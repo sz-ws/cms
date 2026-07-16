@@ -1,0 +1,155 @@
+import type { ReactNode } from "react";
+import type { DeclarativeField, DeclarativeLeafField } from "../manifest";
+import { displayValue, fieldLabel } from "./field-utils";
+import { renderRichtext } from "./richtext-render";
+import { isMediaKey } from "../media-key";
+
+// Tier 2 v1.2: readable server-side rendering of structural field values on the
+// public DetailView. Pure (no I/O, no hooks) so it stays in the server render
+// path alongside the rest of DetailView.
+//
+// group   → a nested definition list of its leaf subfields.
+// repeater→ an ordered list; each row a nested definition list.
+// blocks  → an ordered list; each block shows its type label + a nested list.
+//
+// One level of nesting only (v1): subfields are always leaf types, so each
+// subfield renders via the same leaf primitives DetailView already uses
+// (richtext → renderRichtext, media → <img>, everything else → displayValue).
+
+/** Render one leaf subfield's value (richtext / media / scalar). */
+function renderLeaf(field: DeclarativeLeafField, value: unknown): ReactNode {
+  if (value === undefined || value === null || value === "") return null;
+  if (field.type === "richtext") {
+    return (
+      <div className="richtext-content flex flex-col gap-2 [&_a]:text-indigo-600 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-gray-200 [&_blockquote]:pl-4 [&_blockquote]:text-gray-600 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6">
+        {renderRichtext(value)}
+      </div>
+    );
+  }
+  if (field.type === "media") {
+    // Phase E §2: render-time allowlist guard (mirrors DetailView's top-level
+    // media rendering and richtext-render's image src check) — refuse to
+    // emit an <img src> for anything that doesn't pass isMediaKey.
+    if (!isMediaKey(String(value))) return null;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- media is an arbitrary storage key; native img is used across DetailView.
+      <img
+        src={`/api/files/${String(value)}`}
+        alt=""
+        className="max-w-full rounded"
+      />
+    );
+  }
+  return <span>{displayValue(field, value)}</span>;
+}
+
+/** A nested definition list of leaf subfields for one object of values. */
+function LeafList({
+  fields,
+  data,
+}: {
+  fields: readonly DeclarativeLeafField[];
+  data: Record<string, unknown>;
+}) {
+  return (
+    <dl className="flex flex-col gap-2">
+      {fields.map((sf) => {
+        const node = renderLeaf(sf, data[sf.key]);
+        if (node === null) return null;
+        return (
+          <div key={sf.key} className="flex flex-col gap-0.5">
+            <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">
+              {fieldLabel(sf)}
+            </dt>
+            <dd className="text-sm text-gray-800">{node}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+function asObject(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+function asObjectArray(v: unknown): Record<string, unknown>[] {
+  return Array.isArray(v)
+    ? v.filter(
+        (el): el is Record<string, unknown> =>
+          el !== null && typeof el === "object" && !Array.isArray(el),
+      )
+    : [];
+}
+
+/**
+ * Render a structural field (group / repeater / blocks) value for DetailView.
+ * Returns null when there's nothing to show.
+ */
+export function renderStructural(
+  field: DeclarativeField,
+  value: unknown,
+): ReactNode {
+  if (field.type === "group") {
+    const fields = field.fields ?? [];
+    const data = asObject(value);
+    if (Object.keys(data).length === 0) return null;
+    return (
+      <div className="rounded-xl bg-gray-50 p-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]">
+        <LeafList fields={fields} data={data} />
+      </div>
+    );
+  }
+
+  if (field.type === "repeater") {
+    const fields = field.fields ?? [];
+    const rows = asObjectArray(value);
+    if (rows.length === 0) return null;
+    return (
+      <ol className="flex flex-col gap-3">
+        {rows.map((row, i) => (
+          <li
+            key={i}
+            className="rounded-xl bg-gray-50 p-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]"
+          >
+            <LeafList fields={fields} data={row} />
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  if (field.type === "blocks") {
+    const defs = field.blocks ?? [];
+    const byName = new Map(defs.map((b) => [b.name, b]));
+    const items = asObjectArray(value);
+    if (items.length === 0) return null;
+    return (
+      <ol className="flex flex-col gap-3">
+        {items.map((item, i) => {
+          const name = typeof item["block"] === "string" ? item["block"] : "";
+          const def = byName.get(name);
+          return (
+            <li
+              key={i}
+              className="rounded-xl bg-gray-50 p-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]"
+            >
+              <span className="mb-2 inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
+                {def ? (def.label ?? def.name) : name || "unknown"}
+              </span>
+              {def ? (
+                <LeafList fields={def.fields} data={item} />
+              ) : (
+                <p className="text-sm text-gray-400">Unknown block type.</p>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
+
+  return null;
+}

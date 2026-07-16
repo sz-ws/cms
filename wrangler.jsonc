@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "cms",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "cms" }],
+  "images": { "binding": "IMAGES" },
+  "d1_databases": [
+    // database_id 為佔位值:本環境無 Cloudflare 帳號,無法 `wrangler d1 create`。
+    // 部署前(Phase 7)必須執行 `wrangler d1 create cms-db` 並把回傳的真實 UUID 換進來。
+    { "binding": "DB", "database_name": "cms-db", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" },
+    // 1.8.0 tag cache(OpenNext d1NextTagCache):on-demand revalidateTag 的 tag 記錄。
+    // database_id 同為佔位值 —— 部署前必須 `wrangler d1 create cms-tag-cache`、建 `revalidations`
+    // 表,並把真實 UUID 換進來(見 docs/handoff-notes.md「Tag cache (D1) 部署步驟」)。
+    { "binding": "NEXT_TAG_CACHE_D1", "database_name": "cms-tag-cache", "database_id": "00000000-0000-0000-0000-000000000000" }
+  ],
+  "r2_buckets": [
+    { "binding": "STORAGE", "bucket_name": "cms-storage" },
+    { "binding": "NEXT_INC_CACHE_R2_BUCKET", "bucket_name": "cms-next-cache" }
+  ]
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `declarative_extensions` ADD `stylesheet` text;

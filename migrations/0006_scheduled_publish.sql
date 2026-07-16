@@ -1,0 +1,16 @@
+-- Scheduled publishing: nullable `publish_at` (epoch ms) on `contents`.
+--
+-- Hand-written (NOT drizzle-kit generated), mirroring the 0005 FTS precedent.
+-- The drizzle journal (migrations/meta/_journal.json) already stops at 0004 —
+-- 0005 was added out-of-journal — so `drizzle-kit generate` would next emit a
+-- colliding "0005_*". `wrangler d1 migrations apply` picks up every *.sql by
+-- filename order and tracks applied ones in D1's own d1_migrations table (it
+-- does NOT consult drizzle's journal), so this file alone is enough for
+-- `pnpm db:migrate:local`. The column IS modelled in src/lib/schema.ts
+-- (contents.publishAt) so drizzle's query builder sees it; the meta snapshots
+-- are intentionally left untouched to stay consistent with 0005.
+--
+-- Semantics: a draft row whose publish_at is non-NULL and <= now is flipped to
+-- status='published' by the `publish-due` core job (src/lib/jobs.ts), which then
+-- clears publish_at back to NULL. NULL = not scheduled.
+ALTER TABLE contents ADD COLUMN publish_at integer;

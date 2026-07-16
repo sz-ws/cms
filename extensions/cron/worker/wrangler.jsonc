@@ -1,0 +1,18 @@
+{
+  // Companion cron worker —— 獨立於 CMS 部署的一支小 worker。
+  // 部署前:填 vars.SITE_URL,並用 `wrangler secret put CRON_SECRET` 設密鑰
+  // (與 admin settings 的「Cron signing secret」同值)。見 README.md。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cms-cron",
+  "main": "index.js",
+  "compatibility_date": "2024-12-30",
+  "triggers": {
+    // 每分鐘一次 —— 排程精度 = 此 cron 間隔。
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    // CMS 站台 origin(無尾斜線),如 "https://cms.example.com"。
+    "SITE_URL": "https://REPLACE_ME.example.com"
+  }
+  // CRON_SECRET 不進檔案 —— 用 `wrangler secret put CRON_SECRET`(見 README)。
+}

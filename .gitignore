@@ -1,0 +1,58 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.next-*/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# cloudflare / opennext
+/.open-next/
+/.wrangler/
+# .dev.vars 含 secret,不進版控
+.dev.vars
+# wrangler 產生的型別檔,build/typegen 時重生
+cloudflare-env.d.ts
+
+# commercial-only licensing 實作(src/licensing/index.ts 靠 build-time stub
+# 保證這個路徑永遠有東西可打包,見 scripts/ensure-licensing-stub.mjs)
+src/licensing/verify.local.ts
+dist-ext/
+
+# public template 純 code:markdown 一律不進版控(本地文件保留)
+*.md

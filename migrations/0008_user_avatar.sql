@@ -1,0 +1,20 @@
+-- User avatars: nullable `avatar_key` on `users`, storing the lib/storage.ts
+-- key (scope "avatars") for the uploaded profile picture.
+--
+-- Hand-written (NOT drizzle-kit generated), mirroring the 0006/0007 precedent.
+-- The drizzle journal (migrations/meta/_journal.json) already stops at 0004 —
+-- 0005/0006/0007 were all added out-of-journal — so `drizzle-kit generate`
+-- would next emit a colliding "0005_*". `wrangler d1 migrations apply` picks
+-- up every *.sql by filename order and tracks applied ones in D1's own
+-- d1_migrations table (it does NOT consult drizzle's journal), so this file
+-- alone is enough for `pnpm db:migrate:local`. The column IS modelled in
+-- src/lib/schema.ts (users.avatarKey) so drizzle's query builder sees it; the
+-- meta snapshots are intentionally left untouched to stay consistent with
+-- 0005/0006/0007.
+--
+-- Semantics: NULL = no avatar set. Non-NULL is a storage key produced by
+-- lib/storage.ts#putFile(scope="avatars", ...) and served publicly via
+-- GET /api/files/<key>. Written/cleared by POST|DELETE /api/account/avatar
+-- (src/app/api/account/avatar/route.ts) — self-service only, never by admin
+-- user-management routes.
+ALTER TABLE users ADD COLUMN avatar_key text;

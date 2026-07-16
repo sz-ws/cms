@@ -1,0 +1,333 @@
+import { CORE_API_VERSION } from "../version";
+import { satisfies } from "../semver";
+import { parseManifest } from "./manifest";
+import type {
+  DeclarativeContentType,
+  DeclarativeManifest,
+  DeclarativePublicRoute,
+  DeclarativeSettingField,
+} from "./manifest";
+import type {
+  AdminPage,
+  Extension,
+  HookName,
+  PublicRoute,
+  SettingField,
+} from "../types";
+import { CollectionView } from "./views/CollectionView";
+import type { CollectionViewProps } from "./views/CollectionView";
+import { FormViewPage } from "./views/FormViewPage";
+import type { FormViewPageProps } from "./views/FormViewPage";
+import { FormView } from "./views/FormView";
+import { ListView } from "./views/ListView";
+import type { ListViewProps } from "./views/ListView";
+import { DetailView } from "./views/DetailView";
+import type { DetailViewProps } from "./views/DetailView";
+import { ExtThemeScope } from "./theme-scope";
+import { buildCrudRoutes } from "./crud";
+import { compilePattern, matchSegments } from "./route-matcher";
+import { makeWebhookHandler } from "./webhook";
+import { surfaceIds } from "./surfaces";
+import { overrideRegistry } from "../overrides";
+import { buildScheduleJobs } from "./schedule-jobs";
+import type { ComponentType } from "react";
+
+// core-v2 §3.3:interpreter。把儲存的 declarative manifest 列轉為 loader 已消費的
+// Extension 形狀。install 與 interpret 兩端都重新 parseManifest(§5 防禦手改 DB)。
+//
+// core-v2 §3.6:progressive override。為每個 surface 產生元件前,先查 overrideRegistry
+// —— 有登記(僅在 code 強化層 build 進 bundle 時存在)→ 用自訂元件;無 → 泛用 baseline。
+// resolveSurface() 封裝這個「override-else-baseline」選擇,並保持型別安全:override 元件
+// 收到與泛用 view 完全相同的 props(§3.6 契約)。
+//
+// 決策(manifest hint):v1 的解析純看「是否登記了 override」,不 gate 於任何 manifest 旗標。
+// 這與 §3.6「baseline is the fallback / a registered override wins」一致,且讓 code 層
+// 無需先改 manifest 即可覆寫。manifest 端的 overridableSurfaces hint(文件/意圖)留待需要時
+// 再加,不作為 v1 解析條件(spec §3.6 允許此取捨:permissive)。
+
+/**
+ * 為某 surface 選出實際渲染元件:overrideRegistry.get(extId, surfaceId) ?? generic。
+ * generic 泛型參數 P = 該 surface 的 props;override 元件被登記時已保證同 props,故此處
+ * 收斂回 ComponentType<P> 不放寬約束(見 overrides.ts register 的 view-key 綁定)。
+ */
+function resolveSurface<P>(
+  extId: string,
+  surfaceId: string,
+  generic: ComponentType<P>,
+): ComponentType<P> {
+  const override = overrideRegistry.get(extId, surfaceId);
+  return override
+    ? (override as unknown as ComponentType<P>)
+    : generic;
+}
+
+export interface DeclarativeRow {
+  id: string;
+  manifest: string; // JSON 字串
+  version: string;
+  enabled: number;
+}
+
+/** local content type name → def(供 view/route 查找)。 */
+function typeByName(
+  manifest: DeclarativeManifest,
+): Map<string, DeclarativeContentType> {
+  const m = new Map<string, DeclarativeContentType>();
+  for (const ct of manifest.contentTypes ?? []) m.set(ct.name, ct);
+  return m;
+}
+
+// ---- settings passthrough ----
+
+function toSettingField(f: DeclarativeSettingField): SettingField {
+  const base = {
+    key: f.key,
+    label: f.label,
+    description: f.description,
+    default: f.default,
+    secret: f.secret,
+  };
+  if (f.type === "select") {
+    return { ...base, type: "select", options: f.options ?? [] };
+  }
+  if (f.type === "number") return { ...base, type: "number" };
+  if (f.type === "boolean") return { ...base, type: "boolean" };
+  return { ...base, type: f.type }; // "text" | "textarea"
+}
+
+// ---- admin pages(collection + edit form)----
+
+function buildAdminPages(
+  extId: string,
+  manifest: DeclarativeManifest,
+  types: Map<string, DeclarativeContentType>,
+): AdminPage[] {
+  const pages: AdminPage[] = [];
+  for (const ap of manifest.adminPages ?? []) {
+    const ct = types.get(ap.contentType);
+    if (!ct) continue; // 指向不存在的 type:跳過(schema 不強制交叉檢查)。
+    const slug = ap.slug;
+    const editSlug = slug ? `${slug}/edit` : "edit";
+    const contentType = `${extId}.${ct.name}`; // 完整 type key(surface 鍵)
+
+    // §3.6:collection surface —— override(admin:<type>:collection)或泛用 baseline。
+    const Collection = resolveSurface<CollectionViewProps>(
+      extId,
+      surfaceIds.adminCollection(contentType),
+      CollectionView,
+    );
+    // collection 頁。分頁·排序·filter state 由 searchParams 帶入。
+    pages.push({
+      slug,
+      title: ap.title,
+      component: ({ searchParams }) => (
+        <Collection
+          extId={extId}
+          title={ap.title}
+          adminSlug={slug}
+          contentType={ct}
+          searchParams={searchParams}
+          layout={ap.layout} // §3.5 缺省 → table(view 內處理)
+        />
+      ),
+    });
+    // §3.6:form surface —— override(admin:<type>:form)或泛用 baseline。
+    const Form = resolveSurface<FormViewPageProps>(
+      extId,
+      surfaceIds.adminForm(contentType),
+      FormViewPage,
+    );
+    // edit / new 頁(不進 menu)。
+    pages.push({
+      slug: editSlug,
+      title: `${ap.title} — Edit`,
+      showInMenu: false,
+      component: ({ searchParams }) => (
+        <Form
+          extId={extId}
+          title={ap.title}
+          adminSlug={slug}
+          contentType={ct}
+          entryId={searchParams.id || undefined}
+        />
+      ),
+    });
+  }
+  return pages;
+}
+
+// ---- public routes ----
+
+function buildPublicRoutes(
+  extId: string,
+  manifest: DeclarativeManifest,
+  types: Map<string, DeclarativeContentType>,
+): PublicRoute[] {
+  const routes: PublicRoute[] = [];
+  const byType = manifest.publicRoutes ?? [];
+  // 1.8.0:manifest.theme(若有)包住每個 public view,注入 --ext-* CSS 變數。admin 無視。
+  const theme = manifest.theme;
+
+  // 為 detail link 找同 contentType 的 detail route 前綴(去掉尾端 :param 段)。
+  const detailBaseFor = (contentType: string): string | null => {
+    const detail = byType.find(
+      (r: DeclarativePublicRoute) =>
+        r.contentType === contentType && r.view === "detail",
+    );
+    if (!detail) return null;
+    const parts = detail.pattern.split("/").filter((s) => s.length > 0);
+    parts.pop(); // 去掉 :slug 段
+    return `/${parts.join("/")}`;
+  };
+
+  for (const pr of byType) {
+    const ct = types.get(pr.contentType);
+    if (!ct) continue;
+    const template = compilePattern(pr.pattern);
+    const contentType = `${extId}.${ct.name}`; // 完整 type key(surface 鍵)
+
+    if (pr.view === "list") {
+      const detailBase = detailBaseFor(pr.contentType);
+      // §3.6:list surface —— override(public:<type>:list)或泛用 baseline。
+      const List = resolveSurface<ListViewProps>(
+        extId,
+        surfaceIds.publicList(contentType),
+        ListView,
+      );
+      routes.push({
+        match: (segments) => matchSegments(template, segments),
+        component: () => (
+          <ExtThemeScope extId={extId} theme={theme}>
+            <List
+              extId={extId}
+              contentType={ct}
+              detailBase={detailBase}
+              layout={pr.layout} // §3.5 缺省 → table(view 內處理)
+            />
+          </ExtThemeScope>
+        ),
+      });
+    } else if (pr.view === "form") {
+      // 公開表單現在直接共用泛用 FormView,不再維護一個 public-only thin shell。
+      // public:true 仍由 dispatch(/api/ext/...) 控制匿名 POST 權限。
+      routes.push({
+        match: (segments) => matchSegments(template, segments),
+        component: () => (
+          <ExtThemeScope extId={extId} theme={theme}>
+            <FormView
+              mode="public"
+              extId={extId}
+              typeName={ct.name}
+              title={ct.label ?? ct.name}
+              fields={ct.fields}
+              slugField={ct.slugField}
+              successMessage={pr.success?.message}
+              stepped={pr.stepped} // 1.7.0:≥4 個公開可渲染欄位 + stepped:true → Stepper 多步
+            />
+          </ExtThemeScope>
+        ),
+      });
+    } else {
+      // §3.6:detail surface —— override(public:<type>:detail)或泛用 baseline。
+      const Detail = resolveSurface<DetailViewProps>(
+        extId,
+        surfaceIds.publicDetail(contentType),
+        DetailView,
+      );
+      routes.push({
+        match: (segments) => matchSegments(template, segments),
+        component: ({ params }) => (
+          <ExtThemeScope extId={extId} theme={theme}>
+            <Detail
+              extId={extId}
+              contentType={ct}
+              slug={params.slug ?? ""}
+            />
+          </ExtThemeScope>
+        ),
+      });
+    }
+  }
+  return routes;
+}
+
+// ---- api routes ----
+
+function buildApiRoutes(extId: string, manifest: DeclarativeManifest) {
+  return (manifest.contentTypes ?? []).flatMap((ct) =>
+    buildCrudRoutes(extId, ct),
+  );
+}
+
+// ---- hooks(on bindings)----
+
+function buildHooks(
+  extId: string,
+  manifest: DeclarativeManifest,
+): Partial<Record<HookName, ReturnType<typeof makeWebhookHandler>>> {
+  const hooks: Partial<Record<string, ReturnType<typeof makeWebhookHandler>>> =
+    {};
+  for (const [hookName, actions] of Object.entries(manifest.on ?? {})) {
+    if (!actions || actions.length === 0) continue;
+    hooks[hookName] = makeWebhookHandler(extId, hookName, actions);
+  }
+  return hooks as Partial<
+    Record<HookName, ReturnType<typeof makeWebhookHandler>>
+  >;
+}
+
+// ---- forms 引擎已撤(declarative 化後,forms/contact 直接走 contentType submission)----
+// 過去這裡有 buildForms():為每個 declarative form 產生 admin submissions page + public
+// form page。現在 declarative content type(配合 public:true 旗標)走 auto-CRUD + 現成
+// CollectionView,不需要 form engine。PublicFormView 改在 collection admin 派發後,本檔
+// 已不需要任何 form 路由生成。
+
+
+/**
+ * 把一列 declarative_extensions 轉為 Extension。manifest 於此重新 parseManifest;
+ * 無效 → 回傳 null(loader 跳過並 log,絕不 crash;§5)。
+ */
+export function interpretManifest(row: DeclarativeRow): Extension | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(row.manifest);
+  } catch {
+    console.error(`[dx:interpret] ext=${row.id} manifest not valid JSON`);
+    return null;
+  }
+  const parsed = parseManifest(json);
+  if (!parsed.ok || !parsed.manifest) {
+    console.error(`[dx:interpret] ext=${row.id} invalid manifest: ${parsed.error}`);
+    return null;
+  }
+  const manifest = parsed.manifest;
+  const types = typeByName(manifest);
+
+  return {
+    id: manifest.id,
+    name: manifest.name,
+    version: manifest.version,
+    coreApi: manifest.coreApi,
+    description: manifest.description,
+    icon: manifest.icon,
+    og: manifest.og,
+    settings: (manifest.settings ?? []).map(toSettingField),
+    adminPages: buildAdminPages(manifest.id, manifest, types),
+    apiRoutes: buildApiRoutes(manifest.id, manifest),
+    publicRoutes: buildPublicRoutes(manifest.id, manifest, types),
+    hooks: buildHooks(manifest.id, manifest),
+    // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth)。
+    contentTypes: manifest.contentTypes,
+    // roadmap #16:dashboard 卡直接透傳(同 contentTypes;實際查詢與渲染交給
+    // dashboard-cards.ts + 卡片元件)。
+    dashboardCards: manifest.dashboardCards,
+    // B(docs/spec-declarative-notify-schedule.md):manifest.schedule[] → jobs,
+    // 騎在 ext-jobs 引擎上(src/lib/jobs.ts 既有 reconcile/claim/執行,零引擎改動)。
+    jobs: buildScheduleJobs(manifest.id, manifest, types),
+  };
+}
+
+/** manifest 的 coreApi 是否相容目前 CORE_API_VERSION。 */
+export function isManifestCompatible(manifest: DeclarativeManifest): boolean {
+  return satisfies(CORE_API_VERSION, manifest.coreApi);
+}

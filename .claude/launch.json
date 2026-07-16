@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cms-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "cms-dev-3100",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "--", "-p", "3100"],
+      "port": 3100
+    },
+    {
+      "name": "cms-dev-webpack",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "next", "dev", "--webpack", "--port", "3000"],
+      "port": 3000
+    }
+  ]
+}

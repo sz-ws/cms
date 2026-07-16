@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1783026381524,
+      "tag": "0000_omniscient_thunderbolts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1783361488949,
+      "tag": "0001_workable_xorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783622329487,
+      "tag": "0002_uneven_micromacro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1783628798278,
+      "tag": "0003_natural_squadron_supreme",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1783631434819,
+      "tag": "0004_nosy_blue_marvel",
+      "breakpoints": true
+    }
+  ]
+}

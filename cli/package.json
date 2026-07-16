@@ -1,0 +1,22 @@
+{
+  "name": "@sz.ws/suko",
+  "version": "0.1.0",
+  "description": "Suko CMS code-extension installer — `npx suko add <id>`.",
+  "type": "module",
+  "bin": {
+    "suko": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

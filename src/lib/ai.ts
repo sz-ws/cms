@@ -1,0 +1,45 @@
+import { getExtRuntime } from "@/ext/loader";
+import { buildProviderRegistry } from "@/ext/services";
+import type {
+  AiGenerateOptions,
+  AiGenerateResult,
+  AiProvider,
+  AiStreamEvent,
+} from "@/ext/providers/ai";
+
+// core 呼叫端的 AI 呼叫入口(extension 端走 ctx.services.providers.get<AiProvider>
+// ("ai:generate"),不經此檔)。跟 src/lib/email.ts 同一模式:每次建 registry(含
+// extension provides)+ resolveActive,讓 core.provider.ai:generate 的切換
+// (未來若有 extension 提供其他 AI provider)在這裡也生效。
+//
+// workers pool 地雷:本檔靜態 import loader/services 鏈沒關係(email.ts 同款)——
+// 但被測試靜態 import 的呼叫端(如 /api/ai/generate route)不得把這條鏈拖進去,
+// 該處須改為 handler 內 dynamic import(同 dx/notify.ts 慣例)。
+
+async function activeAiProvider(): Promise<AiProvider> {
+  const rt = await getExtRuntime();
+  const registry = buildProviderRegistry(rt);
+  await registry.resolveActive();
+  return registry.get<AiProvider>("ai:generate");
+}
+
+export async function generateAiText(
+  opts: AiGenerateOptions,
+): Promise<AiGenerateResult> {
+  return (await activeAiProvider()).generate(opts);
+}
+
+// v1.1 streaming(見 docs/spec-ai-capability.md streaming 附錄)。同 generateAiText
+// 走同一個 activeAiProvider() 解析路徑;若 resolve 出的 provider 沒實作
+// generateStream(第三方 provider 也合法未實作),退回單一 error 事件,永不 throw
+// ——與 generate() 的「設定不全 → not_configured」哲學一致。
+export async function* generateAiTextStream(
+  opts: AiGenerateOptions,
+): AsyncGenerator<AiStreamEvent> {
+  const provider = await activeAiProvider();
+  if (!provider.generateStream) {
+    yield { type: "error", error: "streaming_not_supported" };
+    return;
+  }
+  yield* provider.generateStream(opts);
+}

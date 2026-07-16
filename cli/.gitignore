@@ -1,0 +1,2 @@
+# tsc 輸出(pnpm cli:build 重生;bin 指向 ./dist/cli.js)
+dist/

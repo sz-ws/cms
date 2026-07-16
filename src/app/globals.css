@@ -1,0 +1,197 @@
+/* Scope Tailwind content scanning to our own source only. Without this,
+   auto-detection can pull in build output / bundled deps whose complex
+   arbitrary classes (e.g. base-ui drawer opacity-[max(var(...),calc(...))])
+   crash the Tailwind v4 CSS parser. */
+@import "tailwindcss" source(none);
+@source "../";
+@source "../../extensions";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+    /* --- "Paper & Ink" design language (docs/admin-design-language.md) ---
+       Ground = paper #fbfaf9; surfaces = white; ink = black at opacity steps;
+       accent = dither blue rgb(86,114,228). Remapped from shadcn defaults so
+       existing bg-primary / text-muted-foreground etc. inherit the language. */
+    --paper: #fbfaf9;
+    --ink: oklch(0 0 0);
+    --accent-blue: oklch(0.588 0.196 268.5); /* rgb(86,114,228) */
+
+    --card: #ffffff;
+    --card-foreground: oklch(0 0 0 / 0.9);
+    --popover: #ffffff;
+    --popover-foreground: oklch(0 0 0 / 0.9);
+    /* Primary = black ink (buttons, active markers pick accent explicitly) */
+    --primary: oklch(0 0 0);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: #ffffff;
+    --secondary-foreground: oklch(0 0 0 / 0.85);
+    --muted: oklch(0 0 0 / 0.03);
+    --muted-foreground: oklch(0 0 0 / 0.45);
+    --accent: oklch(0 0 0 / 0.03);
+    --accent-foreground: oklch(0 0 0 / 0.9);
+    --destructive: oklch(0.55 0.2 27);
+    /* Depth is shadows, not borders: keep borders barely-there black. */
+    --border: oklch(0 0 0 / 0.08);
+    --input: oklch(0 0 0 / 0.1);
+    --ring: oklch(0.588 0.196 268.5); /* dither blue focus ring */
+    --chart-1: oklch(0.588 0.196 268.5);
+    --chart-2: oklch(0.596 0.145 163); /* muted green for published */
+    --chart-3: oklch(0.6 0.118 184.704);
+    --chart-4: oklch(0.511 0.096 186.391);
+    --chart-5: oklch(0.437 0.078 188.216);
+    --radius: 0.5rem; /* 8px control base; nested surfaces override to 14/20px */
+    --sidebar: #fbfaf9;
+    --sidebar-foreground: oklch(0 0 0 / 0.55);
+    --sidebar-primary: oklch(0.588 0.196 268.5);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0 0 0 / 0.03);
+    --sidebar-accent-foreground: oklch(0 0 0 / 0.9);
+    --sidebar-border: oklch(0 0 0 / 0.08);
+    --sidebar-ring: oklch(0.588 0.196 268.5);
+    --background: #fbfaf9;
+    --foreground: oklch(0 0 0 / 0.9);
+
+    /* --- Intent UI token bridge (react-aria sidebar block) ---
+       Intent UI components reference short token names (fg, muted-fg, bg,
+       overlay, navbar, sidebar-fg, …). Map them onto the project's paper-white
+       stone palette so the block renders in the existing light aesthetic.
+       Ground is the login/admin paper white (#fbfaf9 family). */
+    --bg: #fbfaf9;
+    --fg: oklch(0 0 0 / 0.9);
+    --overlay: #ffffff;
+    --overlay-fg: oklch(0 0 0 / 0.9);
+    --navbar: #fbfaf9;
+    --navbar-fg: oklch(0 0 0 / 0.9);
+    --primary-fg: var(--primary-foreground);
+    --secondary-fg: var(--secondary-foreground);
+    --accent-fg: var(--accent-foreground);
+    --muted-fg: var(--muted-foreground);
+    --success: oklch(0.596 0.145 163);
+    --success-fg: oklch(0.98 0.02 160);
+    --warning: oklch(0.828 0.155 84);
+    --warning-fg: oklch(0.28 0.07 47);
+    --danger: var(--destructive);
+    --danger-fg: oklch(1 0 0);
+    --sidebar-fg: var(--sidebar-foreground);
+    --sidebar-primary-fg: var(--sidebar-primary-foreground);
+    --sidebar-accent-fg: var(--sidebar-accent-foreground);
+}
+
+.dark {
+    --background: oklch(0.147 0.004 49.25);
+    --foreground: oklch(0.985 0.001 106.423);
+    --card: oklch(0.216 0.006 56.043);
+    --card-foreground: oklch(0.985 0.001 106.423);
+    --popover: oklch(0.216 0.006 56.043);
+    --popover-foreground: oklch(0.985 0.001 106.423);
+    --primary: oklch(0.424 0.199 265.638);
+    --primary-foreground: oklch(0.97 0.014 254.604);
+    --secondary: oklch(0.274 0.006 286.033);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.268 0.007 34.298);
+    --muted-foreground: oklch(0.709 0.01 56.259);
+    --accent: oklch(0.268 0.007 34.298);
+    --accent-foreground: oklch(0.985 0.001 106.423);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.553 0.013 58.071);
+    --chart-1: oklch(0.855 0.138 181.071);
+    --chart-2: oklch(0.704 0.14 182.503);
+    --chart-3: oklch(0.6 0.118 184.704);
+    --chart-4: oklch(0.511 0.096 186.391);
+    --chart-5: oklch(0.437 0.078 188.216);
+    --sidebar: oklch(0.216 0.006 56.043);
+    --sidebar-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-primary: oklch(0.623 0.214 259.815);
+    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+    --sidebar-accent: oklch(0.268 0.007 34.298);
+    --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.553 0.013 58.071);
+}
+
+@theme inline {
+    /* Latin stays on Geist/Inter (next/font vars on <html>); Han glyphs fall to
+       the self-hosted Chiron Hei HK (昭源黑體) TC webfont before system fonts.
+       Face declarations + woff2 slices live in
+       public/fonts/chiron-hei-hk/, linked from the root layout. */
+    --font-sans: var(--font-geist), "Chiron Hei HK", ui-sans-serif, system-ui,
+        sans-serif;
+    --font-heading: var(--font-inter), "Chiron Hei HK", ui-sans-serif,
+        system-ui, sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    /* Intent UI short token names → Tailwind color utilities */
+    --color-bg: var(--bg);
+    --color-fg: var(--fg);
+    --color-overlay: var(--overlay);
+    --color-overlay-fg: var(--overlay-fg);
+    --color-navbar: var(--navbar);
+    --color-navbar-fg: var(--navbar-fg);
+    --color-muted-fg: var(--muted-fg);
+    --color-primary-fg: var(--primary-fg);
+    --color-secondary-fg: var(--secondary-fg);
+    --color-accent-fg: var(--accent-fg);
+    --color-success: var(--success);
+    --color-success-fg: var(--success-fg);
+    --color-warning: var(--warning);
+    --color-warning-fg: var(--warning-fg);
+    --color-danger: var(--danger);
+    --color-danger-fg: var(--danger-fg);
+    --color-sidebar-fg: var(--sidebar-fg);
+    --color-sidebar-primary-fg: var(--sidebar-primary-fg);
+    --color-sidebar-accent-fg: var(--sidebar-accent-fg);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground antialiased;
+    }
+  html {
+    @apply font-sans antialiased;
+    }
+}
