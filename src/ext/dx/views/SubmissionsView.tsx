@@ -1,7 +1,8 @@
-import { getContentProvider, toTypeDef } from "../runtime";
+import { getContentProvider } from "../runtime";
 import type { DeclarativeLeafField } from "../manifest";
 import { displayValue, fieldLabel, truncate } from "./field-utils";
 import { Table, PageTitle } from "@/components/ui/legacy";
+import { getLocale } from "@/lib/i18n/server";
 
 // Forms §:admin 看某 form 的提交(declarative 化後:直接查 contents WHERE type='contact.submission')。
 // 與舊 form_submissions 走不同路徑;目前改用 ContentProvider 讀共用 contents。
@@ -22,9 +23,9 @@ export async function SubmissionsView({
   form,
   searchParams,
 }: SubmissionsViewProps) {
+  const locale = await getLocale();
   const contentType = `${extId}.${formName}`;
   const page = Math.max(1, Number(searchParams.page ?? "1") || 1);
-  const offset = (page - 1) * PER_PAGE;
 
   const provider = await getContentProvider();
   const { items, total } = await provider.query(contentType, {
@@ -54,6 +55,7 @@ export async function SubmissionsView({
             fields={fields}
             rows={csvRows}
             fileName={fileName}
+            locale={locale}
           />
         )}
       </div>
@@ -68,7 +70,7 @@ export async function SubmissionsView({
             <tr>
               {fields.map((f) => (
                 <th key={f.key} className="px-3 py-2 font-medium">
-                  {fieldLabel(f)}
+                  {fieldLabel(f, locale)}
                 </th>
               ))}
               <th className="px-3 py-2 font-medium">時間</th>

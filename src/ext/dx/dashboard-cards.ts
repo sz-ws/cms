@@ -4,6 +4,8 @@ import { contents } from "@/lib/schema";
 import { displayValue, pickTitleField } from "./views/field-utils";
 import type { DeclarativeDashboardCard } from "./manifest";
 import type { Extension } from "../types";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+import type { Locale } from "@/lib/i18n/index";
 
 // roadmap #16:把 enabled extensions 宣告的 dashboardCards 解析成可渲染的資料。
 //   stat   → 對共用 contents 表做 count(*)(可選 status filter)。
@@ -50,6 +52,7 @@ export interface ResolvedDashboardCard {
 async function resolveCard(
   ext: Extension,
   card: DeclarativeDashboardCard,
+  locale: Locale,
 ): Promise<ResolvedDashboardCard | null> {
   const ct = (ext.contentTypes ?? []).find((c) => c.name === card.contentType);
   if (!ct) {
@@ -63,7 +66,12 @@ async function resolveCard(
 
   const typeKey = `${ext.id}.${card.contentType}`;
   const adminHref = `/admin/ext/${ext.id}`;
-  const title = card.title ?? ct.label ?? ct.name;
+  // §1 #13 → #3 → name:card.title 優先,退 ct.label,再退 ct.name(全走 resolve)。
+  const title =
+    resolveLocalizedString(card.title, locale) ??
+    resolveLocalizedString(ct.label, locale) ??
+    ct.name;
+  const extName = resolveLocalizedString(ext.name, locale) ?? ext.id;
 
   try {
     if (card.kind === "stat") {
@@ -76,7 +84,7 @@ async function resolveCard(
         .where(where);
       return {
         extId: ext.id,
-        extName: ext.name,
+        extName,
         kind: "stat",
         title,
         contentType: typeKey,
@@ -118,7 +126,7 @@ async function resolveCard(
     });
     return {
       extId: ext.id,
-      extName: ext.name,
+      extName,
       kind: "recent",
       title,
       contentType: typeKey,
@@ -140,11 +148,12 @@ async function resolveCard(
  */
 export async function resolveDashboardCards(
   exts: Extension[],
+  locale: Locale = "en",
 ): Promise<ResolvedDashboardCard[]> {
   const jobs: Promise<ResolvedDashboardCard | null>[] = [];
   for (const ext of exts) {
     for (const card of ext.dashboardCards ?? []) {
-      jobs.push(resolveCard(ext, card));
+      jobs.push(resolveCard(ext, card, locale));
     }
   }
   const settled = await Promise.all(jobs);

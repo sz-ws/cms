@@ -7,6 +7,7 @@ import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
 import { AdminShell, type AdminMenuItem } from "@/components/admin/AdminShell";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export default async function AdminLayout({
       .filter((p) => p.showInMenu !== false)
       .map((p) => ({
         href: `/admin/ext/${ext.id}${p.slug ? `/${p.slug}` : ""}`,
-        title: p.title,
+        title: resolveLocalizedString(p.title, locale) ?? p.slug,
         icon: ext.icon,
       })),
   );

@@ -41,6 +41,7 @@ export function AdminFormSurface(props: AdminFormSurfaceProps) {
       initialStatus={props.initialStatus}
       initialPublishAt={props.initialPublishAt}
       layout={props.contentType?.layout}
+      locale={props.locale}
     />
   );
 }

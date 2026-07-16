@@ -5,6 +5,9 @@ import type {
   ListLayout,
 } from "../manifest";
 import { displayValue, fieldLabel, isSortable, selectColumns } from "./field-utils";
+import { getLocale } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+import type { LocalizedString } from "@/lib/i18n/localized";
 import { renderCell } from "./collection/cell-renderers";
 import { parseState, toFilter } from "./collection/params";
 import {
@@ -29,7 +32,9 @@ import { EmptyState } from "./collection/EmptyState";
 
 export interface CollectionViewProps {
   extId: string;
-  title: string;
+  // §1 #12:interpret 透傳原始 adminPage.title(LocalizedString);此 server view 每
+  // request 以 getLocale() resolve(memo-safe)。
+  title: LocalizedString;
   adminSlug: string; // "" = 主頁
   contentType: DeclarativeContentType;
   searchParams: Record<string, string>;
@@ -44,15 +49,17 @@ export async function CollectionView({
   searchParams,
   layout = "table",
 }: CollectionViewProps) {
+  const locale = await getLocale();
   const def = toTypeDef(extId, contentType);
   const fields = contentType.fields;
-  const typeLabel = contentType.label ?? contentType.name;
+  const typeLabel = resolveLocalizedString(contentType.label, locale) ?? contentType.name;
+  const resolvedTitle = resolveLocalizedString(title, locale) ?? contentType.name;
 
   // ---- 欄位規劃 ----
   const columns = selectColumns(fields, contentType.slugField);
   const columnMeta: ColumnMeta[] = columns.map((f) => ({
     key: f.key,
-    label: fieldLabel(f),
+    label: fieldLabel(f, locale),
     sortable: isSortable(f),
     align: f.type === "number" ? "right" : "left",
   }));
@@ -130,7 +137,7 @@ export async function CollectionView({
   return (
     <div className="flex flex-col gap-5">
       <CollectionHeader
-        title={title}
+        title={resolvedTitle}
         typeLabel={typeLabel}
         total={total}
         createHref={editHref()}
@@ -140,13 +147,13 @@ export async function CollectionView({
         status={state.status}
         selects={selectFields.map((f) => ({
           key: f.key,
-          label: fieldLabel(f),
+          label: fieldLabel(f, locale),
           options: f.options,
           value: state.selects[f.key] ?? "",
         }))}
         searchField={
           searchFieldDef
-            ? { key: searchFieldDef.key, label: fieldLabel(searchFieldDef) }
+            ? { key: searchFieldDef.key, label: fieldLabel(searchFieldDef, locale) }
             : undefined
         }
         search={state.search}

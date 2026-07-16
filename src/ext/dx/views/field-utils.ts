@@ -1,10 +1,27 @@
-import type { DeclarativeField } from "../manifest";
+import type { DeclarativeBlockDef, DeclarativeField } from "../manifest";
 import { richtextToPlainText } from "../fields/richtext-schema";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+import type { Locale } from "@/lib/i18n/index";
 
 // generic views 共用的欄位格式化。純函式,無 I/O。
 
-export function fieldLabel(field: DeclarativeField): string {
-  return field.label ?? field.key;
+// spec-extension-i18n.md #4–#7:label 由 plain string 擴成 LocalizedString。fieldLabel /
+// blockLabel 是「單一 resolve 點」——所有 view / field control 一律經由此處把 label
+// resolve 成當前 locale 的顯示字串(缺 label 時退回機器 key/name,永不露空)。locale 由
+// 呼叫端提供:server component 走 getLocale();client field tree 走 ExtLocaleProvider。
+export function fieldLabel(
+  field: Pick<DeclarativeField, "label" | "key">,
+  locale: Locale,
+): string {
+  return resolveLocalizedString(field.label, locale) ?? field.key;
+}
+
+/** blocks 的具名 block 顯示 label(spec §1 #7):resolve 後退回 block name。 */
+export function blockLabel(
+  def: Pick<DeclarativeBlockDef, "label" | "name">,
+  locale: Locale,
+): string {
+  return resolveLocalizedString(def.label, locale) ?? def.name;
 }
 
 /**

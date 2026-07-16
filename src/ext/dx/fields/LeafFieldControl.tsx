@@ -3,6 +3,7 @@
 import { Label } from "@/components/ui/label";
 import type { DeclarativeLeafField } from "../manifest";
 import { fieldLabel } from "../views/field-utils";
+import { useExtLocale } from "../ext-locale";
 import { FIELD_COMPONENTS } from "./index";
 import type { ErasedFieldComponentProps } from "./index";
 import { SlugField } from "./SlugField";
@@ -37,11 +38,12 @@ export function LeafFieldControl({
   error,
   hideLabel,
 }: LeafFieldControlProps) {
+  const locale = useExtLocale();
   return (
     <div className="flex flex-col gap-1.5">
       {!hideLabel && field.type !== "boolean" && (
         <Label htmlFor={`field-${field.key}`}>
-          {fieldLabel(field)}
+          {fieldLabel(field, locale)}
           {field.required && <span className="text-destructive"> *</span>}
         </Label>
       )}
@@ -53,7 +55,7 @@ export function LeafFieldControl({
         error={error}
       />
       {field.type === "boolean" && !hideLabel && (
-        <span className="text-[13px] text-black/55">{fieldLabel(field)}</span>
+        <span className="text-[13px] text-black/55">{fieldLabel(field, locale)}</span>
       )}
       {error && (
         <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">

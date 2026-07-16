@@ -10,6 +10,15 @@ import type {
   DeclarativeContentType,
   DeclarativeLeafField,
 } from "./manifest";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+
+// ContentTypeDef / ContentLeafFieldDef 的 label(capabilities.ts,禁區,型別為
+// string)只是 provider 內部 metadata,不面向使用者(使用者可見 label 一律經 view 端
+// fieldLabel/resolveLocalizedString 依當次 locale resolve)。label 由 v1.17.0 起可為
+// LocalizedString,故在此把它壓成單一 canonical 字串(取 en/任一鍵)——locale-agnostic、
+// memo-safe,不改動禁區型別。 */
+const canonicalLabel = (v: DeclarativeLeafField["label"]): string | undefined =>
+  resolveLocalizedString(v, "en");
 
 // generic views(server components)在 ext API request 之外執行,拿不到 ctx.services。
 // 提供一個輕量 helper 直接取得 active content provider,並綁上當次 request 的 HookBus。
@@ -31,7 +40,7 @@ function toLeafDef(f: DeclarativeLeafField): ContentLeafFieldDef {
   return {
     key: f.key,
     type: f.type,
-    label: f.label,
+    label: canonicalLabel(f.label),
     required: f.required,
     options: f.options,
     to: f.to, // 08 §1:relation/relations 目標 type key(其餘型別為 undefined)
@@ -42,7 +51,7 @@ function toLeafDef(f: DeclarativeLeafField): ContentLeafFieldDef {
 function toBlockDef(b: DeclarativeBlockDef): ContentBlockDef {
   return {
     name: b.name,
-    label: b.label,
+    label: canonicalLabel(b.label),
     fields: b.fields.map(toLeafDef),
   };
 }
@@ -54,12 +63,12 @@ export function toTypeDef(
 ): ContentTypeDef {
   return {
     type: `${extId}.${ct.name}`,
-    label: ct.label,
+    label: canonicalLabel(ct.label),
     slugField: ct.slugField,
     fields: ct.fields.map((f) => ({
       key: f.key,
       type: f.type,
-      label: f.label,
+      label: canonicalLabel(f.label),
       required: f.required,
       options: f.options,
       to: f.to, // 08 §1:relation/relations 目標 type key(其餘型別為 undefined)

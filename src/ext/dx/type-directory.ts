@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { declarativeExtensions as dxTable } from "@/lib/schema";
 import { parseManifest } from "./manifest";
 import type { DeclarativeContentType } from "./manifest";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+import type { Locale } from "@/lib/i18n/index";
 
 // typeKey → admin 路徑/標籤的目錄(server-safe:只依賴 db/schema/manifest,
 // 無任何 client 模組)。原本住在 dashboard 的 aggregate.ts,但 /api/search 也要
@@ -35,8 +37,15 @@ function resolveCollectionSlug(
 
 /** Enumerate every declarative content type across all ENABLED declarative
  * extensions. Reads the stored rows directly (not the interpreted Extension
- * shape) so we keep manifest-level metadata like labels + admin slugs. */
-export async function listDeclarativeTypes(): Promise<DeclarativeTypeInfo[]> {
+ * shape) so we keep manifest-level metadata like labels + admin slugs.
+ *
+ * spec-extension-i18n.md §1 #1/#3:type label(ct.label)與 ext name(m.name)可為
+ * LocalizedString。此 server-safe 檔不自行讀 core.locale(避免把 settings/DB 依賴綁進
+ * workers 測試池的純結構列舉),改由呼叫端(dashboard / search route,皆 server)以
+ * getLocale() 傳入 locale,於此每 request resolve。缺省 "en" 保留舊行為與測試相容。 */
+export async function listDeclarativeTypes(
+  locale: Locale = "en",
+): Promise<DeclarativeTypeInfo[]> {
   const rows = await db()
     .select({
       id: dxTable.id,
@@ -61,9 +70,9 @@ export async function listDeclarativeTypes(): Promise<DeclarativeTypeInfo[]> {
       const base = `/admin/ext/${m.id}${slug ? `/${slug}` : ""}`;
       types.push({
         typeKey: `${m.id}.${ct.name}`,
-        typeLabel: ct.label ?? ct.name,
+        typeLabel: resolveLocalizedString(ct.label, locale) ?? ct.name,
         extId: m.id,
-        extName: m.name,
+        extName: resolveLocalizedString(m.name, locale) ?? m.id,
         contentType: ct,
         collectionHref: base,
         newHref: `${base}/edit`,

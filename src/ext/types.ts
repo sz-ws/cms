@@ -7,6 +7,7 @@ import type {
   DeclarativeContentType,
   DeclarativeDashboardCard,
 } from "./dx/manifest";
+import type { LocalizedString } from "@/lib/i18n/localized";
 
 // 03 §1:Extension 型別(完整內容,欄位一字不差照 spec)。
 // core-v2 §2.1 / §2.2 / §3.1:ApiCtx.services、manifest coreApi/provides、zod 驗證。
@@ -20,8 +21,11 @@ export interface ExtMigration {
 
 export interface SettingFieldBase {
   key: string; // 存入 settings 表時為 `ext.<extId>.<key>`
-  label: string;
-  description?: string;
+  // spec-extension-i18n.md §1 #9/#10:label/description 可 localize(union;純字串
+  // 全相容)。declarative interpret 透傳原始 LocalizedString(memo-safe),SettingsWorkspace
+  // 於 client(admin,有 I18nProvider)以 useLocale() resolve。
+  label: LocalizedString;
+  description?: LocalizedString;
   default: unknown;
   secret?: boolean; // true → 加密儲存、API 只寫不讀(02 §1、05 §4)
 }
@@ -30,12 +34,15 @@ export type SettingField = SettingFieldBase &
     | { type: "text" | "textarea" }
     | { type: "number" }
     | { type: "boolean" }
-    | { type: "select"; options: { value: string; label: string }[] }
+    // §1 #11:settings select 已 value/label 分離,label 可乾淨 localize。
+    | { type: "select"; options: { value: string; label: LocalizedString }[] }
   );
 
 export interface AdminPage {
   slug: string; // "" = extension 主頁;URL: /admin/ext/<extId>/<slug>
-  title: string; // 顯示在 sidebar
+  // §1 #12:sidebar 標題可 localize;interpret 透傳原始 LocalizedString(memo-safe),
+  // 於 admin layout 每 request 以 getLocale() resolve。
+  title: LocalizedString; // 顯示在 sidebar
   showInMenu?: boolean; // default true
   component: ComponentType<{
     params: Record<string, string>; // 至少含 { extId }
@@ -85,10 +92,13 @@ export interface ExtJobRegistration {
 
 export interface Extension {
   id: string; // ^[a-z][a-z0-9-]{1,30}$
-  name: string;
+  // §1 #1/#2:declarative interpret 透傳原始 LocalizedString(memo-safe);server 端
+  // 消費點(dashboard extName、settings 分頁標題、extensions 列表 DTO)以 getLocale()
+  // resolve。code extension 給純字串即可(string ⊂ LocalizedString)。
+  name: LocalizedString;
   version: string; // semver
   coreApi: string; // core-v2 §1:相容的 CORE_API_VERSION semver range,如 "^1.0.0"
-  description?: string;
+  description?: LocalizedString;
   /** admin nav / menu icon hint (lucide token or code-extension-resolved symbol name). */
   icon?: string;
   /** OG image 設定(declarative extensions only)。 */

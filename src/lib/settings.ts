@@ -4,12 +4,16 @@ import { settings } from "./schema";
 import { getEnv } from "./cf";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 
+import type { LocalizedString } from "./i18n/localized";
+
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
+// spec-extension-i18n.md §1 #9–#11:label/description/option.label 可 localize
+// (union;CORE_SETTINGS 的純字串全相容)。SettingsWorkspace 以 useLocale() resolve。
 export interface SettingFieldBase {
   key: string;
-  label: string;
-  description?: string;
+  label: LocalizedString;
+  description?: LocalizedString;
   default: unknown;
   secret?: boolean;
   /**
@@ -24,7 +28,7 @@ export type SettingField = SettingFieldBase &
     | { type: "text" | "textarea" }
     | { type: "number" }
     | { type: "boolean" }
-    | { type: "select"; options: { value: string; label: string }[] }
+    | { type: "select"; options: { value: string; label: LocalizedString }[] }
   );
 
 // ---- Core settings 定義(05 §3)----

@@ -7,6 +7,8 @@ import { Stepper, StepperItem, StepperList } from "@/components/ui/stepper";
 import { StatusButton } from "@/components/ui/status-button";
 import type { DeclarativeContentType, DeclarativeField } from "../manifest";
 import { fieldLabel } from "./field-utils";
+import { ExtLocaleProvider } from "../ext-locale";
+import type { Locale } from "@/lib/i18n/index";
 import { FIELD_COMPONENTS } from "../fields";
 import { getFieldComponent } from "../fields";
 import type { ErasedFieldComponentProps } from "../fields";
@@ -44,6 +46,10 @@ interface FormViewBaseProps {
   /** Content type's slugField (manifest.ts contentTypeSchema), wired down so
    * SlugField can auto-sync from the right source field's live value. */
   slugField?: string;
+  /** spec-extension-i18n.md #4–#7:當前 locale。admin 由 FormViewPage server resolve、
+   * public 由 PublicFormBody(interpret)resolve 後傳入;供 fieldLabel + 下放給整棵
+   * field control 樹(ExtLocaleProvider),public 頁無 I18nProvider 亦可運作。 */
+  locale: Locale;
 }
 
 export interface AdminFormViewProps extends FormViewBaseProps {
@@ -215,7 +221,19 @@ function toFieldValues(
   return state;
 }
 
+// spec-extension-i18n.md #4–#7:把整棵 field control 樹包在 ExtLocaleProvider 裡,
+// 讓巢狀 client field control(LeafFieldControl / BlocksField / TextFullscreenEditor)
+// 能經 useExtLocale() 取 locale——admin 與 public 兩種 mode 一致(public 頁無 core
+// I18nProvider,故不能靠 useLocale())。
 export function FormView(props: FormViewProps) {
+  return (
+    <ExtLocaleProvider locale={props.locale}>
+      <FormViewInner {...props} />
+    </ExtLocaleProvider>
+  );
+}
+
+function FormViewInner(props: FormViewProps) {
   const router = useRouter();
   const isPublic = props.mode === "public";
   const fields = isPublic ? publicRenderableFields(props.fields) : props.fields;
@@ -365,7 +383,7 @@ export function FormView(props: FormViewProps) {
         !Number.isFinite(Number(raw))
       ) {
         setError(
-          `Field "${fieldLabel(f)}" must be a ${f.type === "number" ? "number" : "date"}.`,
+          `Field "${fieldLabel(f, props.locale)}" must be a ${f.type === "number" ? "number" : "date"}.`,
         );
         return null;
       }
@@ -589,7 +607,7 @@ export function FormView(props: FormViewProps) {
                       htmlFor={`field-${f.key}`}
                       className="text-[13px] font-medium text-black/55"
                     >
-                      {fieldLabel(f)}
+                      {fieldLabel(f, props.locale)}
                       {f.required && <span className="text-destructive"> *</span>}
                     </Label>
                   )}
@@ -606,7 +624,7 @@ export function FormView(props: FormViewProps) {
                     }
                   />
                   {f.type === "boolean" && (
-                    <span className="sr-only">{fieldLabel(f)}</span>
+                    <span className="sr-only">{fieldLabel(f, props.locale)}</span>
                   )}
                   {fieldErrors[f.key] && (
                     <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
@@ -884,7 +902,7 @@ function renderAdminFields(args: RenderAdminFieldsArgs) {
       >
         {f.type !== "boolean" && (
           <Label htmlFor={`field-${f.key}`}>
-            {fieldLabel(f)}
+            {fieldLabel(f, props.locale)}
             {f.required && <span className="text-destructive"> *</span>}
           </Label>
         )}
@@ -901,7 +919,7 @@ function renderAdminFields(args: RenderAdminFieldsArgs) {
           }
         />
         {f.type === "boolean" && (
-          <span className="sr-only">{fieldLabel(f)}</span>
+          <span className="sr-only">{fieldLabel(f, props.locale)}</span>
         )}
         {fieldErrors[f.key] && (
           <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">

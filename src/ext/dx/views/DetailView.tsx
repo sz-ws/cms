@@ -7,6 +7,7 @@ import type { DeclarativeContentType, DeclarativeField } from "../manifest";
 import { displayValue, fieldLabel } from "./field-utils";
 import { renderRichtext } from "./richtext-render";
 import { renderStructural } from "./structural-render";
+import { getLocale } from "@/lib/i18n/server";
 import { resolveRelations, type ResolvedRelation } from "../relation-resolve";
 import { isMediaKey } from "../media-key";
 import { db } from "@/lib/db";
@@ -43,6 +44,7 @@ export async function DetailView({
   contentType,
   slug,
 }: DetailViewProps) {
+  const locale = await getLocale();
   const def = toTypeDef(extId, contentType);
   // public 匿名讀取:走 tagged data cache(content:<type> / ext:<extId>),mutation 精準失效。
   const entry = await cachedPublicGetBySlug(extId, def.type, slug);
@@ -100,7 +102,7 @@ export async function DetailView({
             return (
               <div key={f.key} className="flex flex-col gap-1">
                 <dt className="text-sm font-medium text-gray-500">
-                  {fieldLabel(f)}
+                  {fieldLabel(f, locale)}
                 </dt>
                 <dd className="text-base text-gray-800">{authorName}</dd>
               </div>
@@ -109,7 +111,7 @@ export async function DetailView({
           return (
             <div key={f.key} className="flex flex-col gap-1">
               <dt className="text-sm font-medium text-gray-500">
-                {fieldLabel(f)}
+                {fieldLabel(f, locale)}
               </dt>
               <dd className="text-base text-gray-800">
                 {f.type === "richtext" ? (
@@ -153,7 +155,7 @@ export async function DetailView({
                   </span>
                 ) : STRUCTURAL_TYPES.has(f.type) ? (
                   // Tier 2 v1.2: group/repeater/blocks → readable nested render.
-                  renderStructural(f, value)
+                  renderStructural(f, value, locale)
                 ) : (
                   displayValue(f, value)
                 )}

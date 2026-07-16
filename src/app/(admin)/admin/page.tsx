@@ -128,7 +128,7 @@ export default async function DashboardPage() {
   // already warmed it). Split by kind so stat tiles and recent feeds each get a
   // fitting responsive grid. Rendered only when non-empty.
   const rt = await getExtRuntime();
-  const extCards = await resolveDashboardCards(rt.enabled);
+  const extCards = await resolveDashboardCards(rt.enabled, locale);
   const extStatCards = extCards.filter((c) => c.kind === "stat");
   const extRecentCards = extCards.filter((c) => c.kind === "recent");
 

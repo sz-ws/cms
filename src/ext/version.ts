@@ -162,4 +162,28 @@
 //     (+ [id] DELETE,含「最後登入方式」guard)。
 //   - 型別/介面新增(guest role、requireAuth 最低門檻、loginProvider 表面)→
 //     比照既有「新 field type / provider 介面方法 → minor」精神 minor bump(§1)。
-export const CORE_API_VERSION = "1.16.0";
+// 1.17.0(spec-extension-i18n.md:declarative extension 使用者可見字串 i18n,
+//   Option A —— inline per-locale union):manifest 的使用者可見字串站點(content
+//   type label、欄位 label、group/repeater/block label、settings label/description/
+//   option.label、adminPage title、dashboardCard title、publicRoute success.message、
+//   installPrompts label/description、requires reason、頂層 name/description)由
+//   plain `z.string()` 擴成 `z.union([z.string(), localizedString])` —— localizedString
+//   為 `{ en?, "zh-Hant"? }` 的 .strict() 物件(refine 至少一鍵)。
+//   - back-compat 硬需求達標:純字串 manifest 是 union 的第一分支、一字不改全過,
+//     且 render 行為完全不變(現況單語言 = 所有 locale 都用這一句)。
+//   - 消費端一律走純 helper resolveLocalizedString(value, locale)(src/lib/i18n/
+//     localized.ts):server views 每 request 以 getLocale() resolve;client(admin,
+//     有 I18nProvider)以 useLocale();public FormView 由 route 的 server wrapper 傳
+//     locale 下去(public 頁無 provider)。interpret 的 memo 凍結點(adminPage title /
+//     public form title/success / Extension.name/description / settings 直傳)一律
+//     改成「傳原始 LocalizedString、在 per-request 邊界 resolve」,避免 loader 的
+//     locale-agnostic memo 把字串凍在某個 locale。
+//   - 刻意延後:content-type select `options`(value=label 糾纏,localize 需把
+//     string[] 升成 {value,label} —— 破壞既有儲存值語意的較大工程,列 follow-up);
+//     registry.json index / Browse 卡(surface B,維持 plain string 英文,v1 不做)。
+//   - manifestSchema 是 .strict() —— 但本次「只加聯集、不加新鍵」,故舊 core 對「純
+//     字串」manifest 仍全過;只有實際採用「物件形式」翻譯的 manifest 在 <1.17.0 的
+//     core 會被 .strict() 的 string 分支拒(舊 core 的 label 是純 string),故使用
+//     物件形式者其 coreApi 必須宣告 "^1.17.0";純字串 manifest 不受影響、任何 core
+//     版本都過。純新增可選能力 → minor bump(§1)。
+export const CORE_API_VERSION = "1.17.0";

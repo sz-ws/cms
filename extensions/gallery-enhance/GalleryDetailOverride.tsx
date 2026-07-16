@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getContentProvider, toTypeDef } from "@/ext/dx/runtime";
 import { displayValue, fieldLabel } from "@/ext/dx/views/field-utils";
 import type { DetailSurfaceProps } from "@/ext/overrides";
+import { getLocale } from "@/lib/i18n/server";
 
 // core-v2 §3.6 DEMO ONLY —— progressive extension 的「程式碼強化層」示範。
 //
@@ -26,6 +27,7 @@ export async function GalleryDetailOverride({
   contentType,
   slug,
 }: DetailSurfaceProps) {
+  const locale = await getLocale();
   const def = toTypeDef(extId, contentType);
   const provider = await getContentProvider();
   const entry = await provider.getBySlug(def.type, slug);
@@ -85,7 +87,7 @@ export async function GalleryDetailOverride({
               className="flex flex-col gap-1 rounded-xl border border-black/[0.06] bg-white p-4 shadow-sm"
             >
               <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                {fieldLabel(f)}
+                {fieldLabel(f, locale)}
               </dt>
               <dd className="text-base text-gray-800">{displayValue(f, value)}</dd>
             </div>

@@ -11,6 +11,8 @@ import { Expand, Shrink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import type { FieldComponentProps } from "./types";
+import { fieldLabel } from "../views/field-utils";
+import { useExtLocale } from "../ext-locale";
 
 /**
  * 多行 text 編輯:
@@ -30,6 +32,7 @@ export function TextFullscreenEditor({
 }: FieldComponentProps<string>) {
   const [open, setOpen] = useState(false);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const label = fieldLabel(field, useExtLocale());
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -63,7 +66,7 @@ export function TextFullscreenEditor({
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value),
     onKeyDown,
     "aria-invalid": Boolean(error),
-    placeholder: field.label ?? field.key,
+    placeholder: label,
   } as const;
 
   const compactClass = cn(
@@ -80,13 +83,13 @@ export function TextFullscreenEditor({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={`${field.label ?? field.key} — expanded editor`}
+          aria-label={`${label} — expanded editor`}
           className="fixed inset-0 z-50 flex flex-col bg-[#fbfaf9]/95 backdrop-blur-md p-4 sm:p-8"
         >
           <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-medium text-black/55">
-                {field.label ?? field.key}
+                {label}
               </span>
               <button
                 type="button"

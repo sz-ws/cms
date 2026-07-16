@@ -30,6 +30,8 @@ import { makeWebhookHandler } from "./webhook";
 import { surfaceIds } from "./surfaces";
 import { overrideRegistry } from "../overrides";
 import { buildScheduleJobs } from "./schedule-jobs";
+import { getLocale } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { ComponentType } from "react";
 
 // core-v2 §3.3:interpreter。把儲存的 declarative manifest 列轉為 loader 已消費的
@@ -137,10 +139,13 @@ function buildAdminPages(
       surfaceIds.adminForm(contentType),
       FormViewPage,
     );
-    // edit / new 頁(不進 menu)。
+    // edit / new 頁(不進 menu)。title 保留原始 LocalizedString(memo-safe);此頁
+    // showInMenu:false 且 admin ext route 只用 component、不顯示 title,故不再拼
+    // `${title} — Edit`(拼 LocalizedString 物件會壞)——實際編輯頁標題由 FormViewPage
+    // 以其 title prop + getLocale() resolve 後渲染。
     pages.push({
       slug: editSlug,
-      title: `${ap.title} — Edit`,
+      title: ap.title,
       showInMenu: false,
       component: ({ searchParams }) => (
         <Form
@@ -154,6 +159,42 @@ function buildAdminPages(
     });
   }
   return pages;
+}
+
+// ---- public form body(spec §1 #3/#14:public 頁無 I18nProvider,故 title / success
+// message 必須 server-side resolve 後再往下傳)----
+// 這是一個 async server component:每 request 以 getLocale() resolve(memo-safe —— ct /
+// success 是 interpret 期凍結的原始資料,locale 於此每 request 讀取,不觸 loader memo)。
+// 同時把 locale 傳給 FormView,供其 field label / ExtLocaleProvider 使用。
+async function PublicFormBody({
+  extId,
+  ct,
+  theme,
+  success,
+  stepped,
+}: {
+  extId: string;
+  ct: DeclarativeContentType;
+  theme: DeclarativeManifest["theme"];
+  success: DeclarativePublicRoute["success"];
+  stepped: boolean | undefined;
+}) {
+  const locale = await getLocale();
+  return (
+    <ExtThemeScope extId={extId} theme={theme}>
+      <FormView
+        mode="public"
+        extId={extId}
+        typeName={ct.name}
+        title={resolveLocalizedString(ct.label, locale) ?? ct.name}
+        fields={ct.fields}
+        slugField={ct.slugField}
+        successMessage={resolveLocalizedString(success?.message, locale)}
+        stepped={stepped} // 1.7.0:≥4 個公開可渲染欄位 + stepped:true → Stepper 多步
+        locale={locale}
+      />
+    </ExtThemeScope>
+  );
 }
 
 // ---- public routes ----
@@ -209,22 +250,20 @@ function buildPublicRoutes(
       });
     } else if (pr.view === "form") {
       // 公開表單現在直接共用泛用 FormView,不再維護一個 public-only thin shell。
-      // public:true 仍由 dispatch(/api/ext/...) 控制匿名 POST 權限。
+      // public:true 仍由 dispatch(/api/ext/...) 控制匿名 POST 權限。title / success
+      // message 的 locale resolve 移進 async PublicFormBody(public 頁無 provider)。
+      const success = pr.success;
+      const stepped = pr.stepped;
       routes.push({
         match: (segments) => matchSegments(template, segments),
         component: () => (
-          <ExtThemeScope extId={extId} theme={theme}>
-            <FormView
-              mode="public"
-              extId={extId}
-              typeName={ct.name}
-              title={ct.label ?? ct.name}
-              fields={ct.fields}
-              slugField={ct.slugField}
-              successMessage={pr.success?.message}
-              stepped={pr.stepped} // 1.7.0:≥4 個公開可渲染欄位 + stepped:true → Stepper 多步
-            />
-          </ExtThemeScope>
+          <PublicFormBody
+            extId={extId}
+            ct={ct}
+            theme={theme}
+            success={success}
+            stepped={stepped}
+          />
         ),
       });
     } else {

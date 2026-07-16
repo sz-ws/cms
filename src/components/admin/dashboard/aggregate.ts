@@ -10,6 +10,8 @@ import {
 import { getContentProvider } from "@/ext/dx/runtime";
 import { displayValue } from "@/ext/dx/views/field-utils";
 import type { ContentProvider } from "@/ext/capabilities";
+import { getLocale } from "@/lib/i18n/server";
+import type { Locale } from "@/lib/i18n/index";
 
 // Task #4: server-side aggregation for the content-aware dashboard. Everything
 // here is driven by the enabled declarative extensions + the ContentProvider,
@@ -58,9 +60,11 @@ export interface DashboardData {
   now: number; // server timestamp captured at aggregation time (for relative times)
 }
 
-/** 轉呼叫 type-directory(見上方註解)。 */
-export async function listDashboardTypes(): Promise<DashboardType[]> {
-  return listDeclarativeTypes();
+/** 轉呼叫 type-directory(見上方註解)。type label / ext name 依 locale resolve。 */
+export async function listDashboardTypes(
+  locale: Locale = "en",
+): Promise<DashboardType[]> {
+  return listDeclarativeTypes(locale);
 }
 
 /** Primary text field for an entry's title (mirrors collection view's choice:
@@ -137,8 +141,9 @@ export async function getDashboardData(): Promise<DashboardData> {
   // the provider consistent with the CRUD/collection code paths.
   await getExtRuntime();
 
+  const locale = await getLocale();
   const [types, provider, userRows] = await Promise.all([
-    listDashboardTypes(),
+    listDashboardTypes(locale),
     getContentProvider(),
     db().select({ n: sql<number>`count(*)` }).from(users),
   ]);

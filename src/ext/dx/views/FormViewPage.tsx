@@ -4,6 +4,9 @@ import { getContentPublishAt } from "../content-provider";
 import type { DeclarativeContentType } from "../manifest";
 import { AdminFormSurface } from "./AdminFormSurface";
 import { inferCardConfig } from "./collection/card-config";
+import { getLocale } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+import type { LocalizedString } from "@/lib/i18n/localized";
 
 // admin create/edit 頁(server component)。edit 模式(?id=…)先載入既有 entry,
 // 再交給 client surface。Surface 先嘗試固定入口 layout.tsx 註冊的元件,
@@ -11,7 +14,8 @@ import { inferCardConfig } from "./collection/card-config";
 
 export interface FormViewPageProps {
   extId: string;
-  title: string;
+  // §1 #12:interpret 透傳原始 adminPage.title(LocalizedString);此 server view resolve。
+  title: LocalizedString;
   adminSlug: string;
   contentType: DeclarativeContentType;
   entryId?: string;
@@ -24,6 +28,8 @@ export async function FormViewPage({
   contentType,
   entryId,
 }: FormViewPageProps) {
+  const locale = await getLocale();
+  const resolvedTitle = resolveLocalizedString(title, locale) ?? contentType.name;
   const def = toTypeDef(extId, contentType);
   const base = `/admin/ext/${extId}${adminSlug ? `/${adminSlug}` : ""}`;
 
@@ -59,8 +65,8 @@ export async function FormViewPage({
         {entryId
           ? entryTitle
             ? `Edit: ${entryTitle}`
-            : `Edit ${title}`
-          : `New ${title}`}
+            : `Edit ${resolvedTitle}`
+          : `New ${resolvedTitle}`}
       </PageTitle>
       <AdminFormSurface
         extId={extId}
@@ -73,6 +79,7 @@ export async function FormViewPage({
         initialStatus={initialStatus}
         initialPublishAt={initialPublishAt}
         contentType={contentType}
+        locale={locale}
       />
     </div>
   );

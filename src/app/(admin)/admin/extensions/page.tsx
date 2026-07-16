@@ -7,6 +7,7 @@ import {
 import { getExtRuntime } from "@/ext/loader";
 import { parseManifest } from "@/ext/dx/manifest";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 import {
   ExtensionsManager,
   type ExtensionRow,
@@ -33,11 +34,13 @@ export default async function ExtensionsPage() {
   );
   const installedIds = new Set(dbRows.map((r) => r.id));
 
+  // §1 #1/#2:name/description 可為 LocalizedString;此 server 頁以 getLocale() resolve
+  // 成純字串後才進 ExtensionsManager(client DTO,ExtensionRow.name/description 為 string)。
   const codeRows: ExtensionRow[] = rt.all.map((e) => ({
     id: e.id,
-    name: e.name,
+    name: resolveLocalizedString(e.name, locale) ?? e.id,
     version: e.version,
-    description: e.description,
+    description: resolveLocalizedString(e.description, locale),
     enabled: enabledIds.has(e.id),
     installed: installedIds.has(e.id),
     kind: "code",
@@ -47,12 +50,12 @@ export default async function ExtensionsPage() {
   const dxDbRows = await db().select().from(dxTable);
   const dxRows: ExtensionRow[] = dxDbRows.map((r) => {
     const parsed = parseManifest(safeJson(r.manifest));
-    const m = parsed.manifest;
+    const dm = parsed.manifest;
     return {
       id: r.id,
-      name: m?.name ?? r.id,
+      name: resolveLocalizedString(dm?.name, locale) ?? r.id,
       version: r.version,
-      description: m?.description,
+      description: resolveLocalizedString(dm?.description, locale),
       enabled: r.enabled === 1,
       installed: true,
       kind: "declarative" as const,

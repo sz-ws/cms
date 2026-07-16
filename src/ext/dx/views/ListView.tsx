@@ -5,6 +5,8 @@ import type { DeclarativeContentType, ListLayout } from "../manifest";
 import { displayValue } from "./field-utils";
 import { inferCardConfig } from "./collection/card-config";
 import { StackedList, StackedListItem } from "@/components/ui/stacked-list";
+import { getLocale } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 
 // core-v2 §3.3/§3.5:generic public list view。列出某 content type 的 published
 // entry。layout:"table"(預設,單列連結)、"grid"(響應式卡片格,cover/title/meta)或
@@ -50,7 +52,9 @@ export async function ListView({
   const hrefFor = (slug: string | null): string | null =>
     detailBase && slug ? `${detailBase}/${slug}` : null;
 
-  const heading = contentType.label ?? contentType.name;
+  const locale = await getLocale();
+  const heading =
+    resolveLocalizedString(contentType.label, locale) ?? contentType.name;
   const isGrid = layout === "grid";
   const isStacked = layout === "stacked";
 

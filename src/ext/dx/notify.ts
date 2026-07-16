@@ -1,4 +1,5 @@
 import type { DeclarativeContentType } from "./manifest";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 
 // A(docs/spec-declarative-notify-schedule.md):public create 成功後的
 // best-effort 通知信。純文字信件,不做 HTML 模板。
@@ -45,7 +46,11 @@ export async function notifyOnPublicCreate(
 
     const { sendEmail } = await import("@/lib/email");
     const siteTitle = await getSetting<string>("core.siteTitle", "");
-    const label = ct.label ?? ct.name;
+    // §1 #3:type label 可為 LocalizedString;通知信依站台 core.locale resolve
+    // (物件直接內插會變成 "[object Object]")。
+    const localeRaw = await getSetting<string>("core.locale", "en");
+    const locale = localeRaw === "zh-Hant" ? "zh-Hant" : "en";
+    const label = resolveLocalizedString(ct.label, locale) ?? ct.name;
     const subject = siteTitle
       ? `${siteTitle}: New ${label} submission`
       : `New ${label} submission`;

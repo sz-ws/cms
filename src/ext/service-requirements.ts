@@ -6,10 +6,14 @@
 // availableServices() 與 services.ts 用同一個 buildProviderRegistry(),code extension
 // 的 `provides` 接上 registry 時這裡自動一起生效。
 
+import type { LocalizedString } from "@/lib/i18n/localized";
+
 export interface ServiceRequirement {
   capability: string;
   optional?: boolean;
-  reason?: string;
+  // spec-extension-i18n.md §1 #17:reason 可為 LocalizedString(union)。此判定只讀
+  // capability/optional,不觸 reason;Browse chips 的 reason 顯示(surface B)v1 未接線。
+  reason?: LocalizedString;
 }
 
 /** 目前有註冊者的 provider capability 全集(含 enabled code extension 的 provides)。 */

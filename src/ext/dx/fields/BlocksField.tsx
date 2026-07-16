@@ -10,6 +10,8 @@ import {
 import type { DeclarativeBlockDef } from "../manifest";
 import type { FieldComponentProps } from "./types";
 import { LeafFieldControl } from "./LeafFieldControl";
+import { blockLabel } from "../views/field-utils";
+import { useExtLocale } from "../ext-locale";
 import {
   AddButton,
   InstanceCard,
@@ -36,6 +38,7 @@ export function BlocksField({
   field,
   disabled,
 }: FieldComponentProps<BlockInstance[]>) {
+  const locale = useExtLocale();
   const defs: DeclarativeBlockDef[] = field.blocks ?? [];
   const byName = new Map(defs.map((b) => [b.name, b]));
   const items: BlockInstance[] = Array.isArray(value)
@@ -64,10 +67,6 @@ export function BlocksField({
     onChange(items.map((b, idx) => (idx === i ? { ...b, [key]: next } : b)));
   }
 
-  function blockLabel(def: DeclarativeBlockDef): string {
-    return def.label ?? def.name;
-  }
-
   return (
     <div className="flex flex-col gap-2.5">
       {items.length > 0 && (
@@ -81,7 +80,7 @@ export function BlocksField({
                 key={i}
                 index={i}
                 count={items.length}
-                tag={def ? blockLabel(def) : name || "unknown"}
+                tag={def ? blockLabel(def, locale) : name || "unknown"}
                 summary={firstSummary(subfields, item)}
                 disabled={disabled}
                 onUp={() => move(i, -1)}
@@ -114,7 +113,7 @@ export function BlocksField({
           defs={defs}
           disabled={disabled || atMax}
           onAdd={addBlock}
-          labelOf={blockLabel}
+          labelOf={(def) => blockLabel(def, locale)}
         />
         {max !== undefined && (
           <span className="text-[12px] tabular-nums text-black/35">

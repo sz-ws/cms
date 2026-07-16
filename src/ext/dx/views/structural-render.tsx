@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { DeclarativeField, DeclarativeLeafField } from "../manifest";
-import { displayValue, fieldLabel } from "./field-utils";
+import { blockLabel, displayValue, fieldLabel } from "./field-utils";
 import { renderRichtext } from "./richtext-render";
 import { isMediaKey } from "../media-key";
+import type { Locale } from "@/lib/i18n/index";
 
 // Tier 2 v1.2: readable server-side rendering of structural field values on the
 // public DetailView. Pure (no I/O, no hooks) so it stays in the server render
@@ -47,9 +48,11 @@ function renderLeaf(field: DeclarativeLeafField, value: unknown): ReactNode {
 function LeafList({
   fields,
   data,
+  locale,
 }: {
   fields: readonly DeclarativeLeafField[];
   data: Record<string, unknown>;
+  locale: Locale;
 }) {
   return (
     <dl className="flex flex-col gap-2">
@@ -59,7 +62,7 @@ function LeafList({
         return (
           <div key={sf.key} className="flex flex-col gap-0.5">
             <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">
-              {fieldLabel(sf)}
+              {fieldLabel(sf, locale)}
             </dt>
             <dd className="text-sm text-gray-800">{node}</dd>
           </div>
@@ -91,6 +94,7 @@ function asObjectArray(v: unknown): Record<string, unknown>[] {
 export function renderStructural(
   field: DeclarativeField,
   value: unknown,
+  locale: Locale,
 ): ReactNode {
   if (field.type === "group") {
     const fields = field.fields ?? [];
@@ -98,7 +102,7 @@ export function renderStructural(
     if (Object.keys(data).length === 0) return null;
     return (
       <div className="rounded-xl bg-gray-50 p-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]">
-        <LeafList fields={fields} data={data} />
+        <LeafList fields={fields} data={data} locale={locale} />
       </div>
     );
   }
@@ -114,7 +118,7 @@ export function renderStructural(
             key={i}
             className="rounded-xl bg-gray-50 p-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]"
           >
-            <LeafList fields={fields} data={row} />
+            <LeafList fields={fields} data={row} locale={locale} />
           </li>
         ))}
       </ol>
@@ -137,10 +141,10 @@ export function renderStructural(
               className="rounded-xl bg-gray-50 p-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]"
             >
               <span className="mb-2 inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
-                {def ? (def.label ?? def.name) : name || "unknown"}
+                {def ? blockLabel(def, locale) : name || "unknown"}
               </span>
               {def ? (
-                <LeafList fields={def.fields} data={item} />
+                <LeafList fields={def.fields} data={item} locale={locale} />
               ) : (
                 <p className="text-sm text-gray-400">Unknown block type.</p>
               )}

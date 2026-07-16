@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/select";
 import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
-import { useT } from "@/lib/i18n/I18nProvider";
+import { useT, useLocale } from "@/lib/i18n/I18nProvider";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 
 export interface SettingsSection {
   id: string;
@@ -185,6 +186,9 @@ function statusLine(
 
 export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorkspaceProps) {
   const t = useT();
+  // §1 #9–#11:extension settings 的 label/description/option.label 可為 LocalizedString;
+  // admin 有 I18nProvider,故直接 useLocale() resolve(核心 settings 為純字串,原樣透傳)。
+  const locale = useLocale();
   const coreAddonNode = coreAddon ?? null;
 
   // Registry manager + API tokens:core tab 最後一張獨立卡(不塞進任何分組卡)。
@@ -213,9 +217,13 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
               key={fullKey}
               className={`flex min-w-0 flex-col gap-1.5 ${fieldWrapperClass(field)}`}
             >
-              <label className={labelClass()}>{field.label}</label>
+              <label className={labelClass()}>
+                {resolveLocalizedString(field.label, locale)}
+              </label>
               {field.description && (
-                <p className={descriptionClass()}>{field.description}</p>
+                <p className={descriptionClass()}>
+                  {resolveLocalizedString(field.description, locale)}
+                </p>
               )}
               {field.type === "textarea" ? (
                 <Textarea
@@ -241,7 +249,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   <SelectContent alignItemWithTrigger={false}>
                     {field.options.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
-                        {o.label}
+                        {resolveLocalizedString(o.label, locale)}
                       </SelectItem>
                     ))}
                   </SelectContent>

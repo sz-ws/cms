@@ -6,6 +6,7 @@ import {
   MAX_SEARCH_LIMIT,
 } from "@/lib/search";
 import { listDeclarativeTypes } from "@/ext/dx/type-directory";
+import { getLocale } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ export async function GET(req: Request): Promise<Response> {
   // 補 editHref / typeLabel:manifest 的 admin slug 只有 server 知道(同 dashboard
   // aggregate 的 discovery)。查無對應 type(如 extension 已停用)→ editHref null,
   // 前端呈現為不可點的列。
-  const types = await listDeclarativeTypes();
+  const types = await listDeclarativeTypes(await getLocale());
   const byKey = new Map(types.map((t) => [t.typeKey, t]));
   const enriched = results.map((r) => {
     const t = byKey.get(r.typeKey);

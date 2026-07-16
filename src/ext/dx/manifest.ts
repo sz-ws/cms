@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validateSvg } from "./svg-guard";
+import type { LocalizedString } from "@/lib/i18n/localized";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -19,6 +20,29 @@ const ROUTE_PATTERN_RE = /^(\/[a-z0-9-]+|\/:[a-zA-Z][a-zA-Z0-9]*)+$/;
 // extId 段套 ID_RE 的長度界(1..31),typeName 段套 TYPE_NAME_RE(0..31 尾字)。
 // 純字面,無 regex 特殊字元;install 與 interpret 兩端皆驗。
 const RELATION_TO_RE = /^[a-z][a-z0-9-]{1,30}\.[a-z][a-z0-9-]{0,30}$/;
+
+// ---- LocalizedString(spec-extension-i18n.md,Option A:inline per-locale union)----
+// 使用者可見字串站點的形狀:plain string(現況、無語言意識)或 per-locale 物件。
+// localizedObjectSchema 是 .strict()(對應 JSON Schema additionalProperties:false)
+// 且 refine「至少一鍵」—— 空物件 `{}` 無意義,拒之。canonical locale token 為
+// `en` / `zh-Hant`(src/lib/i18n/index.ts Locale;注意大小寫是 `zh-Hant`)。
+//
+// localized(base?) 產生 union:第一分支保留呼叫端指定的「原本 string schema」
+// (保留 min/max 等既有約束 → 純字串 manifest 一字不改全過),第二分支是物件形式。
+// gen-manifest-schema.mts 會把重複的 object 分支 factor 成一個 $defs/localizedString。
+const localizedObjectSchema = z
+  .object({
+    en: z.string().optional(),
+    "zh-Hant": z.string().optional(),
+  })
+  .strict()
+  .refine((v) => v.en !== undefined || v["zh-Hant"] !== undefined, {
+    message: "localized string requires at least one locale (en / zh-Hant)",
+  });
+
+function localized(base: z.ZodString = z.string()) {
+  return z.union([base, localizedObjectSchema]);
+}
 
 // ---- leaf field types(v1.1 + 08 §1)----
 // core-v2 §3.2 的「單值」欄位。可作為 top-level 欄位,也可作為 Tier 2 結構欄位
@@ -65,9 +89,12 @@ const leafFieldSchema = z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.enum(LEAF_FIELD_TYPES),
-    label: z.string().optional(),
+    label: localized().optional(),
     required: z.boolean().optional(),
     // select 專用;JSON Schema 要求 minItems:1。
+    // i18n note(spec §3.4):`options` 的字串同時是「儲存值」與「顯示 label」,就地
+    // localize 會破壞儲存值 —— 需把 string[] 升成 {value,label} 的較大工程,v1 刻意
+    // 不做(列 follow-up)。故此站點維持 plain string[](非 LocalizedString)。
     options: z.array(z.string()).min(1).optional(),
     // 08 §2:relation/relations 專用;目標 content type 的完整 key。
     to: z.string().regex(RELATION_TO_RE, "invalid relation target (expect <extId>.<typeName>)").optional(),
@@ -106,7 +133,7 @@ const groupFieldSchema = z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.literal("group"),
-    label: z.string().optional(),
+    label: localized().optional(),
     required: z.boolean().optional(),
     fields: leafFieldsSchema, // nested leaf 子欄位(≥1)
   })
@@ -116,7 +143,7 @@ const repeaterFieldSchema = z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.literal("repeater"),
-    label: z.string().optional(),
+    label: localized().optional(),
     required: z.boolean().optional(),
     fields: leafFieldsSchema, // 每個 row 的 leaf 子欄位(≥1)
     max: z.number().int().positive().optional(), // 可選:row 數上限
@@ -126,7 +153,7 @@ const repeaterFieldSchema = z
 const blockDefSchema = z
   .object({
     name: z.string().regex(TYPE_NAME_RE, "invalid block name"),
-    label: z.string().optional(),
+    label: localized().optional(),
     fields: leafFieldsSchema, // 該 block 的 leaf 子欄位(≥1)
   })
   .strict();
@@ -135,7 +162,7 @@ const blocksFieldSchema = z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.literal("blocks"),
-    label: z.string().optional(),
+    label: localized().optional(),
     required: z.boolean().optional(),
     blocks: z.array(blockDefSchema).min(1), // 宣告的具名 block 形狀(≥1)
     max: z.number().int().positive().optional(), // 可選:block 數上限
@@ -182,7 +209,7 @@ const formLayoutSchema = z
 const contentTypeSchema = z
   .object({
     name: z.string().regex(TYPE_NAME_RE, "invalid content type name"),
-    label: z.string().optional(),
+    label: localized().optional(),
     slugField: z.string().optional(),
     fields: z.array(fieldSchema).min(1),
     // Alpha 升級:宣告此 type 為 public(免登入可 POST 建立新 entry)。
@@ -205,15 +232,17 @@ const contentTypeSchema = z
 const settingOptionSchema = z
   .object({
     value: z.string(),
-    label: z.string(),
+    // settings select 的 option 已是 value/label 分離(不同於 content-type select
+    // 的 value=label 糾纏),故 label 可乾淨 localize(spec §1 #11)。
+    label: localized(),
   })
   .strict();
 
 const settingFieldSchema = z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid setting key"),
-    label: z.string(),
-    description: z.string().optional(),
+    label: localized(),
+    description: localized().optional(),
     default: z.unknown(),
     secret: z.boolean().optional(),
     type: z.enum(["text", "textarea", "number", "boolean", "select"]),
@@ -237,7 +266,7 @@ export type ListLayout = (typeof LAYOUT_VALUES)[number];
 const adminPageSchema = z
   .object({
     slug: z.string(), // "" = extension 主頁
-    title: z.string(),
+    title: localized(),
     view: z.literal("collection"),
     contentType: z.string(),
     layout: z.enum(LAYOUT_VALUES).optional(), // 缺省 → "table"
@@ -247,7 +276,7 @@ const adminPageSchema = z
 // ---- forms(提交成功回饋,被 publicRoute view:"form" 引用,須在 publicRoute 之前宣告)----
 const formSuccessSchema = z
   .object({
-    message: z.string().optional(),
+    message: localized().optional(),
   })
   .strict();
 
@@ -300,7 +329,7 @@ const dashboardCardSchema = z
     // 須對應某個 contentTypes[].name(superRefine 交叉驗;schema 端不做 pattern 綁定)。
     contentType: z.string().min(1),
     // 缺省 → 該 contentType 的 label / name(由消費端 fallback)。
-    title: z.string().optional(),
+    title: localized().optional(),
     // stat 專用:只計此 status 的 entry(recent 帶 status → refine 擋)。
     status: z.enum(["draft", "published"]).optional(),
     // recent 專用:回傳筆數 1..10,缺省 5(stat 帶 limit → refine 擋)。
@@ -429,10 +458,12 @@ export const manifestSchema = z
   .object({
     kind: z.literal("declarative"),
     id: z.string().regex(ID_RE, "invalid extension id"),
-    name: z.string().min(1),
+    // spec §1 #1/#2:頂層使用者可見的 name/description 亦可 localize(union;純字串
+    // manifest 全相容)。id 是機器識別字,永不 localize(仍 z.string())。
+    name: localized(z.string().min(1)),
     version: z.string().regex(VERSION_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(CORE_API_RE, "invalid coreApi range"),
-    description: z.string().optional(),
+    description: localized().optional(),
     // declarative extension icon hint (lucide token). 用於 admin sidebar / menus。
     icon: z.string().optional(),
     // PNG icon relative path in registry (e.g. "icon.png" under extensions/<id>/)
@@ -448,11 +479,11 @@ export const manifestSchema = z
       .array(
         z.object({
           key: z.string().min(1),
-          label: z.string().min(1),
+          label: localized(z.string().min(1)),
           type: z.enum(["text", "textarea", "number", "boolean"]),
           required: z.boolean().optional(),
           secret: z.boolean().optional(),
-          description: z.string().optional(),
+          description: localized().optional(),
         }),
       )
       .optional(),
@@ -501,7 +532,7 @@ export const manifestSchema = z
               ),
             optional: z.boolean().optional(),
             /** 顯示給使用者的用途說明(Browse chips tooltip)。 */
-            reason: z.string().max(200).optional(),
+            reason: localized(z.string().max(200)).optional(),
           })
           .strict(),
       )
@@ -658,7 +689,8 @@ export type DeclarativeBlockDef = z.infer<typeof blockDefSchema>;
 export interface DeclarativeField {
   key: string;
   type: (typeof FIELD_TYPES)[number];
-  label?: string;
+  /** spec §1 #4–#6:可 localize(union;消費端一律走 resolveLocalizedString)。 */
+  label?: LocalizedString;
   required?: boolean;
   /** select 專用。 */
   options?: string[];
@@ -678,7 +710,8 @@ export interface DeclarativeField {
 // 與 contentTypeSchema 一致。
 export interface DeclarativeContentType {
   name: string;
-  label?: string;
+  /** spec §1 #3:可 localize(union;消費端一律走 resolveLocalizedString)。 */
+  label?: LocalizedString;
   slugField?: string;
   fields: DeclarativeField[];
   /** Alpha:此 type 對外公開(匿名可建立新 entry)。 */
@@ -718,10 +751,11 @@ export type DeclarativeLoginProvider = z.infer<typeof loginProviderSchema>;
 export interface DeclarativeManifest {
   kind: "declarative";
   id: string;
-  name: string;
+  /** spec §1 #1/#2:可 localize(union)。id 為機器識別字,永不 localize。 */
+  name: LocalizedString;
   version: string;
   coreApi: string;
-  description?: string;
+  description?: LocalizedString;
   /** lucide token used by admin nav/menu (e.g. "images", "mail", "layout-template"). */
   icon?: string;
   /** PNG icon relative path in registry (e.g. "icon.png"). */
@@ -735,11 +769,13 @@ export interface DeclarativeManifest {
   /** 安裝時需要 prompt user 輸入的欄位(線上商店會顯示表單)。 */
   installPrompts?: Array<{
     key: string;
-    label: string;
+    /** spec §1 #15/#16:union。install-time Browse 表面的顯示 resolve 屬 surface B,
+     * v1 未接線(見 version.ts 1.17.0 changelog);此處型別保留 union 以容納翻譯。 */
+    label: LocalizedString;
     type: "text" | "textarea" | "number" | "boolean";
     required?: boolean;
     secret?: boolean;
-    description?: string;
+    description?: LocalizedString;
   }>;
   /** 1.9.0:自訂 API endpoint 定義(read-only v1:method 只允許 "GET")。宣告後成為
    * 「哪些 content type 對外開放」的唯讀白名單;contentType 指向自己宣告的 type。 */
@@ -753,7 +789,12 @@ export interface DeclarativeManifest {
   capabilities?: string[];
   /** 服務需求:provider 層要有誰在場(providers.ts capability,如 email:send)。
    * 非 optional 缺席 → install 擋下;optional 缺席 → 可裝,UI 顯示建議。 */
-  requires?: Array<{ capability: string; optional?: boolean; reason?: string }>;
+  requires?: Array<{
+    capability: string;
+    optional?: boolean;
+    /** spec §1 #17:union。Browse chips tooltip 顯示屬 surface B,v1 未接線。 */
+    reason?: LocalizedString;
+  }>;
   /** 作者/出處(marketplace 信任資訊)。 */
   author?: { name: string; url?: string; email?: string };
   homepage?: string;

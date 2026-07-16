@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { settings } from "@/lib/schema";
 import { CORE_SETTINGS, maskSecrets, getRegistryTokenMap } from "@/lib/settings";
 import { getExtRuntime } from "@/ext/loader";
@@ -63,7 +64,8 @@ export default async function SettingsPage() {
     }),
     ...extSections.map((ext) => ({
       id: ext.id,
-      title: ext.name,
+      // §1 #1:extension section 標題可 localize(ext.name = LocalizedString)。
+      title: resolveLocalizedString(ext.name, locale) ?? ext.id,
       description: m["settings.extensionsDesc"],
       fields: ext.settings ?? [],
       keyPrefix: `ext.${ext.id}.`,

@@ -67,6 +67,11 @@ beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, version TEXT NOT NULL, manifest TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);",
   );
+  // spec-extension-i18n.md:route 現以 getLocale()(讀 settings 的 core.locale)把
+  // typeLabel 依 locale resolve。空 settings 表即可 —— getSetting 查無 key → 預設 "en"。
+  await d1().exec(
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+  );
 });
 
 beforeEach(async () => {
