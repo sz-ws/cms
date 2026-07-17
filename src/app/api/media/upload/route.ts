@@ -4,8 +4,6 @@ import { hitRateLimit } from "@/lib/rate-limit";
 import { createServices } from "@/ext/services";
 import type { UploadProvider } from "@/ext/capabilities";
 
-export const dynamic = "force-dynamic";
-
 // C.5b §2: admin media upload. POST multipart/form-data { file } → stores via
 // the active UploadProvider (scope "core") and returns { key, size,
 // contentType, url }. Mirrors extensions/posts/api.ts upload handler: 25MB cap,

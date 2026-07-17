@@ -12,8 +12,6 @@ import {
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { getExtRuntime } from "@/ext/loader";
 
-export const dynamic = "force-dynamic";
-
 // GET /api/users → { users: SessionUser[] }(不含 password_hash)。
 export async function GET(): Promise<Response> {
   try {

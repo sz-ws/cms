@@ -4,8 +4,6 @@ import { getExtRuntime } from "@/ext/loader";
 import { createServices } from "@/ext/services";
 import type { ApiRoute } from "@/ext/types";
 
-export const dynamic = "force-dynamic";
-
 // 03 §6b:Extension API dispatch。Next.js 15 簽名:params 是 Promise,要 await。
 
 // core 提供的匹配演算法(extension 不自己寫 matcher)。「先註冊先贏」。

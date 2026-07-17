@@ -1,7 +1,5 @@
 import { getFile } from "@/lib/storage";
 
-export const dynamic = "force-dynamic";
-
 // 06 §3:檔案 serving。GET /api/files/<...key>(公開、免登入)。
 
 // Content-Type 白名單:只有這些型別原樣使用,其他一律 application/octet-stream。

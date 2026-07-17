@@ -12,8 +12,6 @@ import type {
   ContentQuery,
 } from "@/ext/capabilities";
 
-export const dynamic = "force-dynamic";
-
 // roadmap #1:Public Content API(GET only)。inbound bearer token 認證(非 cookie
 // session,故「不做」Origin 檢查:bearer 本身即憑證,無 CSRF 面 —— 對比 spec 04 §5
 // 只把 Origin 綁在 cookie 認證的 mutation 路由)。強制 published-only:一律注入

@@ -49,7 +49,7 @@ vi.mock("@/ext/loader", async () => {
 import { buildCrudRoutes } from "../src/ext/dx/crud";
 import { CoreContentProvider } from "../src/ext/dx/content-provider";
 import { HookBus } from "../src/ext/hooks";
-import { setSettings } from "../src/lib/settings";
+import { setSettings, invalidateSettingsCache } from "../src/lib/settings";
 import type { DeclarativeContentType } from "../src/ext/dx/manifest";
 import type { ApiCtx } from "../src/ext/types";
 
@@ -76,6 +76,9 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM contents;");
   await d1().exec("DELETE FROM content_fts;");
   await d1().exec("DELETE FROM settings;");
+  // 直接清表繞開 settings 寫入路徑,需一併清 isolate settings 快取(同 seo-cache 測試
+  // 的 __clearSeoCache),否則上一個 case 讀進快取的 core.notifyEmail 會殘留。
+  invalidateSettingsCache();
   await d1().exec("DELETE FROM login_attempts;");
   emailState.calls = [];
   emailState.shouldThrow = false;

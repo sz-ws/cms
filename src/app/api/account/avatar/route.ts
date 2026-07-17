@@ -6,8 +6,6 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import { putFile, deleteFile } from "@/lib/storage";
 
-export const dynamic = "force-dynamic";
-
 // 使用者頭像自助上傳/移除。任何登入角色皆可呼叫,但只能操作「自己」的
 // users row(user.id 來自 requireAuth() 的 session,不接受 body/路徑帶入的
 // 別人 id —— 沒有 [id] 路由參數,設計上就排除了操作他人的可能)。

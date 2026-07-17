@@ -11,8 +11,6 @@ import {
   ExtNotFound,
 } from "@/ext/manager";
 
-export const dynamic = "force-dynamic";
-
 // 05 §2:PATCH /api/extensions/[extId]。admin only + Origin 檢查。
 // body { action: "enable" | "disable" | "uninstall", kind?: "code" | "declarative", purgeContent?: boolean }。
 // declarative uninstall(core-v2 §3.4 Phase D):purgeContent 決定是否連帶刪除該 extension

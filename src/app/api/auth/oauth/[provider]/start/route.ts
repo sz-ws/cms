@@ -1,8 +1,6 @@
 import { requireAuth, AuthError } from "@/lib/auth";
 import { hitRateLimit } from "@/lib/rate-limit";
 
-export const dynamic = "force-dynamic";
-
 // spec-login-providers.md §5 start:GET /api/auth/oauth/[provider]/start
 //   ?mode=login|link&next=...
 // - mode=link 先 requireAuth("guest")(任何已登入者可綁);payload 記 userId。

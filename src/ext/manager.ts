@@ -9,6 +9,7 @@ import {
   contents,
 } from "@/lib/schema";
 import { registry } from "@/../extensions/registry";
+import { invalidateSettingsCache } from "@/lib/settings";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "./loader";
 import { revalidateExt } from "./dx/cache-invalidate";
 import { CORE_API_VERSION } from "./version";
@@ -123,6 +124,8 @@ export async function enableExtension(extId: string): Promise<void> {
 
   // memo 主動失效(belt-and-braces;跨 isolate 靠 stamp)。
   invalidateExtRuntimeMemo();
+  // 步驟 3 寫了預設 settings,失效 isolate settings 快取(同 isolate 立即生效)。
+  invalidateSettingsCache();
   // 該 extension 的 public content cache 整批失效(enable 後結構/資料可能全變)。
   revalidateExt(extId);
 
@@ -172,6 +175,8 @@ export async function uninstallExtension(extId: string): Promise<void> {
   // disableExtension 已失效過一次,但其後的 getExtRuntime(fire hook)會用「僅停用」
   // 的狀態回填 memo;此處刪除 row 後需再失效一次。
   invalidateExtRuntimeMemo();
+  // 上面刪了 ext.<id>.% 的 settings 列,失效 isolate settings 快取。
+  invalidateSettingsCache();
 }
 
 // ---- declarative extensions(core-v2 §3.2/§3.3)----
@@ -239,4 +244,6 @@ export async function uninstallDeclarative(
 
   // 同 uninstallExtension:disableDeclarative 後的 getExtRuntime 會回填 memo,刪 row 後再失效。
   invalidateExtRuntimeMemo();
+  // 上面刪了 ext.<id>.% 的 settings 列,失效 isolate settings 快取。
+  invalidateSettingsCache();
 }

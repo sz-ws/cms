@@ -39,6 +39,7 @@ vi.mock("@/ext/loader", async () => {
 
 import { buildScheduleJobs } from "../src/ext/dx/schedule-jobs";
 import { runDueJobs } from "../src/lib/jobs";
+import { invalidateSettingsCache } from "../src/lib/settings";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -63,6 +64,7 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM contents;");
   await d1().exec("DELETE FROM content_fts;");
   await d1().exec("DELETE FROM settings;");
+  invalidateSettingsCache(); // 直接清表繞開寫入路徑,一併清 isolate settings 快取。
   await d1().exec("DELETE FROM ext_jobs;");
   rtState.enabled = [];
   hookState.deleted = [];

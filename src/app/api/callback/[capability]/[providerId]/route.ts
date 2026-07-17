@@ -4,8 +4,6 @@ import { isCallbackReceiver } from "@/ext/capabilities";
 import type { Capability } from "@/ext/capabilities";
 import { hitRateLimit } from "@/lib/rate-limit";
 
-export const dynamic = "force-dynamic";
-
 const MAX_BODY_BYTES = 64_000;
 
 // core-v2 §2.5:Unified inbound callback / webhook ingress。

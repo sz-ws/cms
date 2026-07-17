@@ -3,8 +3,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 
-export const dynamic = "force-dynamic";
-
 // docs/spec-ai-capability.md streaming 附錄:/api/ai/generate 的 streaming 手足
 // —— 安全骨架與 body schema 與非 streaming 版一字不差(同一 namespace
 // "ai-generate",共用同一個 10 次/分鐘的 rate limit 桶),差別只在回應改為

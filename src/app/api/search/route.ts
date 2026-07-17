@@ -8,8 +8,6 @@ import {
 import { listDeclarativeTypes } from "@/ext/dx/type-directory";
 import { getLocale } from "@/lib/i18n/server";
 
-export const dynamic = "force-dynamic";
-
 // Admin full-text search:GET /api/search?q=...&limit=...
 // 任何已登入角色皆可用(NOT admin-only)。GET 無狀態變更,故不需 assertSameOrigin。
 // q 由 searchContent 內部淨化為安全的 FTS5 MATCH(見 src/lib/search.ts buildMatchQuery)。

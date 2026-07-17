@@ -2,8 +2,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { getDB } from "@/lib/cf";
 
-export const dynamic = "force-dynamic";
-
 // L1 §3:assertSameOrigin + requireAuth() → 只能刪自己的。
 // 若這是自己最後一把 passkey 也允許刪(密碼 recovery 仍在,不會自鎖)——
 // 故不加「最後一把」防護,DELETE ... WHERE id=? AND user_id=? 即可。

@@ -28,9 +28,10 @@ import {
 import { eq } from "drizzle-orm";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "@/ext/loader";
 import { revalidateExt } from "@/ext/dx/cache-invalidate";
-import { setExtensionSettingsRaw } from "@/lib/settings";
-
-export const dynamic = "force-dynamic";
+import {
+  setExtensionSettingsRaw,
+  invalidateSettingsCache,
+} from "@/lib/settings";
 
 // core-v2 §3.4:POST /api/registry/install。admin + Origin 檢查。
 // body { id, source, promptValues? }。install 與 update 共用(upsert semantics)。
@@ -300,6 +301,8 @@ export async function POST(req: Request): Promise<Response> {
 
   // memo 主動失效(belt-and-braces;跨 isolate 靠 stamp)。
   invalidateExtRuntimeMemo();
+  // 上面寫了預設 / prompted settings,失效 isolate settings 快取(同 isolate 立即生效)。
+  invalidateSettingsCache();
   // 該 extension 的 public content cache 整批失效(install/update 後結構/資料可能全變)。
   revalidateExt(id);
 

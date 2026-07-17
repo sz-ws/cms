@@ -5,8 +5,6 @@ import { db } from "@/lib/db";
 import { userIdentities, users, passkeys } from "@/lib/schema";
 import { SENTINEL_PASSWORD_HASH } from "@/lib/oidc";
 
-export const dynamic = "force-dynamic";
-
 // spec-login-providers.md §6:DELETE /api/account/identities/[id]
 // — requireAuth("guest") + assertSameOrigin;只能刪自己的(否則 404)。
 // **最後登入方式 guard**:若 passwordHash 是 sentinel(OAuth-only)且無 passkey 且

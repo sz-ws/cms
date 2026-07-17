@@ -7,8 +7,6 @@ import {
 } from "@/lib/registry-client";
 import { parseManifest } from "@/ext/dx/manifest";
 
-export const dynamic = "force-dynamic";
-
 // GET /api/registry/manifest?source=...&id=...。admin only。
 // 供 install 表單「安裝前預覽」用:抓 manifest 並驗證,回傳 installPrompts(若有)
 // 給前端渲染表單,不做任何寫入 —— 與 POST /api/registry/install 共用 fetch +

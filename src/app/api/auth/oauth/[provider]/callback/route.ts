@@ -6,8 +6,6 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth";
 
-export const dynamic = "force-dynamic";
-
 // spec-login-providers.md §5 callback:GET /api/auth/oauth/[provider]/callback
 //   ?code&state(?error= → redirect /login?error=oauth_denied)
 // 引擎(@/lib/oidc completeOAuth)做 state 取用 / token exchange / id_token 驗證 /

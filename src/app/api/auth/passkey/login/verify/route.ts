@@ -9,8 +9,6 @@ import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { finishAuthentication } from "@/lib/passkey";
 
-export const dynamic = "force-dynamic";
-
 // 同 login route:本地 next dev 無 CF-Connecting-IP,fallback "local"。
 function clientIp(req: Request): string {
   return req.headers.get("cf-connecting-ip") ?? "local";

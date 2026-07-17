@@ -20,8 +20,6 @@ import { getOgTemplate } from "@/components/og/templates";
 // build path of the component.
 
 export const runtime = "edge";
-export const dynamic = "force-dynamic";
-
 interface RouteParams {
   params: Promise<{ extId: string; type: string; slug: string }>;
 }

@@ -1,8 +1,6 @@
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { startAuthentication } from "@/lib/passkey";
 
-export const dynamic = "force-dynamic";
-
 // L1 §3:assertSameOrigin(無 session 要求)→ startAuthentication。
 export async function POST(req: Request): Promise<Response> {
   try {

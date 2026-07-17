@@ -2,8 +2,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { revokeApiToken } from "@/lib/api-token";
 
-export const dynamic = "force-dynamic";
-
 // DELETE /api/tokens/[id]:撤銷 token。admin + Origin 檢查(cookie session mutation)。
 // 撤銷後該 raw token 立即 401(見 authenticateApiToken)。
 export async function DELETE(

@@ -3,8 +3,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { createApiToken, listApiTokens } from "@/lib/api-token";
 
-export const dynamic = "force-dynamic";
-
 // roadmap #1 §5:API Tokens admin CRUD。這些是 cookie session 的 admin 操作
 // (mirror Registry Sources 模式),故 mutation 要 Origin 檢查 —— 與公開 bearer
 // 端點(/api/content,無 Origin)相反。

@@ -51,7 +51,11 @@ vi.mock("@/ext/loader", async () => {
 import { runDueJobs, maybeRunJobs } from "../src/lib/jobs";
 import { CoreContentProvider } from "../src/ext/dx/content-provider";
 import { HookBus } from "../src/ext/hooks";
-import { getSetting, setSettings } from "../src/lib/settings";
+import {
+  getSetting,
+  setSettings,
+  invalidateSettingsCache,
+} from "../src/lib/settings";
 import { POST } from "../src/app/api/jobs/run/route";
 
 type TestEnv = { DB: D1Database };
@@ -112,6 +116,7 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM contents;");
   await d1().exec("DELETE FROM content_fts;");
   await d1().exec("DELETE FROM settings;");
+  invalidateSettingsCache(); // 直接清表繞開寫入路徑,一併清 isolate settings 快取。
   await d1().exec("DELETE FROM ext_jobs;");
   hookState.calls = [];
   authState.user = ADMIN;

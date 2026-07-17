@@ -10,8 +10,6 @@ import { CORE_API_VERSION } from "@/ext/version";
 import { availableServices } from "@/ext/service-requirements";
 import { getExtRuntime } from "@/ext/loader";
 
-export const dynamic = "force-dynamic";
-
 // core-v2 §3.4:GET /api/registry/index。admin only。
 // 對每個 configured source 抓 registry.json,merge entries,並附上
 // installed?/installedVersion/compatible 供 Browse tab 使用。

@@ -1,8 +1,6 @@
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { listEmailDomains } from "@/lib/email";
 
-export const dynamic = "force-dynamic";
-
 // GET /api/email/domains — active email provider 帳號下的寄信網域。
 // admin settings 的 from-address 後綴提示用(EmailDomainChips)。admin-only:
 // 網域清單屬帳號資訊,不給 editor。GET 無狀態變更,不需 assertSameOrigin。

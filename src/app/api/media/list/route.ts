@@ -1,8 +1,6 @@
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { listFiles } from "@/lib/storage";
 
-export const dynamic = "force-dynamic";
-
 // C.5b §2: admin media library listing. GET /api/media/list?cursor= →
 // { files: StoredFile[], cursor?: string }. Read-only, no mutation, so an
 // Origin check is not required (matches GET /api/users which is auth-only);

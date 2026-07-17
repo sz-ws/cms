@@ -3,8 +3,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 
-export const dynamic = "force-dynamic";
-
 // docs/spec-ai-capability.md:admin 測試口 + 未來 UI 的掛點。POST-only,呼叫外部
 // AI provider(有副作用/成本),故走 assertSameOrigin(mutation)+ requireAuth("admin")
 // + rate limit(10 次/分鐘),guard 順序同 tokens/media-upload route 慣例。

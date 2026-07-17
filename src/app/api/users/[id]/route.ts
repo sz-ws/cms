@@ -10,8 +10,6 @@ import {
 } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 
-export const dynamic = "force-dynamic";
-
 const patchSchema = z
   .object({
     name: z.string().min(1).optional(),

@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { db } from "./db";
 import { settings } from "./schema";
-import { getEnv } from "./cf";
+import { getEnv, getDB } from "./cf";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 
 import type { LocalizedString } from "./i18n/localized";
@@ -304,13 +304,78 @@ async function decryptSecret(stored: string): Promise<string> {
   return new TextDecoder().decode(pt);
 }
 
-// ---- 全表讀取(React cache)----
+// ---- 全表讀取(React per-request cache + stamp-based module memo)----
 // settings 表小,一次 SELECT * 快取整包(05 §3)。value 一律 JSON.stringify 存 / JSON.parse 讀。
+//
+// 兩層快取:
+//   1. React cache() —— 同一 request 內去重(一個請求裡多處 getSetting 只讀一次)。
+//   2. module 級 memo,以 stamp 驗新鮮度(手法同 loader.ts 的 getExtRuntime)——
+//      每個 request 用一次輕量 scalar query 對 settings 表算指紋,指紋不變就重用已 parse
+//      的整包 Map,省下列傳輸 + Map 重建 + secret 判定的 JSON.parse;省的是常見的「沒改
+//      過 settings」路徑(getLocale、public 首頁、幾乎每個頁面都讀 settings)。
+//
+// 為何不用純 TTL(seo-cache 模式):Next 把 Server Component 與 Route Handler 放在
+// 不同的 module 實例圖(RSC 的 react-server 層 vs route handler 層),同 isolate 的
+// 「寫入即失效」無法跨 graph 傳播(實測:PUT /api/settings 後 public 首頁仍讀到舊
+// siteTitle)。純 TTL 會讓非 SEO 的 settings(siteTitle/locale/email…,無「5 分鐘生效」
+// 文案承諾)出現未告知的 staleness。stamp 每 request 對 DB 現況重新指紋,任一寫入
+// (bump updated_at 或改 row 數)都必然改變指紋,所有 graph/isolate 於「下一個 request」
+// 立即看到新值——保住既有「即時生效」語意(非 TTL 收斂)。
+//
+// 為何不用 next/cache 的 unstable_cache:prod 的 D1 tag cache 每次讀都要打 revalidations
+// 表(hasBeenRevalidated → SELECT ... WHERE tag IN (...)),對「單表一次讀」沒省到,還多
+// 一次 R2 incremental cache get(content-cache.ts 走 unstable_cache 是因為要掛 tag 做精準
+// 失效,取捨不同)。
+//
+// 失敗一律降級:stamp query 失敗 → 直接走全表讀(不寫 memo,無法驗新鮮度);任何一步
+// throw 都往上拋(維持原 readAll 的行為),絕不因快取 plumbing 弄壞讀取路徑。
 
-const readAll = cache(async (): Promise<Map<string, string>> => {
+// 指紋:COUNT + MAX(updated_at)。所有寫入路徑(setSettings / setExtensionSettingsRaw、
+// manager enable/uninstall、install route)都 upsert updated_at=now 或改 row 數,故任一
+// mutation 必然改變此值(同 runtime-stamp.ts 的精神)。用 getDB() 直打 scalar 最省。
+const SETTINGS_STAMP_SQL =
+  "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), 0) AS m FROM settings";
+
+let settingsMemo: { stamp: string; value: Map<string, string> } | null = null;
+
+async function computeSettingsStamp(): Promise<string> {
+  const row = await getDB()
+    .prepare(SETTINGS_STAMP_SQL)
+    .first<{ n: number; m: number }>();
+  if (!row) return "0:0";
+  return `${row.n}:${row.m}`;
+}
+
+async function loadAllSettings(): Promise<Map<string, string>> {
   const rows = await db().select().from(settings);
   return new Map(rows.map((r): [string, string] => [r.key, r.value]));
+}
+
+const readAll = cache(async (): Promise<Map<string, string>> => {
+  // stamp 失敗 → null,強制走全表讀且不寫 memo(無法在下個 request 驗證新鮮度)。
+  let stamp: string | null = null;
+  try {
+    stamp = await computeSettingsStamp();
+  } catch (e) {
+    console.error("[settings] stamp query failed; reading full table", e);
+  }
+  if (stamp !== null && settingsMemo !== null && settingsMemo.stamp === stamp) {
+    return settingsMemo.value; // 命中:重用已 parse 的整包 Map。
+  }
+  const value = await loadAllSettings();
+  if (stamp !== null) settingsMemo = { stamp, value };
+  return value;
 });
+
+/**
+ * 主動清 module 級 settings memo(belt-and-braces:同 graph 的寫入後立即清,讓下個
+ * request 連 stamp 都不必比就重讀)。跨 graph / 跨 isolate 的正確性已由每 request 的
+ * stamp 重算涵蓋,故此函式非正確性必需——與 loader.ts 的 invalidateExtRuntimeMemo 對稱。
+ * 測試亦以此重置。
+ */
+export function invalidateSettingsCache(): void {
+  settingsMemo = null;
+}
 
 /**
  * 讀單一 setting(明文;server 端內核用途)。
@@ -355,6 +420,9 @@ export async function setSettings(
         set: { value: json, updatedAt: now },
       });
   }
+  // 同 graph 立即失效(admin 存檔後下一個 request 讀到新值);跨 graph/isolate 靠
+  // 每 request 的 stamp 重算(見 readAll 註解)。
+  invalidateSettingsCache();
   // hook 分派:settings:saved(03 §1)。enabled extension 的 handler 收得到。
   const { getExtRuntime } = await import("@/ext/loader");
   const rt = await getExtRuntime();
@@ -388,6 +456,8 @@ export async function setExtensionSettingsRaw(
         set: { value: json, updatedAt: now },
       });
   }
+  // 同 setSettings:直接寫表後失效 isolate 快取(install route 於此後仍會再失效一次,無害)。
+  invalidateSettingsCache();
 }
 
 // ---- Secret 判定與遮罩(讀寫兩端都經由 field 定義,D1 資料不帶旗標;05 §4)----

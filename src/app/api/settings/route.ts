@@ -7,8 +7,6 @@ import {
   splitRegistrySourceTokens,
 } from "@/lib/settings";
 
-export const dynamic = "force-dynamic";
-
 const bodySchema = z.object({
   entries: z.record(z.string(), z.unknown()),
 });

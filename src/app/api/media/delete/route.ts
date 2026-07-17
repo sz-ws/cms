@@ -3,8 +3,6 @@ import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { deleteFile } from "@/lib/storage";
 
-export const dynamic = "force-dynamic";
-
 // Task #7 §1: admin media deletion — the gap left by C.5b (upload + list only).
 // POST /api/media/delete, body { key }. Mirrors the upload route's guard order
 // (assertSameOrigin → requireAuth("admin")) since this is a cookie-authenticated

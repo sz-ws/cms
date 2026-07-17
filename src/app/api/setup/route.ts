@@ -11,8 +11,6 @@ import {
 import { setSettings } from "@/lib/settings";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 
-export const dynamic = "force-dynamic";
-
 const bodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),

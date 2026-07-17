@@ -2,8 +2,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { runDueJobs } from "@/lib/jobs";
 
-export const dynamic = "force-dynamic";
-
 // POST /api/jobs/run:手動催發 core jobs（見 src/lib/jobs.ts）。
 // admin only + same-origin(mutation:改動 D1 內容狀態,走 CSRF 防線)。
 // 回傳每支任務的逐項結果 { id, ok, processed?, detail? }。

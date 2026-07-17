@@ -7,8 +7,6 @@ import {
 } from "@/lib/registry-client";
 import { EXTENSION_ID_RE, assetContentType, isValidAssetFile } from "@/lib/registry-asset";
 
-export const dynamic = "force-dynamic";
-
 const ASSET_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 
 /** 錯誤回應一律 no-store(見下方檔案註解)。 */

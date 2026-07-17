@@ -2,8 +2,6 @@ import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { finishRegistration, PasskeyError } from "@/lib/passkey";
 
-export const dynamic = "force-dynamic";
-
 // L1 §3:assertSameOrigin + requireAuth() → finishRegistration → 201 { id, name }。
 export async function POST(req: Request): Promise<Response> {
   try {
