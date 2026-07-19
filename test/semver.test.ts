@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { satisfies } from "../src/ext/semver";
+import { rangeStartsAtOrAfter, satisfies } from "../src/ext/semver";
 
 // core-v2 §1 semver range checker 的純邏輯測試(試水:確認測試棧能跑)。
 describe("semver satisfies", () => {
@@ -36,4 +36,20 @@ describe("semver satisfies", () => {
     expect(satisfies("1.3.0", "^1.0.0")).toBe(true); // gallery
     expect(satisfies("1.3.0", "^1.1.0")).toBe(true); // blog
   });
+});
+
+describe("rangeStartsAtOrAfter", () => {
+  it.each(["^1.17.0", "~1.17.0", ">=1.17.0", "1.17.0", "~1.16.0", "1.16.0"])(
+    "rejects older base range %s",
+    (range) => {
+      expect(rangeStartsAtOrAfter(range, "1.18.0")).toBe(false);
+    },
+  );
+
+  it.each(["^1.18.0", "~1.18.0", ">=1.18.0", "1.18.0", "^2.0.0"])(
+    "accepts base range %s",
+    (range) => {
+      expect(rangeStartsAtOrAfter(range, "1.18.0")).toBe(true);
+    },
+  );
 });

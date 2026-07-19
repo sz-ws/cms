@@ -1,4 +1,4 @@
-import { eq, like, sql } from "drizzle-orm";
+import { and, eq, like, notLike, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { db } from "@/lib/db";
 import {
@@ -15,6 +15,7 @@ import { revalidateExt } from "./dx/cache-invalidate";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import type { Extension, ExtMigration } from "./types";
+import { buildInstallRevisionClaim } from "./dx/declarative-migrate";
 
 // 03 §5:Manager — 啟用/停用/migrations。
 
@@ -185,32 +186,43 @@ export async function uninstallExtension(extId: string): Promise<void> {
 
 async function findDeclarativeRow(
   extId: string,
-): Promise<{ id: string } | undefined> {
+): Promise<{ id: string; updatedAt: number } | undefined> {
   const rows = await db()
-    .select({ id: declarativeExtensions.id })
+    .select({
+      id: declarativeExtensions.id,
+      updatedAt: declarativeExtensions.updatedAt,
+    })
     .from(declarativeExtensions)
     .where(eq(declarativeExtensions.id, extId))
     .limit(1);
   return rows[0];
 }
 
+async function setDeclarativeEnabled(
+  extId: string,
+  enabled: 0 | 1,
+): Promise<void> {
+  const row = await findDeclarativeRow(extId);
+  if (!row) throw new ExtNotFound(extId);
+  const now = Math.max(Date.now(), row.updatedAt + 1);
+  await db().batch([
+    buildInstallRevisionClaim(extId, row.updatedAt, now),
+    db()
+      .update(declarativeExtensions)
+      .set({ enabled, updatedAt: now })
+      .where(eq(declarativeExtensions.id, extId)),
+  ]);
+}
+
 export async function enableDeclarative(extId: string): Promise<void> {
-  if (!(await findDeclarativeRow(extId))) throw new ExtNotFound(extId);
-  await db()
-    .update(declarativeExtensions)
-    .set({ enabled: 1, updatedAt: Date.now() })
-    .where(eq(declarativeExtensions.id, extId));
+  await setDeclarativeEnabled(extId, 1);
   invalidateExtRuntimeMemo();
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
 }
 
 export async function disableDeclarative(extId: string): Promise<void> {
-  if (!(await findDeclarativeRow(extId))) throw new ExtNotFound(extId);
-  await db()
-    .update(declarativeExtensions)
-    .set({ enabled: 0, updatedAt: Date.now() })
-    .where(eq(declarativeExtensions.id, extId));
+  await setDeclarativeEnabled(extId, 0);
   invalidateExtRuntimeMemo();
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
@@ -226,24 +238,42 @@ export async function uninstallDeclarative(
   extId: string,
   purgeContent: boolean,
 ): Promise<void> {
-  if (!(await findDeclarativeRow(extId))) throw new ExtNotFound(extId);
-
-  await disableDeclarative(extId);
-
-  await db()
-    .delete(settings)
-    .where(like(settings.key, `ext.${extId}.%`));
-
+  const row = await findDeclarativeRow(extId);
+  if (!row) throw new ExtNotFound(extId);
+  const rt = await getExtRuntime();
+  const now = Math.max(Date.now(), row.updatedAt + 1);
+  const batch: BatchItem<"sqlite">[] = [
+    buildInstallRevisionClaim(extId, row.updatedAt, now),
+    db()
+      .delete(settings)
+      .where(like(settings.key, `ext.${extId}.%`)),
+    db()
+      .delete(extMigrations)
+      .where(
+        and(
+          eq(extMigrations.extId, extId),
+          notLike(extMigrations.id, `${extId}:install:%`),
+        ),
+      ),
+    db()
+      .delete(declarativeExtensions)
+      .where(eq(declarativeExtensions.id, extId)),
+  ];
   if (purgeContent) {
-    await db().delete(contents).where(like(contents.type, `${extId}.%`));
+    batch.splice(
+      batch.length - 1,
+      0,
+      db().delete(contents).where(like(contents.type, `${extId}.%`)),
+    );
   }
-
-  await db()
-    .delete(declarativeExtensions)
-    .where(eq(declarativeExtensions.id, extId));
+  await db().batch(
+    batch as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]],
+  );
 
   // 同 uninstallExtension:disableDeclarative 後的 getExtRuntime 會回填 memo,刪 row 後再失效。
   invalidateExtRuntimeMemo();
   // 上面刪了 ext.<id>.% 的 settings 列,失效 isolate settings 快取。
   invalidateSettingsCache();
+  revalidateExt(extId);
+  await rt.hooks.doAction("ext:disabled", extId);
 }

@@ -18,6 +18,201 @@ describe("parseManifest", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("rejects invalid setting defaults and duplicate select values", () => {
+    expect(
+      parseManifest({
+        ...base,
+        settings: [{ key: "count", label: "Count", type: "number", default: "3" }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseManifest({
+        ...base,
+        coreApi: "^1.18.0",
+        settings: [
+          {
+            key: "mode",
+            label: "Mode",
+            type: "select",
+            default: "a",
+            options: [
+              { value: "a", label: "A" },
+              { value: "a", label: "Again" },
+            ],
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("allows a required setting to start unconfigured with an empty default", () => {
+    expect(
+      parseManifest({
+        ...base,
+        coreApi: "^1.18.0",
+        settings: [
+          {
+            key: "apiKey",
+            label: "API key",
+            type: "text",
+            required: true,
+            default: "",
+          },
+        ],
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("requires coreApi 1.18.0 when settings use required", () => {
+    const result = parseManifest({
+      ...base,
+      settings: [
+        {
+          key: "apiKey",
+          label: "API key",
+          type: "text",
+          required: true,
+          default: "",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("1.18.0");
+  });
+
+  it("rejects options on non-select settings", () => {
+    expect(
+      parseManifest({
+        ...base,
+        settings: [
+          {
+            key: "label",
+            label: "Label",
+            type: "text",
+            default: "",
+            options: [{ value: "x", label: "X" }],
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects non-empty secret defaults", () => {
+    expect(
+      parseManifest({
+        ...base,
+        settings: [
+          {
+            key: "apiKey",
+            label: "API key",
+            type: "text",
+            secret: true,
+            default: "plaintext-secret",
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects duplicate nested fields and block names", () => {
+    const result = parseManifest({
+      ...base,
+      contentTypes: [
+        {
+          name: "page",
+          fields: [
+            {
+              key: "meta",
+              type: "group",
+              fields: [
+                { key: "title", type: "text" },
+                { key: "title", type: "text" },
+              ],
+            },
+            {
+              key: "body",
+              type: "blocks",
+              blocks: [
+                { name: "hero", fields: [{ key: "title", type: "text" }] },
+                {
+                  name: "hero",
+                  fields: [
+                    { key: "copy", type: "text" },
+                    { key: "copy", type: "text" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("duplicate nested field key");
+    expect(result.error).toContain("duplicate block name");
+    expect(result.error).toContain("duplicate block field key");
+  });
+
+  it("rejects duplicate names and broken content type references", () => {
+    const result = parseManifest({
+      ...base,
+      contentTypes: [
+        {
+          name: "post",
+          slugField: "missing",
+          fields: [
+            { key: "title", type: "text" },
+            { key: "title", type: "text" },
+          ],
+        },
+        { name: "post", fields: [{ key: "name", type: "text" }] },
+      ],
+      adminPages: [
+        { slug: "", title: "Missing", view: "collection", contentType: "missing" },
+      ],
+      publicRoutes: [
+        { pattern: "/missing", view: "list", contentType: "missing" },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("duplicate content type name");
+    expect(result.error).toContain("duplicate field key");
+    expect(result.error).toContain("slugField");
+    expect(result.error).toContain("adminPages");
+    expect(result.error).toContain("publicRoutes");
+  });
+
+  it("rejects webhook secret settings that are absent or not secret", () => {
+    const result = parseManifest({
+      ...base,
+      settings: [{ key: "signingKey", label: "Key", type: "text", default: "" }],
+      on: {
+        "content:created": [
+          {
+            action: "webhook",
+            url: "https://example.com/hook",
+            secretSetting: "signingKey",
+          },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("must reference a secret setting");
+  });
+
+  it("rejects unknown declarative hook names", () => {
+    expect(
+      parseManifest({
+        ...base,
+        on: {
+          "content:cretaed": [
+            { action: "webhook", url: "https://example.com/hook" },
+          ],
+        },
+      }).ok,
+    ).toBe(false);
+  });
+
   it("parses declarative contentType with public:true (anonymous POST enabled)", () => {
     const r = parseManifest({
       kind: "declarative",

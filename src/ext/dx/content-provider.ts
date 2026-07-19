@@ -140,7 +140,8 @@ export function validateFieldSet(
     const path = pathPrefix ? `${pathPrefix}.${field.key}` : field.key;
     const present = Object.prototype.hasOwnProperty.call(data, field.key);
     const value = data[field.key];
-    if (!present || value === undefined || value === null || value === "") {
+    const emptyString = typeof value === "string" && value.trim().length === 0;
+    if (!present || value === undefined || value === null || emptyString) {
       if (field.required) fail(path, "required");
       continue; // 空值:略過(稀疏 document)。
     }

@@ -11,7 +11,7 @@
  *      when converting to JSON Schema -- no error, no warning, just gone.
  *      Every refine in manifest.ts is re-derived here as `if`/`then`/`not`
  *      (where JSON Schema draft 2020-12 can express it) or documented via
- *      `description` (where it can't -- e.g. the two superRefine cross-field
+ *      `description` (where it can't -- e.g. superRefine cross-field
  *      checks, which need sibling-array lookups JSON Schema has no keyword
  *      for).
  *   2. A readable `$defs` structure. Raw `z.toJSONSchema` output inlines
@@ -363,7 +363,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, ["properties", "contentTypes", "items"], { $ref: "#/$defs/contentType" });
 }
 
-// ---- step 6: settings (settingFieldSchema.refine(): select requires options) ----
+// ---- step 6: settings (select requires options; non-select forbids them) ----
 {
   const optionPath = ["properties", "settings", "items", "properties", "options", "items"];
   const option = clone(get(root, optionPath));
@@ -373,13 +373,15 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   const settingPath = ["properties", "settings", "items"];
   const setting = clone(get(root, settingPath)) as any;
   assert(setting.properties?.type?.enum?.includes("select"), "settingField shape drifted");
-  setting.description = "Same shape as the code extension SettingField.";
+  setting.description =
+    "Same shape as the code extension SettingField. Select option values must be unique; secret defaults must be empty. Using required:true requires coreApi with a minimum version of 1.18.0. These cross-value/version semantics are enforced by manifestSchema (authoritative).";
   setting.properties.key = { $ref: "#/$defs/fieldKey" };
   setting.if = { properties: { type: { const: "select" } }, required: ["type"] };
   setting.then = {
     required: ["key", "label", "default", "type", "options"],
     properties: { options: { type: "array", minItems: 1 } },
   };
+  setting.else = { not: { required: ["options"] } };
   defs.settingField = setting;
   root = set(root, settingPath, { $ref: "#/$defs/settingField" });
 }
@@ -436,11 +438,28 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, publicRoutePath, { $ref: "#/$defs/publicRoute" });
 }
 
-// ---- step 8: hooks (hookActionSchema: no refine) ----
+// ---- step 8: hooks (hook names are an allowlist in manifestSchema) ----
 {
   const hookActionPath = ["properties", "on", "additionalProperties", "items"];
   defs.hookAction = clone(get(root, hookActionPath));
   root = set(root, hookActionPath, { $ref: "#/$defs/hookAction" });
+  const onPath = ["properties", "on"];
+  const on = clone(get(root, onPath)) as any;
+  on.propertyNames = {
+    enum: [
+      "ext:enabled",
+      "ext:disabled",
+      "user:created",
+      "settings:saved",
+      "storage:uploaded",
+      "content:created",
+      "content:updated",
+      "content:deleted",
+      "payment:succeeded",
+      "extraction:completed",
+    ],
+  };
+  root = set(root, onPath, on);
 }
 
 // ---- step 9: install prompts (cross-checked against settings[] via
@@ -452,6 +471,8 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   installPrompt.description = "zod does not call .strict() on this object, so additional properties are permitted here.";
   installPrompt.properties.key.description = "Must reference an existing settings[].key (zod superRefine cross-check).";
   installPrompt.properties.secret.description = "Must match the referenced settings[].secret flag (zod superRefine cross-check).";
+  installPrompt.properties.type.description =
+    "Must match the referenced settings[].type (zod superRefine cross-check).";
   defs.installPrompt = installPrompt;
   root = set(root, installPromptPath, { $ref: "#/$defs/installPrompt" });
 }
@@ -558,7 +579,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   const scheduleAction = clone(get(root, scheduleActionPath)) as any;
   assert(scheduleAction.properties?.op?.const === "deleteOlderThan", "scheduleAction shape drifted");
   scheduleAction.description =
-    "v1 has a single op: deleteOlderThan. `contentType` names a contentTypes[].name declared by this same manifest (not cross-checked by zod; interpret skips schedule items pointing at an unknown type).";
+    "v1 has a single op: deleteOlderThan. `contentType` must name a contentTypes[].name declared by this same manifest (enforced by zod superRefine; not expressible in JSON Schema).";
   defs.scheduleAction = scheduleAction;
   root = set(root, scheduleActionPath, { $ref: "#/$defs/scheduleAction" });
 
@@ -700,7 +721,7 @@ const final = {
   $id: "https://raw.githubusercontent.com/kuosuko/registry/main/schema/manifest.schema.json",
   title: "Suko CMS declarative extension manifest v1",
   description:
-    "Mirrors the zod schema in cms/src/ext/dx/manifest.ts (manifestSchema, Core v2 architecture spec section 3.2). Validated at install time AND at interpret time. Generated by cms/scripts/gen-manifest-schema.mts -- do not hand-edit; re-run the script after changing manifest.ts. Two zod superRefine cross-checks (installPrompts[].key must reference settings[].key with matching secret; dashboardCards[].contentType must reference a declared contentTypes[].name) cannot be expressed in JSON Schema and are noted on the relevant properties instead.",
+    "Mirrors the zod schema in cms/src/ext/dx/manifest.ts (manifestSchema, Core v2 architecture spec section 3.2). Validated at install time AND at interpret time. Generated by cms/scripts/gen-manifest-schema.mts -- do not hand-edit; re-run the script after changing manifest.ts. Zod superRefine cross-checks (cross-array references, uniqueness, credential requirements and related semantic invariants) cannot all be expressed in JSON Schema and are documented on the relevant properties where possible; manifestSchema remains authoritative.",
   type: "object",
   required: (root as any).required,
   additionalProperties: false,

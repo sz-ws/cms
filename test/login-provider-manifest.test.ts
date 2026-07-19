@@ -155,4 +155,32 @@ describe("loginProvider manifest — rejects", () => {
       }),
     ).not.toBe("");
   });
+
+  it("explicit scopes without openid", () => {
+    expect(
+      err({
+        issuer: "https://accounts.google.com",
+        scopes: ["profile", "email"],
+        button: { label: "Google" },
+      }),
+    ).toMatch(/openid/i);
+  });
+
+  it("missing or non-secret credential settings", () => {
+    const withoutClientId = parseManifest({
+      ...GOOGLE_LOGIN_MANIFEST,
+      settings: GOOGLE_LOGIN_MANIFEST.settings.filter((s) => s.key !== "clientId"),
+    });
+    expect(withoutClientId.ok).toBe(false);
+    expect(withoutClientId.error).toMatch(/clientId/);
+
+    const publicSecret = parseManifest({
+      ...GOOGLE_LOGIN_MANIFEST,
+      settings: GOOGLE_LOGIN_MANIFEST.settings.map((s) =>
+        s.key === "clientSecret" ? { ...s, secret: false } : s,
+      ),
+    });
+    expect(publicSecret.ok).toBe(false);
+    expect(publicSecret.error).toMatch(/clientSecret/);
+  });
 });

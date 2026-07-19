@@ -8,6 +8,8 @@ import type {
   DeclarativeDashboardCard,
 } from "./dx/manifest";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import { validateSettingValue } from "../lib/setting-validation";
+import { rangeStartsAtOrAfter } from "./semver";
 
 // 03 §1:Extension 型別(完整內容,欄位一字不差照 spec)。
 // core-v2 §2.1 / §2.2 / §3.1:ApiCtx.services、manifest coreApi/provides、zod 驗證。
@@ -27,6 +29,8 @@ export interface SettingFieldBase {
   label: LocalizedString;
   description?: LocalizedString;
   default: unknown;
+  /** Empty/blank values are rejected at manifest/install/settings boundaries. */
+  required?: boolean;
   secret?: boolean; // true → 加密儲存、API 只寫不讀(02 §1、05 §4)
 }
 export type SettingField = SettingFieldBase &
@@ -149,6 +153,95 @@ const apiRouteSchema = z.object({
   handler: fn,
 });
 
+const localizedStringSchema = z.union([
+  z.string().min(1),
+  z
+    .object({
+      en: z.string().optional(),
+      "zh-Hant": z.string().optional(),
+    })
+    .strict()
+    .refine((value) => value.en !== undefined || value["zh-Hant"] !== undefined, {
+      message: "localized string requires at least one locale",
+    }),
+]);
+
+const settingSchema = z
+  .object({
+    key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, "invalid setting key"),
+    label: localizedStringSchema,
+    description: localizedStringSchema.optional(),
+    default: z.unknown(),
+    required: z.boolean().optional(),
+    secret: z.boolean().optional(),
+    type: z.enum(["text", "textarea", "number", "boolean", "select"]),
+    options: z
+      .array(
+        z.object({ value: z.string(), label: localizedStringSchema }).strict(),
+      )
+      .optional(),
+  })
+  .strict()
+  .superRefine((setting, ctx) => {
+    if (setting.type === "select") {
+      const values = (setting.options ?? []).map((option) => option.value);
+      if (values.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: "select setting requires options",
+          path: ["options"],
+        });
+      } else if (new Set(values).size !== values.length) {
+        ctx.addIssue({
+          code: "custom",
+          message: "select setting option values must be unique",
+          path: ["options"],
+        });
+      }
+    } else if (setting.options !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "options are only valid for select settings",
+        path: ["options"],
+      });
+    }
+    if (setting.secret && setting.default !== "") {
+      ctx.addIssue({
+        code: "custom",
+        message: "secret setting default must be empty",
+        path: ["default"],
+      });
+    }
+    const error = validateSettingValue(
+      { ...setting, required: false },
+      setting.default,
+    );
+    if (error) {
+      ctx.addIssue({
+        code: "custom",
+        message: `invalid default for ${setting.type} setting: ${error}`,
+        path: ["default"],
+      });
+    }
+  });
+
+const migrationSchema = z.object({
+  id: z.string().min(1),
+  sql: z.string().min(1),
+});
+
+const adminPageSchema = z.object({
+  slug: z.string(),
+  title: localizedStringSchema,
+  showInMenu: z.boolean().optional(),
+  component: fn,
+});
+
+const publicRouteSchema = z.object({
+  match: fn,
+  component: fn,
+});
+
 // spec-extension-jobs.md:job id 規則比 extension id 寬(允許單字元)。
 const JOB_ID_RE = /^[a-z][a-z0-9-]{0,30}$/;
 const extJobSchema = z.object({
@@ -171,6 +264,11 @@ const manifestSchema = z
     version: z.string().regex(SEMVER_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(RANGE_RE, "invalid coreApi range"),
     description: z.string().optional(),
+    migrations: z.array(migrationSchema).optional(),
+    uninstall: z.array(migrationSchema).optional(),
+    settings: z.array(settingSchema).optional(),
+    adminPages: z.array(adminPageSchema).optional(),
+    publicRoutes: z.array(publicRouteSchema).optional(),
     apiRoutes: z.array(apiRouteSchema).optional(),
     provides: z
       .array(
@@ -185,7 +283,51 @@ const manifestSchema = z
   })
   // 其餘欄位(migrations/settings/adminPages/publicRoutes/hooks/uninstall)含 React
   // 型別與 function,不在 zod 深驗範圍,passthrough 保留。
-  .passthrough();
+  .passthrough()
+  .superRefine((ext, ctx) => {
+    const duplicate = (
+      values: readonly string[],
+      path: string,
+      label: string,
+    ) => {
+      const seen = new Set<string>();
+      values.forEach((value, idx) => {
+        if (seen.has(value)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `duplicate ${label} "${value}"`,
+            path: [path, idx],
+          });
+        }
+        seen.add(value);
+      });
+    };
+
+    duplicate((ext.settings ?? []).map((item) => item.key), "settings", "setting key");
+    duplicate((ext.migrations ?? []).map((item) => item.id), "migrations", "migration id");
+    duplicate((ext.uninstall ?? []).map((item) => item.id), "uninstall", "uninstall migration id");
+    duplicate((ext.adminPages ?? []).map((item) => item.slug), "adminPages", "admin page slug");
+    duplicate(
+      (ext.apiRoutes ?? []).map((item) => `${item.method} ${item.path}`),
+      "apiRoutes",
+      "API route",
+    );
+    duplicate(
+      (ext.provides ?? []).map((item) => `${item.capability}:${item.id}`),
+      "provides",
+      "provider registration",
+    );
+    if (
+      (ext.settings ?? []).some((setting) => setting.required) &&
+      !rangeStartsAtOrAfter(ext.coreApi, "1.18.0")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: 'settings[].required requires coreApi "^1.18.0" or newer',
+        path: ["coreApi"],
+      });
+    }
+  });
 
 export function defineExtension(ext: Extension): Extension {
   const result = manifestSchema.safeParse(ext);

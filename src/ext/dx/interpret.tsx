@@ -5,14 +5,13 @@ import type {
   DeclarativeContentType,
   DeclarativeManifest,
   DeclarativePublicRoute,
-  DeclarativeSettingField,
 } from "./manifest";
+import { toSettingField } from "./setting-field";
 import type {
   AdminPage,
   Extension,
   HookName,
   PublicRoute,
-  SettingField,
 } from "../types";
 import { CollectionView } from "./views/CollectionView";
 import type { CollectionViewProps } from "./views/CollectionView";
@@ -77,24 +76,6 @@ function typeByName(
   const m = new Map<string, DeclarativeContentType>();
   for (const ct of manifest.contentTypes ?? []) m.set(ct.name, ct);
   return m;
-}
-
-// ---- settings passthrough ----
-
-function toSettingField(f: DeclarativeSettingField): SettingField {
-  const base = {
-    key: f.key,
-    label: f.label,
-    description: f.description,
-    default: f.default,
-    secret: f.secret,
-  };
-  if (f.type === "select") {
-    return { ...base, type: "select", options: f.options ?? [] };
-  }
-  if (f.type === "number") return { ...base, type: "number" };
-  if (f.type === "boolean") return { ...base, type: "boolean" };
-  return { ...base, type: f.type }; // "text" | "textarea"
 }
 
 // ---- admin pages(collection + edit form)----

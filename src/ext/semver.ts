@@ -54,3 +54,17 @@ export function satisfies(version: string, range: string): boolean {
   const exact = parse(trimmed);
   return exact ? compare(v, exact) === 0 : false;
 }
+
+/** Whether the minimum version named by a supported range is >= `minimum`. */
+export function rangeStartsAtOrAfter(range: string, minimum: string): boolean {
+  const min = parse(minimum);
+  if (!min) return false;
+  const trimmed = range.trim();
+  const baseText = trimmed.startsWith(">=")
+    ? trimmed.slice(2)
+    : trimmed.startsWith("^") || trimmed.startsWith("~")
+      ? trimmed.slice(1)
+      : trimmed;
+  const base = parse(baseText);
+  return base ? compare(base, min) >= 0 : false;
+}

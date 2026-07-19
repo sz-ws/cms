@@ -32,6 +32,12 @@ describe("validateFieldSet (forms submission server-side validation)", () => {
     }
   });
 
+  it("rejects whitespace-only required text", () => {
+    expect(() => validateFieldSet(fields, { name: "  \n " }, "")).toThrow(
+      ContentValidationError,
+    );
+  });
+
   it("rejects wrong type", () => {
     expect(() =>
       validateFieldSet(fields, { name: "Suko", age: "old" }, ""),

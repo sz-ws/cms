@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { validateSvg } from "./svg-guard";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import { validateSettingValue } from "../../lib/setting-validation";
+import { rangeStartsAtOrAfter } from "../semver";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -16,6 +18,18 @@ const TYPE_NAME_RE = /^[a-z][a-z0-9-]{0,30}$/;
 const FIELD_KEY_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 // route pattern:純 segment 字串,允許字面段 /foo 或 param 段 /:name,無 regex 特殊字元。
 const ROUTE_PATTERN_RE = /^(\/[a-z0-9-]+|\/:[a-zA-Z][a-zA-Z0-9]*)+$/;
+const DECLARATIVE_HOOK_NAMES = [
+  "ext:enabled",
+  "ext:disabled",
+  "user:created",
+  "settings:saved",
+  "storage:uploaded",
+  "content:created",
+  "content:updated",
+  "content:deleted",
+  "payment:succeeded",
+  "extraction:completed",
+] as const;
 // 08 §2:relation `to` 目標,形狀 "<extId>.<typeName>"(同 ContentTypeDef.type key)。
 // extId 段套 ID_RE 的長度界(1..31),typeName 段套 TYPE_NAME_RE(0..31 尾字)。
 // 純字面,無 regex 特殊字元;install 與 interpret 兩端皆驗。
@@ -244,6 +258,7 @@ const settingFieldSchema = z
     label: localized(),
     description: localized().optional(),
     default: z.unknown(),
+    required: z.boolean().optional(),
     secret: z.boolean().optional(),
     type: z.enum(["text", "textarea", "number", "boolean", "select"]),
     options: z.array(settingOptionSchema).optional(),
@@ -252,6 +267,40 @@ const settingFieldSchema = z
   .refine((s) => s.type !== "select" || (s.options?.length ?? 0) >= 1, {
     message: "select setting requires options",
     path: ["options"],
+  })
+  .superRefine((s, ctx) => {
+    if (s.type === "select") {
+      const values = (s.options ?? []).map((option) => option.value);
+      if (new Set(values).size !== values.length) {
+        ctx.addIssue({
+          code: "custom",
+          message: "select setting option values must be unique",
+          path: ["options"],
+        });
+      }
+    }
+    if (s.type !== "select" && s.options !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "options are only valid for select settings",
+        path: ["options"],
+      });
+    }
+    if (s.secret && s.default !== "") {
+      ctx.addIssue({
+        code: "custom",
+        message: "secret setting default must be empty",
+        path: ["default"],
+      });
+    }
+    const error = validateSettingValue({ ...s, required: false }, s.default);
+    if (error) {
+      ctx.addIssue({
+        code: "custom",
+        message: `invalid default for ${s.type} setting: ${error}`,
+        path: ["default"],
+      });
+    }
   });
 
 // ---- admin / public / hooks ----
@@ -614,7 +663,21 @@ export const manifestSchema = z
       )
       .optional(),
     // hook 名 -> action 綁定陣列。v1 僅 webhook。
-    on: z.record(z.string(), z.array(hookActionSchema)).optional(),
+    on: z
+      .record(z.string(), z.array(hookActionSchema))
+      .superRefine((hooks, ctx) => {
+        const allowed = new Set<string>(DECLARATIVE_HOOK_NAMES);
+        for (const name of Object.keys(hooks)) {
+          if (!allowed.has(name)) {
+            ctx.addIssue({
+              code: "custom",
+              message: `unknown declarative hook name "${name}"`,
+              path: [name],
+            });
+          }
+        }
+      })
+      .optional(),
     // roadmap #16:extension 貢獻的 dashboard 卡(≤4;contentType 須引用已宣告的
     // contentTypes[].name,交叉檢查見下方 superRefine)。
     dashboardCards: z.array(dashboardCardSchema).max(4).optional(),
@@ -629,12 +692,185 @@ export const manifestSchema = z
   })
   .strict()
   .superRefine((m, ctx) => {
+    const addDuplicateIssues = (
+      values: readonly string[],
+      path: string,
+      label: string,
+    ) => {
+      const seen = new Set<string>();
+      values.forEach((value, idx) => {
+        if (seen.has(value)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `duplicate ${label} "${value}"`,
+            path: [path, idx],
+          });
+        }
+        seen.add(value);
+      });
+    };
+
+    const contentTypes = m.contentTypes ?? [];
+    const typeNames = new Set(contentTypes.map((contentType) => contentType.name));
+    const settings = m.settings ?? [];
+    const settingsByKey = new Map(settings.map((setting) => [setting.key, setting]));
+
+    addDuplicateIssues(contentTypes.map((item) => item.name), "contentTypes", "content type name");
+    addDuplicateIssues(settings.map((item) => item.key), "settings", "setting key");
+    addDuplicateIssues(
+      (m.installPrompts ?? []).map((item) => item.key),
+      "installPrompts",
+      "install prompt key",
+    );
+    addDuplicateIssues(
+      (m.adminPages ?? []).map((item) => item.slug),
+      "adminPages",
+      "admin page slug",
+    );
+    addDuplicateIssues(
+      (m.publicRoutes ?? []).map((item) => item.pattern),
+      "publicRoutes",
+      "public route pattern",
+    );
+
+    contentTypes.forEach((contentType, typeIdx) => {
+      addDuplicateIssues(
+        contentType.fields.map((field) => field.key),
+        `contentTypes.${typeIdx}.fields`,
+        "field key",
+      );
+      if (
+        contentType.slugField &&
+        !contentType.fields.some((field) => field.key === contentType.slugField)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `slugField "${contentType.slugField}" does not reference a declared field`,
+          path: ["contentTypes", typeIdx, "slugField"],
+        });
+      }
+
+      contentType.fields.forEach((field, fieldIdx) => {
+        if (field.type === "group" || field.type === "repeater") {
+          addDuplicateIssues(
+            (field.fields ?? []).map((nested) => nested.key),
+            `contentTypes.${typeIdx}.fields.${fieldIdx}.fields`,
+            "nested field key",
+          );
+        }
+        if (field.type === "blocks") {
+          addDuplicateIssues(
+            (field.blocks ?? []).map((block) => block.name),
+            `contentTypes.${typeIdx}.fields.${fieldIdx}.blocks`,
+            "block name",
+          );
+          (field.blocks ?? []).forEach((block, blockIdx) => {
+            addDuplicateIssues(
+              block.fields.map((nested) => nested.key),
+              `contentTypes.${typeIdx}.fields.${fieldIdx}.blocks.${blockIdx}.fields`,
+              "block field key",
+            );
+          });
+        }
+      });
+    });
+
+    if (
+      settings.some((setting) => setting.required) &&
+      !rangeStartsAtOrAfter(m.coreApi, "1.18.0")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: 'settings[].required requires coreApi "^1.18.0" or newer',
+        path: ["coreApi"],
+      });
+    }
+
+    (m.adminPages ?? []).forEach((page, idx) => {
+      if (!typeNames.has(page.contentType)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `contentType "${page.contentType}" does not reference a declared content type`,
+          path: ["adminPages", idx, "contentType"],
+        });
+      }
+    });
+    (m.publicRoutes ?? []).forEach((route, idx) => {
+      if (!typeNames.has(route.contentType)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `contentType "${route.contentType}" does not reference a declared content type`,
+          path: ["publicRoutes", idx, "contentType"],
+        });
+      }
+    });
+    (m.schedule ?? []).forEach((item, idx) => {
+      if (!typeNames.has(item.action.contentType)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `contentType "${item.action.contentType}" does not reference a declared content type`,
+          path: ["schedule", idx, "action", "contentType"],
+        });
+      }
+    });
+    (m.customApiRoutes ?? []).forEach((route, idx) => {
+      if (route.contentType && !typeNames.has(route.contentType)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `contentType "${route.contentType}" does not reference a declared content type`,
+          path: ["customApiRoutes", idx, "contentType"],
+        });
+      }
+    });
+
+    for (const [hookName, actions] of Object.entries(m.on ?? {})) {
+      actions.forEach((action, actionIdx) => {
+        if (!action.secretSetting) return;
+        const setting = settingsByKey.get(action.secretSetting);
+        if (!setting || !setting.secret) {
+          ctx.addIssue({
+            code: "custom",
+            message: `secretSetting "${action.secretSetting}" must reference a secret setting`,
+            path: ["on", hookName, actionIdx, "secretSetting"],
+          });
+        }
+      });
+    }
+
+    if (m.loginProvider) {
+      const clientId = settingsByKey.get("clientId");
+      const clientSecret = settingsByKey.get("clientSecret");
+      if (!clientId || clientId.type !== "text") {
+        ctx.addIssue({
+          code: "custom",
+          message: "loginProvider requires a text setting named clientId",
+          path: ["loginProvider"],
+        });
+      }
+      if (!clientSecret || clientSecret.type !== "text" || !clientSecret.secret) {
+        ctx.addIssue({
+          code: "custom",
+          message: "loginProvider requires a secret text setting named clientSecret",
+          path: ["loginProvider"],
+        });
+      }
+      if (
+        m.loginProvider.scopes !== undefined &&
+        !m.loginProvider.scopes.includes("openid")
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: "loginProvider scopes must include openid",
+          path: ["loginProvider", "scopes"],
+        });
+      }
+    }
+
     // installPrompts 是「settings 的 UX 前門」——每個 prompt.key 都必須對應到一個
     // 已宣告的 settings[].key,且 secret 旗標須與該 setting 一致(install 端才知道
     // 該不該走加密管線,見 install route + setExtensionSettingsRaw)。settings 仍是
     // 唯一真相來源,prompts 只是安裝時預填其值的表單。
     if (m.installPrompts && m.installPrompts.length > 0) {
-      const settingsByKey = new Map((m.settings ?? []).map((s) => [s.key, s]));
       m.installPrompts.forEach((prompt, idx) => {
         const setting = settingsByKey.get(prompt.key);
         if (!setting) {
@@ -654,13 +890,19 @@ export const manifestSchema = z
             path: ["installPrompts", idx, "secret"],
           });
         }
+        if (prompt.type !== setting.type) {
+          ctx.addIssue({
+            code: "custom",
+            message: `installPrompts[${idx}].type must match settings[].type for key "${prompt.key}"`,
+            path: ["installPrompts", idx, "type"],
+          });
+        }
       });
     }
 
     // roadmap #16:每張 dashboardCard 都必須引用一個已宣告的 contentTypes[].name
     // (與 installPrompts 同模式的交叉檢查;錯誤點名該 contentType,方便作者定位)。
     if (m.dashboardCards && m.dashboardCards.length > 0) {
-      const typeNames = new Set((m.contentTypes ?? []).map((c) => c.name));
       m.dashboardCards.forEach((card, idx) => {
         if (!typeNames.has(card.contentType)) {
           ctx.addIssue({

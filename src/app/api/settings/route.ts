@@ -2,10 +2,13 @@ import { z } from "zod";
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import {
+  allowedSettingFields,
   allowedSettingKeys,
+  isValidRegistrySources,
   setSettings,
   splitRegistrySourceTokens,
 } from "@/lib/settings";
+import { validateSettingEntries } from "@/lib/setting-validation";
 
 const bodySchema = z.object({
   entries: z.record(z.string(), z.unknown()),
@@ -46,12 +49,34 @@ export async function PUT(req: Request): Promise<Response> {
 
   // core.registrySources 特別處理:token 拆到 core.registryTokens(secret 管線
   // AES-GCM 加密),registrySources 本體不落地明文 token。
+  if (
+    "core.registrySources" in parsed.entries &&
+    !isValidRegistrySources(parsed.entries["core.registrySources"])
+  ) {
+    return Response.json(
+      {
+        error: "invalid_values",
+        fields: [{ key: "core.registrySources", code: "invalid_format" }],
+      },
+      { status: 400 },
+    );
+  }
+
   let entries = parsed.entries;
   if ("core.registrySources" in entries) {
     entries = {
       ...entries,
       ...(await splitRegistrySourceTokens(entries["core.registrySources"])),
     };
+  }
+
+  const fields = await allowedSettingFields();
+  const fieldErrors = validateSettingEntries(fields, entries);
+  if (fieldErrors.length > 0) {
+    return Response.json(
+      { error: "invalid_values", fields: fieldErrors },
+      { status: 400 },
+    );
   }
 
   await setSettings(entries);

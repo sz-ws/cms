@@ -10,28 +10,41 @@ import {
 } from "@/lib/registry-client";
 import { parseManifest } from "@/ext/dx/manifest";
 import { validateStylesheet } from "@/ext/dx/stylesheet-guard";
+import {
+  isStaleInstallConflict,
+  migrationHistoryChanged,
+} from "@/ext/dx/install-contract";
 import { missingCapabilities } from "@/ext/features";
 import {
   availableServices,
   unmetRequiredServices,
 } from "@/ext/service-requirements";
 import { validatePromptValues } from "@/ext/dx/install-prompts";
-import { runDeclarativeMigrations } from "@/ext/dx/declarative-migrate";
+import {
+  buildDeclarativeMigrationBatch,
+  buildInstallRevisionClaim,
+} from "@/ext/dx/declarative-migrate";
 import { satisfies } from "@/ext/semver";
 import { CORE_API_VERSION } from "@/ext/version";
+import {
+  incompatibleSettingContract,
+  validateSettingValue,
+} from "@/lib/setting-validation";
 import { db } from "@/lib/db";
 import {
   declarativeExtensions as dxTable,
+  extMigrations,
   extensions as extTable,
   settings,
 } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { desc, eq, like } from "drizzle-orm";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "@/ext/loader";
 import { revalidateExt } from "@/ext/dx/cache-invalidate";
 import {
-  setExtensionSettingsRaw,
+  prepareExtensionSettingValues,
   invalidateSettingsCache,
 } from "@/lib/settings";
+import type { BatchItem } from "drizzle-orm/batch";
 
 // core-v2 §3.4:POST /api/registry/install。admin + Origin 檢查。
 // body { id, source, promptValues? }。install 與 update 共用(upsert semantics)。
@@ -141,6 +154,63 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  const existingRows = await db()
+    .select({
+      manifest: dxTable.manifest,
+      version: dxTable.version,
+      updatedAt: dxTable.updatedAt,
+    })
+    .from(dxTable)
+    .where(eq(dxTable.id, id))
+    .limit(1);
+  let previousManifest: typeof manifest | undefined;
+  if (existingRows[0]) {
+    let previousJson: unknown;
+    try {
+      previousJson = JSON.parse(existingRows[0].manifest);
+    } catch {
+      return Response.json(
+        { error: "installed_manifest_invalid" },
+        { status: 409 },
+      );
+    }
+    const previousResult = parseManifest(previousJson);
+    if (!previousResult.ok || !previousResult.manifest) {
+      return Response.json(
+        { error: "installed_manifest_invalid" },
+        { status: 409 },
+      );
+    }
+    previousManifest = previousResult.manifest;
+    const incompatible = incompatibleSettingContract(
+      previousManifest.settings ?? [],
+      manifest.settings ?? [],
+    );
+    if (incompatible.length > 0) {
+      return Response.json(
+        {
+          error: "incompatible_setting_contract",
+          fields: incompatible,
+          fromVersion: existingRows[0].version,
+          toVersion: manifest.version,
+        },
+        { status: 409 },
+      );
+    }
+    const previousMigrations = previousManifest.migrations ?? [];
+    const nextMigrations = manifest.migrations ?? [];
+    if (migrationHistoryChanged(previousMigrations, nextMigrations)) {
+      return Response.json(
+        {
+          error: "migration_history_changed",
+          fromVersion: existingRows[0].version,
+          toVersion: manifest.version,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   if (!satisfies(CORE_API_VERSION, manifest.coreApi)) {
     return Response.json(
       {
@@ -194,6 +264,22 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const promptedValues = promptValidation.values;
+  const settingsByKey = new Map(
+    (manifest.settings ?? []).map((field) => [field.key, field]),
+  );
+  const invalidPromptFields: string[] = [];
+  for (const [key, value] of Object.entries(promptedValues)) {
+    const field = settingsByKey.get(key);
+    if (field && validateSettingValue(field, value)) {
+      invalidPromptFields.push(key);
+    }
+  }
+  if (invalidPromptFields.length > 0) {
+    return Response.json(
+      { error: "invalid_prompt_values", fields: invalidPromptFields },
+      { status: 400 },
+    );
+  }
 
   // 1.8.0 stylesheet(可選):manifest 宣告 stylesheet:"style.css" → 抓取並驗證。
   // fetch 或 validate 任一失敗 → 400 invalid_stylesheet,且在「任何 DB 寫入之前」
@@ -224,91 +310,149 @@ export async function POST(req: Request): Promise<Response> {
     validatedStylesheet = rawCss;
   }
 
-  // manifest.migrations(可選 DDL,zod 已把關 CREATE … IF NOT EXISTS 白名單):
-  // 在寫入 declarative_extensions 之前套用 —— 表建失敗就不該讓 extension 上線。
-  // helper 冪等(ext_migrations 記錄 + IF NOT EXISTS 雙保險),update 重跑 noop。
+  // Ensure the committed revision always advances, even for two operations in
+  // the same millisecond. The observed revision is claimed inside the batch.
+  const tombstones = existingRows[0]
+    ? []
+    : await db()
+        .select({ appliedAt: extMigrations.appliedAt })
+        .from(extMigrations)
+        .where(like(extMigrations.id, `${id}:install:%`))
+        .orderBy(desc(extMigrations.appliedAt))
+        .limit(1);
+  const previousRevision: number | "new" = existingRows[0]
+    ? existingRows[0].updatedAt
+    : (tombstones[0]?.appliedAt ?? "new");
+  const now =
+    typeof previousRevision === "number"
+      ? Math.max(Date.now(), previousRevision + 1)
+      : Date.now();
+  const promptedKeys = new Set(Object.keys(promptedValues));
+  const secretKeys = new Set(
+    (manifest.settings ?? [])
+      .filter((field) => field.secret)
+      .map((field) => `ext.${id}.${field.key}`),
+  );
+  const promptedEntries: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(promptedValues)) {
+    promptedEntries[`ext.${id}.${key}`] = value;
+  }
+
+  const defaultEntries: Record<string, unknown> = {};
+  for (const field of manifest.settings ?? []) {
+    if (!promptedKeys.has(field.key)) {
+      defaultEntries[`ext.${id}.${field.key}`] = field.default;
+    }
+  }
+
+  let preparedPrompted: Record<string, string>;
+  let preparedDefaults: Record<string, string>;
+  let migrationItems: BatchItem<"sqlite">[];
   try {
-    await runDeclarativeMigrations(id, manifest.migrations ?? []);
+    preparedPrompted = await prepareExtensionSettingValues(
+      promptedEntries,
+      secretKeys,
+    );
+    preparedDefaults = await prepareExtensionSettingValues(
+      defaultEntries,
+      secretKeys,
+    );
+    migrationItems = await buildDeclarativeMigrationBatch(
+      id,
+      manifest.migrations ?? [],
+      now,
+    );
   } catch (e) {
     return Response.json(
       {
-        error: "migration_failed",
+        error: "install_prepare_failed",
         message: e instanceof Error ? e.message : "unknown error",
       },
       { status: 500 },
     );
   }
 
-  const now = Date.now();
-
-  // upsert declarative_extensions:enabled=1, source, version, timestamps。
-  // 硬規則(同 manager.ts enableExtension):ON CONFLICT SET 不得包含 installed_at。
-  await db()
-    .insert(dxTable)
-    .values({
-      id,
-      manifest: JSON.stringify(manifest),
-      version: manifest.version,
-      enabled: 1,
-      source,
-      // 已驗證的 CSS(或 null 清除先前 sheet);見上方 stylesheet fetch/validate。
-      stylesheet: validatedStylesheet,
-      installedAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: dxTable.id,
-      set: {
+  // D1 batch has transaction semantics. Migrations + markers, manifest enable,
+  // defaults and prompted settings now commit or roll back as one unit.
+  const batch: BatchItem<"sqlite">[] = [
+    buildInstallRevisionClaim(id, previousRevision, now),
+    ...migrationItems,
+  ];
+  batch.push(
+    db()
+      .insert(dxTable)
+      .values({
+        id,
         manifest: JSON.stringify(manifest),
         version: manifest.version,
         enabled: 1,
         source,
         stylesheet: validatedStylesheet,
+        installedAt: now,
         updatedAt: now,
-      },
-    });
-
-  // 寫入預設 settings(同 manager.ts enableExtension 步驟 3):
-  // 對 manifest.settings 每項,若 settings 表無 ext.<id>.<key> → insert default。
-  // 若使用者透過 installPrompts 提供了該 key 的值,default insert 跳過(改由下方
-  // setExtensionSettingsRaw 用 upsert 寫入使用者提供的值,覆蓋既有值)。
-  const promptedKeys = new Set(Object.keys(promptedValues));
-  for (const field of manifest.settings ?? []) {
-    if (promptedKeys.has(field.key)) continue;
-    const key = `ext.${id}.${field.key}`;
-    await db()
-      .insert(settings)
-      .values({ key, value: JSON.stringify(field.default), updatedAt: now })
-      .onConflictDoNothing({ target: settings.key });
-  }
-
-  // installPrompts 提供的值:寫入 ext.<id>.<key>(upsert,覆蓋既有值)。這裡尚未
-  // fire ext:enabled,extension 還不在 enabled runtime 內,setSettings 的自動加密
-  // 判定會漏判 secret key —— 改用 setExtensionSettingsRaw,secretKeys 直接從
-  // manifest.settings[].secret 算(此 request 手上已有完整 manifest,不必等 runtime)。
-  if (promptedKeys.size > 0) {
-    const secretKeys = new Set(
-      (manifest.settings ?? [])
-        .filter((f) => f.secret)
-        .map((f) => `ext.${id}.${f.key}`),
+      })
+      .onConflictDoUpdate({
+        target: dxTable.id,
+        set: {
+          manifest: JSON.stringify(manifest),
+          version: manifest.version,
+          enabled: 1,
+          source,
+          stylesheet: validatedStylesheet,
+          updatedAt: now,
+        },
+      }),
+  );
+  for (const [key, value] of Object.entries(preparedDefaults)) {
+    batch.push(
+      db()
+        .insert(settings)
+        .values({
+          key,
+          value,
+          updatedAt: now,
+        })
+        .onConflictDoNothing({ target: settings.key }),
     );
-    const entries: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(promptedValues)) {
-      entries[`ext.${id}.${key}`] = value;
-    }
-    await setExtensionSettingsRaw(entries, secretKeys);
+  }
+  for (const [key, value] of Object.entries(preparedPrompted)) {
+    batch.push(
+      db()
+        .insert(settings)
+        .values({ key, value, updatedAt: now })
+        .onConflictDoUpdate({
+          target: settings.key,
+          set: { value, updatedAt: now },
+        }),
+    );
   }
 
-  // memo 主動失效(belt-and-braces;跨 isolate 靠 stamp)。
-  invalidateExtRuntimeMemo();
-  // 上面寫了預設 / prompted settings,失效 isolate settings 快取(同 isolate 立即生效)。
-  invalidateSettingsCache();
-  // 該 extension 的 public content cache 整批失效(install/update 後結構/資料可能全變)。
-  revalidateExt(id);
+  try {
+    await db().batch(
+      batch as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]],
+    );
+  } catch (e) {
+    const staleClaim = isStaleInstallConflict(e);
+    return Response.json(
+      {
+        error: staleClaim ? "stale_install_conflict" : "install_commit_failed",
+        message: e instanceof Error ? e.message : "unknown error",
+      },
+      { status: staleClaim ? 409 : 500 },
+    );
+  }
 
-  // fire ext:enabled(既有 install/update 皆視為「啟用」;下一個 request 的 runtime 才看得到)。
-  const rt = await getExtRuntime();
-  await rt.hooks.doAction("ext:enabled", id);
+  // Commit 已成功;後續 cache/hook 是 best-effort，失敗不得把已完成的 install
+  // 回報成 500(否則 client retry 會面臨 ambiguous committed state)。
+  try {
+    invalidateExtRuntimeMemo();
+    invalidateSettingsCache();
+    revalidateExt(id);
+    const rt = await getExtRuntime();
+    await rt.hooks.doAction("ext:enabled", id);
+  } catch (e) {
+    console.error(`[registry-install] post-commit refresh failed ext="${id}"`, e);
+  }
 
   return Response.json({ ok: true, id, version: manifest.version });
 }

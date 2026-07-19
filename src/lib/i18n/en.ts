@@ -279,6 +279,7 @@ export const en = {
   "settingsWorkspace.declarative": "Declarative",
   "settingsWorkspace.declarativeDesc": "Reserved for manifest-declared settings tooling. Today, declarative extensions still expose their ordinary settings through the Extensions tab; this tab is where manifest-described capabilities can grow into richer configuration modules later.",
   "settingsWorkspace.invalidKey": "Invalid settings key.",
+  "settingsWorkspace.invalidValues": "One or more setting values are invalid.",
   "settingsWorkspace.notAllowed": "Not allowed.",
   "settingsWorkspace.saveFailedError": "Save failed.",
   "settingsWorkspace.networkError": "Network error.",

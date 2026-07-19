@@ -1,13 +1,15 @@
 import { sql, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { extMigrations } from "@/lib/schema";
+import type { BatchItem } from "drizzle-orm/batch";
 
 // declarative extension migrations —— 與 src/ext/manager.ts runMigrations
 // (code extension)對稱,差別:
 //
 //   - 輸入是 `string[]`,無外部 id,用 array index(0-based,4 位 zero-pad)。
-//   - 不用 db.batch 包裹 SQL(每條都是 IF NOT EXISTS CREATE,D1 對冪等 CREATE 已
-//     保證單語句原子);改用 prepare+run() 逐條,簡潔、可讀。
+//   - loader 兜底的 `runDeclarativeMigrations` 仍逐條跑;install route 使用
+//     `buildDeclarativeMigrationBatch` 把 DDL/markers 與 manifest/settings 放進同一
+//     D1 transaction batch,避免安裝半完成。
 //   - 即使兩 request 同時跑 CREATE table(無 batch 包裹),第二個會拿到
 //     SQLITE_ERROR "table already exists" —— 視為已套用吞掉,ext_migrations INSERT
 //     不寫。後續 request 自然無重試。
@@ -85,4 +87,49 @@ export async function runDeclarativeMigrations(
       appliedAt: now,
     });
   }
+}
+
+/** Build unapplied migration statements + markers for a caller-owned batch. */
+export async function buildDeclarativeMigrationBatch(
+  extId: string,
+  sqls: readonly string[],
+  now: number,
+): Promise<BatchItem<"sqlite">[]> {
+  if (sqls.length === 0) return [];
+  const applied = await db()
+    .select({ id: extMigrations.id })
+    .from(extMigrations)
+    .where(eq(extMigrations.extId, extId));
+  const appliedIds = new Set(applied.map((row) => row.id));
+  const items: BatchItem<"sqlite">[] = [];
+  for (let i = 0; i < sqls.length; i++) {
+    const key = migrationKey(extId, i);
+    if (appliedIds.has(key)) continue;
+    items.push(db().run(sql.raw(sqls[i])));
+    items.push(
+      db().insert(extMigrations).values({
+        id: key,
+        extId,
+        appliedAt: now,
+      }),
+    );
+  }
+  return items;
+}
+
+/**
+ * Optimistic install/update claim. Every request that observed the same
+ * extension revision generates the same primary key, so only one caller can
+ * commit; stale batches fail and roll back all DDL/DML in their transaction.
+ */
+export function buildInstallRevisionClaim(
+  extId: string,
+  revision: number | "new",
+  now: number,
+): BatchItem<"sqlite"> {
+  return db().insert(extMigrations).values({
+    id: `${extId}:install:${revision}`,
+    extId,
+    appliedAt: now,
+  });
 }

@@ -16,6 +16,8 @@ import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
+import { coerceSettingInput } from "@/lib/setting-validation";
+import { settingControlId } from "@/lib/settings-ui";
 
 export interface SettingsSection {
   id: string;
@@ -212,13 +214,19 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
       <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
         {section.fields.map((field) => {
           const fullKey = `${section.keyPrefix}${field.key}`;
+          const controlId = settingControlId(fullKey);
           return (
             <div
               key={fullKey}
               className={`flex min-w-0 flex-col gap-1.5 ${fieldWrapperClass(field)}`}
             >
-              <label className={labelClass()}>
+              <label htmlFor={controlId} className={labelClass()}>
                 {resolveLocalizedString(field.label, locale)}
+                {field.required && (
+                  <span className="ml-1 text-red-600" aria-hidden="true">
+                    *
+                  </span>
+                )}
               </label>
               {field.description && (
                 <p className={descriptionClass()}>
@@ -227,14 +235,18 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
               )}
               {field.type === "textarea" ? (
                 <Textarea
+                  id={controlId}
                   className="min-h-[120px] rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
                   value={String(state[fullKey] ?? "")}
+                  aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}
                 />
               ) : field.type === "boolean" ? (
                 <div className="inline-flex h-10 items-center rounded-[10px] bg-black/[0.03] px-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
                   <Checkbox
+                    id={controlId}
                     checked={Boolean(state[fullKey])}
+                    aria-required={field.required || undefined}
                     onChange={(e) => update(fullKey, e.target.checked)}
                   />
                 </div>
@@ -243,7 +255,11 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   value={String(state[fullKey] ?? "")}
                   onValueChange={(next) => update(fullKey, String(next))}
                 >
-                  <SelectTrigger className="w-full rounded-[10px] border-black/10 bg-white text-[14px] text-black/85">
+                  <SelectTrigger
+                    id={controlId}
+                    aria-required={field.required || undefined}
+                    className="w-full rounded-[10px] border-black/10 bg-white text-[14px] text-black/85"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
@@ -256,9 +272,11 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                 </Select>
               ) : (
                 <Input
+                  id={controlId}
                   className="rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
                   type={field.type === "number" ? "number" : "text"}
                   value={String(state[fullKey] ?? "")}
+                  aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}
                   placeholder={field.secret ? "已設定,輸入以覆寫" : undefined}
                 />
@@ -424,7 +442,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
         const val = state[fullKey];
         if (field.secret && (val === "" || val === "•••")) continue;
         if (field.type === "number") {
-          entries[fullKey] = Number(val);
+          entries[fullKey] = coerceSettingInput(field, val);
         } else if (field.type === "textarea" && typeof val === "string") {
           entries[fullKey] = parseTextareaValue(val);
         } else {
@@ -446,7 +464,14 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
         router.refresh();
         window.setTimeout(() => setSaved(false), 1200);
       } else if (res.status === 400) {
-        setError(t("settingsWorkspace.invalidKey"));
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          body?.error === "invalid_values"
+            ? t("settingsWorkspace.invalidValues")
+            : t("settingsWorkspace.invalidKey"),
+        );
       } else if (res.status === 403) {
         setError(t("settingsWorkspace.notAllowed"));
       } else {

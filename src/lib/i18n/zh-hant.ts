@@ -276,6 +276,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settingsWorkspace.declarative": "宣告式",
   "settingsWorkspace.declarativeDesc": "預留給擴充功能資訊清單所宣告的設定工具。目前宣告式擴充功能仍透過擴充功能標籤顯示其一般設定；此標籤則供未來更具體的設定模組發展之用。",
   "settingsWorkspace.invalidKey": "無效的設定鍵。",
+  "settingsWorkspace.invalidValues": "一或多個設定值無效。",
   "settingsWorkspace.notAllowed": "不允許此操作。",
   "settingsWorkspace.saveFailedError": "儲存失敗。",
   "settingsWorkspace.networkError": "網路連線錯誤。",

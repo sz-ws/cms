@@ -49,7 +49,7 @@ export function validatePromptValues(
     const isEmptyString =
       (prompt.type === "text" || prompt.type === "textarea") &&
       typeof raw === "string" &&
-      raw.length === 0;
+      raw.trim().length === 0;
     if (prompt.required && (!hasValue || isEmptyString)) {
       missing.push(prompt.key);
       continue;

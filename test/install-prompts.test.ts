@@ -11,9 +11,24 @@ vi.mock("@/lib/cf", () => ({
   getStorage: () => (env as { STORAGE?: unknown }).STORAGE,
 }));
 
+vi.mock("@/ext/loader", () => ({
+  getExtRuntime: async () => ({
+    enabled: [],
+    hooks: { doAction: async () => undefined },
+  }),
+}));
+
 import { validatePromptValues } from "../src/ext/dx/install-prompts";
 import type { InstallPrompt } from "../src/ext/dx/install-prompts";
-import { setExtensionSettingsRaw } from "../src/lib/settings";
+import {
+  prepareExtensionSettingValues,
+  setSettings,
+  setExtensionSettingsRaw,
+} from "../src/lib/settings";
+import { isValidRegistrySources } from "../src/lib/settings";
+
+type TestEnv = { DB: D1Database };
+const d1 = () => (env as TestEnv).DB;
 
 describe("validatePromptValues (pure)", () => {
   const prompts: InstallPrompt[] = [
@@ -43,6 +58,15 @@ describe("validatePromptValues (pure)", () => {
 
   it("treats an empty string for a required text prompt as missing", () => {
     const r = validatePromptValues(prompts, { apiKey: "" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBe("missing_prompt_values");
+      expect(r.fields).toEqual(["apiKey"]);
+    }
+  });
+
+  it("treats whitespace-only required text as missing", () => {
+    const r = validatePromptValues(prompts, { apiKey: "   \n" });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBe("missing_prompt_values");
@@ -108,10 +132,27 @@ describe("validatePromptValues (pure)", () => {
   });
 });
 
-describe("setExtensionSettingsRaw (miniflare D1)", () => {
-  type TestEnv = { DB: D1Database };
-  const d1 = () => (env as TestEnv).DB;
+describe("registry source validation", () => {
+  it("accepts HTTPS strings and source objects", () => {
+    expect(
+      isValidRegistrySources([
+        "https://registry.example.com",
+        { url: "https://private.example.com", token: "secret" },
+      ]),
+    ).toBe(true);
+  });
 
+  it("rejects malformed, non-array and insecure values", () => {
+    expect(isValidRegistrySources("invalid")).toBe(false);
+    expect(isValidRegistrySources(["https://"])).toBe(false);
+    expect(isValidRegistrySources(["http://insecure.example.com"])).toBe(false);
+    expect(isValidRegistrySources([{ url: "https://ok.example.com", token: 1 }])).toBe(
+      false,
+    );
+  });
+});
+
+describe("setExtensionSettingsRaw (miniflare D1)", () => {
   beforeAll(async () => {
     await d1().exec(
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
@@ -155,5 +196,41 @@ describe("setExtensionSettingsRaw (miniflare D1)", () => {
       .bind("ext.demo.siteLabel")
       .first<{ value: string }>();
     expect(row?.value).toBe(JSON.stringify("Second"));
+  });
+});
+
+describe("prepareExtensionSettingValues", () => {
+  it("encrypts non-empty secret defaults before an install batch", async () => {
+    const prepared = await prepareExtensionSettingValues(
+      { "ext.demo.apiKey": "bootstrap-secret" },
+      new Set(["ext.demo.apiKey"]),
+    );
+    const stored = JSON.parse(prepared["ext.demo.apiKey"]) as string;
+    expect(stored).not.toBe("bootstrap-secret");
+    expect(() => atob(stored)).not.toThrow();
+  });
+});
+
+describe("setSettings atomic preparation", () => {
+  it("does not partially persist earlier entries when a later value cannot serialize", async () => {
+    await d1()
+      .prepare(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+      )
+      .bind("core.atomicProbe", JSON.stringify("old"), Date.now())
+      .run();
+
+    await expect(
+      setSettings({
+        "core.atomicProbe": "new",
+        "core.unserializable": BigInt(1),
+      }),
+    ).rejects.toThrow(/not JSON serializable/);
+
+    const row = await d1()
+      .prepare("SELECT value FROM settings WHERE key = ?1")
+      .bind("core.atomicProbe")
+      .first<{ value: string }>();
+    expect(row?.value).toBe(JSON.stringify("old"));
   });
 });

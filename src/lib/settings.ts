@@ -5,6 +5,7 @@ import { getEnv, getDB } from "./cf";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 
 import type { LocalizedString } from "./i18n/localized";
+import type { BatchItem } from "drizzle-orm/batch";
 
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
@@ -15,6 +16,8 @@ export interface SettingFieldBase {
   label: LocalizedString;
   description?: LocalizedString;
   default: unknown;
+  /** Empty/blank values are rejected by the shared server-side validator. */
+  required?: boolean;
   secret?: boolean;
   /**
    * 顯示分組(settings 頁一組一張卡)。目前僅 CORE_SETTINGS 使用
@@ -406,27 +409,34 @@ export async function setSettings(
   const now = Date.now();
   const keys = Object.keys(entries);
   const secretKeys = await secretKeySetAsync();
-  for (const key of keys) {
-    let value = entries[key];
-    if (secretKeys.has(key) && typeof value === "string") {
-      value = await encryptSecret(value);
-    }
-    const json = JSON.stringify(value);
-    await db()
+  const prepared = await prepareExtensionSettingValues(entries, secretKeys);
+  const batch = keys.map((key) =>
+    db()
       .insert(settings)
-      .values({ key, value: json, updatedAt: now })
+      .values({ key, value: prepared[key], updatedAt: now })
       .onConflictDoUpdate({
         target: settings.key,
-        set: { value: json, updatedAt: now },
-      });
+        set: { value: prepared[key], updatedAt: now },
+      }),
+  );
+  if (batch.length > 0) {
+    const [first, ...rest] = batch;
+    await db().batch([first, ...rest] as [
+      BatchItem<"sqlite">,
+      ...BatchItem<"sqlite">[],
+    ]);
   }
   // 同 graph 立即失效(admin 存檔後下一個 request 讀到新值);跨 graph/isolate 靠
   // 每 request 的 stamp 重算(見 readAll 註解)。
   invalidateSettingsCache();
   // hook 分派:settings:saved(03 §1)。enabled extension 的 handler 收得到。
-  const { getExtRuntime } = await import("@/ext/loader");
-  const rt = await getExtRuntime();
-  await rt.hooks.doAction("settings:saved", keys);
+  try {
+    const { getExtRuntime } = await import("@/ext/loader");
+    const rt = await getExtRuntime();
+    await rt.hooks.doAction("settings:saved", keys);
+  } catch (e) {
+    console.error("[settings] post-commit hook dispatch failed", e);
+  }
 }
 
 /**
@@ -442,12 +452,8 @@ export async function setExtensionSettingsRaw(
   secretKeys: Set<string>,
 ): Promise<void> {
   const now = Date.now();
-  for (const [key, rawValue] of Object.entries(entries)) {
-    let value = rawValue;
-    if (secretKeys.has(key) && typeof value === "string") {
-      value = await encryptSecret(value);
-    }
-    const json = JSON.stringify(value);
+  const prepared = await prepareExtensionSettingValues(entries, secretKeys);
+  for (const [key, json] of Object.entries(prepared)) {
     await db()
       .insert(settings)
       .values({ key, value: json, updatedAt: now })
@@ -458,6 +464,34 @@ export async function setExtensionSettingsRaw(
   }
   // 同 setSettings:直接寫表後失效 isolate 快取(install route 於此後仍會再失效一次,無害)。
   invalidateSettingsCache();
+}
+
+/**
+ * Prepare extension setting values before an atomic install batch. Encryption
+ * and serialization can fail, so callers run this before any DB mutation.
+ */
+export async function prepareExtensionSettingValues(
+  entries: Record<string, unknown>,
+  secretKeys: ReadonlySet<string>,
+): Promise<Record<string, string>> {
+  const prepared: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(entries)) {
+    let value = rawValue;
+    if (secretKeys.has(key) && typeof value === "string") {
+      value = await encryptSecret(value);
+    }
+    let json: string | undefined;
+    try {
+      json = JSON.stringify(value);
+    } catch {
+      throw new Error(`setting "${key}" is not JSON serializable`);
+    }
+    if (json === undefined) {
+      throw new Error(`setting "${key}" is not JSON serializable`);
+    }
+    prepared[key] = json;
+  }
+  return prepared;
 }
 
 // ---- Secret 判定與遮罩(讀寫兩端都經由 field 定義,D1 資料不帶旗標;05 §4)----
@@ -475,6 +509,23 @@ export async function allowedSettingKeys(): Promise<Set<string>> {
       (e.settings ?? []).map((f) => extSetting(e.id, f.key)),
     ),
   ]);
+}
+
+/**
+ * Setting definitions keyed exactly as they are persisted/submitted. This is
+ * the value-validation counterpart to `allowedSettingKeys()`; callers should
+ * use both the key allowlist and each field's declared contract.
+ */
+export async function allowedSettingFields(): Promise<Map<string, SettingField>> {
+  const { getExtRuntime } = await import("@/ext/loader");
+  const rt = await getExtRuntime();
+  const fields = new Map<string, SettingField>(CORE_SETTINGS.map((f) => [f.key, f]));
+  for (const ext of rt.enabled) {
+    for (const field of ext.settings ?? []) {
+      fields.set(extSetting(ext.id, field.key), field);
+    }
+  }
+  return fields;
 }
 
 /**
@@ -573,6 +624,36 @@ export async function splitRegistrySourceTokens(
     "core.registrySources": sources,
     "core.registryTokens": JSON.stringify(tokens),
   };
+}
+
+/** Shape guard for core.registrySources before token extraction mutates it. */
+export function isValidRegistrySources(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.every((item) => {
+    const validUrl = (raw: unknown): raw is string => {
+      if (typeof raw !== "string") return false;
+      try {
+        const url = new URL(raw);
+        return (
+          url.protocol === "https:" &&
+          url.hostname.length > 0 &&
+          url.username === "" &&
+          url.password === "" &&
+          url.hash === ""
+        );
+      } catch {
+        return false;
+      }
+    };
+    if (typeof item === "string") return validUrl(item);
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const source = item as Record<string, unknown>;
+    if (!validUrl(source.url)) return false;
+    return (
+      (source.token === undefined || typeof source.token === "string") &&
+      (source.hasToken === undefined || typeof source.hasToken === "boolean")
+    );
+  });
 }
 
 /**

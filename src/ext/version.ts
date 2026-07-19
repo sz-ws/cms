@@ -186,4 +186,32 @@
 //     core 會被 .strict() 的 string 分支拒(舊 core 的 label 是純 string),故使用
 //     物件形式者其 coreApi 必須宣告 "^1.17.0";純字串 manifest 不受影響、任何 core
 //     版本都過。純新增可選能力 → minor bump(§1)。
-export const CORE_API_VERSION = "1.17.0";
+// 1.18.0(docs/spec-extension-contract-validation.md:extension contract hardening):
+//   - code/declarative SettingField 新增 optional `required`;settings API 依實際 field
+//     definition 驗 submitted values(type/finite number/select option/required),錯誤回
+//     `{error:"invalid_values",fields:[{key,code}]}`。`textarea` 保留既有 JSON value
+//     相容性(registry sources/dashboard insights)。新 optional manifest surface → minor。
+//   - declarative manifest install-time fail-loud:settings default/type/options、duplicate
+//     content types/fields/settings/prompts/pages/routes、slugField/admin/public/schedule/
+//     customApiRoute contentType references、webhook secretSetting、prompt type/secret
+//     consistency。既有合法 manifest 行為不變;以前被 silent-skip 的壞 manifest 現在拒絕。
+//     同時驗 nested field keys / block names / block field keys;required 必須搭配
+//     coreApi >=1.18.0,且 interpret 保留 required 至 runtime SettingField。
+//   - code defineExtension 對稱驗 settings/defaults、migrations/admin/public surfaces,
+//     並拒絕重複 settings/migration IDs/admin slugs/API routes/provider registrations。
+//   - content/install prompt required strings 使用 trim-aware 判定,純空白視為 missing。
+//     settings admin 顯示 required marker/aria-required;number 空 input 保留 null,不轉成 0。
+//   - declarative install 改為 prepare + 單一 D1 batch:migration DDL/markers、manifest row、
+//     defaults、prompted encrypted settings 原子 commit/rollback;hooks/cache 僅 post-commit。
+//     更新時禁止既有 setting key 的 type/secret/required/select options contract 改變
+//     (作者須新增 key + migration);secret default 必須為空;stale migration marker
+//     conflict 令整批 rollback並回 409;已移除 setting rows 同 batch 刪除,避免 stale value
+//     在 key 重加時繞過 contract guard;migration array 必須 immutable append-only。
+//     declarative enable/disable 亦使用 revision claim;uninstall 原子清除資料與 positional
+//     migration markers、保留 revision claims 作 tombstone,reinstall 從最新 tombstone CAS。
+//     既有 setting keys 不可移除(避免 settings endpoint stale write)。
+//   - core setSettings 同步改為 prepare + atomic D1 batch,settings:saved hook post-commit
+//     best-effort,避免 registrySources/tokens 或一般多欄設定部分寫入。
+//   使用 `settings[].required` 的 extension 應宣告 coreApi "^1.18.0";只使用舊表面的
+//   extension 仍由 caret range 向前相容。
+export const CORE_API_VERSION = "1.18.0";

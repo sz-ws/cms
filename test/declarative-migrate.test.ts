@@ -11,9 +11,14 @@ vi.mock("@/lib/cf", () => ({
 }));
 
 import {
+  buildDeclarativeMigrationBatch,
+  buildInstallRevisionClaim,
   runDeclarativeMigrations,
   migrationKey,
 } from "../src/ext/dx/declarative-migrate";
+import { db } from "../src/lib/db";
+import { sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -91,5 +96,99 @@ describe("runDeclarativeMigrations (miniflare D1)", () => {
     await expect(
       runDeclarativeMigrations("broken", ["CREATE TABLE"]),
     ).rejects.toThrow();
+  });
+});
+
+describe("declarative migration atomic batch", () => {
+  it("rolls back DDL and migration markers when a later batch item fails", async () => {
+    const items = await buildDeclarativeMigrationBatch(
+      "atomic-fail",
+      ["CREATE TABLE IF NOT EXISTS ext_atomic_fail (id TEXT PRIMARY KEY)"],
+      Date.now(),
+    );
+    items.push(db().run(sql.raw("INSERT INTO table_that_does_not_exist VALUES (1)")));
+
+    await expect(
+      db().batch(items as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]),
+    ).rejects.toThrow();
+
+    const table = await d1()
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='ext_atomic_fail'",
+      )
+      .first<{ name: string }>();
+    expect(table).toBeNull();
+    const marker = await d1()
+      .prepare("SELECT id FROM ext_migrations WHERE ext_id = 'atomic-fail'")
+      .first<{ id: string }>();
+    expect(marker).toBeNull();
+  });
+
+  it("allows only one install batch to commit from an observed revision", async () => {
+    const revision = 100;
+    const first = [
+      buildInstallRevisionClaim("revision-race", revision, 101),
+      db().run(
+        sql.raw(
+          "CREATE TABLE IF NOT EXISTS ext_revision_winner (id TEXT PRIMARY KEY)",
+        ),
+      ),
+    ] as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]];
+    const stale = [
+      buildInstallRevisionClaim("revision-race", revision, 102),
+      db().run(
+        sql.raw(
+          "CREATE TABLE IF NOT EXISTS ext_revision_stale (id TEXT PRIMARY KEY)",
+        ),
+      ),
+    ] as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]];
+
+    await db().batch(first);
+    await expect(db().batch(stale)).rejects.toThrow(/UNIQUE constraint/);
+    const staleTable = await d1()
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='ext_revision_stale'",
+      )
+      .first<{ name: string }>();
+    expect(staleTable).toBeNull();
+
+    await expect(
+      db().batch([
+        buildInstallRevisionClaim("revision-race", 101, 103),
+      ]),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a stale prepared batch and rolls back its DDL", async () => {
+    const sqls = [
+      "CREATE TABLE IF NOT EXISTS ext_atomic_race (id TEXT PRIMARY KEY)",
+    ];
+    const first = await buildDeclarativeMigrationBatch(
+      "atomic-race",
+      sqls,
+      Date.now(),
+    );
+    const second = await buildDeclarativeMigrationBatch(
+      "atomic-race",
+      [
+        ...sqls,
+        "CREATE TABLE IF NOT EXISTS ext_atomic_stale_extra (id TEXT PRIMARY KEY)",
+      ],
+      Date.now(),
+    );
+    await db().batch(first as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+    await expect(
+      db().batch(second as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]),
+    ).rejects.toThrow(/UNIQUE constraint/);
+    const markers = await d1()
+      .prepare("SELECT COUNT(*) AS n FROM ext_migrations WHERE ext_id = 'atomic-race'")
+      .first<{ n: number }>();
+    expect(markers?.n).toBe(1);
+    const staleTable = await d1()
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='ext_atomic_stale_extra'",
+      )
+      .first<{ name: string }>();
+    expect(staleTable).toBeNull();
   });
 });
