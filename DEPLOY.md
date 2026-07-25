@@ -1,35 +1,41 @@
-# 部署清單(Phase 7,在你自己的終端機執行)
+# Deploying to your own Cloudflare account
 
-前提:專案在 `/Users/kuosuko/Documents/suko-mod/cms/`,Phase 0-6 已完成並在本地驗收通過。
+Run these from the repository root in your own terminal. Assumes you have a
+Cloudflare account and the project already runs locally (`pnpm dev` works).
 
 ```bash
-cd /Users/kuosuko/Documents/suko-mod/cms
-
-# 0. 本機第一次跑:裝依賴
+# 0. install dependencies
 pnpm install --frozen-lockfile
 
-# 1. 登入 Cloudflare
+# 1. log in to Cloudflare
 pnpm exec wrangler login
 
-# 2. 建資源
-pnpm exec wrangler d1 create cms-db          # 記下輸出的 database_id
+# 2. create the resources
+pnpm exec wrangler d1 create cms-db          # note the database_id it prints
 pnpm exec wrangler r2 bucket create cms-storage
 pnpm exec wrangler r2 bucket create cms-next-cache
 
-# 3. 把 database_id 填進 wrangler.jsonc(取代 00000000-... 佔位)
+# 3. put that database_id into wrangler.jsonc, replacing the 00000000-… placeholder
 
-# 4. 設 production 的加密金鑰(不要沿用 .dev.vars 裡的開發用值!)
-openssl rand -base64 32                 # 產生新金鑰
-pnpm exec wrangler secret put SECRETS_KEY     # 貼上剛才的值
+# 4. set the production encryption key
+#    Do NOT reuse the development value from .dev.vars.
+openssl rand -base64 32                       # generate a fresh key
+pnpm exec wrangler secret put SECRETS_KEY     # paste it in
 
-# 5. 跑 remote migration + 部署
+# 5. run remote migrations and deploy
 pnpm db:migrate:remote
 pnpm deploy
 ```
 
-部署後驗收(08 Phase 7):開 production URL → `/setup` 建 admin(production D1 是全新空庫,與本地資料無關)→ /admin/extensions 啟用 posts → 發一篇文 → `/posts` 公開頁可見。
+## After deploying
 
-備註:
-- 本專案使用 `pnpm@9.4.0`;`wrangler` 固定在 Node 20 可執行的 4.x 版本
-- 部署前可先跑 `pnpm exec wrangler deploy --dry-run` 做 Workers 設定與 bundle preflight
-- bundle 預算:部署時留意 `opennextjs-cloudflare build` 輸出的 worker 大小,壓縮後應 < 8MB
+Open the production URL and go to `/setup` to create the first admin account —
+production D1 starts empty and shares nothing with your local database. Then
+enable an extension under `/admin/extensions`, create an entry, and confirm the
+public route renders it.
+
+## Notes
+
+- The project pins `pnpm@9.4.0`; `wrangler` stays on a 4.x release that runs on Node 20.
+- `pnpm exec wrangler deploy --dry-run` gives you a Workers config and bundle preflight before the real deploy.
+- Watch the worker size reported by `opennextjs-cloudflare build` — it should stay under 8 MB compressed.
