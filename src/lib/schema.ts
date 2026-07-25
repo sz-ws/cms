@@ -158,6 +158,38 @@ export const contents = sqliteTable(
   ],
 );
 
+// 內容版本歷史(migrations/0010_content_revisions.sql,手寫,照 0006–0009 precedent)。
+// 每次有意義的寫入在此留一列**完整快照**(非 diff):slug/status/publishAt/data 合起來
+// 就是那一刻可還原的全部 row 狀態(id/type/createdAt 不可變,故不入快照)。取捨理由、
+// 保留策略與 actor 語意寫在該 migration 檔頭;runtime 契約見 src/lib/revisions.ts。
+//
+// 與 extJobs(0007)不同,這裡的索引**同時**宣告於此與 migration 原生 SQL(同名同欄),
+// 不讓 schema.ts 再度變成資料庫的不完整描述。
+export const contentRevisions = sqliteTable(
+  "content_revisions",
+  {
+    id: text("id").primaryKey(), // nanoid()
+    contentId: text("content_id")
+      .notNull()
+      .references(() => contents.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // "<extId>.<typeName>"
+    slug: text("slug"),
+    status: text("status").notNull(), // 'draft' | 'published'
+    publishAt: integer("publish_at"),
+    data: text("data").notNull(), // JSON 快照
+    // 寫入當下的 session user;匿名 public create / 無 request session → NULL。
+    // 使用者被刪 → SET NULL(歷史留著,歸屬掉;UI 查無使用者就整欄不渲染)。
+    actorId: text("actor_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reason: text("reason", {
+      enum: ["create", "update", "restore"],
+    }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("content_revisions_content").on(t.contentId, t.createdAt)],
+);
+
 // core-v2 §3.2:declarative extension —— 儲存於 D1 的驗證後 manifest,request 時由 core 解讀。
 export const declarativeExtensions = sqliteTable("declarative_extensions", {
   id: text("id").primaryKey(), // 與 code extension 相同 id 規則

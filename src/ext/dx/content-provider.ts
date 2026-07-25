@@ -15,6 +15,11 @@ import { isTiptapDoc, isValidRichtextDoc, stringToDoc } from "./fields/richtext-
 import { isMediaKey } from "./media-key";
 import { revalidateContent } from "./cache-invalidate";
 import { indexContentEntry, removeContentIndex } from "@/lib/search";
+import {
+  captureRevision,
+  deleteRevisionsFor,
+  revisionKeep,
+} from "@/lib/revisions";
 
 // core-v2 §2.4:default ContentProvider("core")over the `contents` table。
 //
@@ -546,6 +551,18 @@ export class CoreContentProvider implements ContentProvider {
     const entry = rowToEntry(row);
     // FTS 全文索引(best-effort,見 index()):draft/published 皆索引。
     await this.index(entry);
+    // 版本歷史:create 一定留一筆「初始狀態」,而且永不被後續 update 合併覆寫
+    // (見 src/lib/revisions.ts 的合併規則),所以「回到最初」永遠做得到。
+    // 與 index() 同為 best-effort,內部已吞掉例外,絕不連累這次寫入。
+    await captureRevision({
+      contentId: id,
+      type,
+      slug,
+      status,
+      publishAt: row.publishAt,
+      data: entry.data,
+      reason: "create",
+    });
     await this.hooks.doAction("content:created", {
       type,
       id,
@@ -624,6 +641,15 @@ export class CoreContentProvider implements ContentProvider {
     // 未帶 publishAt key → 不動 column(保留既有排程 / NULL)。
     if (publishAtRaw !== undefined) setValues.publishAt = publishAtRaw;
 
+    // 版本快照要記「這次寫入之後」的完整 row 狀態,但 publishAt 是 row 欄位、不在
+    // ContentEntry 上;本次未帶該 key 時得先把既有值讀出來才知道快照該存什麼。
+    // 只有在版本歷史啟用時才多這一次讀取(keep=0 → 完全不查)。
+    const keep = await revisionKeep();
+    let effectivePublishAt: number | null = publishAtRaw ?? null;
+    if (keep > 0 && publishAtRaw === undefined) {
+      effectivePublishAt = await getContentPublishAt(id);
+    }
+
     await this.conn()
       .update(contents)
       .set(setValues)
@@ -638,6 +664,17 @@ export class CoreContentProvider implements ContentProvider {
     };
     // FTS 全文索引 re-index(best-effort,見 index()):以新 data 覆寫該行。
     await this.index(entry);
+    // 版本歷史(best-effort):同一人、狀態沒變、在合併視窗內的連續儲存會就地覆寫
+    // 最新那筆,所以編輯者連按十次儲存只會留下一筆 —— 規則與理由見 src/lib/revisions.ts。
+    await captureRevision({
+      contentId: id,
+      type,
+      slug,
+      status,
+      publishAt: effectivePublishAt,
+      data: entry.data,
+      reason: "update",
+    });
     await this.hooks.doAction("content:updated", {
       type,
       id,
@@ -655,6 +692,11 @@ export class CoreContentProvider implements ContentProvider {
       .where(and(eq(contents.type, type), eq(contents.id, id)));
     // FTS 全文索引移除(best-effort,見 unindex())。
     await this.unindex(id);
+    // 版本歷史一併清除。migration 已宣告 ON DELETE CASCADE,但 D1 是否開啟 FK
+    // enforcement 不在本層的掌控內,故明確再刪一次(best-effort,內部吞例外)。
+    // 註:因此「還原已刪除的整筆內容」不在此功能範圍內 —— 那要另外處理 id/slug
+    // 與現存列的衝突,屬於獨立的一件事。
+    await deleteRevisionsFor(id);
     await this.hooks.doAction("content:deleted", {
       type,
       id,

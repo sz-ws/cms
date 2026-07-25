@@ -7,6 +7,8 @@ import { displayValue, pickTitleField } from "./views/field-utils";
 import { hitRateLimit } from "@/lib/rate-limit"; // public:true anonymous POST 防護用
 import { sanitizePublicCreateBody } from "./public-create";
 import { notifyOnPublicCreate } from "./notify"; // A:public create 成功後 best-effort 通知信
+import { getRevision, listRevisions } from "@/lib/revisions";
+import { restoreRevision, RevisionRestoreError } from "@/lib/revision-restore";
 
 const HONEYPOT_KEY = "_hp"; // public content create only;填了 → 靜默丟棄(201)
 const PUBLIC_CREATE_LIMIT = 20;
@@ -39,9 +41,17 @@ async function protectPublicCreate(
 //   GET    /api/ext/<id>/<type>/:id      get one
 //   PUT    /api/ext/<id>/<type>/:id      update
 //   DELETE /api/ext/<id>/<type>/:id      delete
+//   GET    /api/ext/<id>/<type>/:id/revisions              版本列表(不含快照本體)
+//   GET    /api/ext/<id>/<type>/:id/revisions/:revId       單筆版本(含 JSON 快照)
+//   POST   /api/ext/<id>/<type>/:id/revisions/:revId/restore  還原該版本
 // handler 一律經 dispatch 層 requireAuth + mutation origin 檢查(見 route.ts)。
 // NOTE:matcher 為「先註冊先贏」(route.ts matchApiRoute),故 `<type>/options` 必須
-// 排在 `<type>/:id` 之前,否則 "options" 會被當成 :id 吃掉。
+// 排在 `<type>/:id` 之前,否則 "options" 會被當成 :id 吃掉。revisions 三條的段數
+// (3/4/5)與既有路由(1/2)都不同,matcher 先比段數,故不需要考慮順序。
+//
+// 版本歷史對 declarative extension 宣告的 content type 自動生效:這些路由是由
+// buildCrudRoutes 為「每一個 contentType」產出的,與 core 內建型別無差別待遇 ——
+// type key 一律是 `<extId>.<typeName>`(def.type),歷史表存的也是同一個 key。
 
 const MAX_PER_PAGE = 100;
 // 08 §2:options 端點回傳的最大筆數(picker 只需前幾筆;避免無界回傳)。
@@ -263,6 +273,70 @@ export function buildCrudRoutes(
           const entry = await p.update(def.type, params.id, body);
           return Response.json({ entry });
         } catch (e) {
+          return errResponse(e);
+        }
+      },
+    },
+    {
+      // 版本列表(新→舊)。刻意不回傳每一筆的 data 快照 —— 列表只需要「誰、什麼時候、
+      // 做了哪種變更」;整份文件由下面的單筆端點按需取。
+      method: "GET",
+      path: `${typeName}/:id/revisions`,
+      handler: async (_req, params, ctx) => {
+        try {
+          const p = await provider(ctx, def);
+          // 先確認該 entry 存在且屬於本 type,才回傳它的歷史(避免以任意 id 探測)。
+          const existing = await p.get(def.type, params.id);
+          if (!existing)
+            return Response.json({ error: "not_found" }, { status: 404 });
+          const revisions = await listRevisions(params.id);
+          return Response.json({ revisions });
+        } catch (e) {
+          return errResponse(e);
+        }
+      },
+    },
+    {
+      // 單筆版本(含 JSON 快照),供還原前預覽。
+      method: "GET",
+      path: `${typeName}/:id/revisions/:revId`,
+      handler: async (_req, params, ctx) => {
+        try {
+          const p = await provider(ctx, def);
+          const existing = await p.get(def.type, params.id);
+          if (!existing)
+            return Response.json({ error: "not_found" }, { status: 404 });
+          const revision = await getRevision(params.id, params.revId);
+          if (!revision)
+            return Response.json({ error: "not_found" }, { status: 404 });
+          return Response.json({ revision });
+        } catch (e) {
+          return errResponse(e);
+        }
+      },
+    },
+    {
+      // 還原。權限與一般編輯相同(dispatch 的 requireAuth 預設 editor 以上)——
+      // 能編輯這筆內容的人本來就能手動改回去,還原只是把它變成一次點擊。
+      method: "POST",
+      path: `${typeName}/:id/revisions/:revId/restore`,
+      handler: async (_req, params, ctx) => {
+        try {
+          const p = await provider(ctx, def);
+          const existing = await p.get(def.type, params.id);
+          if (!existing)
+            return Response.json({ error: "not_found" }, { status: 404 });
+          const result = await restoreRevision(params.id, params.revId, {
+            actorId: ctx.user.id,
+          });
+          return Response.json({ restored: result });
+        } catch (e) {
+          if (e instanceof RevisionRestoreError) {
+            return Response.json(
+              { error: e.code },
+              { status: e.code === "not_found" ? 404 : 400 },
+            );
+          }
           return errResponse(e);
         }
       },
