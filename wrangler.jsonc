@@ -1,7 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "main": ".open-next/worker.js",
+  // main 指向 custom-worker.ts,而不是 OpenNext 直接產出的 .open-next/worker.js ——
+  // 那個產出物只有 `fetch`,沒有 `scheduled`。custom-worker.ts 原樣 re-export 它的
+  // fetch 與 Durable Object class,只多掛一個 scheduled handler(cron extension 的
+  // tick)。@opennextjs/cloudflare 的 CLI 不讀也不覆寫這個欄位,產出物一個 byte 都沒動。
+  "main": "custom-worker.ts",
   "name": "cms",
+  // 分鐘級準時排程。tick 實作見 extensions/cron/scheduled.ts:cron extension 未安裝
+  // 或未設 signing secret 時,handler 安靜 no-op(core 的 lazy sweep 仍是保底)。
+  // 要更省可調成 "*/5 * * * *";publish-due 的 WHERE 子句冪等,與 lazy sweep 併發無害。
+  "triggers": { "crons": ["* * * * *"] },
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },

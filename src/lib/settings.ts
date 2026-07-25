@@ -3,6 +3,7 @@ import { db } from "./db";
 import { settings } from "./schema";
 import { getEnv, getDB } from "./cf";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
+import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
 
 import type { LocalizedString } from "./i18n/localized";
 import type { BatchItem } from "drizzle-orm/batch";
@@ -250,63 +251,28 @@ export const extSetting = (extId: string, key: string): string =>
 
 const SECRET_MASK = "•••";
 
-// 以 ArrayBuffer 為 backing(避免 DOM/workerd lib 的 BufferSource 型別衝突)。
-function bytes(len: number): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(new ArrayBuffer(len));
-}
-function fromBinary(s: string): Uint8Array<ArrayBuffer> {
-  const out = bytes(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
-  return out;
-}
-function enc(s: string): Uint8Array<ArrayBuffer> {
-  const src = new TextEncoder().encode(s);
-  const out = bytes(src.length);
-  out.set(src);
-  return out;
-}
+// 信封本體(IV ‖ 密文 → base64)住在 ./secret-envelope —— 那是純函式模組,金鑰材料
+// 當參數收。這裡只負責「金鑰從哪來」:request 生命週期內經 getEnv() 讀 SECRETS_KEY。
+//
+// 為什麼要拆:custom-worker.ts 的 `scheduled` handler 也要解 ext.cron.secret,但它拿到的
+// 是 Cloudflare 直接傳入的 `env`,沒有 request context(getCloudflareContext() 會 throw),
+// 且不能把 Next module graph 拖進 worker 入口。兩邊共用同一份信封實作 → 格式不會漂移。
+// 本檔的對外函式簽章完全不變,呼叫端無感。
 
-function secretKeyMaterial(): Uint8Array<ArrayBuffer> {
+/** 取 Worker secret SECRETS_KEY(base64 32-byte AES-256 金鑰);缺 → fail-loud。 */
+function secretsKey(): string {
   const env = getEnv() as unknown as { SECRETS_KEY?: string };
   const raw = env.SECRETS_KEY;
   if (!raw) throw new Error("SECRETS_KEY not configured");
-  // base64 32-byte(AES-256)金鑰
-  return fromBinary(atob(raw));
+  return raw;
 }
 
-async function importAesKey(): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    secretKeyMaterial(),
-    { name: "AES-GCM" },
-    false,
-    ["encrypt", "decrypt"],
-  );
-}
-
-/**
- * 02 §1 硬規則:每次寫入都用 crypto.getRandomValues 產生全新 12-byte IV,
- * IV 前置於密文,整體 base64 存入。
- */
 async function encryptSecret(plaintext: string): Promise<string> {
-  const key = await importAesKey();
-  const iv = crypto.getRandomValues(bytes(12));
-  const ct = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc(plaintext)),
-  );
-  const combined = new Uint8Array(iv.length + ct.length);
-  combined.set(iv, 0);
-  combined.set(ct, iv.length);
-  return btoa(String.fromCharCode(...combined));
+  return encryptSecretWithKey(secretsKey(), plaintext);
 }
 
 async function decryptSecret(stored: string): Promise<string> {
-  const key = await importAesKey();
-  const combined = fromBinary(atob(stored));
-  const iv = combined.slice(0, 12);
-  const ct = combined.slice(12);
-  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
-  return new TextDecoder().decode(pt);
+  return decryptSecretWithKey(secretsKey(), stored);
 }
 
 // ---- 全表讀取(React per-request cache + stamp-based module memo)----

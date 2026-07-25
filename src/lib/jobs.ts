@@ -14,23 +14,28 @@ import { revalidateContent } from "@/ext/dx/cache-invalidate";
 //      這是「無 cron 環境」下的保底機制,靠 admin 有人在看時順手推進。
 //   2. Manual：POST /api/jobs/run（requireAuth("admin") + assertSameOrigin）
 //      直接跑 runDueJobs 並回傳每支任務結果,供手動催發 / debug。
-//   3. Cron：**目前未接線**（見下方 CRON 決策）。
+//   3. Cron：Cloudflare cron trigger → `scheduled` handler → 簽章回呼
+//      `POST /api/callback/cron:tick/cron` → cron extension 的 provider 驗簽後
+//      呼叫 runDueJobs（見下方 CRON 接線）。
 //
-// ── CRON 決策(已查證,勿臆測)────────────────────────────────────────────
-// 安裝的 @opennextjs/cloudflare 版本為 1.20.1。其產生的入口
-// `.open-next/worker.js`（wrangler.jsonc 的 `main`）只 `export default { fetch }`,
-// 不含 `scheduled` handler;該套件 dist 完全沒有 "scheduled" 字樣,也未提供任何
-// 註冊自訂 scheduled handler 的 API。要接 cron 只能改動「產生出來的 worker 輸出」
-// (硬規則禁止)或另包一層 wrapper worker 當 `main`(非 OpenNext cleanly 支援)。
-// 故 v1 不實作 cron,改以上述 lazy + manual 觸發保底。
+// ── CRON 接線(已查證,勿臆測)────────────────────────────────────────────
+// @opennextjs/cloudflare 1.20.1 產生的入口 `.open-next/worker.js` 只
+// `export default { fetch }`,不含 `scheduled` handler。但**它的 CLI 完全不讀、
+// 不驗證、不覆寫 wrangler.jsonc 的 `main` 欄位**(已讀原始碼確認,並以
+// `wrangler deploy --dry-run` 實測)。所以接法是:`main` 指到 repo 根的
+// `custom-worker.ts`,由它原樣 re-export 產出物的 fetch 與 Durable Object class,
+// 只多掛一個 `scheduled` —— OpenNext 的輸出一個 byte 都沒被改動,不違反硬規則。
 //
-// 未來若 @opennextjs/cloudflare 提供 cleanly 支援自訂 scheduled handler(檢查其
-// dist/API 是否新增 scheduled export 或 wrapper 機制),接線步驟為:
-//   a. 在該套件支援的 handler 檔加上 `async scheduled(_event, env, ctx)`,以
-//      `ctx.waitUntil(runDueJobs(Date.now()))` 呼叫本模組(需先 initOpenNext
-//      的 cloudflare context,使 getDB()/getEnv() 可用)。
-//   b. wrangler.jsonc 加上 `"triggers": { "crons": ["*/5 * * * *"] }`。
-//      publish-due 的 WHERE 子句本身冪等,cron 與 lazy 併發最壞只是重跑一次。
+// **core 本身仍然只有 lazy sweep**:上面第 3 條的 signing secret 與 tick 入口都住在
+// cron extension(extensions/cron/)。core 沒有、也不會有自己的 cron secret。
+// scheduled handler 沒有 request context(getCloudflareContext() 會 throw),
+// 所以它不直接呼叫本模組,而是走既有的 unified callback ingress —— 驗簽 / rate limit /
+// 錯誤語意全部沿用同一份已驗證過的程式碼,不會多開一條繞過驗簽的入口。
+// 實作見 extensions/cron/scheduled.ts;cron extension 沒裝 / 沒啟用 / 沒設密鑰時
+// handler 安靜 no-op,退回 lazy sweep 節奏。
+//
+// 排程頻率在 wrangler.jsonc 的 `triggers.crons`(預設每分鐘)。publish-due 的
+// WHERE 子句本身冪等,cron 與 lazy 併發最壞只是重跑一次。
 //
 // ── Extension 貢獻的 job(docs/spec-extension-jobs.md,CORE_API 1.10.0)───────
 // 見下方 `ext-jobs` core job:併入本模組既有的 CORE_JOBS 陣列 / runDueJobs 迭代,
