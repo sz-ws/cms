@@ -1,6 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// [core] 不要在客戶站改這個檔。
+//
+// 上游會持續改它,改了之後 `git merge upstream/main` 每次都會在同一處衝突。
+// 需要逐站不同的東西各自有家:
+//   - 品牌色 / 字體 / 樣式覆寫 → ./site.css
+//   - 站名 / 描述               → settings(core.siteTitle、core.siteDescription),
+//                                 下面的 generateMetadata() 已經在讀
+//   - 公開站的頁首頁尾         → (public)/layout.tsx 的 filter,見該檔說明
+//   - favicon                   → 公開站的 icon 由架站者自己放在 (public)/,
+//                                 (admin)/ 底下那份是後台用的產品 icon
+// ─────────────────────────────────────────────────────────────────────────────
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+// 站台自訂樣式。**必須排在 globals.css 之後** —— 兩者同為 :root 層級的宣告,
+// 後載入者才蓋得掉前者的 token 預設值。site.css 預設是空的。
+import "./site.css";
 // Self-hosted Chiron Hei HK (昭源黑體) TC fallback face declarations. The css
 // lives in public/ (kept out of Tailwind @source scanning) but is imported here
 // so Next bundles it; its unicode-range-sliced @font-face set means the browser
@@ -9,6 +24,7 @@ import "./globals.css";
 import "../../public/fonts/chiron-hei-hk/chiron-hei-hk.css";
 import { Geist, Inter } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getSetting } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
 // Distinct var names (not --font-sans/--font-heading) so they don't collide with
@@ -38,10 +54,19 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 // 之後每個新增的 page/layout 都不得覆寫為靜態(見 08 Phase 0 步驟 2)。
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "CMS",
-  description: "Cloudflare Workers CMS",
-};
+// 站台標題/描述取自 settings,不硬寫 —— 否則每個用這套架起來的站都會送出
+// <title>CMS</title>。兩個 setting 早就存在,(public)/page.tsx 也已經在讀。
+// 讀不到時才退回產品名,那是「還沒設定過」的合理預設而非別人的品牌。
+export async function generateMetadata(): Promise<Metadata> {
+  const [title, description] = await Promise.all([
+    getSetting<string>("core.siteTitle"),
+    getSetting<string>("core.siteDescription"),
+  ]);
+  return {
+    title: title?.trim() || "CMS by szws",
+    description: description?.trim() || undefined,
+  };
+}
 
 export default function RootLayout({
   children,

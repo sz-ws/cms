@@ -1,4 +1,9 @@
 {
+  // [site] 這個檔預期逐站不同 —— worker 名稱、D1/R2 的 id 本來就每個站一組。
+  // `sz-cms setup` 會自動填入下面的 database_id(只改那幾個值,註解與排版原樣保留)。
+  //
+  // 但 "main" 與 "triggers" 是 core 的東西:前者指向 custom-worker.ts(cron 接線的
+  // 唯一入口),後者是排程頻率。動它們之前先讀 custom-worker.ts 的說明。
   "$schema": "node_modules/wrangler/config-schema.json",
   // main 指向 custom-worker.ts,而不是 OpenNext 直接產出的 .open-next/worker.js ——
   // 那個產出物只有 `fetch`,沒有 `scheduled`。custom-worker.ts 原樣 re-export 它的

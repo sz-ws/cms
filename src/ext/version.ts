@@ -214,4 +214,17 @@
 //     best-effort,避免 registrySources/tokens 或一般多欄設定部分寫入。
 //   使用 `settings[].required` 的 extension 應宣告 coreApi "^1.18.0";只使用舊表面的
 //   extension 仍由 caret range 向前相容。
-export const CORE_API_VERSION = "1.18.0";
+// 1.19.0
+//   - 新增兩個 filter hook:`filter:publicHeader` / `filter:publicFooter`,由新的
+//     src/app/(public)/layout.tsx 消費,套在所有公開路由外層。兩者預設 null =
+//     不渲染,故對既有 extension 完全無影響(純附加)。
+//     動機:在這之前,一個站要放自己的頁首頁尾只能改 src/ 底下的 core 檔案,
+//     那會讓「把 core 修正 merge 回已交付的站」變成解衝突地獄。有了這兩個 filter,
+//     站台外框由 extension 提供,客戶站與正本的分歧維持在零。
+//   - 同批(非 CORE_API 表面,但同屬「別人架的站不該被 core 蓋掉品牌」):
+//     root layout 的 metadata 改為 generateMetadata() 讀 core.siteTitle /
+//     core.siteDescription(以前硬寫 title:"CMS",每個部署出去的站都送
+//     <title>CMS</title>);icon.svg / apple-icon.png 移到 (admin)/ —— 產品 icon
+//     只代表後台,公開站的 favicon 由架站者自己放(同 Next.js 預設可被覆蓋的語意)。
+//   使用 publicHeader/publicFooter 的 extension 應宣告 coreApi "^1.19.0"。
+export const CORE_API_VERSION = "1.19.0";

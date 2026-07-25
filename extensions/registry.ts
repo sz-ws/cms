@@ -1,3 +1,10 @@
+// [site] 這個檔預期逐站不同 —— 每個站裝的 extension 不一樣,改它是正常的。
+//
+// 但它也是**上游會動的檔**(core 更新預設 bundle 時),所以是最可能衝突的地方。
+// 衝突了就手動把兩邊的 import 與陣列項都留下,語意上永遠是聯集。
+//
+// ⚠️ 最下面 `export const registry` 那一行的排版是 CLI 的公開契約
+//(cli/src/patch.ts 用 regex 錨定它)。不要換行、不要重排,否則 `sz-cms add` 會裝不進去。
 import type { Extension } from "@/ext/types";
 import { cron } from "./cron";
 import { newebpay } from "./newebpay";

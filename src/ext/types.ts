@@ -361,7 +361,13 @@ export type HookName =
   | "extraction:completed" // (payload: { providerId; event: unknown })
   // filters(第一個參數是值,回傳修改後的值)
   | "filter:adminMenu" // (items: AdminMenuItem[]) => AdminMenuItem[]
-  | "filter:publicHome"; // (component: ComponentType | null) => ComponentType | null
+  | "filter:publicHome" // (component: ComponentType | null) => ComponentType | null
+  // 1.19.0:公開站外框。由 src/app/(public)/layout.tsx 消費,套在所有公開路由外層
+  // (含首頁與 [...slug])。預設 null = 不渲染,新站就是「只有內容、沒有外框」。
+  // 這兩個 filter 存在的意義:讓站台自訂頁首頁尾**不必改 core 檔案** —— 客戶站與
+  // 正本的分歧維持在零,日後 merge 上游修正才不會衝突。
+  | "filter:publicHeader" // (component: ComponentType | null) => ComponentType | null
+  | "filter:publicFooter"; // (component: ComponentType | null) => ComponentType | null
 // v1 刻意不含 head/meta 注入 filter(App Router 的 <head> 管理方式不同,留待未來)
 
 export interface AdminMenuItem {
