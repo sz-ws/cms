@@ -31,10 +31,6 @@ export interface PaymentProviderOptions {
   mode: "notify" | "return";
 }
 
-interface OrderStatusRow {
-  status: string;
-}
-
 function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
@@ -104,37 +100,36 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     }
 
     if (parsed.orderNo) {
-      // Notify 與 Return 都會走到這裡(先到先贏)。已 paid 的訂單不再改寫、不重複
-      // 觸發 hook —— SELECT-先-判斷有極小的併發窗(notify/return 幾乎同時),最壞
-      // 情況是 hook 重複觸發一次;hooks 為通知性質,可接受。
-      const existing = await this.opts.services.db.get<
-        OrderStatusRow | undefined
-      >(sql`
-        SELECT status FROM ${sql.raw(this.opts.table)}
-        WHERE order_no = ${parsed.orderNo}
+      // Notify 與 Return 可能同時到達；以同一支條件式 UPDATE 爭取結算權。
+      // 只有實際把列翻成 paid 的請求能拿到 RETURNING，因此 hook 不會重複觸發。
+      const settled = await this.opts.services.db.all<{ orderNo: string }>(sql`
+        UPDATE ${sql.raw(this.opts.table)} SET
+          status = ${parsed.succeeded ? "paid" : "failed"},
+          trade_no = ${parsed.tradeNo ?? null},
+          payment_type = ${parsed.paymentType ?? null},
+          pay_time = ${parsed.payTime ?? null},
+          raw_result = ${parsed.raw},
+          updated_at = ${Date.now()}
+        WHERE order_no = ${parsed.orderNo} AND status <> 'paid'
+        RETURNING order_no AS orderNo
       `);
-      if (existing && existing.status !== "paid") {
-        await this.opts.services.db.run(sql`
-          UPDATE ${sql.raw(this.opts.table)} SET
-            status = ${parsed.succeeded ? "paid" : "failed"},
-            trade_no = ${parsed.tradeNo ?? null},
-            payment_type = ${parsed.paymentType ?? null},
-            pay_time = ${parsed.payTime ?? null},
-            raw_result = ${parsed.raw},
-            updated_at = ${Date.now()}
+      if (settled.length > 0 && parsed.succeeded) {
+        await this.opts.services.hooks.doAction("payment:succeeded", {
+          providerId: this.opts.providerId,
+          event: parsed.event,
+        });
+      } else if (settled.length === 0) {
+        // 保留原本「簽章有效但查無訂單」的診斷；這個查詢不參與結算判斷。
+        const existing = await this.opts.services.db.get<{ orderNo: string }>(sql`
+          SELECT order_no AS orderNo FROM ${sql.raw(this.opts.table)}
           WHERE order_no = ${parsed.orderNo}
         `);
-        if (parsed.succeeded) {
-          await this.opts.services.hooks.doAction("payment:succeeded", {
-            providerId: this.opts.providerId,
-            event: parsed.event,
-          });
+        if (!existing) {
+          // 簽章有效但查無此訂單:可能是別台環境共用同一組商店金鑰。記錄即可。
+          console.warn(
+            `[payment-kit:${this.opts.providerId}] callback for unknown order "${parsed.orderNo}"`,
+          );
         }
-      } else if (!existing) {
-        // 簽章有效但查無此訂單:可能是別台環境共用同一組商店金鑰。記錄即可。
-        console.warn(
-          `[payment-kit:${this.opts.providerId}] callback for unknown order "${parsed.orderNo}"`,
-        );
       }
     }
 

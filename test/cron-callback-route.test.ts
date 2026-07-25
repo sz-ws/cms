@@ -110,6 +110,41 @@ describe("POST /api/callback/cron:tick/cron (unified ingress → cron provider)"
     expect(jobsState.calls).toHaveLength(0);
   });
 
+  it("413 for a chunked oversized body without buffering its trailing bytes", async () => {
+    let chunksRead = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (chunksRead === 0) {
+            chunksRead++;
+            controller.enqueue(new Uint8Array(64_001));
+            return;
+          }
+          throw new Error("reader must cancel before asking for trailing data");
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request("https://cms.test/api/callback/cron:tick/cron", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+
+    const res = await POST(request, ctx("cron:tick", "cron"));
+
+    expect(request.headers.has("content-length")).toBe(false);
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "payload_too_large" });
+    expect(cancelled).toBe(true);
+    expect(chunksRead).toBe(1);
+    expect(jobsState.calls).toHaveLength(0);
+  });
+
   it("200 on a valid signature → runs due jobs + writes lastTick", async () => {
     const sig = await hmacHex(SECRET, BODY);
     const res = await POST(req(BODY, sig), ctx("cron:tick", "cron"));

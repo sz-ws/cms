@@ -34,10 +34,23 @@ function enc(s: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-/** base64 的 SECRETS_KEY → 32-byte 金鑰材料。空值 fail-loud(與原 settings.ts 同訊息)。 */
+/** base64 的 SECRETS_KEY → 32-byte AES-256 金鑰材料。 */
 function keyMaterial(secretsKey: string): Uint8Array<ArrayBuffer> {
   if (!secretsKey) throw new Error("SECRETS_KEY not configured");
-  return fromBinary(atob(secretsKey));
+  let decoded: string;
+  try {
+    decoded = atob(secretsKey);
+  } catch (e) {
+    throw new Error(
+      "SECRETS_KEY must be a base64-encoded 32-byte AES-256 key",
+      { cause: e },
+    );
+  }
+  const material = fromBinary(decoded);
+  if (material.byteLength !== 32) {
+    throw new Error("SECRETS_KEY must be a base64-encoded 32-byte AES-256 key");
+  }
+  return material;
 }
 
 async function importAesKey(secretsKey: string): Promise<CryptoKey> {

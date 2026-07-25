@@ -6,6 +6,45 @@ import { hitRateLimit } from "@/lib/rate-limit";
 
 const MAX_BODY_BYTES = 64_000;
 
+/**
+ * 讀取未驗證 callback 的 raw body，但不讓任一請求累積超過上限。
+ * 回傳 null 代表過大；reader.cancel 失敗仍記錄，避免掩蓋 runtime 異常。
+ */
+async function readBoundedRawBody(req: Request): Promise<string | null> {
+  if (!req.body) return "";
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        try {
+          await reader.cancel("payload_too_large");
+        } catch (e) {
+          console.error("[callback] unable to cancel oversized request body", e);
+        }
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
+}
+
 // core-v2 §2.5:Unified inbound callback / webhook ingress。
 //
 //   POST /api/callback/<capability>/<providerId>
@@ -30,9 +69,9 @@ const MAX_BODY_BYTES = 64_000;
 //   - **Phase E §4 additions**: rate limit by client IP + (capability,
 //     providerId) — 60/min, reusing the D1 counter from lib/rate-limit.ts
 //     (this route has no session, so IP + path is the only available key).
-//     Body-size guard via Content-Length (MAX_BODY_BYTES = 64KB) checked
-//     BEFORE req.text() — bounds this public, unauthenticated route without
-//     touching the verify/handle contract above.
+//     Body-size guard(MAX_BODY_BYTES = 64KB):Content-Length 僅作為提早拒絕，
+//     實際以 stream reader 累計並封頂，再交給 verify/handle，避免未驗證請求
+//     先把任意大的 body 緩衝進 isolate。
 
 async function handleCallback(
   req: Request,
@@ -53,18 +92,21 @@ async function handleCallback(
     return Response.json({ error: "rate_limited" }, { status: 429 });
   }
 
-  // 0b. Body-size guard via Content-Length, checked BEFORE req.text() so an
-  // oversized inbound callback never gets buffered into memory (§4).
+  // 0b. Content-Length 只能作為提早拒絕的提示；缺席或非數字一律不可信，仍由
+  // 下方 reader 的累計位元組數強制上限。
   const contentLength = req.headers.get("content-length");
-  if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
+  const declaredLength = contentLength === null ? NaN : Number(contentLength);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
     return Response.json({ error: "payload_too_large" }, { status: 413 });
   }
 
-  // 1. raw body 只讀一次,原樣保留供簽章驗證(§5 raw body preserved)。
-  //    arrayBuffer + TextDecoder 與 req.text() 語意相同(raw bytes → UTF-8),但
+  // 1. raw body 只讀一次、串流封頂後才解碼，原樣保留供簽章驗證(§5 raw body preserved)。
   //    不觸發 Miniflare 對非 text/* Content-Type(如 payment gateway 的
   //    application/x-www-form-urlencoded)呼叫 .text() 的噪音警告。
-  const rawBody = new TextDecoder().decode(await req.arrayBuffer());
+  const rawBody = await readBoundedRawBody(req);
+  if (rawBody === null) {
+    return Response.json({ error: "payload_too_large" }, { status: 413 });
+  }
 
   // 2. 建 registry(與 services.ts 相同:getExtRuntime → buildProviderRegistry)。
   //    含 enabled code extension 的 provides —— 這是 code extension(如 cron:tick/cron)

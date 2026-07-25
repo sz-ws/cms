@@ -112,6 +112,13 @@ describe("secret-envelope", () => {
       "SECRETS_KEY not configured",
     );
   });
+
+  it("16-byte SECRETS_KEY → 拒絕非 AES-256 的設定", async () => {
+    const aes128Key = btoa("0123456789abcdef");
+    await expect(encryptSecretWithKey(aes128Key, SECRET)).rejects.toThrow(
+      "SECRETS_KEY must be a base64-encoded 32-byte AES-256 key",
+    );
+  });
 });
 
 describe("runCronTick — 送出的 tick", () => {

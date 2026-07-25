@@ -188,6 +188,19 @@ describe("callback ingress — notify(server-to-server)", () => {
     expect((await orderRow(ORDER_NO))?.status).toBe("paid");
   });
 
+  it("concurrent notify and return settlements dispatch payment:succeeded exactly once", async () => {
+    const body = await callbackBody(successPayload());
+    const [notify, returned] = await Promise.all([
+      post("newebpay", body),
+      post("newebpay-return", body),
+    ]);
+
+    expect(notify.status).toBe(200);
+    expect(returned.status).toBe(200);
+    expect((await orderRow(ORDER_NO))?.status).toBe("paid");
+    expect(hookEvents.events).toHaveLength(1);
+  });
+
   it("failed transaction → pending→failed, no hook", async () => {
     const payload = {
       ...successPayload(),
