@@ -18,13 +18,18 @@ Requires Node **22.12+** and pnpm 9 (`rolldown`, which Vitest 4 builds on, decla
 it locally.
 
 ```bash
-pnpm install          # also writes .dev.vars and cloudflare-env.d.ts if absent
+pnpm install          # also fills in .dev.vars and cloudflare-env.d.ts
 pnpm db:migrate:local
 pnpm dev
 ```
 
-Open `/setup` and create the first admin account, then **Extensions → Browse**
-and install one from the default registry to see the shape of the thing.
+Open `/setup` and create the first admin account. It asks for a setup token —
+that is `SETUP_TOKEN` in the `.dev.vars` that `pnpm install` just generated.
+(The endpoint is fail-closed on purpose: in production, "whoever finds the URL
+first" must not be able to claim the admin account.)
+
+Then **Extensions → Browse** and install one from the default registry to see
+the shape of the thing.
 
 What you install is a JSON manifest. This one is complete — it is all it takes
 to add a content type with an admin section and two public pages:

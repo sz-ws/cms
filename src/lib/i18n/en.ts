@@ -426,6 +426,11 @@ export const en = {
   "setup.email": "Email",
   "setup.password": "Password (min 8)",
   "setup.creating": "Creating…",
+  "setup.setupToken": "Setup token",
+  "setup.setupTokenHint": "From `wrangler secret put SETUP_TOKEN`, or `SETUP_TOKEN` in .dev.vars for local development.",
+  "setup.tokenError": "That setup token is not correct.",
+  "setup.tokenMissing": "This deployment has no SETUP_TOKEN configured, so the first admin cannot be created. Set one with `pnpm exec wrangler secret put SETUP_TOKEN` (or re-run `sz-ws-cms setup`), then reload.",
+  "setup.rateLimited": "Too many attempts. Wait a minute and try again.",
   "setup.createAdmin": "Create admin & continue",
 
   // RegistryBrowser (Marketplace browse — RegistryBrowser.tsx + child components)

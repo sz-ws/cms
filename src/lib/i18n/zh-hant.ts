@@ -420,6 +420,11 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "setup.email": "電子郵件",
   "setup.password": "密碼（至少 8 個字元）",
   "setup.creating": "建立中…",
+  "setup.setupToken": "Setup token",
+  "setup.setupTokenHint": "來自 `wrangler secret put SETUP_TOKEN`;本機開發則是 .dev.vars 裡的 `SETUP_TOKEN`。",
+  "setup.tokenError": "setup token 不正確。",
+  "setup.tokenMissing": "這個部署沒有設定 SETUP_TOKEN,因此無法建立第一個管理員。請用 `pnpm exec wrangler secret put SETUP_TOKEN` 設定(或重跑 `sz-ws-cms setup`)後重新整理。",
+  "setup.rateLimited": "嘗試次數過多。請等一分鐘再試。",
   "setup.createAdmin": "建立管理者並繼續",
 
   // RegistryBrowser

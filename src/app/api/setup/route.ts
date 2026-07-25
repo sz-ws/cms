@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { getDB } from "@/lib/cf";
+import { getDB, getEnv } from "@/lib/cf";
 import {
   SESSION_COOKIE,
   createSession,
@@ -9,10 +9,15 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth";
 import { setSettings } from "@/lib/settings";
-import { assertSameOrigin, originErrorResponse } from "@/lib/security";
+import {
+  assertSameOrigin,
+  originErrorResponse,
+  timingSafeEqualString,
+} from "@/lib/security";
 import { readBoundedJsonObject } from "@/lib/body-limit";
+import { hitRateLimit } from "@/lib/rate-limit";
 
-// 這四個欄位再長也不會接近 16KB;訂這麼小就是不讓未驗證的請求有機會餵大 body。
+// 這五個欄位再長也不會接近 16KB;訂這麼小就是不讓未驗證的請求有機會餵大 body。
 const MAX_BODY_BYTES = 16_000;
 
 const bodySchema = z.object({
@@ -20,7 +25,35 @@ const bodySchema = z.object({
   password: z.string().min(8),
   name: z.string().min(1),
   siteTitle: z.string().min(1),
+  setupToken: z.string().min(1),
 });
+
+/**
+ * `SETUP_TOKEN` —— bootstrap 憑證,worker secret。
+ *
+ * 沒有它的話,「誰能建第一個管理員」的答案是「最先找到這個網址的人」。
+ * 部署完成到擁有者打開 /setup 之間有一段空窗,而 workers.dev 的子網域是可以被
+ * 列舉的;assertSameOrigin 擋不了任何會自己送 header 的人。
+ *
+ * 刻意 fail-closed:沒設定就完全不能 setup(回 503,不是放行)。本機開發不會
+ * 因此卡住 —— scripts/ensure-dev-env.mjs 會在 .dev.vars 裡補一把,而 setup CLI
+ * 會為正式站產生並**印出來**(另外兩把 secret 從不顯示;這一把的用途就是給人
+ * 貼進表單,而且用完就作廢)。
+ */
+function configuredSetupToken(): string | null {
+  let env: { SETUP_TOKEN?: string };
+  try {
+    env = getEnv() as unknown as { SETUP_TOKEN?: string };
+  } catch {
+    return null;
+  }
+  const raw = env.SETUP_TOKEN;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+function clientIp(req: Request): string {
+  return req.headers.get("cf-connecting-ip") ?? "local";
+}
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -29,6 +62,26 @@ export async function POST(req: Request): Promise<Response> {
     const r = originErrorResponse(e);
     if (r) return r;
     throw e;
+  }
+
+  // 在做任何事之前先限流。setup 是未驗證入口,而下面每一關都比上一關貴。
+  if (
+    await hitRateLimit(clientIp(req), {
+      namespace: "setup",
+      limit: 10,
+      windowMs: 60_000,
+    })
+  ) {
+    return Response.json({ error: "rate_limited" }, { status: 429 });
+  }
+
+  const expectedToken = configuredSetupToken();
+  if (expectedToken === null) {
+    // 設定錯誤,不是使用者的錯 —— 用 503 而不是 403,並講清楚要做什麼。
+    return Response.json(
+      { error: "setup_token_not_configured" },
+      { status: 503 },
+    );
   }
 
   const body = await readBoundedJsonObject(req, MAX_BODY_BYTES, "setup");
@@ -43,6 +96,12 @@ export async function POST(req: Request): Promise<Response> {
     parsed = bodySchema.parse(body.value);
   } catch {
     return Response.json({ error: "invalid_input" }, { status: 400 });
+  }
+
+  // token 比對擺在存在性檢查**之前**:否則「已經 setup 過了」這個 403 會變成
+  // 一個不需要 token 就能問的探測點。定時比較,不讓回應時間洩漏猜對幾個字元。
+  if (!timingSafeEqualString(parsed.setupToken, expectedToken)) {
+    return Response.json({ error: "invalid_setup_token" }, { status: 401 });
   }
 
   const email = parsed.email.toLowerCase();

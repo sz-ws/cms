@@ -40,9 +40,9 @@ You do not need to create the `revalidations` table inside `cms-tag-cache`.
 OpenNext (it gained `stale` / `expire` columns in v1.19), so don't hand-copy a
 copy of it into this repo — it would drift.
 
-## 4. Set the two production secrets
+## 4. Set the three production secrets
 
-Both are **generate once, never rotate**. Do **not** reuse the development
+All three are **generate once, never rotate**. Do **not** reuse the development
 values from `.dev.vars`.
 
 ### `SECRETS_KEY`
@@ -78,7 +78,25 @@ pnpm exec wrangler secret put AUTH_PEPPER   # paste the value
 > Removing the pepper afterwards *does* lock everyone out: those hashes can no
 > longer be computed. There is no recovery path.
 
-`sz-ws-cms setup` generates and sets both for you. It cannot do so on the very
+### `SETUP_TOKEN`
+
+The bootstrap credential for `/setup`. Without it, whoever finds the URL first
+becomes the administrator — there is a window between deploying and you opening
+`/setup`, and `workers.dev` subdomains are enumerable. Same-origin checks stop
+nothing here; an attacker sets their own headers.
+
+```bash
+openssl rand -base64 32
+pnpm exec wrangler secret put SETUP_TOKEN   # paste the value
+```
+
+> This one is deliberately **fail-closed**: if it is not set, `/setup` returns
+> 503 and no admin can be created at all. It is also the only one of the three
+> you need to see — you type it into the `/setup` form. Once the first admin
+> exists the endpoint returns 403 forever, so the token stops mattering.
+
+`sz-ws-cms setup` generates and sets all three for you, and prints `SETUP_TOKEN`
+(only that one — the other two never need to be seen by a human). It cannot do so on the very
 first run — the Worker does not exist yet, so there is nothing to attach a
 secret to. Deploy once, then re-run `setup`; it skips everything already done.
 
@@ -91,8 +109,9 @@ pnpm run deploy
 
 ## 6. First run
 
-Open the production URL and go to `/setup` to create the first admin account —
-production D1 starts empty and shares nothing with your local database.
+Open the production URL and go to `/setup` to create the first admin account.
+The form asks for `SETUP_TOKEN` from step 4. Production D1 starts empty and
+shares nothing with your local database.
 
 Then, in **Settings**, set `core.siteUrl` to your public origin. Several things
 need an absolute URL and cannot infer one reliably: OIDC `redirect_uri`, SEO

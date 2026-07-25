@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { recordingExecutor, type ExecResult, type RecordedCall } from "./exec.js";
 import { PLACEHOLDER_ID, WranglerClient } from "./wrangler.js";
-import { runSetup, SECRETS_KEY, AUTH_PEPPER, type SetupOptions } from "./setup.js";
+import {
+  runSetup,
+  SECRETS_KEY,
+  AUTH_PEPPER,
+  SETUP_TOKEN,
+  type SetupOptions,
+} from "./setup.js";
 import { createReporter, makeStyles, type Prompter } from "./ui.js";
 import { EXIT } from "./exit.js";
 
@@ -181,6 +187,7 @@ describe("runSetup — 全新帳號的完整流程", () => {
     // pepper 必須跟 SECRETS_KEY 一樣是全新站台的預設產物 —— 漏掉它,第一批
     // 密碼就會以無 pepper 的形式落地,事後只能靠逐一重設密碼補回來。
     expect(sent).toContain(`secret put ${AUTH_PEPPER}`);
+    expect(sent).toContain(`secret put ${SETUP_TOKEN}`);
 
     // migrations 只對宣告了 migrations_dir 的 cms-db 跑。
     expect(sent).toContain("d1 migrations apply cms-db --remote");
@@ -308,7 +315,7 @@ describe("runSetup — 冪等 / 可重跑", () => {
         { name: "cms-tag-cache", uuid: TAG_UUID },
       ],
       r2Existing: ["cms-storage", "cms-next-cache"],
-      secrets: [SECRETS_KEY, AUTH_PEPPER],
+      secrets: [SECRETS_KEY, AUTH_PEPPER, SETUP_TOKEN],
     };
     const first = await setup({ account });
     expect(first.code).toBe(EXIT.OK);
@@ -374,9 +381,24 @@ describe("runSetup — 冪等 / 可重跑", () => {
     expect(written).not.toContain("99999999-9999-9999-9999-999999999999");
   });
 
+  // SETUP_TOKEN 是三把裡唯一必須讓人看到的:wrangler 事後讀不回 secret 的值,
+  // 不印就等於沒有人建得出第一個管理員。這條壞掉的方式是靜默的,所以要守。
+  it("SETUP_TOKEN 產生後一定把值印出來,另外兩把一定不印", async () => {
+    const secret = "TEST-SECRET-VALUE-DO-NOT-REUSE";
+    const { out } = await setup({
+      account: { secrets: [] },
+      generateSecret: () => secret,
+    });
+    expect(out).toContain(SETUP_TOKEN);
+    expect(out).toContain(secret);
+    // 值只能出現一次 —— 三把用的是同一個假產生器,若 SECRETS_KEY / AUTH_PEPPER
+    // 也被印出來,這裡就會看到三次。
+    expect(out.split(secret).length - 1).toBe(1);
+  });
+
   it("已存在的 secret 絕不覆寫", async () => {
     const { calls, out } = await setup({
-      account: { secrets: [SECRETS_KEY, AUTH_PEPPER] },
+      account: { secrets: [SECRETS_KEY, AUTH_PEPPER, SETUP_TOKEN] },
     });
     expect(argsOf(calls).some((s) => s.startsWith("secret put"))).toBe(false);
     expect(out).toContain("不覆寫");
@@ -384,10 +406,10 @@ describe("runSetup — 冪等 / 可重跑", () => {
 
   // 兩把是分開判斷的:已經有 SECRETS_KEY 的既有站台,重跑 setup 應該只補
   // AUTH_PEPPER,而不是連帶把 SECRETS_KEY 也重設(那會讓既存的加密設定全毀)。
-  it("既有站台重跑:只補上缺的 AUTH_PEPPER,不動 SECRETS_KEY", async () => {
+  it("既有站台重跑:只補上缺的那幾把,不動 SECRETS_KEY", async () => {
     const { calls } = await setup({ account: { secrets: [SECRETS_KEY] } });
     const puts = argsOf(calls).filter((s) => s.startsWith("secret put"));
-    expect(puts).toEqual([`secret put ${AUTH_PEPPER}`]);
+    expect(puts).toEqual([`secret put ${AUTH_PEPPER}`, `secret put ${SETUP_TOKEN}`]);
   });
 });
 

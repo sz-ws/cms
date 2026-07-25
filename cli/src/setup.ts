@@ -1,7 +1,7 @@
 // `sz-cms setup` —— 從「本機跑得起來」到「線上跑得起來」的引導流程。
 //
 // 取代 DEPLOY.md 的手工步驟:建兩組 D1 + 兩組 R2、把回傳的 id 貼回 wrangler.jsonc、
-// 套 migrations、設 SECRETS_KEY 與 AUTH_PEPPER。
+// 套 migrations、設 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN。
 //
 // 冪等性怎麼保證的:每一步都先「看帳號上有什麼」再決定要不要動作,而不是記錄自己做過什麼。
 //   - 先把這份 repo 的 site slug 寫成唯一資源名稱;只有這個本地租戶邊界已驗證後,
@@ -9,7 +9,7 @@
 //   - R2 先 `r2 bucket info`;真的去建到已存在的 bucket 也被當成成功。
 //   - wrangler.jsonc 的值已經對了就完全不產生編輯。
 //   - migrations 本來就有 applied 紀錄表,重跑是 no-op。
-//   - SECRETS_KEY / AUTH_PEPPER 已存在就跳過(**絕不覆寫** —— 換掉任一把都是不可逆的災難,
+//   - 三把 worker secret 已存在就跳過(**絕不覆寫** —— 換掉任一把都是不可逆的災難,
 //     見 MANAGED_SECRETS 的說明)。
 // 所以跑到一半斷掉的人,直接再跑一次就好。
 
@@ -32,6 +32,7 @@ import { JsoncParseError } from "./jsonc.js";
 
 export const SECRETS_KEY = "SECRETS_KEY";
 export const AUTH_PEPPER = "AUTH_PEPPER";
+export const SETUP_TOKEN = "SETUP_TOKEN";
 
 /**
  * setup 會產生的 worker secret。兩把都是**產生後就不能換**的:
@@ -57,6 +58,15 @@ const MANAGED_SECRETS = [
     why: "密碼雜湊前先做 HMAC;DB 單獨外洩時,沒有它連離線爆破都無從開始",
     neverRotate:
       "不覆寫 —— 換掉會讓所有既存密碼算不出來,等於全站鎖死。",
+  },
+  {
+    name: SETUP_TOKEN,
+    why: "/setup 的 bootstrap 憑證,擋掉「誰先找到網址誰就是管理員」",
+    neverRotate: "不覆寫 —— 站台可能還沒建管理員,換掉會讓你自己也進不去。",
+    // 唯一會被印出來的一把:它的用途就是給人貼進 /setup 的表單,而且建完
+    // 第一個管理員之後就完全失效(那個端點從此一律回 403)。另外兩把印出來
+    // 只有壞處 —— 它們的值永遠不需要被人眼看到。
+    reveal: true,
   },
 ] as const;
 
@@ -241,9 +251,11 @@ function deployNextSteps(): string[] {
     "  1. pnpm run deploy                 # opennextjs-cloudflare build + deploy",
     // pepper 一定要卡在建第一個管理員之前。晚一步設,那批密碼就永遠是無 pepper 的
     // 形式(還是登得進去,core 照雜湊裡的旗標驗證),但要拿回保護只能逐一重設密碼。
-    `  2. 確認 ${SECRETS_KEY} 與 ${AUTH_PEPPER} 都已設定(第一次跑 setup 時 Worker 還不存在,`,
-    "     所以那一步會被延後;現在重跑一次 setup 就會補上)",
-    "  3. 開正式站的 /setup 建第一個管理員帳號(正式 D1 是空的,跟本機不共用)",
+    `  2. 確認 ${SECRETS_KEY} / ${AUTH_PEPPER} / ${SETUP_TOKEN} 都已設定(第一次跑 setup 時`,
+    "     Worker 還不存在,所以那一步會被延後;現在重跑一次 setup 就會補上,",
+    `     並印出 ${SETUP_TOKEN} 的值)`,
+    `  3. 開正式站的 /setup 建第一個管理員帳號,表單要填 ${SETUP_TOKEN}`,
+    "     (正式 D1 是空的,跟本機不共用)",
     "  4. Settings → core.siteUrl 設成你的公開網址",
     "     (OIDC redirect_uri、SEO canonical/sitemap/feed、金流 return URL 都需要絕對網址)",
     "  5. /admin/extensions 啟用一個 extension,建一筆內容,確認公開路由渲染得出來",
@@ -615,6 +627,8 @@ async function ensureSecretsKey(
       "",
       `⚠ ${AUTH_PEPPER} 必須在你開 /setup 建第一個管理員**之前**就設好,`,
       "  否則第一批密碼會以無 pepper 的形式落地(能登入,但少了那層保護)。",
+      `⚠ ${SETUP_TOKEN} 沒設定的話 /setup 一律回 503 —— 這是刻意的:`,
+      "  沒有它,「誰先找到這個網址誰就是管理員」。",
       "",
       "⚠ 不要沿用 .dev.vars 裡的開發金鑰。兩把都是設了就不能再換的:",
       `  ${SECRETS_KEY} 換掉 → 既存的加密設定全部變亂碼(信封沒有 key id)。`,
@@ -657,13 +671,25 @@ async function ensureOneSecret(
   }
 
   // 值走 stdin 進 wrangler,不進 argv、不印到畫面 —— argv 會被 ps 看到,也會留在 history。
-  const outcome = await r.task(`設定 ${name}`, () =>
-    o.client.putSecret(name, generateSecret()),
-  );
+  const value = generateSecret();
+  const outcome = await r.task(`設定 ${name}`, () => o.client.putSecret(name, value));
   if (outcome.status === "failed") {
     r.step("fail", `設定 ${name} 失敗`, outcome.detail);
     return [`${name} 還沒設定好。部署之後手動補上:`, manual];
   }
-  r.step("ok", `${name} 已產生並設定`, "值只存在 Cloudflare,本機沒有留副本。");
-  return [];
+
+  const reveal = "reveal" in spec && spec.reveal === true;
+  r.step(
+    "ok",
+    `${name} 已產生並設定`,
+    reveal ? "下面會印出這個值 —— 只有這一次。" : "值只存在 Cloudflare,本機沒有留副本。",
+  );
+  if (!reveal) return [];
+
+  // 這一把非印不可:CLI 不會替使用者開瀏覽器填表,而 wrangler 事後也讀不回
+  // secret 的值。不印 = 使用者永遠建不出第一個管理員,只能自己覆寫一把。
+  return [
+    `${name}(建第一個管理員時要貼進 /setup;之後就自動失效):`,
+    `  ${value}`,
+  ];
 }

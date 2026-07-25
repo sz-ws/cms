@@ -26,3 +26,23 @@ export function originErrorResponse(e: unknown): Response | null {
   }
   return null;
 }
+
+/**
+ * 定時比較兩個字串。用在任何「拿使用者送來的值跟伺服器上的祕密比對」的地方:
+ * `===` 會在第一個不同的位元組就返回,回應時間因此洩漏「猜對了幾個字元」,
+ * 讓 token 可以被逐字元試出來。
+ *
+ * 長度不同時仍然跑完整輪比對(拿較長的那個當基準),否則長度本身就是側通道。
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const x = enc.encode(a);
+  const y = enc.encode(b);
+  // 長度不同一定不相等,但仍要付出等量的比對成本。
+  let diff = x.length ^ y.length;
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i++) {
+    diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  }
+  return diff === 0;
+}
