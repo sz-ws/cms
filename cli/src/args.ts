@@ -2,7 +2,7 @@
 //
 //   sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
 //                 [--non-interactive] [--skip-core-check]
-//   sz-cms setup [--config <path>] [--dry-run] [--yes]
+//   sz-cms setup [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
 //                [--skip-migrations] [--skip-secrets]
 //   sz-cms --help | --version
 
@@ -21,6 +21,10 @@ export interface ParsedArgs {
   // ---- setup ----
   /** 覆寫 wrangler 設定檔路徑(預設 <cwd>/wrangler.jsonc)。 */
   config?: string;
+  /** 新 clone 的唯一站點識別;由 setup 衍生 Worker/D1/R2 名稱。 */
+  siteSlug?: string;
+  /** 僅限明確單站/開發帳號使用 shipped 的共用資源名稱。 */
+  allowSharedDefaultNames: boolean;
   /** 略過所有確認關卡。CI 用;與 --non-interactive 同義。 */
   yes: boolean;
   skipMigrations: boolean;
@@ -31,7 +35,7 @@ export interface ParsedArgs {
   error?: string;
 }
 
-const FLAGS_WITH_VALUE = new Set(["--source", "--token", "--config"]);
+const FLAGS_WITH_VALUE = new Set(["--source", "--token", "--config", "--site-slug"]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
@@ -39,6 +43,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     force: false,
     nonInteractive: false,
     skipCoreCheck: false,
+    allowSharedDefaultNames: false,
     yes: false,
     skipMigrations: false,
     skipSecrets: false,
@@ -67,6 +72,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.skipMigrations = true;
     } else if (arg === "--skip-secrets") {
       out.skipSecrets = true;
+    } else if (arg === "--allow-shared-default-names") {
+      out.allowSharedDefaultNames = true;
     } else if (FLAGS_WITH_VALUE.has(arg)) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("-")) {
@@ -76,6 +83,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       if (arg === "--source") out.source = value;
       if (arg === "--token") out.token = value;
       if (arg === "--config") out.config = value;
+      if (arg === "--site-slug") out.siteSlug = value;
       i++;
     } else if (arg.startsWith("--source=")) {
       out.source = arg.slice("--source=".length);
@@ -83,6 +91,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.token = arg.slice("--token=".length);
     } else if (arg.startsWith("--config=")) {
       out.config = arg.slice("--config=".length);
+    } else if (arg.startsWith("--site-slug=")) {
+      out.siteSlug = arg.slice("--site-slug=".length);
     } else if (arg.startsWith("-")) {
       out.error = `未知旗標:${arg}`;
       return out;

@@ -10,6 +10,7 @@
   // fetch 與 Durable Object class,只多掛一個 scheduled handler(cron extension 的
   // tick)。@opennextjs/cloudflare 的 CLI 不讀也不覆寫這個欄位,產出物一個 byte 都沒動。
   "main": "custom-worker.ts",
+  // 新 clone 先由 `sz-cms setup --site-slug <slug>` 原子寫入這組名稱;不得在同帳號共用。
   "name": "cms",
   // 分鐘級準時排程。tick 實作見 extensions/cron/scheduled.ts:cron extension 未安裝
   // 或未設 signing secret 時,handler 安靜 no-op(core 的 lazy sweep 仍是保底)。
@@ -18,7 +19,10 @@
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  // service 必須與 name 同步,否則 cron 的簽名 self-call 會打到別的 Worker。
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "cms" }],
+  // setup 用此值確認命名已由 slug 衍生;空字串代表尚未設定的新 scaffold。
+  "vars": { "CMS_SITE_SLUG": "" },
   "images": { "binding": "IMAGES" },
   "d1_databases": [
     // database_id 為佔位值:本環境無 Cloudflare 帳號,無法 `wrangler d1 create`。

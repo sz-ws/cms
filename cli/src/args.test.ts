@@ -63,6 +63,8 @@ describe("parseArgs", () => {
       "setup",
       "--config",
       "custom.jsonc",
+      "--site-slug",
+      "acme-taipei",
       "--dry-run",
       "--yes",
       "--skip-migrations",
@@ -70,6 +72,7 @@ describe("parseArgs", () => {
     ]);
     expect(a.command).toBe("setup");
     expect(a.config).toBe("custom.jsonc");
+    expect(a.siteSlug).toBe("acme-taipei");
     expect(a.dryRun).toBe(true);
     expect(a.yes).toBe(true);
     expect(a.skipMigrations).toBe(true);
@@ -80,6 +83,7 @@ describe("parseArgs", () => {
     const a = parseArgs(["setup"]);
     expect(a.config).toBeUndefined();
     expect(a.yes).toBe(false);
+    expect(a.allowSharedDefaultNames).toBe(false);
     expect(a.skipMigrations).toBe(false);
     expect(a.skipSecrets).toBe(false);
   });
@@ -90,6 +94,12 @@ describe("parseArgs", () => {
 
   it("--config=value 形式", () => {
     expect(parseArgs(["setup", "--config=a/b.jsonc"]).config).toBe("a/b.jsonc");
+  });
+
+  it("解析 site slug 與明確共用名稱逃生門", () => {
+    const a = parseArgs(["setup", "--site-slug=acme", "--allow-shared-default-names"]);
+    expect(a.siteSlug).toBe("acme");
+    expect(a.allowSharedDefaultNames).toBe(true);
   });
 
   it("--config 缺值時報錯", () => {

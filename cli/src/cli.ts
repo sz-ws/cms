@@ -46,7 +46,7 @@ export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
 const USAGE = `用法:
   sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
                   [--non-interactive] [--skip-core-check]
-  sz-cms setup    [--config <path>] [--dry-run] [--yes]
+  sz-cms setup    [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
                   [--skip-migrations] [--skip-secrets]
 
 add —— 安裝 code extension
@@ -58,6 +58,9 @@ add —— 安裝 code extension
 
 setup —— 接上你自己的 Cloudflare 帳號(建 D1/R2、回填設定檔、套 migrations、設 secret)
   --config <path>     wrangler 設定檔路徑(預設 ./${DEFAULT_CONFIG_FILE})
+  --site-slug <slug>  新站唯一識別(3–48 小寫英數/連字號);衍生 Worker、D1、R2 名稱
+  --allow-shared-default-names
+                      明確允許 cms 等預設共用名稱(僅單站/開發帳號;不可用於多客戶帳號)
   --skip-migrations   不套用 migrations/
   --skip-secrets      不處理 SECRETS_KEY
 
@@ -185,6 +188,8 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
     assumeYes,
     skipMigrations: args.skipMigrations,
     skipSecrets: args.skipSecrets,
+    siteSlug: args.siteSlug,
+    allowSharedDefaultNames: args.allowSharedDefaultNames,
   });
 }
 

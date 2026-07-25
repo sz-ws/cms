@@ -17,6 +17,9 @@ const CONFIG = `{
   "main": "custom-worker.ts",
   "name": "cms",
   "triggers": { "crons": ["* * * * *"] },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "cms" }],
+  // 新 clone 尚未選定租戶。
+  "vars": { "CMS_SITE_SLUG": "" },
   "d1_databases": [
     // 第一個佔位值
     { "binding": "DB", "database_name": "cms-db", "database_id": "${PLACEHOLDER_ID}", "migrations_dir": "migrations" },
@@ -81,17 +84,19 @@ function fakeWrangler(account: FakeAccount = {}) {
 }
 
 /** 腳本化的 Prompter:依序回答,答完之後一律用預設值。 */
-function scriptedPrompter(answers: boolean[]): Prompter & { asked: string[] } {
+function scriptedPrompter(answers: boolean[], textAnswers: string[] = []): Prompter & { asked: string[] } {
   const asked: string[] = [];
   let i = 0;
+  let textIndex = 0;
   return {
     asked,
     async confirm(question, defaultValue) {
       asked.push(question);
       return i < answers.length ? answers[i++] : defaultValue;
     },
-    async text(_q, d) {
-      return d ?? "";
+    async text(question, d) {
+      asked.push(question);
+      return textIndex < textAnswers.length ? textAnswers[textIndex++] : (d ?? "");
     },
     async select(_q, options) {
       return options[0].value;
@@ -117,6 +122,7 @@ afterEach(async () => {
 interface HarnessOverrides extends Partial<SetupOptions> {
   account?: FakeAccount;
   answers?: boolean[];
+  textAnswers?: string[];
 }
 
 async function setup(overrides: HarnessOverrides = {}): Promise<{
@@ -126,7 +132,7 @@ async function setup(overrides: HarnessOverrides = {}): Promise<{
   prompter: ReturnType<typeof scriptedPrompter>;
 }> {
   const { executor, calls } = fakeWrangler(overrides.account);
-  const prompter = scriptedPrompter(overrides.answers ?? []);
+  const prompter = scriptedPrompter(overrides.answers ?? [], overrides.textAnswers);
   const code = await runSetup({
     cwd: repo,
     configPath,
@@ -149,6 +155,8 @@ async function setup(overrides: HarnessOverrides = {}): Promise<{
     assumeYes: true,
     skipMigrations: false,
     skipSecrets: false,
+    // 舊流程測試刻意在單站假帳號跑;新租戶邊界案例會明確關掉這個逃生門。
+    allowSharedDefaultNames: true,
     generateSecret: () => "deterministic-test-key",
     ...overrides,
   });
@@ -197,6 +205,95 @@ describe("runSetup — 全新帳號的完整流程", () => {
     expect(out).toContain("pnpm deploy");
     expect(out).toContain("/setup");
     expect(out).toContain("core.siteUrl");
+  });
+});
+
+describe("runSetup — site slug 租戶邊界", () => {
+  it("新的 scaffold 在非互動模式沒有 slug 就拒絕,不查也不建帳號資源", async () => {
+    const { code, calls, out } = await setup({ allowSharedDefaultNames: false });
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(calls).toHaveLength(0);
+    expect(out).toContain("必須提供 site slug");
+    expect(out).toContain("--allow-shared-default-names");
+  });
+
+  it("互動模式會要求 slug,並拒絕不符合 Cloudflare 安全交集的字元", async () => {
+    const { code, calls, prompter, out } = await setup({
+      allowSharedDefaultNames: false,
+      assumeYes: false,
+      textAnswers: ["Acme_Taipei"],
+    });
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(calls).toHaveLength(0);
+    expect(prompter.asked[0]).toContain("site slug");
+    expect(out).toContain("小寫英數或連字號");
+  });
+
+  it("設定過的 site 重跑不再問 slug、不改名也不重建", async () => {
+    const first = await setup({
+      allowSharedDefaultNames: false,
+      siteSlug: "client-a",
+      account: { secrets: [SECRETS_KEY] },
+    });
+    expect(first.code).toBe(EXIT.OK);
+    const afterFirst = await readFile(configPath, "utf8");
+
+    const second = await setup({
+      allowSharedDefaultNames: false,
+      account: {
+        d1: [
+          { name: "cms-client-a-db", uuid: DB_UUID },
+          { name: "cms-client-a-tag-cache", uuid: DB_UUID },
+        ],
+        r2Existing: ["cms-client-a-storage", "cms-client-a-next-cache"],
+        secrets: [SECRETS_KEY],
+      },
+    });
+    expect(second.code).toBe(EXIT.OK);
+    expect(second.prompter.asked).toHaveLength(0);
+    expect(await readFile(configPath, "utf8")).toBe(afterFirst);
+    expect(argsOf(second.calls).some((s) => s.startsWith("d1 create"))).toBe(false);
+    expect(argsOf(second.calls).some((s) => s.startsWith("r2 bucket create"))).toBe(false);
+  });
+
+  it("預設 cms 名稱在未明示單站模式時拒絕", async () => {
+    const { code, out } = await setup({ allowSharedDefaultNames: false });
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(out).toContain("預設共用名稱");
+  });
+
+  it("新的 clone 撞到同 slug 的 D1 時拒絕認領,且不改設定檔", async () => {
+    const before = await readFile(configPath, "utf8");
+    const { code, calls, out } = await setup({
+      allowSharedDefaultNames: false,
+      siteSlug: "client-a",
+      account: { d1: [{ name: "cms-client-a-db", uuid: DB_UUID }] },
+    });
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(out).toContain("不會認領");
+    expect(await readFile(configPath, "utf8")).toBe(before);
+    expect(argsOf(calls).some((s) => s.startsWith("d1 create"))).toBe(false);
+  });
+
+  it("slug 的單次 JSONC 編輯會更新五個名稱與 self-reference,保留註解", async () => {
+    const { code } = await setup({
+      allowSharedDefaultNames: false,
+      siteSlug: "acme-taipei",
+      skipMigrations: true,
+      skipSecrets: true,
+    });
+    expect(code).toBe(EXIT.OK);
+    const written = await readFile(configPath, "utf8");
+    expect(written).toContain('"name": "cms-acme-taipei"');
+    expect(written).toContain('"service": "cms-acme-taipei"');
+    expect(written).toContain('"database_name": "cms-acme-taipei-db"');
+    expect(written).toContain('"database_name": "cms-acme-taipei-tag-cache"');
+    expect(written).toContain('"bucket_name": "cms-acme-taipei-storage"');
+    expect(written).toContain('"bucket_name": "cms-acme-taipei-next-cache"');
+    expect(written).toContain('"CMS_SITE_SLUG": "acme-taipei"');
+    expect(written).toContain("// main 指向 custom-worker.ts");
+    expect(written).toContain("// 第一個佔位值");
+    expect(written).toContain("// 新 clone 尚未選定租戶。");
   });
 });
 
