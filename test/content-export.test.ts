@@ -247,6 +247,32 @@ describe("streaming / pagination at a size that would blow up a single query", (
     expect(resumed.some((e) => overlap.has(e.id))).toBe(false);
   });
 
+  it("marks a mid-stream entry read failure incomplete and returns the last emitted cursor", async () => {
+    await seedEntries(300);
+    let prepares = 0;
+    const brokenAfterFirstPage = {
+      prepare(sql: string) {
+        prepares++;
+        if (prepares === 2) throw new Error("D1 subrequest limit reached");
+        return d1().prepare(sql);
+      },
+    } as unknown as D1Database;
+
+    const records = await collect({ d1: brokenAfterFirstPage });
+    const end = endOf(records);
+
+    expect(records.at(-1)?.kind).toBe("end");
+    expect(records).toContainEqual({
+      kind: "warning",
+      phase: "entry",
+      message: "D1 subrequest limit reached",
+    });
+    expect(entriesOf(records)).toHaveLength(250);
+    // warning 不是完成訊號：consumer 只能把 truncated 全 false 視為完整 backup。
+    expect(end.truncated).toEqual({ media: false, entries: true });
+    expect(end.resume).toEqual({ after: idAt(249) });
+  });
+
   it("never buffers the whole result set: ndjsonStream pulls lazily", async () => {
     await seedEntries(1200);
     // 只讀第一個 chunk 就取消,generator 必須停在早期批次而非跑完 1200 筆。
@@ -366,7 +392,7 @@ describe("media manifest", () => {
     expect(end.resume?.mediaCursor).toBe("next-page");
   });
 
-  it("degrades to a warning when R2 listing fails, still reaching `end`", async () => {
+  it("marks a failed R2 listing incomplete while still reaching `end`", async () => {
     await seedEntries(2);
     const broken = {
       list: async () => {
@@ -378,6 +404,7 @@ describe("media manifest", () => {
     expect(records.some((r) => r.kind === "warning")).toBe(true);
     expect(entriesOf(records)).toHaveLength(2);
     expect(endOf(records).counts.entries).toBe(2);
+    expect(endOf(records).truncated.media).toBe(true);
   });
 });
 

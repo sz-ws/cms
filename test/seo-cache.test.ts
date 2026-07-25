@@ -22,8 +22,14 @@ vi.mock("@/lib/settings", () => ({
   },
 }));
 
-import { getSeoSnapshot, __clearSeoCache } from "../src/ext/dx/seo-cache";
+import {
+  getSeoSnapshot,
+  __clearSeoCache,
+  SITEMAP_PAGE_SIZE,
+} from "../src/ext/dx/seo-cache";
 import { escapeXml } from "../src/ext/dx/seo-xml";
+import { GET as sitemapIndex } from "../src/app/sitemap.xml/route";
+import { GET as sitemapChild } from "../src/app/sitemap/[page]/route";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -83,17 +89,19 @@ async function insertContent(opts: {
   type: string;
   slug: string;
   status?: string;
+  locale?: string;
   data: Record<string, unknown>;
   updatedAt: number;
   publishAt?: number | null;
 }): Promise<void> {
   await d1()
     .prepare(
-      "INSERT INTO contents (id, type, slug, status, publish_at, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO contents (id, type, locale, slug, status, publish_at, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(
       opts.id,
       opts.type,
+      opts.locale ?? "en",
       opts.slug,
       opts.status ?? "published",
       opts.publishAt ?? null,
@@ -102,6 +110,23 @@ async function insertContent(opts: {
       opts.updatedAt,
     )
     .run();
+}
+
+async function insertPublishedRange(count: number): Promise<void> {
+  for (let start = 0; start < count; start += 100) {
+    const batch = [];
+    for (let i = start; i < Math.min(start + 100, count); i++) {
+      const id = `bulk-${String(i).padStart(5, "0")}`;
+      batch.push(
+        d1()
+          .prepare(
+            "INSERT INTO contents (id, type, locale, slug, status, publish_at, data, created_at, updated_at) VALUES (?, ?, 'en', ?, 'published', NULL, ?, ?, ?)",
+          )
+          .bind(id, "gallery.item", `item-${i}`, JSON.stringify({ title: `Item ${i}` }), 1, 1),
+      );
+    }
+    await d1().batch(batch);
+  }
 }
 
 describe("getSeoSnapshot", () => {
@@ -228,6 +253,67 @@ describe("getSeoSnapshot", () => {
     });
     const snap = await getSeoSnapshot();
     expect(snap.sitemapUrls.some((u) => u.path.includes(":"))).toBe(false);
+  });
+
+  it("deduplicates the one public sitemap URL shared by two locale rows", async () => {
+    await insertDx("gallery", GALLERY_MANIFEST);
+    await insertContent({
+      id: "en-about",
+      type: "gallery.item",
+      locale: "en",
+      slug: "about",
+      data: { title: "About" },
+      updatedAt: 1000,
+    });
+    await insertContent({
+      id: "zh-about",
+      type: "gallery.item",
+      locale: "zh-Hant",
+      slug: "about",
+      data: { title: "關於" },
+      updatedAt: 2000,
+    });
+
+    const urls = (await getSeoSnapshot()).sitemapUrls.filter(
+      (url) => url.path === "/gallery/about",
+    );
+    expect(urls).toEqual([{ path: "/gallery/about", lastModified: 2000 }]);
+  });
+
+  it("serves a sitemap index whose reachable child pages cover every published URL", async () => {
+    await insertDx("gallery", GALLERY_MANIFEST);
+    await insertPublishedRange(SITEMAP_PAGE_SIZE + 1);
+    settingsStore.set("core.siteUrl", "https://cms.test");
+
+    const index = await sitemapIndex();
+    const indexXml = await index.text();
+    const childLocs = [...indexXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    expect(childLocs).toEqual([
+      "https://cms.test/sitemap/0.xml",
+      "https://cms.test/sitemap/1.xml",
+    ]);
+
+    const childXml = await Promise.all(
+      childLocs.map(async (loc) => {
+        const page = loc.match(/\/(\d+\.xml)$/)?.[1];
+        expect(page).toBeTruthy();
+        const response = await sitemapChild(new Request(loc), {
+          params: Promise.resolve({ page: page! }),
+        });
+        expect(response.status).toBe(200);
+        return response.text();
+      }),
+    );
+    const urls = childXml.flatMap((xml) =>
+      [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]),
+    );
+
+    // 10,001 detail pages + the static /gallery list route; no gaps or duplicate URLs.
+    expect(urls).toHaveLength(SITEMAP_PAGE_SIZE + 2);
+    expect(new Set(urls).size).toBe(SITEMAP_PAGE_SIZE + 2);
+    expect(urls).toContain("https://cms.test/gallery/item-0");
+    expect(urls).toContain("https://cms.test/gallery/item-10000");
+    expect(urls).toContain("https://cms.test/gallery");
   });
 });
 

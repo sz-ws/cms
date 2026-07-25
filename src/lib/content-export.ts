@@ -36,14 +36,28 @@ import { settings as settingsTable } from "./schema";
 export const EXPORT_FORMAT = "szws-cms-export/1";
 
 /** 每次 D1 查詢取幾列。250 × 一筆 JSON document ≈ 數百 KB,在 D1 回應大小內。 */
-const CONTENT_BATCH = 250;
+export const CONTENT_BATCH = 250;
 
 /**
- * 單次匯出的 entry 上限。25,000 / 250 = 100 次 D1 查詢;加上媒體列舉約 130 次
- * subrequest,在付費方案 1000 次的預算內(免費方案 50 次 subrequest,實際約
- * 8,000 筆就會到頂)。超過上限不是失敗:end 紀錄會帶 truncated + resume cursor。
+ * 匯出串流可花掉的 read page 總預算(媒體列舉與 entry 查詢共用)。Workers Free
+ * 每 request 只有 50 個 subrequest；預設 35 頁，為 route return 前的 settings /
+ * extension 前置查詢保留至少 15 個位置。帳號方案無法在 runtime 判定，付費方案可用
+ * EXPORT_PAGE_BUDGET 覆寫(上限仍保留 100 個位置給其餘 request 工作)。
  */
-export const MAX_ENTRIES = 25_000;
+export const DEFAULT_EXPORT_PAGE_BUDGET = 35;
+export const MAX_EXPORT_PAGE_BUDGET = 900;
+
+/** 預設情況(完全沒有媒體頁)可讀出的 entry 上限。實際上限受共用 page budget 約束。 */
+export const MAX_ENTRIES = CONTENT_BATCH * DEFAULT_EXPORT_PAGE_BUDGET;
+
+/** 部署設定是字串 binding；無效值一律退回保守的 Free-plan 預設。 */
+export function exportPageBudget(raw: string | undefined): number {
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_EXPORT_PAGE_BUDGET;
+  const value = Number(raw);
+  return value >= 1 && value <= MAX_EXPORT_PAGE_BUDGET
+    ? value
+    : DEFAULT_EXPORT_PAGE_BUDGET;
+}
 
 /** R2 list 單頁上限(平台硬性),與 lib/storage.ts 的 listFiles 一致。 */
 const MEDIA_PAGE_SIZE = 100;
@@ -212,6 +226,8 @@ export interface ExportOptions {
   after: string | null;
   /** R2 續抓 cursor(上一份匯出的 end.resume.mediaCursor)。 */
   mediaCursor: string | null;
+  /** media 與 entry 共用的 read page 預算；route 以部署設定提供，測試可直接指定。 */
+  pageBudget?: number;
 }
 
 interface ContentRow extends Record<string, unknown> {
@@ -243,14 +259,24 @@ const KNOWN_CONTENT_COLUMNS = new Set([
  * 分頁走 keyset(`WHERE id > ? ORDER BY id`)而非 OFFSET:id 是 PRIMARY KEY,
  * 每批都是索引定位,第 100 批和第 1 批一樣快;OFFSET 則會愈翻愈慢,大站必超時。
  *
- * 任何一段出錯都轉成 warning 紀錄後繼續往下走,確保檔案結尾一定有 end ——
- * 「有 end 就是完整下載」這個保證比「出錯就中斷」有用得多。
+ * 任何一段出錯都轉成 warning 後仍走到 end，確保 consumer 永遠能讀到最後一行；但
+ * end 會明確標記 truncated 並附上可用 cursor，**只有 truncated 全為 false 才完整**。
  */
 export async function* exportRecords(
   opts: ExportOptions,
 ): AsyncGenerator<ExportRecord> {
   yield opts.meta;
   for (const s of opts.settings) yield s;
+
+  // options 是內部 API，但仍防禦呼叫端直接傳錯數字，不能因此繞過 deployment 上限。
+  const pageBudget =
+    typeof opts.pageBudget === "number" &&
+    Number.isInteger(opts.pageBudget) &&
+    opts.pageBudget >= 1 &&
+    opts.pageBudget <= MAX_EXPORT_PAGE_BUDGET
+      ? opts.pageBudget
+      : DEFAULT_EXPORT_PAGE_BUDGET;
+  let pagesRemaining = pageBudget;
 
   // ---- media:R2 物件清單(只有 key,沒有 bytes)----
   let mediaCount = 0;
@@ -260,11 +286,18 @@ export async function* exportRecords(
     let cursor = opts.mediaCursor ?? undefined;
     try {
       for (let page = 0; page < MAX_MEDIA_PAGES; page++) {
+        if (pagesRemaining === 0) {
+          // 沒有多打一個 R2 list 來「猜」還有沒有下一頁；保守地交回目前 cursor。
+          mediaTruncated = true;
+          nextMediaCursor = cursor;
+          break;
+        }
         const listed = await opts.r2.list({
           cursor,
           limit: MEDIA_PAGE_SIZE,
           include: ["httpMetadata", "customMetadata"],
         });
+        pagesRemaining--;
         for (const o of listed.objects) {
           const alt = o.customMetadata?.["alt"];
           mediaCount++;
@@ -283,12 +316,16 @@ export async function* exportRecords(
           break;
         }
         cursor = listed.cursor;
-        if (page === MAX_MEDIA_PAGES - 1) {
+        if (page === MAX_MEDIA_PAGES - 1 || pagesRemaining === 0) {
           mediaTruncated = true;
           nextMediaCursor = cursor;
+          break;
         }
       }
     } catch (e) {
+      // R2 cursor 是「這次失敗的 page」起點；不丟它，下一份就無法補回這段。
+      mediaTruncated = true;
+      nextMediaCursor = cursor;
       yield {
         kind: "warning",
         phase: "media",
@@ -310,9 +347,15 @@ export async function* exportRecords(
 
   try {
     for (;;) {
+      if (pagesRemaining === 0) {
+        // 預算用盡時不探測下一頁；寧可要求一次空的續抓，也不能宣告完整。
+        entriesTruncated = true;
+        break;
+      }
       const stmt = opts.d1.prepare(sql);
       const bound = opts.type ? stmt.bind(lastId, opts.type) : stmt.bind(lastId);
       const { results } = await bound.all<ContentRow>();
+      pagesRemaining--;
       if (results.length === 0) break;
 
       for (const row of results) {
@@ -343,17 +386,17 @@ export async function* exportRecords(
           updatedAt: row.updated_at,
           ...(Object.keys(extra).length > 0 ? { extra } : {}),
         };
-        if (entryCount >= MAX_ENTRIES) break;
-      }
-
-      if (entryCount >= MAX_ENTRIES) {
-        // 只有「還有下一批」才算截斷:剛好等於上限且已讀完不該誤報。
-        entriesTruncated = results.length === CONTENT_BATCH;
-        break;
       }
       if (results.length < CONTENT_BATCH) break;
+      if (pagesRemaining === 0) {
+        // 最後一頁剛好滿批時，不能再用額外 D1 查詢確認尾端；保守地標記 incomplete。
+        entriesTruncated = true;
+        break;
+      }
     }
   } catch (e) {
+    // 前面已成功 yield 的 lastId 就是可重啟的 keyset cursor；這不能只是一行 warning。
+    entriesTruncated = true;
     yield {
       kind: "warning",
       phase: "entry",
@@ -364,7 +407,7 @@ export async function* exportRecords(
   const resume =
     entriesTruncated || mediaTruncated
       ? {
-          ...(entriesTruncated ? { after: lastId } : {}),
+          ...(entriesTruncated && lastId ? { after: lastId } : {}),
           ...(nextMediaCursor ? { mediaCursor: nextMediaCursor } : {}),
         }
       : null;

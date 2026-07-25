@@ -1,13 +1,14 @@
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
-import { getDB, getStorage } from "@/lib/cf";
+import { getDB, getEnv, getStorage } from "@/lib/cf";
 import { getExtRuntime } from "@/ext/loader";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { getLocale } from "@/lib/i18n/server";
 import {
   EXPORT_FORMAT,
-  MAX_ENTRIES,
+  CONTENT_BATCH,
   collectExportableSettings,
+  exportPageBudget,
   exportRecords,
   ndjsonStream,
   type ExportTypeInfo,
@@ -79,6 +80,11 @@ export async function POST(req: Request): Promise<Response> {
 
   // ---- request-scoped 前置(必須在 return 之前做完)----
   const d1 = getDB();
+  // Workers 不會告訴 request 自己跑在哪個 subrequest 方案；Free-safe 的 35 頁
+  // 是引擎預設，付費 deployment 可明確設 EXPORT_PAGE_BUDGET(1–900) 放寬。
+  const pageBudget = exportPageBudget(
+    (getEnv() as unknown as { EXPORT_PAGE_BUDGET?: string }).EXPORT_PAGE_BUDGET,
+  );
   let r2: R2Bucket | undefined;
   try {
     r2 = getStorage();
@@ -140,7 +146,11 @@ export async function POST(req: Request): Promise<Response> {
     ],
     types,
     filter: { type, after },
-    limits: { maxEntries: MAX_ENTRIES, maxMediaObjects: 3000 },
+    limits: {
+      // page budget 與媒體列舉共用；沒有媒體時這是 entry 可達的最高值。
+      maxEntries: pageBudget * CONTENT_BATCH,
+      maxMediaObjects: Math.min(pageBudget, 30) * 100,
+    },
   };
 
   const stream = ndjsonStream(
@@ -152,6 +162,7 @@ export async function POST(req: Request): Promise<Response> {
       type,
       after,
       mediaCursor,
+      pageBudget,
     }),
   );
 
