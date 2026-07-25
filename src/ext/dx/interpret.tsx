@@ -72,6 +72,16 @@ export interface DeclarativeRow {
   enabled: number;
 }
 
+/**
+ * Declarative manifest 的 runtime 解讀結果。相容性不是「提示」：不相容的
+ * manifest 在產生 routes / hooks / providers 前就停下，交由 loader 記成可見的
+ * unavailable 狀態，而不是讓它半套進 runtime。
+ */
+export type ManifestInterpretation =
+  | { status: "ready"; extension: Extension }
+  | { status: "incompatible"; coreApi: string }
+  | { status: "invalid" };
+
 /** local content type name → def(供 view/route 查找)。 */
 function typeByName(
   manifest: DeclarativeManifest,
@@ -350,48 +360,55 @@ function buildHooks(
 
 /**
  * 把一列 declarative_extensions 轉為 Extension。manifest 於此重新 parseManifest;
- * 無效 → 回傳 null(loader 跳過並 log,絕不 crash;§5)。
+ * 無效 → 回傳 invalid(loader 跳過並 log,絕不 crash;§5)。CORE_API 不相容則
+ * 在任何 runtime surface 建立前回傳 incompatible。
  */
-export function interpretManifest(row: DeclarativeRow): Extension | null {
+export function interpretManifest(row: DeclarativeRow): ManifestInterpretation {
   let json: unknown;
   try {
     json = JSON.parse(row.manifest);
   } catch {
     console.error(`[dx:interpret] ext=${row.id} manifest not valid JSON`);
-    return null;
+    return { status: "invalid" };
   }
   const parsed = parseManifest(json);
   if (!parsed.ok || !parsed.manifest) {
     console.error(`[dx:interpret] ext=${row.id} invalid manifest: ${parsed.error}`);
-    return null;
+    return { status: "invalid" };
   }
   const manifest = parsed.manifest;
+  if (!isManifestCompatible(manifest)) {
+    return { status: "incompatible", coreApi: manifest.coreApi };
+  }
   const types = typeByName(manifest);
   // 1.21.0:哪些 content type 是收件匣。判定一次、往下傳給三個 surface builder,
   // 確保 admin / public / API 三邊對「這是不是私人訊息」的認知不可能分叉。
   const submissions = submissionTypeNames(manifest);
 
   return {
-    id: manifest.id,
-    name: manifest.name,
-    version: manifest.version,
-    coreApi: manifest.coreApi,
-    description: manifest.description,
-    icon: manifest.icon,
-    og: manifest.og,
-    settings: (manifest.settings ?? []).map(toSettingField),
-    adminPages: buildAdminPages(manifest.id, manifest, types, submissions),
-    apiRoutes: buildApiRoutes(manifest.id, manifest, submissions),
-    publicRoutes: buildPublicRoutes(manifest.id, manifest, types),
-    hooks: buildHooks(manifest.id, manifest),
-    // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth)。
-    contentTypes: manifest.contentTypes,
-    // roadmap #16:dashboard 卡直接透傳(同 contentTypes;實際查詢與渲染交給
-    // dashboard-cards.ts + 卡片元件)。
-    dashboardCards: manifest.dashboardCards,
-    // B(docs/spec-declarative-notify-schedule.md):manifest.schedule[] → jobs,
-    // 騎在 ext-jobs 引擎上(src/lib/jobs.ts 既有 reconcile/claim/執行,零引擎改動)。
-    jobs: buildScheduleJobs(manifest.id, manifest, types),
+    status: "ready",
+    extension: {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      coreApi: manifest.coreApi,
+      description: manifest.description,
+      icon: manifest.icon,
+      og: manifest.og,
+      settings: (manifest.settings ?? []).map(toSettingField),
+      adminPages: buildAdminPages(manifest.id, manifest, types, submissions),
+      apiRoutes: buildApiRoutes(manifest.id, manifest, submissions),
+      publicRoutes: buildPublicRoutes(manifest.id, manifest, types),
+      hooks: buildHooks(manifest.id, manifest),
+      // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth)。
+      contentTypes: manifest.contentTypes,
+      // roadmap #16:dashboard 卡直接透傳(同 contentTypes;實際查詢與渲染交給
+      // dashboard-cards.ts + 卡片元件)。
+      dashboardCards: manifest.dashboardCards,
+      // B(docs/spec-declarative-notify-schedule.md):manifest.schedule[] → jobs,
+      // 騎在 ext-jobs 引擎上(src/lib/jobs.ts 既有 reconcile/claim/執行,零引擎改動)。
+      jobs: buildScheduleJobs(manifest.id, manifest, types),
+    },
   };
 }
 

@@ -335,6 +335,15 @@ export const en = {
   "extensions.declarative": "Declarative",
   "extensions.enabled": "enabled",
   "extensions.disabled": "disabled",
+  "extensions.unavailable": "unavailable",
+  "extensions.unavailable.coreApi":
+    "Requires core API {coreApi}; this core provides {coreVersion}.",
+  "extensions.unavailable.missingCoreApi":
+    "This code extension does not declare a core API contract.",
+  "extensions.unavailable.migration":
+    "A required database migration failed. It will retry on the next request.",
+  "extensions.unavailable.load":
+    "This extension could not be prepared for runtime.",
   "extensions.disable": "Disable",
   "extensions.enable": "Enable",
   "extensions.uninstall": "Uninstall",
@@ -346,6 +355,7 @@ export const en = {
   "extensions.sheet.id": "Extension ID",
   "extensions.sheet.kind": "Type",
   "extensions.sheet.kindCode": "Code",
+  "extensions.sheet.runtimeIssue": "Runtime health",
   "extensions.sheet.dangerZone": "Danger zone",
   "extensions.sheet.uninstallDesc": "Removes this extension from your site.",
   "extensions.sheet.purgeContent": "Also delete its content",
@@ -414,8 +424,31 @@ export const en = {
   "setup.adminName": "Admin name",
   "setup.email": "Email",
   "setup.password": "Password (min 8)",
+  "setup.passwordCalibrationRequired":
+    "Calibrate password hashing on this deployment before creating the first admin.",
   "setup.creating": "Creating…",
   "setup.createAdmin": "Create admin & continue",
+
+  // PasswordWorkFactorWizard
+  "authCalibration.title": "Password hashing",
+  "authCalibration.description":
+    "Tests real deployed requests for CPU-limit survival, then records the PBKDF2 work factor and its matching dummy hash together.",
+  "authCalibration.notCalibrated":
+    "Not calibrated. The first admin cannot be created until this deployment proves the OWASP minimum can complete.",
+  "authCalibration.current": "Calibrated at {iterations} PBKDF2 iterations.",
+  "authCalibration.start": "Calibrate now",
+  "authCalibration.recalibrate": "Recalibrate",
+  "authCalibration.calibrating": "Calibrating…",
+  "authCalibration.ceiling":
+    "The safe calibration ceiling of {iterations} iterations survived; the wizard does not probe beyond it.",
+  "authCalibration.incompatible":
+    "This deployment could not complete the OWASP minimum of {iterations} PBKDF2-HMAC-SHA256 iterations. Do not lower password hashing; move this CMS to a Workers plan with more CPU.",
+  "authCalibration.failed":
+    "Calibration did not complete. Nothing was weakened or changed; check the deployment response and try again.",
+  "authCalibration.loweringWarning":
+    "This deployed plan only validated {next} iterations, lower than the current {current}. Applying it weakens password hashing and replaces the recorded profile.",
+  "authCalibration.keepCurrent": "Keep current protection",
+  "authCalibration.applyLowering": "Apply lower work factor",
 
   // RegistryBrowser (Marketplace browse — RegistryBrowser.tsx + child components)
   "registryBrowser.loading": "Loading marketplace…",

@@ -46,6 +46,11 @@ export type SettingField = SettingFieldBase &
  */
 export const DEFAULT_CONTENT_LOCALE = "en";
 
+// 密碼 work factor 與 dummy hash 是 auth.ts 的單一 profile；這個 key 仍登記在
+// CORE_SETTINGS，讓設定白名單、匯出遮罩與 runtime cache 都有同一個真相來源。
+// 它不可由通用 PUT /api/settings 改寫，只能由校準路由原子地寫入完整 profile。
+export const PASSWORD_HASHING_SETTING = "core.auth.passwordHashing";
+
 /** 站台的內容預設語言;未設定 → DEFAULT_CONTENT_LOCALE。 */
 export async function getDefaultContentLocale(): Promise<string> {
   const v = await getSetting<string>("core.content.defaultLocale");
@@ -213,6 +218,15 @@ export const CORE_SETTINGS: SettingField[] = [
     description:
       'e.g. "gpt-4o-mini", "claude-haiku-4-5-20251001", or "@cf/meta/llama-3.1-8b-instruct".',
     type: "text",
+    default: "",
+  },
+  {
+    key: PASSWORD_HASHING_SETTING,
+    group: "advanced",
+    label: "Password hashing calibration",
+    description:
+      "Managed by the password hashing calibration wizard. It records the PBKDF2 work factor and its matching dummy hash together.",
+    type: "textarea",
     default: "",
   },
   {

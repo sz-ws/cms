@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Power, Trash2 } from "lucide-react";
+import { CircleAlert, Power, Trash2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -140,7 +140,7 @@ function ExtensionSheetBody({
         <div className="flex flex-col gap-3.5">
           <SectionLabel>{t("extensions.status")}</SectionLabel>
           <div className="flex items-center justify-between rounded-[10px] border border-black/[0.08] px-3.5 py-2.5">
-            <StatusPill enabled={ext.enabled} />
+            <StatusPill enabled={ext.enabled} issue={ext.issue} />
             <button
               type="button"
               disabled={busy}
@@ -163,6 +163,7 @@ function ExtensionSheetBody({
                   : t("extensions.enable")}
             </button>
           </div>
+          {ext.issue && <RuntimeIssue issue={ext.issue} />}
         </div>
 
         {/* Danger zone */}
@@ -231,6 +232,34 @@ function ExtensionSheetBody({
         )}
       </div>
     </>
+  );
+}
+
+function RuntimeIssue({ issue }: { issue: NonNullable<ExtensionRow["issue"]> }) {
+  const t = useT();
+  const message =
+    issue.kind === "core-api-incompatible"
+      ? t("extensions.unavailable.coreApi", {
+          coreApi: issue.coreApi,
+          coreVersion: issue.coreVersion,
+        })
+      : issue.kind === "missing-core-api"
+        ? t("extensions.unavailable.missingCoreApi")
+        : issue.kind === "migration-failed"
+          ? t("extensions.unavailable.migration")
+          : t("extensions.unavailable.load");
+
+  return (
+    <div
+      role="alert"
+      className="flex gap-2 rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-red-700"
+    >
+      <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span className="flex flex-col gap-0.5">
+        <span className="font-medium">{t("extensions.sheet.runtimeIssue")}</span>
+        <span className="text-red-700/80">{message}</span>
+      </span>
+    </div>
   );
 }
 

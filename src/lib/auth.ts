@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "./db";
 import { sessions, users } from "./schema";
+import { getSetting, PASSWORD_HASHING_SETTING } from "./settings";
 
 // ---- 型別 ----
 
@@ -63,13 +64,71 @@ const toHex = (u8: Uint8Array): string =>
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-// ---- 密碼雜湊(04 §1:PBKDF2-HMAC-SHA256,600k iterations)----
+// ---- 密碼雜湊(04 §1:PBKDF2-HMAC-SHA256)----
 
-// PBKDF2 成本註記(04 §5):600k iterations 在 Workers 上約數十 ms CPU。
-// 若免費方案碰到 CPU 上限,降到 210k(OWASP 下限)並在此記錄。實測未觸頂,維持 600k。
-const PBKDF2_ITERATIONS = 600_000;
+// OWASP 對 PBKDF2-HMAC-SHA256 的現行建議下限。不能為了讓 Free plan 跑得動而
+// 偷降；若這個值在部署端無法存活，該方案就不適合承載 password login。
+export const PBKDF2_MIN_ITERATIONS = 600_000;
 
-export async function hashPassword(password: string): Promise<string> {
+// 校準上限是明確的政策界線，不把「找最高可存活值」變成無上限的 CPU / 帳單探測。
+// 四倍 OWASP 基線已足以涵蓋目前 paid Workers 的常見配置；碰到它時 UI 會明說。
+export const PBKDF2_MAX_ITERATIONS = 2_400_000;
+
+export interface PasswordHashingProfile {
+  iterations: number;
+  dummyHash: string;
+}
+
+const LEGACY_DUMMY_PASSWORD_HASH =
+  "pbkdf2$600000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+const DUMMY_PASSWORD = "__cms_password_hashing_dummy_never_a_user_password__";
+
+// 升版前的資料庫沒有 profile；舊寫入端固定是 600k，因此這個 fallback 是相容
+// 行為，不是新的降級策略。管理員登入後必須從設定頁重新校準。
+const LEGACY_PASSWORD_HASHING_PROFILE: PasswordHashingProfile = {
+  iterations: PBKDF2_MIN_ITERATIONS,
+  dummyHash: LEGACY_DUMMY_PASSWORD_HASH,
+};
+
+export function isSupportedPasswordHashingIterations(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= PBKDF2_MIN_ITERATIONS &&
+    value <= PBKDF2_MAX_ITERATIONS
+  );
+}
+
+/** 從自描述 hash 取工作因子；格式錯誤回 null，供 profile 完整性檢查共用。 */
+export function passwordHashIterations(stored: string): number | null {
+  const parts = stored.split("$");
+  if (parts.length !== 4 || parts[0] !== "pbkdf2" || !/^\d+$/.test(parts[1])) {
+    return null;
+  }
+  const iterations = Number(parts[1]);
+  return Number.isSafeInteger(iterations) && iterations > 0 ? iterations : null;
+}
+
+/**
+ * work factor 與 dummy hash 是同一筆不可拆的 profile：任何直接改 iterations、
+ * 忘了重做 dummy hash 的值都會被拒絕，避免帳號列舉 oracle 倒轉回來。
+ */
+export function isPasswordHashingProfile(
+  value: unknown,
+): value is PasswordHashingProfile {
+  if (!value || typeof value !== "object") return false;
+  const profile = value as Partial<PasswordHashingProfile>;
+  return (
+    isSupportedPasswordHashingIterations(profile.iterations) &&
+    typeof profile.dummyHash === "string" &&
+    passwordHashIterations(profile.dummyHash) === profile.iterations
+  );
+}
+
+async function derivePasswordHash(
+  password: string,
+  iterations: number,
+): Promise<string> {
   const salt = randomBytes(16);
   const key = await crypto.subtle.importKey(
     "raw",
@@ -79,11 +138,65 @@ export async function hashPassword(password: string): Promise<string> {
     ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations: PBKDF2_ITERATIONS },
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
     key,
     256,
   );
-  return `pbkdf2$${PBKDF2_ITERATIONS}$${b64(salt)}$${b64(new Uint8Array(bits))}`;
+  return `pbkdf2$${iterations}$${b64(salt)}$${b64(new Uint8Array(bits))}`;
+}
+
+/** 校準 probe 與登入 dummy 共用的唯一 profile 產生器。 */
+export async function createPasswordHashingProfile(
+  iterations: number,
+): Promise<PasswordHashingProfile> {
+  if (!isSupportedPasswordHashingIterations(iterations)) {
+    throw new RangeError("unsupported PBKDF2 iteration count");
+  }
+  return {
+    iterations,
+    dummyHash: await derivePasswordHash(DUMMY_PASSWORD, iterations),
+  };
+}
+
+/** 校準階段只測試一次同成本 derivation；成功前不改動任何已生效的 profile。 */
+export async function probePasswordHashingWorkFactor(
+  iterations: number,
+): Promise<void> {
+  if (!isSupportedPasswordHashingIterations(iterations)) {
+    throw new RangeError("unsupported PBKDF2 iteration count");
+  }
+  await derivePasswordHash(DUMMY_PASSWORD, iterations);
+}
+
+/**
+ * 新寫入一律由 active profile 帶入工作因子。呼叫端已持有已驗證 profile 時可
+ * 直接傳入（setup 的同一 request），其餘產品寫入路徑由這裡集中取得 active 值。
+ */
+export async function hashPassword(
+  password: string,
+  profile?: PasswordHashingProfile,
+): Promise<string> {
+  return derivePasswordHash(
+    password,
+    (profile ?? (await getActivePasswordHashingProfile())).iterations,
+  );
+}
+
+/** 只讀取真正校準完成的 profile；setup 用它拒絕未校準的首次寫入。 */
+export async function getConfiguredPasswordHashingProfile(): Promise<PasswordHashingProfile | null> {
+  const value = await getSetting<unknown>(PASSWORD_HASHING_SETTING, null);
+  return isPasswordHashingProfile(value) ? value : null;
+}
+
+/**
+ * 已有站升版前仍可用舊 600k dummy 登入；一旦校準成功，登入 dummy 與所有新
+ * password hash 都只能從同一個 profile 取值。
+ */
+export async function getActivePasswordHashingProfile(): Promise<PasswordHashingProfile> {
+  return (
+    (await getConfiguredPasswordHashingProfile()) ??
+    LEGACY_PASSWORD_HASHING_PROFILE
+  );
 }
 
 /** 逐 byte XOR 累積的 constant-time 比對(04 §1)。 */
@@ -101,8 +214,8 @@ export async function verifyPassword(
   const parts = stored.split("$");
   // 格式:pbkdf2$<iterations>$<salt b64>$<hash b64>
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
-  const iterations = Number.parseInt(parts[1], 10);
-  if (!Number.isFinite(iterations) || iterations <= 0) return false;
+  const iterations = passwordHashIterations(stored);
+  if (iterations === null) return false;
   const salt = unb64(parts[2]);
   const expected = unb64(parts[3]);
   const key = await crypto.subtle.importKey(
@@ -119,13 +232,6 @@ export async function verifyPassword(
   );
   return constantTimeEqual(new Uint8Array(bits), expected);
 }
-
-/**
- * 固定 dummy hash(04 §5):帳號不存在時也對它跑一次 verifyPassword,
- * 消除回應時間差造成的帳號列舉 oracle。內容永不會被任何真實密碼命中。
- */
-export const DUMMY_PASSWORD_HASH =
-  "pbkdf2$600000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 // ---- Session(04 §2)----
 

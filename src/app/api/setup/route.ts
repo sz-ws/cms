@@ -5,6 +5,7 @@ import { getDB } from "@/lib/cf";
 import {
   SESSION_COOKIE,
   createSession,
+  getConfiguredPasswordHashingProfile,
   hashPassword,
   sessionCookieOptions,
 } from "@/lib/auth";
@@ -35,7 +36,15 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const email = parsed.email.toLowerCase();
-  const passwordHash = await hashPassword(parsed.password);
+  // 首次建立前必須先在實際部署端完成存活校準；絕不能默默退回較低 work factor。
+  const passwordProfile = await getConfiguredPasswordHashingProfile();
+  if (!passwordProfile) {
+    return Response.json(
+      { error: "password_work_factor_not_calibrated" },
+      { status: 409 },
+    );
+  }
+  const passwordHash = await hashPassword(parsed.password, passwordProfile);
   const id = nanoid();
   const now = Date.now();
 

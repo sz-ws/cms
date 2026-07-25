@@ -4,9 +4,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import {
-  DUMMY_PASSWORD_HASH,
   SESSION_COOKIE,
   createSession,
+  getActivePasswordHashingProfile,
   purgeExpiredSessions,
   sessionCookieOptions,
   verifyPassword,
@@ -60,10 +60,11 @@ export async function POST(req: Request): Promise<Response> {
     .limit(1);
   const user = rows[0];
 
-  // 帳號不存在時也對固定 dummy hash 跑一次 verifyPassword,消除時間差 oracle。
+  // dummy 與新寫入 hash 從同一個校準 profile 取 iterations，消除帳號列舉 oracle。
+  const profile = await getActivePasswordHashingProfile();
   const ok = await verifyPassword(
     parsed.password,
-    user ? user.passwordHash : DUMMY_PASSWORD_HASH,
+    user ? user.passwordHash : profile.dummyHash,
   );
 
   if (!user || !ok) {

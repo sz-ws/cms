@@ -1,9 +1,14 @@
-import { requireAuth } from "@/lib/auth";
+import { getConfiguredPasswordHashingProfile, requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { settings } from "@/lib/schema";
-import { CORE_SETTINGS, maskSecrets, getRegistryTokenMap } from "@/lib/settings";
+import {
+  CORE_SETTINGS,
+  getRegistryTokenMap,
+  maskSecrets,
+  PASSWORD_HASHING_SETTING,
+} from "@/lib/settings";
 import { groupSettingFields } from "@/lib/settings-ui";
 import { getExtRuntime } from "@/ext/loader";
 import {
@@ -12,6 +17,7 @@ import {
 } from "@/components/admin/SettingsWorkspace";
 import { RegistrySourcesManager, type RegistrySource } from "@/components/admin/RegistrySourcesManager";
 import { ApiTokensManager } from "@/components/admin/ApiTokensManager";
+import { PasswordWorkFactorWizard } from "@/components/admin/PasswordWorkFactorWizard";
 import {
   ContentExportCard,
   type ExportContentType,
@@ -48,7 +54,8 @@ export default async function SettingsPage() {
     (field) =>
       field.key !== "core.registrySources" &&
       field.key !== "core.registryTokens" &&
-      field.key !== "core.dashboard.insights",
+      field.key !== "core.dashboard.insights" &&
+      field.key !== PASSWORD_HASHING_SETTING,
   );
 
   // Core 卡片完全由 SettingField.group 推導(見 settings-ui.ts):有欄位的 group
@@ -112,6 +119,7 @@ export default async function SettingsPage() {
 
   // roadmap #1 §5:API tokens 列表(永不含 raw / hash;只給 prefix / scope / 時間)。
   const apiTokens = await listApiTokens();
+  const passwordProfile = await getConfiguredPasswordHashingProfile();
 
   // 匯出的「只匯出某個 type」選單。來源是已啟用 extension 宣告的 content type;
   // 匯出端點本身不受此清單限制(它讀的是 contents 表,連停用 extension 留下的
@@ -139,11 +147,15 @@ export default async function SettingsPage() {
         sections={sections}
         values={values}
         coreAddon={
-          <>
+          <div className="flex flex-col gap-6">
+            <PasswordWorkFactorWizard
+              initialIterations={passwordProfile?.iterations ?? null}
+            />
+            <div className="h-px bg-black/[0.06]" />
             <RegistrySourcesManager initialSources={registrySources} />
             <ApiTokensManager initialTokens={apiTokens} />
             <ContentExportCard types={exportTypes} />
-          </>
+          </div>
         }
       />
 

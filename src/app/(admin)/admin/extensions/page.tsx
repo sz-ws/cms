@@ -44,6 +44,7 @@ export default async function ExtensionsPage() {
     enabled: enabledIds.has(e.id),
     installed: installedIds.has(e.id),
     kind: "code",
+    issue: enabledIds.has(e.id) ? (rt.unavailableById.get(e.id) ?? null) : null,
   }));
 
   // declarative extensions:name/description 取自 manifest(驗證後)。
@@ -59,6 +60,7 @@ export default async function ExtensionsPage() {
       enabled: r.enabled === 1,
       installed: true,
       kind: "declarative" as const,
+      issue: r.enabled === 1 ? (rt.unavailableById.get(r.id) ?? null) : null,
     };
   });
 

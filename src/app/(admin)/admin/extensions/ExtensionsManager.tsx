@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import NumberFlow from "@number-flow/react";
 import { TextMorph } from "torph/react";
-import { Power, Trash2 } from "lucide-react";
+import { CircleAlert, Power, Trash2 } from "lucide-react";
 import { CoreTable, RowIconButton, type CoreColumn } from "@/components/admin/core-table";
 import { RegistryBrowser } from "./RegistryBrowser";
 import { DevInstallTrigger } from "./DevInstallDialog";
 import { ExtensionSheet } from "./ExtensionSheet";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
+import type { ExtensionRuntimeIssue } from "@/ext/loader";
 
 export interface ExtensionRow {
   id: string;
@@ -20,6 +21,7 @@ export interface ExtensionRow {
   enabled: boolean;
   installed: boolean;
   kind: "code" | "declarative";
+  issue: ExtensionRuntimeIssue | null;
 }
 
 interface ExtensionsManagerProps {
@@ -31,25 +33,48 @@ type Tab = "installed" | "browse";
 
 // 琺瑯 pill(頂光 + 內高光 + 同色 hairline,配方同 users 的 RolePill):
 // enabled 走綠、disabled 走中性。TextMorph 讓 enable/disable 切換時字自己變形。
-export function StatusPill({ enabled }: { enabled: boolean }) {
+export function StatusPill({
+  enabled,
+  issue,
+}: {
+  enabled: boolean;
+  issue?: ExtensionRuntimeIssue | null;
+}) {
   const t = useT();
+  const unavailable = enabled && issue !== null && issue !== undefined;
+  const label = unavailable
+    ? t("extensions.unavailable")
+    : enabled
+      ? t("extensions.enabled")
+      : t("extensions.disabled");
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold tracking-[0.04em] uppercase",
-        enabled ? "text-[rgb(18,124,88)]" : "text-black/50",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
+        unavailable
+          ? "text-red-700"
+          : enabled
+            ? "text-[rgb(18,124,88)]"
+            : "text-black/50",
       )}
       style={{
         backgroundImage:
           "linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0) 58%)",
-        backgroundColor: enabled ? "rgba(16,145,90,0.12)" : "rgba(0,0,0,0.05)",
-        boxShadow: enabled
+        backgroundColor: unavailable
+          ? "rgba(254,226,226,0.9)"
+          : enabled
+            ? "rgba(16,145,90,0.12)"
+            : "rgba(0,0,0,0.05)",
+        boxShadow: unavailable
+          ? "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 0 0 1px rgba(220,38,38,0.18), 0 1px 1.5px rgba(127,29,29,0.08)"
+          : enabled
           ? "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 0 0 1px rgba(16,145,90,0.18), 0 1px 1.5px rgba(20,90,60,0.08)"
           : "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 0 0 1px rgba(0,0,0,0.06), 0 1px 1.5px rgba(0,0,0,0.04)",
       }}
     >
+      {unavailable && <CircleAlert className="size-3" aria-hidden="true" />}
       <TextMorph respectReducedMotion>
-        {enabled ? t("extensions.enabled") : t("extensions.disabled")}
+        {label}
       </TextMorph>
     </span>
   );
@@ -160,7 +185,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
       label: t("extensions.status"),
       sortable: true,
       sortValue: (e) => (e.enabled ? 0 : 1),
-      render: (e) => <StatusPill enabled={e.enabled} />,
+      render: (e) => <StatusPill enabled={e.enabled} issue={e.issue} />,
     },
   ];
 

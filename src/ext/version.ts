@@ -278,6 +278,15 @@
 //   manifestSchema 是 .strict() —— 宣告 `kind` 的 manifest 在 <1.21.0 的 core 會整包
 //   驗證失敗,故使用該欄位的 manifest 其 coreApi 必須宣告 "^1.21.0";不寫 `kind`
 //   而依賴推論的 manifest 不受影響、任何 core 版本都過。
+// 1.23.0(部署端 PBKDF2 校準):
+//   - 新 core setting `core.auth.passwordHashing` 是不可分離的 profile：同時保存
+//     PBKDF2-HMAC-SHA256 iterations 與同一 work factor 產生的 dummy hash。這讓
+//     login 的不存在帳號路徑不會因校準後 dummy 留在 600k 而反向變成列舉 oracle。
+//   - setup 與 admin settings 共用可重跑 wizard；browser 以 request 是否完整返回
+//     做有限二分 probe，因 Workers 同步執行時 Date.now()/performance.now() 不前進。
+//     OWASP 600k 是硬下限，無法存活時明確提示升級 Workers CPU，而非靜默降級。
+//   - password hash 本身既有 `pbkdf2$<iterations>$...` 自描述格式，verify 早已讀取
+//     每筆 stored iterations；舊 600k 帳號不需資料 migration，之後的新寫入採 profile。
 // 1.22.0(媒體服務層 —— 圖片變體):
 //   - `/api/files/<key>` 新增 `?w=`(寬度)與 `?f=`(格式)兩個查詢參數,extension
 //     組得出來的 URL 契約,故屬 CORE_API 表面。寬度是**封閉白名單**
@@ -294,4 +303,4 @@
 //     binding。Images 未啟用時原樣回傳原檔(X-Image-Transform: none),永不 404/500。
 //   讀 StoredFile 尺寸或組 ?w=/?f= 的 extension 應宣告 coreApi "^1.22.0";
 //   舊 extension 不受影響(參數被忽略、欄位為 undefined)。
-export const CORE_API_VERSION = "1.22.0";
+export const CORE_API_VERSION = "1.23.0";

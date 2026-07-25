@@ -331,6 +331,14 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "extensions.declarative": "宣告式",
   "extensions.enabled": "已啟用",
   "extensions.disabled": "已停用",
+  "extensions.unavailable": "無法執行",
+  "extensions.unavailable.coreApi":
+    "需要 Core API {coreApi}；目前核心提供 {coreVersion}。",
+  "extensions.unavailable.missingCoreApi":
+    "此程式碼擴充功能沒有宣告 Core API 契約。",
+  "extensions.unavailable.migration":
+    "必要的資料庫 migration 失敗，會在下一個請求重新嘗試。",
+  "extensions.unavailable.load": "此擴充功能無法準備為 runtime。",
   "extensions.disable": "停用",
   "extensions.enable": "啟用",
   "extensions.uninstall": "解除安裝",
@@ -342,6 +350,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "extensions.sheet.id": "擴充功能 ID",
   "extensions.sheet.kind": "類型",
   "extensions.sheet.kindCode": "程式碼",
+  "extensions.sheet.runtimeIssue": "Runtime 健康狀態",
   "extensions.sheet.dangerZone": "危險區域",
   "extensions.sheet.uninstallDesc": "從你的網站移除此擴充功能。",
   "extensions.sheet.purgeContent": "同時刪除其內容",
@@ -409,8 +418,31 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "setup.adminName": "管理者名稱",
   "setup.email": "電子郵件",
   "setup.password": "密碼（至少 8 個字元）",
+  "setup.passwordCalibrationRequired":
+    "請先在這個部署上校準密碼雜湊，再建立第一位管理者。",
   "setup.creating": "建立中…",
   "setup.createAdmin": "建立管理者並繼續",
+
+  // PasswordWorkFactorWizard
+  "authCalibration.title": "密碼雜湊",
+  "authCalibration.description":
+    "以實際部署 request 是否能在 CPU 上限內完成來測試，並把 PBKDF2 工作因子與對應 dummy hash 一起記錄。",
+  "authCalibration.notCalibrated":
+    "尚未校準。此部署必須先證明 OWASP 最低值可完成，才能建立第一位管理者。",
+  "authCalibration.current": "已校準為 {iterations} 次 PBKDF2 iterations。",
+  "authCalibration.start": "立即校準",
+  "authCalibration.recalibrate": "重新校準",
+  "authCalibration.calibrating": "校準中…",
+  "authCalibration.ceiling":
+    "安全校準上限 {iterations} 次已能完成；wizard 不會再往上探測。",
+  "authCalibration.incompatible":
+    "這個部署無法完成 OWASP 最低的 {iterations} 次 PBKDF2-HMAC-SHA256。請不要降低密碼雜湊；改用 CPU 額度更高的 Workers 方案。",
+  "authCalibration.failed":
+    "校準沒有完成。沒有降低或變更任何密碼雜湊設定；請檢查部署回應後重試。",
+  "authCalibration.loweringWarning":
+    "這個部署只驗證到 {next} 次，低於目前的 {current} 次。套用會降低密碼雜湊強度，並取代已記錄的 profile。",
+  "authCalibration.keepCurrent": "保留目前保護強度",
+  "authCalibration.applyLowering": "套用較低工作因子",
 
   // RegistryBrowser
   "registryBrowser.loading": "載入市集中…",

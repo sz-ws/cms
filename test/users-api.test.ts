@@ -65,10 +65,14 @@ beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'editor', created_at INTEGER NOT NULL, avatar_key TEXT);",
   );
+  await d1().exec(
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+  );
 });
 
 beforeEach(async () => {
   await d1().exec("DELETE FROM users;");
+  await d1().exec("DELETE FROM settings;");
   for (const u of [ADMIN, EDITOR]) {
     await d1()
       .prepare(

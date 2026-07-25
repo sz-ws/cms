@@ -3,9 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input } from "@/components/ui/legacy";
+import { PasswordWorkFactorWizard } from "@/components/admin/PasswordWorkFactorWizard";
 import { useT } from "@/lib/i18n/I18nProvider";
 
-export function SetupForm() {
+export function SetupForm({
+  initialPasswordIterations,
+}: {
+  initialPasswordIterations: number | null;
+}) {
   const t = useT();
   const router = useRouter();
   const [siteTitle, setSiteTitle] = useState("");
@@ -14,10 +19,17 @@ export function SetupForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [passwordCalibrated, setPasswordCalibrated] = useState(
+    initialPasswordIterations !== null,
+  );
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!passwordCalibrated) {
+      setError(t("setup.passwordCalibrationRequired"));
+      return;
+    }
     setPending(true);
     try {
       const res = await fetch("/api/setup", {
@@ -29,9 +41,16 @@ export function SetupForm() {
         router.push("/admin");
         return;
       }
-      if (res.status === 403) setError(t("setup.alreadyCompleted"));
-      else setError(t("setup.formError"));
-    } catch {
+      if (res.status === 403) {
+        setError(t("setup.alreadyCompleted"));
+      } else if (res.status === 409) {
+        setPasswordCalibrated(false);
+        setError(t("setup.passwordCalibrationRequired"));
+      } else {
+        setError(t("setup.formError"));
+      }
+    } catch (submissionError) {
+      console.error("[setup] admin creation request failed", submissionError);
       setError(t("setup.networkError"));
     } finally {
       setPending(false);
@@ -41,6 +60,11 @@ export function SetupForm() {
   return (
     <Card>
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <PasswordWorkFactorWizard
+          initialIterations={initialPasswordIterations}
+          onCalibrated={() => setPasswordCalibrated(true)}
+        />
+        <div className="h-px bg-black/[0.06]" />
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-foreground">
             {t("setup.siteTitle")}
@@ -84,7 +108,7 @@ export function SetupForm() {
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end">
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || !passwordCalibrated}>
             {pending ? t("setup.creating") : t("setup.createAdmin")}
           </Button>
         </div>
