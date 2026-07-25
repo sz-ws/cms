@@ -14,7 +14,7 @@ the shape of *your* site: a JSON manifest you install at runtime, no rebuild.
 
 ## The short path
 
-Requires Node 20+ and pnpm 9. You do **not** need a Cloudflare account to run
+Requires Node **22.12+** and pnpm 9 (`rolldown`, which Vitest 4 builds on, declares `^20.19.0 || >=22.12.0`; Node 20 reached end-of-life in April 2026, so 22.12 is the floor here). `.node-version` pins it. You do **not** need a Cloudflare account to run
 it locally.
 
 ```bash
