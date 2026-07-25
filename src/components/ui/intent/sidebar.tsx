@@ -524,7 +524,15 @@ const SidebarInset = ({ className, ref, ...props }: React.ComponentProps<'main'>
       data-slot="sidebar-inset"
       ref={ref}
       className={twMerge(
-        'relative flex w-full flex-1 flex-col bg-bg lg:min-w-0',
+        // [core] 對上游的**刻意偏離**:原本是 `lg:min-w-0`。
+        // 這是 flex item,沒有 min-width:0 就會套用 min-width:auto,寬度被內容的
+        // 最小寬度頂著、無法縮到可用空間以下 —— 於是 sidebar 展開、視窗又不到 lg
+        // 時,整個後台頁面可以左右捲(內容被 sidebar 擠出視窗)。條件式的
+        // `lg:` 讓這個保護剛好在最需要的斷點缺席。
+        // 已量測:改成無條件後,extensions 頁的水平溢出 82px → 0，<main> 從 774px
+        // 回到正確的 692px，橫向捲動的區塊仍照常捲動。
+        // 更新這個元件時不要改回 `lg:min-w-0`。
+        'relative flex w-full min-w-0 flex-1 flex-col bg-bg',
         'group-has-data-[intent=inset]/sidebar-root:border group-has-data-[intent=inset]/sidebar-root:border-sidebar-border group-has-data-[intent=inset]/sidebar-root:bg-muted',
         'md:group-has-data-[intent=inset]/sidebar-root:m-2',
         'md:group-has-data-[side=left]:group-has-data-[intent=inset]/sidebar-root:ms-0',

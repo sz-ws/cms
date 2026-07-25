@@ -195,3 +195,16 @@
     @apply font-sans antialiased;
     }
 }
+
+/* 橫向捲動容器用:捲軸本身是雜訊,捲動的可供性由「下一張露一角」來表達。
+   這個 class 在 fluid-tabs / command / combobox 早就被引用,但從未定義過
+   (它通常來自 tailwind-scrollbar-hide plugin,本專案沒裝),所以那幾處
+   一直沒生效。定義在這裡,那些既有呼叫點的原意才成立。 */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,6 +1,13 @@
 "use client";
 
-import { createElement, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { motion } from "motion/react";
 import {
   Search,
@@ -9,6 +16,8 @@ import {
   AlertCircle,
   Loader2,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
   Images,
   FileText,
   Mail,
@@ -468,6 +477,92 @@ function FeaturedCard({
   );
 }
 
+// Featured 滑軌。垂直堆疊時每張 hero 卡都佔滿寬度,兩張就把首屏吃光,下面的
+// 搜尋與完整列表被推到摺線外 —— featured 反而擋住了「找東西」這件主要工作。
+// 改成橫向 snap 滑軌:一次只佔一屏的一部分,下一張露出一角當作可捲動的可供性
+// (所以卡片寬度刻意不是 100%),鍵盤與觸控都能操作,箭頭只是輔助。
+function FeaturedShelf({
+  header,
+  children,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(true);
+
+  const sync = useCallback(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    // 1px 容差:scrollWidth/clientWidth 在縮放與分數像素下不會剛好相等。
+    const max = el.scrollWidth - el.clientWidth;
+    setAtStart(el.scrollLeft <= 1);
+    setAtEnd(el.scrollLeft >= max - 1);
+  }, []);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    sync();
+    // 卡片是非同步載入的圖,寬度會變 —— 只聽 scroll 會讓箭頭停在過期狀態。
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [sync]);
+
+  function page(direction: -1 | 1) {
+    const el = trackRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * el.clientWidth * 0.9, behavior: "smooth" });
+  }
+
+  const arrow =
+    "inline-flex size-7 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 transition-[color,background-color,opacity] hover:bg-black/[0.04] hover:text-black/80 disabled:pointer-events-none disabled:opacity-30";
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        {header}
+        {/* 兩端都到底(內容塞得下)時整組箭頭收起來,不留兩顆永遠灰掉的按鈕。 */}
+        {!(atStart && atEnd) && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => page(-1)}
+              disabled={atStart}
+              className={arrow}
+              aria-label="Previous"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => page(1)}
+              disabled={atEnd}
+              className={arrow}
+              aria-label="Next"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        )}
+      </div>
+      <div
+        ref={trackRef}
+        onScroll={sync}
+        // min-w-0:橫向捲動容器該有的自保,讓它的內容寬度不往祖先傳。
+        // (真正讓整頁能左右捲的是外殼 SidebarInset 的 `lg:min-w-0`,已在該處
+        //  改為無條件 min-w-0;這裡保留是為了不依賴外層的正確性。)
+        // pb-1 + -mb-1:留出 hover 陰影的空間,又不讓它撐開版面高度。
+        className="no-scrollbar -mb-1 flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-1"
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
 function kindLabel(t: Translator, kind: "declarative" | "code"): string {
   return kind === "declarative"
     ? t("registryBrowser.kind.declarative")
@@ -693,8 +788,9 @@ export function RegistryBrowser() {
 
   const featured = useMemo(() => {
     if (!data) return [];
-    // Featured = first 2 entries that are compatible and not installed
-    return data.entries.filter((e) => e.compatible && !e.installed).slice(0, 2);
+    // Featured = compatible、尚未安裝的前幾個。上限從 2 提到 6:滑軌只放兩張
+    // 就沒有滑的意義,而卡片不再各佔一整屏之後,多放幾張也不會壓到下面的列表。
+    return data.entries.filter((e) => e.compatible && !e.installed).slice(0, 6);
   }, [data]);
 
   // 安裝/更新成功 → 就地更新 client 端的 registry data(installedVersion 對齊 registry
@@ -759,23 +855,32 @@ export function RegistryBrowser() {
 
       {/* Featured */}
       {featured.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-[rgb(86,114,228)]" />
-            <span className="text-[14px] font-semibold tracking-[-0.01em] text-black/85">
-              {t("registryBrowser.featured")}
-            </span>
-          </div>
-          <div className="flex flex-col gap-3">
+        // 同上:這層也要 min-w-0,否則寬度會沿著祖先鏈一路傳到 <main>。
+        <div className="flex min-w-0 flex-col gap-3">
+          <FeaturedShelf
+            header={
+              <>
+                <Sparkles className="size-4 text-[rgb(86,114,228)]" />
+                <span className="text-[14px] font-semibold tracking-[-0.01em] text-black/85">
+                  {t("registryBrowser.featured")}
+                </span>
+              </>
+            }
+          >
             {featured.map((entry) => (
-              <FeaturedCard
+              // 刻意不是 w-full:下一張露出的一角就是「還有更多、可以捲」的訊號。
+              <div
                 key={`f-${entry.source}:${entry.id}`}
-                entry={entry}
-                onClick={() => setSelectedEntry(entry)}
-                onInstalled={handleInstalled}
-              />
+                className="w-[88%] shrink-0 snap-start sm:w-[72%] lg:w-[54%]"
+              >
+                <FeaturedCard
+                  entry={entry}
+                  onClick={() => setSelectedEntry(entry)}
+                  onInstalled={handleInstalled}
+                />
+              </div>
             ))}
-          </div>
+          </FeaturedShelf>
         </div>
       )}
 
