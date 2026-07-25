@@ -17,7 +17,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "./exit.js";
 import type { Prompter, Reporter } from "./ui.js";
-import type { WranglerClient } from "./wrangler.js";
+import { WranglerClient } from "./wrangler.js";
 import {
   ConfigShapeError,
   readWranglerConfig,
@@ -207,7 +207,9 @@ async function prepareSiteConfig(
 function deployNextSteps(): string[] {
   return [
     "接下來:",
-    "  1. pnpm deploy                     # opennextjs-cloudflare build + deploy",
+    // 一定要是 `pnpm run deploy`:`deploy` 是 pnpm 的內建指令,`pnpm deploy`
+    // 會被它接走而不是跑 package.json 的 script(ERR_PNPM_CANNOT_DEPLOY)。
+    "  1. pnpm run deploy                 # opennextjs-cloudflare build + deploy",
     "  2. 開正式站的 /setup 建第一個管理員帳號(正式 D1 是空的,跟本機不共用)",
     "  3. Settings → core.siteUrl 設成你的公開網址",
     "     (OIDC redirect_uri、SEO canonical/sitemap/feed、金流 return URL 都需要絕對網址)",
@@ -279,13 +281,20 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   r.step("ok", `wrangler 已登入${who.detail ? `(${who.detail})` : ""}`);
 
   // ---- 3. 偵測現況 ----
-  const accountDbs = await r.task("盤點帳號上的 D1", () => client.listD1());
+  const d1List = await r.task("盤點帳號上的 D1", () => client.listD1());
+  const accountDbs = d1List?.dbs ?? null;
   if (accountDbs === null) {
-    r.step("fail", "讀不到帳號的 D1 清單");
-    r.outro([
-      "`wrangler d1 list --json` 失敗 —— 沒有這份清單就無法判斷哪些資源已經存在,",
-      "硬做下去可能建出重複的資料庫。請先確認網路與帳號權限,再重跑。",
-    ]);
+    const detail = d1List?.detail ?? null;
+    r.step("fail", "讀不到帳號的 D1 清單", detail ?? undefined);
+    // 多帳號是最常見的原因,而且解法明確 —— 給指令,不要只丟原始訊息。
+    const hint = WranglerClient.accountAmbiguityHint(detail);
+    r.outro(
+      hint ?? [
+        "`wrangler d1 list --json` 失敗 —— 沒有這份清單就無法判斷哪些資源已經存在,",
+        "硬做下去可能建出重複的資料庫。請先確認網路與帳號權限,再重跑。",
+        ...(detail ? ["", "wrangler 的訊息:", detail] : []),
+      ],
+    );
     return EXIT.SETUP_PREREQ;
   }
 
@@ -558,7 +567,7 @@ async function ensureSecretsKey(
     r.step("warn", `查不到目前的 secret 清單`, "Worker 可能還沒 deploy 過。");
     return [
       `${SECRETS_KEY} 這一步留到部署之後(現在還沒有 Worker 可以掛 secret):`,
-      "  pnpm deploy",
+      "  pnpm run deploy",
       `  openssl rand -base64 32 | pnpm exec wrangler secret put ${SECRETS_KEY}`,
       "",
       "⚠ 不要沿用 .dev.vars 裡的開發金鑰。加密信封沒有 key id,",

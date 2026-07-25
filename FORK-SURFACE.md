@@ -11,7 +11,7 @@
 ```bash
 git remote add upstream <canonical-repo-url>   # clone 當下就設,永不刪除
 git fetch upstream && git merge upstream/main  # 之後每次要拿上游修正
-pnpm db:migrate:remote && pnpm deploy
+pnpm db:migrate:remote && pnpm run deploy
 ```
 
 沒有 `upstream` 這個遠端,就沒有升級路徑 —— 事後補共同歷史可行但很煩。**clone 站台的

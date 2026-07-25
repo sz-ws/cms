@@ -83,23 +83,52 @@ export class WranglerClient {
     return { authenticated: true, detail: email };
   }
 
-  /** 帳號裡現有的 D1 清單。回 null 代表查不到(未登入 / 指令失敗),呼叫端不可當成「空的」。 */
-  async listD1(): Promise<D1Database[] | null> {
+  /**
+   * 帳號裡現有的 D1 清單。`dbs` 為 null 代表查不到(未登入 / 指令失敗),
+   * 呼叫端不可當成「空的」。
+   *
+   * `detail` 帶回 wrangler 自己的訊息:失敗原因幾乎都只有它知道,最常見的是
+   * 「登入了多個帳號、非互動模式無法選一個」—— 那則訊息直接寫了解法
+   * (設定 CLOUDFLARE_ACCOUNT_ID)。把它吞掉會讓使用者完全找不到方向。
+   */
+  async listD1(): Promise<{ dbs: D1Database[] | null; detail: string | null }> {
     const r = await this.run(["d1", "list", "--json"]);
-    if (r.code !== 0) return null;
+    if (r.code !== 0) {
+      return { dbs: null, detail: (r.stderr || r.stdout).trim() || null };
+    }
     try {
       const parsed = JSON.parse(r.stdout) as unknown;
-      if (!Array.isArray(parsed)) return null;
+      if (!Array.isArray(parsed)) {
+        return { dbs: null, detail: "wrangler 回傳的不是 JSON 陣列。" };
+      }
       const out: D1Database[] = [];
       for (const raw of parsed as { name?: unknown; uuid?: unknown }[]) {
         if (typeof raw?.name === "string" && typeof raw.uuid === "string") {
           out.push({ name: raw.name, uuid: raw.uuid });
         }
       }
-      return out;
+      return { dbs: out, detail: null };
     } catch {
-      return null;
+      return { dbs: null, detail: "wrangler 的輸出不是合法 JSON。" };
     }
+  }
+
+  /**
+   * 多帳號是接案者/工作室的常態,而 wrangler 只在非互動模式才報這個錯 ——
+   * 也就是 CI 與本 CLI。單獨挑出來給明確指引,不要只丟原始訊息。
+   */
+  static accountAmbiguityHint(detail: string | null): string[] | null {
+    if (!detail || !/More than one account/i.test(detail)) return null;
+    return [
+      "你的 wrangler 登入了多個 Cloudflare 帳號,非互動模式無法自行選定。",
+      "指定其中一個之後再重跑:",
+      "",
+      "  CLOUDFLARE_ACCOUNT_ID=<account_id> pnpm exec sz-cms setup ...",
+      "",
+      "或把 account_id 寫進 wrangler.jsonc。可用帳號:",
+      "",
+      "  pnpm exec wrangler whoami",
+    ];
   }
 
   async createD1(

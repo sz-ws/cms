@@ -81,13 +81,39 @@ describe("WranglerClient — 唯讀操作", () => {
     const { client } = makeClient(() =>
       ok(JSON.stringify([{ name: "cms-db", uuid: UUID }, { bad: 1 }])),
     );
-    await expect(client.listD1()).resolves.toEqual([{ name: "cms-db", uuid: UUID }]);
+    await expect(client.listD1()).resolves.toEqual({
+      dbs: [{ name: "cms-db", uuid: UUID }],
+      detail: null,
+    });
   });
 
-  it("listD1 失敗或非 JSON 回 null —— 呼叫端不可當成空清單", async () => {
-    await expect(makeClient(() => fail("boom")).client.listD1()).resolves.toBeNull();
-    await expect(makeClient(() => ok("not json")).client.listD1()).resolves.toBeNull();
-    await expect(makeClient(() => ok(`{"x":1}`)).client.listD1()).resolves.toBeNull();
+  it("listD1 失敗或非 JSON 回 dbs:null —— 呼叫端不可當成空清單", async () => {
+    for (const make of [
+      () => fail("boom"),
+      () => ok("not json"),
+      () => ok(`{"x":1}`),
+    ]) {
+      const res = await makeClient(make).client.listD1();
+      expect(res.dbs).toBeNull();
+      // 失敗一定要帶回可讀的原因,否則呼叫端只能印一句沒有指向性的話。
+      expect(res.detail).toBeTruthy();
+    }
+  });
+
+  it("listD1 失敗時把 wrangler 的原始訊息帶回來", async () => {
+    const res = await makeClient(() =>
+      fail("More than one account available but unable to select one"),
+    ).client.listD1();
+    expect(res.detail).toContain("More than one account available");
+  });
+
+  it("accountAmbiguityHint 只在多帳號時給指引", () => {
+    expect(WranglerClient.accountAmbiguityHint(null)).toBeNull();
+    expect(WranglerClient.accountAmbiguityHint("network unreachable")).toBeNull();
+    const hint = WranglerClient.accountAmbiguityHint(
+      "✘ More than one account available but unable to select one in non-interactive mode.",
+    );
+    expect(hint?.join("\n")).toContain("CLOUDFLARE_ACCOUNT_ID");
   });
 
   it("r2Exists:0 = 存在,not found = 不存在,其他錯誤 = 不知道", async () => {

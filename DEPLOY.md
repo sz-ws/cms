@@ -59,7 +59,7 @@ pnpm exec wrangler secret put SECRETS_KEY   # paste the value
 
 ```bash
 pnpm db:migrate:remote   # applies migrations/ to cms-db only
-pnpm deploy
+pnpm run deploy
 ```
 
 ## 6. First run

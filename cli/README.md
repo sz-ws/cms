@@ -81,7 +81,7 @@ npx @sz.ws/cms setup
 
 ## 它不做的事
 
-`wrangler login`(碰憑證)、`pnpm deploy`、開 `/setup` 建第一個管理員、設 `core.siteUrl`。
+`wrangler login`(碰憑證)、`pnpm run deploy`、開 `/setup` 建第一個管理員、設 `core.siteUrl`。
 這些會列在收尾訊息裡,由人執行。
 
 ---

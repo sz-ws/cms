@@ -125,7 +125,7 @@ function nextSteps(
   // enableExtension() 在 worker 內用單一 D1 batch 跑的(src/ext/manager.ts),
   // 不是 `wrangler d1 migrations apply` —— 那支只管 core 自己的 migrations/。
   log("接下來(CLI 不代跑):");
-  log("  1. pnpm build && pnpm deploy       # Enable 讀編譯期 registry,必須先上線");
+  log("  1. pnpm build && pnpm run deploy       # Enable 讀編譯期 registry,必須先上線");
   log("  2. admin → Extensions → Installed → Enable");
   log("     (此 extension 自帶的 migrations 會在這一步以單一 D1 batch 原子執行)");
   log("  3. 需要外部伴侶的(cron 之類):另見該 extension 的部署說明。");

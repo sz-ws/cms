@@ -202,7 +202,7 @@ describe("runSetup — 全新帳號的完整流程", () => {
 
   it("收尾一定講得出下一步", async () => {
     const { out } = await setup({ account: { secrets: [] } });
-    expect(out).toContain("pnpm deploy");
+    expect(out).toContain("pnpm run deploy");
     expect(out).toContain("/setup");
     expect(out).toContain("core.siteUrl");
   });
