@@ -8,6 +8,13 @@ export interface StoredFileDTO {
   contentType: string;
   /** Alt text from the R2 object's customMetadata; undefined = not set. */
   alt?: string;
+  /**
+   * Intrinsic pixel size, also from customMetadata ("w" / "h"). Undefined for
+   * non-images, unsniffable formats, and anything uploaded before dimensions
+   * were recorded — the UI just omits the caption in that case.
+   */
+  width?: number;
+  height?: number;
 }
 
 const IMAGE_CT_RE = /^image\//;
@@ -39,6 +46,16 @@ export function typeLabelOf(file: StoredFileDTO): string {
   const slash = ct.lastIndexOf("/");
   if (slash >= 0 && slash < ct.length - 1) return ct.slice(slash + 1);
   return ct || "file";
+}
+
+/**
+ * "1920×1080" caption, or null when dimensions are unknown. Digits + U+00D7
+ * only — no translatable words, so this deliberately stays out of the i18n
+ * dictionaries.
+ */
+export function dimensionLabel(file: StoredFileDTO): string | null {
+  if (file.width === undefined || file.height === undefined) return null;
+  return `${file.width}×${file.height}`;
 }
 
 /** Client-side filter over an already-loaded page: filename/key/type/alt substring match. */

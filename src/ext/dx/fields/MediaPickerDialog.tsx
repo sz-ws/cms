@@ -10,6 +10,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { MediaImage } from "@/components/ui/media-image";
 import { cn } from "@/lib/utils";
 
 // C.5b §2: reusable media picker. Two tabs — Upload (dropzone → POST
@@ -209,13 +210,14 @@ function LibraryGrid({
               className="group relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] outline-none transition-[box-shadow] focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_2px_6px_-2px_rgba(0,0,0,0.12)] active:scale-[0.96] motion-reduce:active:scale-100"
             >
               {isImage(file) ? (
-                // Storage-key preview: /api/files/<key>. next/image would need a
-                // loader for this dynamic source; native img is intentional.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={`/api/files/${file.key}`}
+                // Storage-key preview through the shared variant helper: the
+                // grid is aspect-square thumbnails, so it asks for the small
+                // srcset tiers instead of pulling full-size originals.
+                <MediaImage
+                  mediaKey={file.key}
                   alt=""
-                  loading="lazy"
+                  maxWidth={320}
+                  sizes="160px"
                   className="size-full object-cover"
                 />
               ) : (

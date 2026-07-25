@@ -15,3 +15,10 @@ export interface WorkersAiBinding {
 }
 export const getAI = (): WorkersAiBinding | undefined =>
   (getEnv() as unknown as { AI?: WorkersAiBinding }).AI;
+
+// Cloudflare Images binding(圖片變體轉換)。wrangler.jsonc 有宣告,型別因此是
+// 必填的 ImagesBinding —— 但**執行期未必在**:帳號沒開通 Cloudflare Images 時
+// 這個欄位會是 undefined。所以這裡刻意回 `| undefined`,逼呼叫端寫降級分支
+// (見 src/app/api/files/[[...key]]/route.ts:轉不動就送原圖,不 404)。
+export const getImages = (): ImagesBinding | undefined =>
+  (getEnv() as unknown as { IMAGES?: ImagesBinding }).IMAGES;

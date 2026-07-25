@@ -4,6 +4,7 @@ import { richtextToPlainText } from "../../fields/richtext-schema";
 import { StatusBadge } from "../StatusBadge";
 import { fmtDate, truncate } from "../field-utils";
 import { RelationCell } from "./RelationCell";
+import { MediaImage } from "@/components/ui/media-image";
 
 // 依 field type 把 data 值渲染為表格 cell。純展示,server-renderable(無 hooks)。
 // Paper & Ink:數字 tabular-nums、boolean ring-dot、select 借 StatusBadge 藥丸、
@@ -42,22 +43,20 @@ function RingDot({ on }: { on: boolean }) {
 function MediaCell({ value }: { value: unknown }) {
   if (typeof value !== "string" || value.length === 0) return EMPTY;
   const key = value;
-  const src = `/api/files/${key}`;
   const ext = key.split(".").pop()?.toLowerCase() ?? "";
   const isImage = ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"].includes(
     ext,
   );
   if (isImage) {
-    // 小縮圖;shadow-ring 取代邊框。explicit dims 免 CLS。用原生 <img>:縮圖走
-    // /api/files/<key> 串流,不需 next/image 最佳化管線。
+    // 小縮圖;shadow-ring 取代邊框。size-8 已鎖死版位(免 CLS),所以不放
+    // width/height 屬性 —— 那會跟 MediaImage 的 h-auto 打架。srcset 上限只到最小
+    // 的一格:32px 的格子沒理由下載 1920w。
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
+      <MediaImage
+        mediaKey={key}
         alt=""
-        width={32}
-        height={32}
-        loading="lazy"
+        maxWidth={320}
+        sizes="32px"
         className="size-8 rounded-[6px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
       />
     );

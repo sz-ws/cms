@@ -2,11 +2,13 @@
 
 import { FileIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MediaImage } from "@/components/ui/media-image";
 import { MediaAltField } from "./MediaAltField";
 import {
   isImage,
   fileNameOf,
   formatBytes,
+  dimensionLabel,
   typeLabelOf,
   type StoredFileDTO,
 } from "./media-utils";
@@ -72,11 +74,13 @@ function GridItem({
       >
         <span className="relative block aspect-square w-full shrink-0 overflow-hidden rounded-t-[14px] bg-black/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
           {img ? (
-            // eslint-disable-next-line @next/next/no-img-element -- dynamic storage-key source, see MediaPickerDialog.
-            <img
-              src={`/api/files/${file.key}`}
+            // aspect-square 已鎖住版位;縮圖只需要最小的幾格 srcset —— 這個頁面
+            // 一次列 100 個檔,抓原圖是整個 admin 最貴的網路成本。
+            <MediaImage
+              mediaKey={file.key}
               alt={file.alt ?? ""}
-              loading="lazy"
+              maxWidth={320}
+              sizes="176px"
               className="size-full object-cover"
             />
           ) : (
@@ -114,6 +118,16 @@ function GridItem({
               ·
             </span>
             <span className="truncate lowercase">{typeLabelOf(file)}</span>
+            {/* 原生尺寸。純數字,不經 i18n(沒有可翻譯的字);此功能上線前上傳的
+                舊檔沒有這筆資料,那時整段不顯示。 */}
+            {dimensionLabel(file) && (
+              <>
+                <span aria-hidden className="shrink-0">
+                  ·
+                </span>
+                <span className="shrink-0">{dimensionLabel(file)}</span>
+              </>
+            )}
           </span>
         </span>
       </button>

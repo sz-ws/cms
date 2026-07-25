@@ -10,6 +10,8 @@ import { renderStructural } from "./structural-render";
 import { getLocale } from "@/lib/i18n/server";
 import { resolveRelations, type ResolvedRelation } from "../relation-resolve";
 import { isMediaKey } from "../media-key";
+import { collectMediaKeys, loadMediaDims } from "./media-dims";
+import { MediaImage } from "@/components/ui/media-image";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 
@@ -69,6 +71,12 @@ export async function DetailView({
     }),
   );
 
+  // 圖片原生尺寸:一次收齊本頁所有 media key(頂層 + 巢狀),平行問 R2 metadata,
+  // 讓 <img> 寫得出 width/height(免 CLS)。查不到的 key 就只是少了那兩個屬性。
+  const mediaDims = await loadMediaDims(
+    collectMediaKeys(contentType.fields, entry.data),
+  );
+
   // 公開頁清理:`author` 欄存的是內部 user id(如 "Ccjf9UDqD8OXASUmvP_0H"),對
   // 訪客毫無意義且外洩內部識別碼。查 users 表換成可讀名字;查無該 user 時整欄
   // 不渲染(寧可不顯示也不洩內部 ID)。單次直查(公開頁已走 tagged content cache,
@@ -126,10 +134,15 @@ export async function DetailView({
                   // doesn't pass isMediaKey (hand-edited row, legacy bad
                   // data) renders nothing rather than an unsafe <img src>.
                   isMediaKey(String(value)) ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- media 為任意 storage key,next/image 需預設網域/loader;v1 用原生 img。
-                    <img
-                      src={`/api/files/${String(value)}`}
+                    // 版心 max-w-2xl(672px)扣掉 px-6:實際版位 ≤ 624px,srcset
+                    // 上限給 640 這一格就夠,不必列到 1920w。
+                    <MediaImage
+                      mediaKey={String(value)}
                       alt={title}
+                      maxWidth={640}
+                      sizes="(max-width: 672px) 100vw, 640px"
+                      width={mediaDims.get(String(value))?.width}
+                      height={mediaDims.get(String(value))?.height}
                       className="max-w-full rounded"
                     />
                   ) : null
@@ -155,7 +168,7 @@ export async function DetailView({
                   </span>
                 ) : STRUCTURAL_TYPES.has(f.type) ? (
                   // Tier 2 v1.2: group/repeater/blocks → readable nested render.
-                  renderStructural(f, value, locale)
+                  renderStructural(f, value, locale, mediaDims)
                 ) : (
                   displayValue(f, value)
                 )}

@@ -5,6 +5,7 @@ import type { DeclarativeContentType, ListLayout } from "../manifest";
 import { displayValue } from "./field-utils";
 import { inferCardConfig } from "./collection/card-config";
 import { StackedList, StackedListItem } from "@/components/ui/stacked-list";
+import { MediaImage } from "@/components/ui/media-image";
 import { getLocale } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 
@@ -150,11 +151,13 @@ function GridBody({
           <>
             {coverKey && isImageKey(coverKey) ? (
               // 公開卡:image outline(純黑低透明),8px 圓角坐落 12px 卡 - pad 內。
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`/api/files/${coverKey}`}
+              // aspect box 已鎖住版位,不需要 width/height 屬性;srcset 只為省頻寬
+              // ——— 卡片最寬約 1 欄佈局下的 640px,再高的刻度用不到。
+              <MediaImage
+                mediaKey={coverKey}
                 alt=""
-                loading="lazy"
+                maxWidth={640}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
                 className="aspect-[4/3] w-full rounded-[8px] object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
               />
             ) : (

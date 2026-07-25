@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "../StatusBadge";
 import { BulkActionBar } from "./BulkActionBar";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { MediaImage } from "@/components/ui/media-image";
 
 // core-v2 §3.5:admin grid renderer(sibling of CollectionTable)。同樣擁有 row
 // selection state 並復用 BulkActionBar。每張卡 = cover(image outline + aspect box,
@@ -92,13 +93,14 @@ function CornerCheckbox({
 function CardCover({ coverKey, title }: { coverKey: string | null; title: string }) {
   if (coverKey && isImageKey(coverKey)) {
     return (
-      // 圖走 /api/files/<key> 串流,原生 <img> 即可。image outline = 純黑低透明,
-      // 8px 圓角坐落於 14px 卡 - 6px pad 內。aspect box 免 CLS。
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={`/api/files/${coverKey}`}
+      // image outline = 純黑低透明,8px 圓角坐落於 14px 卡 - 6px pad 內。
+      // aspect box 免 CLS,所以不放 width/height;srcset 讓 admin 卡片抓縮圖而不是
+      // 原圖 —— 一頁 50 張 4MB 原圖是這個介面最貴的地方。
+      <MediaImage
+        mediaKey={coverKey}
         alt=""
-        loading="lazy"
+        maxWidth={320}
+        sizes="(max-width: 768px) 50vw, 240px"
         className="aspect-[4/3] w-full rounded-[8px] object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
       />
     );

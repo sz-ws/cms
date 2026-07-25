@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { getStorage } from "./cf";
+import { sniffImageSize, SNIFF_BYTES } from "./image-dimensions";
 // 注意:loader 以動態 import 載入,避免 storage → loader → registry → posts/api →
 // storage 的靜態循環相依(會造成 "Cannot access before initialization")。
 
@@ -16,10 +17,70 @@ export interface StoredFile {
    * undefined = 未設定(與空字串同義,寫入端會把空字串當成「清除」)。
    */
   alt?: string;
+  /**
+   * 原生像素寬 / 高。與 alt 同樣住在 R2 customMetadata(欄位名 "w" / "h"),
+   * 不另建 D1 表、不需要 migration —— list() 已經 include customMetadata,
+   * 所以尺寸是**免費**跟著回來的,沒有第二次查詢。
+   *
+   * undefined = 這個物件沒有尺寸資訊。三種情況都會這樣:非圖片、嗅不出來的
+   * 格式、或是這個功能上線**之前**就已經在 bucket 裡的舊檔。render 端遇到
+   * undefined 就不放 width/height 屬性,行為與現況一致(不會壞)。
+   */
+  width?: number;
+  height?: number;
 }
 
 /** customMetadata 的欄位名。單一常數,避免各處字面值飄移。 */
 const ALT_META_KEY = "alt";
+const WIDTH_META_KEY = "w";
+const HEIGHT_META_KEY = "h";
+
+/** customMetadata 的字串值 → 正整數;非法一律 undefined。 */
+function parseDim(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** 從 customMetadata 取出寬高(兩邊都在才算數)。 */
+function dimsOf(meta: Record<string, string> | undefined): {
+  width?: number;
+  height?: number;
+} {
+  const width = parseDim(meta?.[WIDTH_META_KEY]);
+  const height = parseDim(meta?.[HEIGHT_META_KEY]);
+  return width !== undefined && height !== undefined ? { width, height } : {};
+}
+
+/**
+ * 取檔頭前 SNIFF_BYTES 個 byte 來嗅尺寸。
+ *
+ * ReadableStream 一律回 null:要 peek 就得 tee 或整份讀進來,前者會讓兩端的
+ * backpressure 互相卡住,後者等於把串流上傳的意義消掉。上傳路徑
+ * (/api/media/upload)傳的是 File(Blob),走得到 slice,所以實務上不會落在
+ * 這個分支;真的走串流的呼叫端就沒有尺寸,render 端已經能處理 undefined。
+ */
+async function sniffDims(
+  body: ReadableStream | ArrayBuffer | Blob,
+  contentType: string,
+): Promise<{ width?: number; height?: number }> {
+  if (!contentType.toLowerCase().startsWith("image/")) return {};
+  try {
+    let head: ArrayBuffer;
+    if (body instanceof Blob) {
+      head = await body.slice(0, SNIFF_BYTES).arrayBuffer();
+    } else if (body instanceof ArrayBuffer) {
+      head = body.slice(0, SNIFF_BYTES);
+    } else {
+      return {};
+    }
+    const size = sniffImageSize(new Uint8Array(head));
+    return size ? { width: size.width, height: size.height } : {};
+  } catch {
+    // 嗅探絕不可以讓上傳失敗 —— 尺寸是加分項,檔案本身才是重點。
+    return {};
+  }
+}
 
 /**
  * alt 長度上限。R2 對單一 object 的 metadata 總量有限額(數 KB),
@@ -61,16 +122,25 @@ export async function putFile(
 ): Promise<StoredFile> {
   const key = makeKey(scope, filename);
   const normalized = alt ? normalizeAlt(alt) : "";
+  // 尺寸在**寫入時**嗅一次就定案:R2 不會重跑上傳,漏掉就永遠補不回來。
+  const dims = await sniffDims(body, contentType);
+  const customMetadata: Record<string, string> = {};
+  if (normalized) customMetadata[ALT_META_KEY] = normalized;
+  if (dims.width !== undefined && dims.height !== undefined) {
+    customMetadata[WIDTH_META_KEY] = String(dims.width);
+    customMetadata[HEIGHT_META_KEY] = String(dims.height);
+  }
   const obj = await getStorage().put(key, body, {
     httpMetadata: { contentType },
     // customMetadata 只在有值時帶,免得每個物件都掛一個空欄位。
-    ...(normalized ? { customMetadata: { [ALT_META_KEY]: normalized } } : {}),
+    ...(Object.keys(customMetadata).length > 0 ? { customMetadata } : {}),
   });
   const file: StoredFile = {
     key,
     size: obj?.size ?? 0,
     contentType,
     ...(normalized ? { alt: normalized } : {}),
+    ...dims,
   };
   // storage:uploaded hook(03 §1:({ key, size, contentType }))。
   // 動態 import 打破循環相依(見檔頭註解)。
@@ -82,6 +152,24 @@ export async function putFile(
 
 export async function getFile(key: string): Promise<R2ObjectBody | null> {
   return (await getStorage().get(key)) ?? null;
+}
+
+/**
+ * 只取 metadata(不拉 body)。給 render 端補 width/height 用 —— DetailView 之類
+ * 的 server component 手上只有一個 storage key,尺寸得從這裡來。
+ * R2 head() 不計輸出流量,單張圖成本約等於一次 metadata 查詢。
+ */
+export async function headFile(key: string): Promise<StoredFile | null> {
+  const obj = await getStorage().head(key);
+  if (!obj) return null;
+  const alt = obj.customMetadata?.[ALT_META_KEY];
+  return {
+    key,
+    size: obj.size,
+    contentType: obj.httpMetadata?.contentType ?? "application/octet-stream",
+    ...(alt ? { alt } : {}),
+    ...dimsOf(obj.customMetadata),
+  };
 }
 
 export async function deleteFile(key: string): Promise<void> {
@@ -107,6 +195,7 @@ export async function listFiles(
       size: o.size,
       contentType: o.httpMetadata?.contentType ?? "application/octet-stream",
       ...(alt ? { alt } : {}),
+      ...dimsOf(o.customMetadata),
     };
   });
   return {
@@ -165,6 +254,9 @@ export async function updateFileAlt(
       size: put.size,
       contentType,
       ...(normalized ? { alt: normalized } : {}),
+      // w / h 已經隨 customMetadata 原樣寫回(見上方 spread);回傳的 DTO 也要帶,
+      // 否則 admin 端存一次 alt 就會把尺寸從畫面上抹掉。
+      ...dimsOf(customMetadata),
     },
   };
 }

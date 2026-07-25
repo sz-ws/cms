@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { toDoc, isEmptyDoc } from "../fields/richtext-schema";
+import { buildSrcSet } from "@/lib/image-variants";
 
 // C.5b §3: SAFE public rendering of richtext Tiptap JSON.
 //
@@ -17,6 +18,7 @@ import { toDoc, isEmptyDoc } from "../fields/richtext-schema";
 // src is dropped (no arbitrary remote/tracking images, no data: URIs).
 
 const ALLOWED_LINK_PROTO = /^(https?:|mailto:)/i;
+const FILES_PREFIX = "/api/files/";
 const ALLOWED_IMG_SRC = /^\/api\/files\/[^\s"'<>]+$/;
 
 type Mark = { type?: string; attrs?: Record<string, unknown> };
@@ -109,8 +111,23 @@ function renderBlock(node: JSONContent, key: string): ReactNode {
       )
         return null;
       const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : "";
-      // eslint-disable-next-line @next/next/no-img-element -- dynamic storage-key source resolved to /api/files/<key>.
-      return <img key={key} src={src} alt={alt} className="max-w-full rounded" />;
+      // 內嵌圖只補 srcset,不補 width/height:編輯器插入的張數不設限,為每張各問
+      // 一次 R2 metadata 的成本與收益不成比例(見 views/media-dims.ts 檔頭)。
+      // CLS 由 max-w-full 的文章版型承擔。srcSet 為 undefined(gif/svg 等不可轉換
+      // 型別)時整個屬性不輸出,行為與先前完全一致。
+      const srcSet = buildSrcSet(src.slice(FILES_PREFIX.length), 640);
+      return (
+        // eslint-disable-next-line @next/next/no-img-element -- dynamic storage-key source resolved to /api/files/<key>.
+        <img
+          key={key}
+          src={src}
+          {...(srcSet ? { srcSet, sizes: "(max-width: 672px) 100vw, 640px" } : {})}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          className="max-w-full rounded"
+        />
+      );
     }
     default:
       return null; // unknown block type → dropped

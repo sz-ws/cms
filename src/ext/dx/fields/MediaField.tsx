@@ -5,6 +5,7 @@ import { FileIcon, ImageIcon, XIcon, Maximize2, Minimize2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaPickerDialog } from "./MediaPickerDialog";
+import { buildSrcSet, variantUrl } from "@/lib/image-variants";
 import type { FieldComponentProps } from "./types";
 
 // C.5b §2 + visual upgrade: media field. Stored value = R2 storage key string
@@ -34,7 +35,17 @@ export function MediaField({
   const [expanded, setExpanded] = useState(false);
 
   const looksLikeImage = useMemo(() => IMAGE_EXT_RE.test(key), [key]);
-  const src = looksLikeImage ? `/api/files/${key}` : null;
+  // 這裡刻意留著原生 <img>(而非共用的 MediaImage):兩個預覽都掛了 onError 來
+  // 藏掉壞掉的 key,MediaImage 是無事件的純呈現元件。只把 src/srcSet 換成變體。
+  const src = looksLikeImage ? variantUrl(key, { width: 960 }) : null;
+  const coverSrcSet = useMemo(
+    () => (looksLikeImage ? buildSrcSet(key, 960) : undefined),
+    [looksLikeImage, key],
+  );
+  const thumbSrcSet = useMemo(
+    () => (looksLikeImage ? buildSrcSet(key, 320) : undefined),
+    [looksLikeImage, key],
+  );
 
   return (
     <div className="flex flex-col gap-3" id={`field-${field.key}`}>
@@ -114,8 +125,12 @@ export function MediaField({
                 // eslint-disable-next-line @next/next/no-img-element -- dynamic storage-key source; native img is intentional (see MediaPickerDialog).
                 <img
                   src={src}
+                  {...(coverSrcSet
+                    ? { srcSet: coverSrcSet, sizes: "(max-width: 768px) 100vw, 640px" }
+                    : {})}
                   alt=""
                   loading="lazy"
+                  decoding="async"
                   className="absolute inset-0 size-full object-contain"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.visibility =
@@ -148,8 +163,10 @@ export function MediaField({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={src}
+                    {...(thumbSrcSet ? { srcSet: thumbSrcSet, sizes: "80px" } : {})}
                     alt=""
                     loading="lazy"
+                    decoding="async"
                     className="size-full object-cover"
                     onError={(e) => {
                       (

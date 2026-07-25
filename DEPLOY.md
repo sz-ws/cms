@@ -74,6 +74,41 @@ canonical / sitemap / feed URLs, and payment gateway return URLs.
 Finally, enable an extension under `/admin/extensions`, create an entry, and
 confirm the public route renders it.
 
+## Optional: image transformations
+
+Uploaded images are served from `/api/files/<key>`, and that route can resize
+and re-encode on the fly — `?w=640` gives you a 640px-wide WebP, and every CMS
+render path emits a `srcset` over a fixed width ladder (320 / 640 / 960 / 1280 /
+1920). This is what stops a 4 MB phone photo from being shipped to every
+visitor.
+
+The resizing itself runs through the `IMAGES` binding already declared in
+`wrangler.jsonc`, which needs **Cloudflare Images enabled on the account**
+(Dashboard → Images). Nothing else to configure — the binding is there either
+way.
+
+**If you do not enable it, nothing breaks.** When the binding is missing or the
+transform fails, the route serves the original bytes with the same status,
+content type, and security headers as before. You can tell the two apart from
+the response header:
+
+```bash
+curl -sI "https://<your-worker>/api/files/core/2026/07/<id>.jpg?w=640" | grep -i x-image-transform
+# x-image-transform: applied      → resized + re-encoded
+# x-image-transform: unavailable  → transform failed, original served
+# x-image-transform: none         → no variant asked for, or source not resizable
+```
+
+`/cdn-cgi/image/...` URL transformations are deliberately **not** used: those
+are a zone-level feature and require the site to run on a Cloudflare zone with
+transformations turned on, which a plain `*.workers.dev` deployment does not
+have.
+
+Intrinsic pixel dimensions are sniffed from the file header at upload time and
+stored in the R2 object's `customMetadata` (`w` / `h`), next to the alt text.
+Files uploaded before this existed simply have no dimensions recorded; they keep
+serving normally, just without `width`/`height` attributes in the markup.
+
 ## Notes
 
 - The project pins `pnpm@9.4.0`; `wrangler` stays on a 4.x release that runs on Node 20.
