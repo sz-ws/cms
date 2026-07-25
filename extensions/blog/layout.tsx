@@ -74,7 +74,7 @@ export function BlogLayout(props: LayoutComponentProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ogPreviewOpen, setOgPreviewOpen] = useState(false);
   const [showBar, setShowBar] = useState(false);
-  const [coverPreset, setCoverPreset] = useState(0);
+  const [coverPreset] = useState(0);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
 
   const baseline = useMemo(() => seedStrings(props), [props]);
@@ -87,21 +87,20 @@ export function BlogLayout(props: LayoutComponentProps) {
   useEffect(() => autoGrow(titleRef.current), [titleRef]);
 
   useEffect(() => {
-    if (dirty || pending || saved) {
-      setShowBar(true);
-      return;
-    }
+    if (dirty || pending || saved) return;
     const t = window.setTimeout(() => setShowBar(false), 220);
     return () => window.clearTimeout(t);
   }, [dirty, pending, saved]);
 
   function update(key: (typeof STRING_FIELDS)[number], value: string) {
+    setShowBar(true);
     setStr((p) => ({ ...p, [key]: value }));
     if (error) setError(null);
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setShowBar(true);
     setError(null);
     setSaved(false);
     setPending(true);
@@ -243,7 +242,10 @@ export function BlogLayout(props: LayoutComponentProps) {
             <div className="mt-1.5">
               <RichtextEditor
                 value={body}
-                onChange={(doc: JSONContent) => setBody(doc)}
+                onChange={(doc: JSONContent) => {
+                  setShowBar(true);
+                  setBody(doc);
+                }}
                 disabled={false}
                 invalid={false}
                 fieldKey="body"

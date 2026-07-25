@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Check, X, AlertCircle, Loader2, Edit2 } from "lucide-react";
+import { Plus, Trash2, Check, AlertCircle, Loader2, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,8 +45,6 @@ export function RegistrySourcesManager({
   const [newIcon, setNewIcon] = useState("");
   const [newToken, setNewToken] = useState("");
   const [testResult, setTestResult] = useState<TestResult>({ status: "idle" });
-  const [saving, setSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState<"idle" | "success" | "error">("idle");
 
   async function testConnection(url: string, token?: string): Promise<TestResult> {
     try {
@@ -142,7 +140,10 @@ export function RegistrySourcesManager({
     }
 
     // local state 不保留 token 明文(只留 hasToken 旗標)
-    setSources(updatedPayload.map(({ token: _token, ...rest }) => rest));
+    setSources(updatedPayload.map(({ token, ...rest }) => {
+      void token;
+      return rest;
+    }));
     setNewUrl("");
     setNewName("");
     setNewIcon("");
@@ -162,8 +163,10 @@ export function RegistrySourcesManager({
   }
 
   async function saveToServer(sourcesToSave: RegistrySource[]) {
-    setSaving(true);
-    setSaveResult("idle");
+    // 這裡原本有一組 saving / saveResult state,但它們從未被 render 用到(死狀態,
+    // 也正是 lint 抓到的那條 error)。移除是對的 —— 但**不能連錯誤處理一起移除**:
+    // 設定存檔失敗若完全無聲,使用者會以為存好了。可見的 UI 回饋是後續任務;在那
+    // 之前至少要留下痕跡,而不是吞掉(見 rules:never silently swallow errors)。
     try {
       const res = await fetch("/api/settings", {
         method: "PUT",
@@ -174,18 +177,11 @@ export function RegistrySourcesManager({
           },
         }),
       });
-      if (res.ok) {
-        setSaveResult("success");
-        setTimeout(() => setSaveResult("idle"), 2000);
-      } else {
-        setSaveResult("error");
-        setTimeout(() => setSaveResult("idle"), 3000);
+      if (!res.ok) {
+        console.error("[registry-sources] 儲存失敗", res.status);
       }
     } catch (e) {
-      setSaveResult("error");
-      setTimeout(() => setSaveResult("idle"), 3000);
-    } finally {
-      setSaving(false);
+      console.error("[registry-sources] 儲存請求失敗", e);
     }
   }
 

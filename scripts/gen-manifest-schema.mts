@@ -192,17 +192,17 @@ let root: Json = stripFormat(clone(rawGenerated));
 // asserted below as a tripwire for drift, but replaceAll itself does not
 // depend on the list being exhaustive.
 
-// `any`, deliberately: every entry is a hand-assembled JSON Schema fragment
-// mutated in place across many steps below (add `description`, `allOf`,
-// nested `properties.*.description`, ...). Fighting the type system with
-// `unknown` casts at every access site would obscure the actual JSON Schema
-// shapes being built; `any` is the honest type for this codegen script.
-const defs: Record<string, any> = {};
+// 每個片段都會依路徑動態改寫，保留其原有 JSON Schema 結構，避免把 runtime schema
+// 誤窄化成不正確的靜態型別。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態 JSON Schema 片段的屬性由 zod 在 runtime 決定。
+type MutableSchema = Record<string, any>;
+
+const defs: Record<string, MutableSchema> = {};
 
 function extractLeaf(name: string, canonicalPath: (string | number)[], expect: (v: Json) => void) {
   const value = get(root, canonicalPath);
   expect(value);
-  defs[name] = clone(value);
+  defs[name] = clone(value) as MutableSchema;
   root = replaceAll(root, sig(value), { $ref: `#/$defs/${name}` });
 }
 
@@ -211,31 +211,31 @@ const leafFieldTypeEnum = [
 ];
 
 extractLeaf("fieldKey", ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 0, "properties", "key"], (v) => {
-  assert((v as any).type === "string" && typeof (v as any).pattern === "string", "leaf field `key` is not a plain patterned string");
+  assert((v as MutableSchema).type === "string" && typeof (v as MutableSchema).pattern === "string", "leaf field `key` is not a plain patterned string");
 });
 
 extractLeaf("typeName", ["properties", "contentTypes", "items", "properties", "name"], (v) => {
-  assert((v as any).type === "string" && typeof (v as any).pattern === "string", "contentType.name is not a plain patterned string");
+  assert((v as MutableSchema).type === "string" && typeof (v as MutableSchema).pattern === "string", "contentType.name is not a plain patterned string");
 });
 
 extractLeaf("relationTo", ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 0, "properties", "to"], (v) => {
-  assert((v as any).type === "string" && typeof (v as any).pattern === "string", "leaf field `to` is not a plain patterned string");
+  assert((v as MutableSchema).type === "string" && typeof (v as MutableSchema).pattern === "string", "leaf field `to` is not a plain patterned string");
 });
 
 extractLeaf("routePattern", ["properties", "publicRoutes", "items", "properties", "pattern"], (v) => {
-  assert((v as any).type === "string" && typeof (v as any).pattern === "string", "publicRoute.pattern is not a plain patterned string");
+  assert((v as MutableSchema).type === "string" && typeof (v as MutableSchema).pattern === "string", "publicRoute.pattern is not a plain patterned string");
 });
 
 extractLeaf("listLayout", ["properties", "adminPages", "items", "properties", "layout"], (v) => {
-  assert(Array.isArray((v as any).enum) && (v as any).enum.length === 3, "adminPage.layout enum shape drifted");
+  assert(Array.isArray((v as MutableSchema).enum) && (v as MutableSchema).enum.length === 3, "adminPage.layout enum shape drifted");
 });
 
 extractLeaf("themeColor", ["properties", "theme", "properties", "accent"], (v) => {
-  assert((v as any).type === "string" && typeof (v as any).pattern === "string", "theme.accent is not a plain patterned string");
+  assert((v as MutableSchema).type === "string" && typeof (v as MutableSchema).pattern === "string", "theme.accent is not a plain patterned string");
 });
 
 extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) => {
-  assert((v as any).type === "string" && typeof (v as any).pattern === "string", "theme.radius is not a plain patterned string");
+  assert((v as MutableSchema).type === "string" && typeof (v as MutableSchema).pattern === "string", "theme.radius is not a plain patterned string");
 });
 
 // ---- step 3: leafField (the 08 §1/§2 single-value field shape), reused as
@@ -247,7 +247,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 //   - `multiline` is only valid on type:"text"
 {
   const canonicalPath = ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 0];
-  const raw = get(root, canonicalPath) as any;
+  const raw = get(root, canonicalPath) as MutableSchema;
   assert(raw.type === "object" && raw.properties?.type?.enum?.length === leafFieldTypeEnum.length, "leafField shape drifted");
   const patched = clone(raw);
   patched.description =
@@ -274,7 +274,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // leafFields: the >=1 array of leaf subfields shared by group/repeater/blockDef.
 {
   const canonicalPath = ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 1, "properties", "fields"];
-  const raw = get(root, canonicalPath) as any;
+  const raw = get(root, canonicalPath) as MutableSchema;
   assert(raw.type === "array" && raw.minItems === 1 && raw.items?.$ref === "#/$defs/leafField", "leafFields shape drifted");
   defs.leafFields = clone(raw);
   root = replaceAll(root, sig(raw), { $ref: "#/$defs/leafFields" });
@@ -286,7 +286,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // named shapes, not incidental structure). ----
 {
   const groupPath = ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 1];
-  const group = clone(get(root, groupPath)) as any;
+  const group = clone(get(root, groupPath)) as MutableSchema;
   assert(group.properties?.type?.const === "group", "groupField shape drifted");
   group.description =
     "Tier 2 v1.2: nested fieldset. Stored value: { ...subfield values }. Its `fields` are leaf fields only (one level of nesting).";
@@ -294,7 +294,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, groupPath, { $ref: "#/$defs/groupField" });
 
   const repeaterPath = ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 2];
-  const repeater = clone(get(root, repeaterPath)) as any;
+  const repeater = clone(get(root, repeaterPath)) as MutableSchema;
   assert(repeater.properties?.type?.const === "repeater", "repeaterField shape drifted");
   repeater.description =
     "Tier 2 v1.2: sortable ordered list of groups. Stored value: [{ ... }, ...]. Its `fields` are leaf fields only (one level of nesting). Optional `max` caps the row count.";
@@ -302,11 +302,11 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, repeaterPath, { $ref: "#/$defs/repeaterField" });
 
   const blocksPath = ["properties", "contentTypes", "items", "properties", "fields", "items", "anyOf", 3];
-  const blocksField = clone(get(root, blocksPath)) as any;
+  const blocksField = clone(get(root, blocksPath)) as MutableSchema;
   assert(blocksField.properties?.type?.const === "blocks", "blocksField shape drifted");
   assert(blocksField.properties?.blocks?.items?.type === "object", "blockDef nested inside blocksField shape drifted");
 
-  const blockDef = clone(blocksField.properties.blocks.items) as any;
+  const blockDef = clone(blocksField.properties.blocks.items) as MutableSchema;
   blockDef.description = "One named block shape declared by a blocks field. Its `fields` are leaf fields only.";
   defs.blockDef = blockDef;
   blocksField.properties.blocks.items = { $ref: "#/$defs/blockDef" };
@@ -344,7 +344,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = replaceAll(root, sig(column), { $ref: "#/$defs/formLayoutColumn" });
 
   const layoutPath = ["properties", "contentTypes", "items", "properties", "layout"];
-  const layout = clone(get(root, layoutPath)) as any;
+  const layout = clone(get(root, layoutPath)) as MutableSchema;
   assert(layout.properties?.kind?.enum?.includes("manual"), "formLayout shape drifted");
   layout.description =
     "Progressive form layout. 'auto2col' = declarative baseline (full-row tall fields, paired short fields). 'single' = single column stack. 'manual' = author-defined groups; keys are field names that must exist on this content type. manual layout requires groups (zod refine: at least one group when kind='manual').";
@@ -371,7 +371,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = replaceAll(root, sig(option), { $ref: "#/$defs/settingOption" });
 
   const settingPath = ["properties", "settings", "items"];
-  const setting = clone(get(root, settingPath)) as any;
+  const setting = clone(get(root, settingPath)) as MutableSchema;
   assert(setting.properties?.type?.enum?.includes("select"), "settingField shape drifted");
   setting.description =
     "Same shape as the code extension SettingField. Select option values must be unique; secret defaults must be empty. Using required:true requires coreApi with a minimum version of 1.18.0. These cross-value/version semantics are enforced by manifestSchema (authoritative).";
@@ -408,7 +408,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = replaceAll(root, sig(get(root, successPath)), { $ref: "#/$defs/formSuccess" });
 
   const publicRoutePath = ["properties", "publicRoutes", "items"];
-  const publicRoute = clone(get(root, publicRoutePath)) as any;
+  const publicRoute = clone(get(root, publicRoutePath)) as MutableSchema;
   assert(publicRoute.properties?.view?.enum?.includes("form"), "publicRoute shape drifted");
   publicRoute.properties.layout = {
     allOf: [{ $ref: "#/$defs/listLayout" }],
@@ -444,7 +444,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   defs.hookAction = clone(get(root, hookActionPath));
   root = set(root, hookActionPath, { $ref: "#/$defs/hookAction" });
   const onPath = ["properties", "on"];
-  const on = clone(get(root, onPath)) as any;
+  const on = clone(get(root, onPath)) as MutableSchema;
   on.propertyNames = {
     enum: [
       "ext:enabled",
@@ -467,7 +467,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // via description instead) ----
 {
   const installPromptPath = ["properties", "installPrompts", "items"];
-  const installPrompt = clone(get(root, installPromptPath)) as any;
+  const installPrompt = clone(get(root, installPromptPath)) as MutableSchema;
   installPrompt.description = "zod does not call .strict() on this object, so additional properties are permitted here.";
   installPrompt.properties.key.description = "Must reference an existing settings[].key (zod superRefine cross-check).";
   installPrompt.properties.secret.description = "Must match the referenced settings[].secret flag (zod superRefine cross-check).";
@@ -480,7 +480,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // customApiRoute (customApiRouteSchema: no refine; .strict())
 {
   const customApiRoutePath = ["properties", "customApiRoutes", "items"];
-  const customApiRoute = clone(get(root, customApiRoutePath)) as any;
+  const customApiRoute = clone(get(root, customApiRoutePath)) as MutableSchema;
   customApiRoute.properties.method.description =
     "read-only v1: only GET is accepted. Older core versions accepted POST/PUT/DELETE; consumers using this field must declare coreApi ^1.9.0.";
   customApiRoute.properties.contentType.description =
@@ -493,7 +493,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // requiresEntry (no refine)
 {
   const requiresEntryPath = ["properties", "requires", "items"];
-  const requiresEntry = clone(get(root, requiresEntryPath)) as any;
+  const requiresEntry = clone(get(root, requiresEntryPath)) as MutableSchema;
   requiresEntry.properties.capability.description =
     "Provider capability name, matching providers.ts convention: 'name' or 'name:verb' (lowercase/digits/hyphens).";
   requiresEntry.properties.optional.description =
@@ -514,7 +514,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
     "<number>px or <number>rem. Same injection-safety note as themeColor applies (character set already excludes the dangerous characters).";
 
   const themePath = ["properties", "theme"];
-  const theme = clone(get(root, themePath)) as any;
+  const theme = clone(get(root, themePath)) as MutableSchema;
   theme.description =
     "1.8.0: optional design tokens rendered into public pages as inline CSS custom properties (--ext-accent / --ext-bg / --ext-muted / --ext-radius). Admin ignores this. All fields optional.";
   defs.theme = theme;
@@ -531,7 +531,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // over-restriction, not a loosening). ----
 {
   const migrationPath = ["properties", "migrations", "items"];
-  const migration = clone(get(root, migrationPath)) as any;
+  const migration = clone(get(root, migrationPath)) as MutableSchema;
   migration.pattern = "CREATE\\s+(TABLE|UNIQUE\\s+INDEX|INDEX)\\s+IF\\s+NOT\\s+EXISTS";
   migration.not = { pattern: ";" };
   migration.description =
@@ -546,7 +546,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // against contentTypes[].name (not expressible in JSON Schema; documented).
 {
   const dashboardCardPath = ["properties", "dashboardCards", "items"];
-  const dashboardCard = clone(get(root, dashboardCardPath)) as any;
+  const dashboardCard = clone(get(root, dashboardCardPath)) as MutableSchema;
   assert(dashboardCard.properties?.kind?.enum?.includes("stat"), "dashboardCard shape drifted");
   dashboardCard.description =
     "roadmap #16: one extension-contributed dashboard card. kind='stat' shows the entry count for a content type (optionally filtered by status); kind='recent' shows the most recently updated entries (limit 1..10, default 5). `status` is stat-only, `limit` is recent-only (zod refine).";
@@ -576,7 +576,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // via description instead (same pattern as dashboardCards' cross-array checks). ----
 {
   const scheduleActionPath = ["properties", "schedule", "items", "properties", "action"];
-  const scheduleAction = clone(get(root, scheduleActionPath)) as any;
+  const scheduleAction = clone(get(root, scheduleActionPath)) as MutableSchema;
   assert(scheduleAction.properties?.op?.const === "deleteOlderThan", "scheduleAction shape drifted");
   scheduleAction.description =
     "v1 has a single op: deleteOlderThan. `contentType` must name a contentTypes[].name declared by this same manifest (enforced by zod superRefine; not expressible in JSON Schema).";
@@ -584,7 +584,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, scheduleActionPath, { $ref: "#/$defs/scheduleAction" });
 
   const scheduleItemPath = ["properties", "schedule", "items"];
-  const scheduleItem = clone(get(root, scheduleItemPath)) as any;
+  const scheduleItem = clone(get(root, scheduleItemPath)) as MutableSchema;
   scheduleItem.description =
     "One declarative scheduled action, interpreted into an Extension.jobs entry and executed by the ext-jobs core job (docs/spec-extension-jobs.md). `id` must be unique across schedule[] (zod array refine; not expressible in JSON Schema).";
   defs.scheduleItem = scheduleItem;
@@ -595,7 +595,7 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
 // non-regex-expressible semantics (installPrompts[].key <-> settings[].key,
 // dashboardCards[].contentType <-> contentTypes[].name superRefine checks) ----
 {
-  const p = (root as any).properties;
+  const p = (root as MutableSchema).properties;
   p.installPrompts.description =
     "Fields to prompt the installing user for (marketplace shows a form). Each entry's `key` must reference an existing settings[].key with a matching `secret` flag (zod superRefine cross-check; not expressible in JSON Schema).";
   p.dashboardCards.description =
@@ -641,12 +641,12 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
     p.loginProvider.properties.button.properties.svg.description =
       "Optional brand icon. Validated by src/ext/dx/svg-guard.ts (allowlist of svg/g/path/circle/rect/ellipse/line/polyline/polygon/defs/linearGradient/radialGradient/stop/clipPath/title; rejects on*= handlers, <script>, javascript:, href/xlink:href, <foreignObject>, <image>, <use>, <style>, <animate*>, external URLs). Rejection fails manifest validation (fail-loud). Not expressible as a JSON Schema constraint beyond maxLength.";
   }
-  root = { ...(root as any), properties: p };
+  root = { ...(root as MutableSchema), properties: p };
 }
 
 // contentType's own nested field descriptions
 {
-  const ct = defs.contentType as any;
+  const ct = defs.contentType as MutableSchema;
   ct.properties.name.description = "Local type name. Full type key becomes '<extId>.<name>'.";
   ct.properties.slugField.description = "Key of the field used as the auto-slug source.";
   ct.properties.public.description =
@@ -667,10 +667,10 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   defs.leafField.properties.options.description = "select only.";
   defs.leafField.properties.multiline.description =
     "text only: upgrades the input to a fullscreen textarea overlay (TextFullscreenEditor).";
-  defs.relationTo = { ...(defs.relationTo as any), description: "relation/relations only: target content type key '<extId>.<typeName>'." };
-  defs.routePattern = { ...(defs.routePattern as any), description: "Plain segment string with ':param' placeholders only. No regex metacharacters; compiled by the O(n) segment matcher." };
+  defs.relationTo = { ...(defs.relationTo as MutableSchema), description: "relation/relations only: target content type key '<extId>.<typeName>'." };
+  defs.routePattern = { ...(defs.routePattern as MutableSchema), description: "Plain segment string with ':param' placeholders only. No regex metacharacters; compiled by the O(n) segment matcher." };
   defs.listLayout = {
-    ...(defs.listLayout as any),
+    ...(defs.listLayout as MutableSchema),
     description:
       "core-v2 §3.5 listing layout. 'table' (default) = one entry per row; 'grid' = responsive card grid; 'stacked' = vendored StackedList sweep-in animation. Absent = table (back-compat). 'table'/'grid' require coreApi ^1.1.0; 'stacked' requires coreApi ^1.7.0.",
   };
@@ -708,7 +708,7 @@ function orderedDefs(): Record<string, Json> {
 }
 
 function orderedProperties(): Record<string, Json> {
-  const props = (root as any).properties as Record<string, Json>;
+  const props = (root as MutableSchema).properties as Record<string, Json>;
   const missing = PROPERTY_ORDER.filter((name) => !(name in props));
   assert(missing.length === 0, `top-level properties missing after extraction: ${missing.join(", ")}`);
   const out: Record<string, Json> = {};
@@ -723,7 +723,7 @@ const final = {
   description:
     "Mirrors the zod schema in cms/src/ext/dx/manifest.ts (manifestSchema, Core v2 architecture spec section 3.2). Validated at install time AND at interpret time. Generated by cms/scripts/gen-manifest-schema.mts -- do not hand-edit; re-run the script after changing manifest.ts. Zod superRefine cross-checks (cross-array references, uniqueness, credential requirements and related semantic invariants) cannot all be expressed in JSON Schema and are documented on the relevant properties where possible; manifestSchema remains authoritative.",
   type: "object",
-  required: (root as any).required,
+  required: (root as MutableSchema).required,
   additionalProperties: false,
   properties: orderedProperties(),
   $defs: orderedDefs(),
