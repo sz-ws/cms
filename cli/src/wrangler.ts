@@ -123,7 +123,7 @@ export class WranglerClient {
       "你的 wrangler 登入了多個 Cloudflare 帳號,非互動模式無法自行選定。",
       "指定其中一個之後再重跑:",
       "",
-      "  CLOUDFLARE_ACCOUNT_ID=<account_id> pnpm exec sz-cms setup ...",
+      "  CLOUDFLARE_ACCOUNT_ID=<account_id> pnpm exec sz-ws-cms setup ...",
       "",
       "或把 account_id 寫進 wrangler.jsonc。可用帳號:",
       "",

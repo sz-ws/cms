@@ -1,6 +1,6 @@
 {
   // [site] 這個檔預期逐站不同 —— worker 名稱、D1/R2 的 id 本來就每個站一組。
-  // `sz-cms setup` 會自動填入下面的 database_id(只改那幾個值,註解與排版原樣保留)。
+  // `sz-ws-cms setup` 會自動填入下面的 database_id(只改那幾個值,註解與排版原樣保留)。
   //
   // 但 "main" 與 "triggers" 是 core 的東西:前者指向 custom-worker.ts(cron 接線的
   // 唯一入口),後者是排程頻率。動它們之前先讀 custom-worker.ts 的說明。
@@ -10,7 +10,7 @@
   // fetch 與 Durable Object class,只多掛一個 scheduled handler(cron extension 的
   // tick)。@opennextjs/cloudflare 的 CLI 不讀也不覆寫這個欄位,產出物一個 byte 都沒動。
   "main": "custom-worker.ts",
-  // 新 clone 先由 `sz-cms setup --site-slug <slug>` 原子寫入這組名稱;不得在同帳號共用。
+  // 新 clone 先由 `sz-ws-cms setup --site-slug <slug>` 原子寫入這組名稱;不得在同帳號共用。
   "name": "cms",
   // 分鐘級準時排程。tick 實作見 extensions/cron/scheduled.ts:cron extension 未安裝
   // 或未設 signing secret 時,handler 安靜 no-op(core 的 lazy sweep 仍是保底)。

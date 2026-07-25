@@ -38,7 +38,7 @@ grep -rn "\[site\]\|\[site-seam\]\|\[core\] 不要" src/ extensions/ wrangler.js
 | `src/app/site.css` | 品牌色、字體、樣式覆寫。在 `globals.css` 之後載入,所以蓋得掉 token 預設值 |
 | `extensions/<你的站>/` | 這個站專屬的 extension。多數客製都該落在這裡 |
 | `extensions/registry.ts` | 加一行 import + 陣列項。⚠️ `export const registry` 那行的排版是 CLI 的契約,不要換行 |
-| `wrangler.jsonc` | worker 名稱、D1/R2 的 id(`sz-cms setup` 會自動填)。但 `main` 與 `triggers` 是 core 的 |
+| `wrangler.jsonc` | worker 名稱、D1/R2 的 id(`sz-ws-cms setup` 會自動填)。但 `main` 與 `triggers` 是 core 的 |
 | `public/brand/` | logo、favicon 等品牌資產 |
 | `src/app/(public)/icon.svg` | 公開站的 favicon。`(admin)/` 底下那份是後台用的產品 icon,別動 |
 

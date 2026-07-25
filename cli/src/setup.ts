@@ -1,4 +1,4 @@
-// `sz-cms setup` —— 從「本機跑得起來」到「線上跑得起來」的引導流程。
+// `sz-ws-cms setup` —— 從「本機跑得起來」到「線上跑得起來」的引導流程。
 //
 // 取代 DEPLOY.md 的手工步驟:建兩組 D1 + 兩組 R2、把回傳的 id 貼回 wrangler.jsonc、
 // 套 migrations、設 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN。
@@ -217,7 +217,7 @@ async function prepareSiteConfig(
     if (o.assumeYes) {
       r.step("fail", "新的 scaffold clone 仍是預設共用名稱,必須提供 site slug");
       r.outro([
-        "CI / --yes 請加:sz-cms setup --site-slug <小寫站點識別> --yes",
+        "CI / --yes 請加:sz-ws-cms setup --site-slug <小寫站點識別> --yes",
         "只有明確的單站或開發帳號才可用:--allow-shared-default-names",
       ]);
       return EXIT.SETUP_PREREQ;
@@ -268,7 +268,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   const relConfig = path.relative(o.cwd, o.configPath) || o.configPath;
 
   r.intro(
-    "sz-cms setup",
+    "sz-ws-cms setup",
     o.dryRun
       ? "預演模式:只偵測與列出計畫,不建立任何資源、不改任何檔案。"
       : "把這個 repo 接上你自己的 Cloudflare 帳號。",
@@ -281,7 +281,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   } catch (e) {
     r.step("fail", `讀不到 ${relConfig}`, e instanceof Error ? e.message : String(e));
     r.outro([
-      "請確認你在 CMS repo 根目錄執行 `sz-cms setup`,",
+      "請確認你在 CMS repo 根目錄執行 `sz-ws-cms setup`,",
       "或用 --config <路徑> 指定 wrangler 設定檔。",
     ]);
     return EXIT.SETUP_PREREQ;
@@ -296,7 +296,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
         ? e.message
         : String(e);
     r.step("fail", `${relConfig} 解析失敗`, detail);
-    r.outro(["請先修好設定檔的格式,再重跑 `sz-cms setup`。"]);
+    r.outro(["請先修好設定檔的格式,再重跑 `sz-ws-cms setup`。"]);
     return EXIT.SETUP_PREREQ;
   }
 
@@ -318,7 +318,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     r.outro([
       "先登入,再重跑:",
       "  pnpm exec wrangler login",
-      "  sz-cms setup",
+      "  sz-ws-cms setup",
       who.detail ? `\nwrangler 說:${who.detail}` : "",
     ].filter(Boolean));
     return EXIT.SETUP_PREREQ;
@@ -438,7 +438,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     );
     if (!go) {
       r.step("skip", "已中止,沒有建立任何資源、沒有改任何檔案。");
-      r.outro(["想先看看會做什麼:sz-cms setup --dry-run"]);
+      r.outro(["想先看看會做什麼:sz-ws-cms setup --dry-run"]);
       return EXIT.SETUP_ABORTED;
     }
   }
@@ -475,7 +475,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   if (configResult !== null) return configResult;
 
   if (failed) {
-    r.outro([`✗ ${failed}`, "修掉上面的錯誤之後直接重跑 `sz-cms setup`,已完成的步驟會自動略過。"]);
+    r.outro([`✗ ${failed}`, "修掉上面的錯誤之後直接重跑 `sz-ws-cms setup`,已完成的步驟會自動略過。"]);
     return EXIT.SETUP_FAILED;
   }
 
@@ -488,7 +488,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     if (outcome.status === "failed") {
       r.step("fail", `建立 R2 ${bucket.bucketName} 失敗`, outcome.detail);
       r.outro([
-        "修掉上面的錯誤之後重跑 `sz-cms setup`;已建好的資源會被偵測到並略過。",
+        "修掉上面的錯誤之後重跑 `sz-ws-cms setup`;已建好的資源會被偵測到並略過。",
       ]);
       return EXIT.SETUP_FAILED;
     }
@@ -511,7 +511,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
         r.outro([
           "資源都已建好,只差 migrations。修正後可單獨重跑:",
           `  pnpm exec wrangler d1 migrations apply ${entry.databaseName} --remote`,
-          "或直接重跑 `sz-cms setup`(已完成的步驟會略過)。",
+          "或直接重跑 `sz-ws-cms setup`(已完成的步驟會略過)。",
         ]);
         return EXIT.SETUP_FAILED;
       }
@@ -569,7 +569,7 @@ async function persistSiteResources(
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
     o.reporter.step("fail", `寫入 ${relConfig} 的租戶命名失敗`, detail);
-    o.reporter.outro(["沒有建立任何 Cloudflare 資源;修正後可直接重跑 `sz-cms setup`。"]);
+    o.reporter.outro(["沒有建立任何 Cloudflare 資源;修正後可直接重跑 `sz-ws-cms setup`。"]);
     return EXIT.SETUP_FAILED;
   }
 }
@@ -599,7 +599,7 @@ async function persistIds(
     o.reporter.note("請手動填入以下 database_id", [
       ...[...assignments].map(([name, uuid]) => `${name}: ${uuid}`),
     ]);
-    o.reporter.outro(["填好之後重跑 `sz-cms setup`,已建立的資源會被偵測到並略過。"]);
+    o.reporter.outro(["填好之後重跑 `sz-ws-cms setup`,已建立的資源會被偵測到並略過。"]);
     return EXIT.SETUP_FAILED;
   }
 }

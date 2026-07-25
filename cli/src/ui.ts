@@ -4,7 +4,7 @@
 //   1. cli/ 不是 pnpm workspace 成員(repo 沒有 pnpm-workspace.yaml,也沒有 cli/node_modules)。
 //      在 cli/package.json 宣告依賴不會被安裝,實際要能 import 得在**根** package.json
 //      再宣告一次 —— 兩邊各一份、版本各自漂移,是個維護陷阱。
-//   2. args.ts 開頭就寫著這支 CLI 刻意零依賴,讓 `npx @sz.ws/cms` 免安裝、冷啟動快。
+//   2. args.ts 開頭就寫著這支 CLI 刻意零依賴,讓 `npx @sz-ws/cms` 免安裝、冷啟動快。
 //   3. `pnpm test:cli` 是純 node 且跑在半秒內,那個速度是資產。零依賴 = 零額外解析成本。
 //
 // 介面(Reporter / Prompter)是抽象的,所以 setup 流程完全不知道自己在對誰講話:
@@ -166,12 +166,13 @@ export function createAutoPrompter(
  * 數字選單在任何 stdin 都能用,程式碼也只有幾行。
  */
 export function createTtyPrompter(): Prompter {
-  const s = makeStyles(useColor && process.stdout.isTTY === true);
+  const s = makeStyles(useColor && process.stderr.isTTY === true);
 
   async function ask(query: string): Promise<string> {
+    // 問題本身不是結果 —— 跟其他人看的輸出一起走 stderr,stdout 保持乾淨。
     const rl = readline.createInterface({
       input: process.stdin,
-      output: process.stdout,
+      output: process.stderr,
     });
     try {
       return (await rl.question(query)).trim();
@@ -194,10 +195,10 @@ export function createTtyPrompter(): Prompter {
     },
     async select(question, options) {
       if (options.length === 0) throw new Error("select 需要至少一個選項");
-      process.stdout.write(`${question}\n`);
+      process.stderr.write(`${question}\n`);
       options.forEach((opt, i) => {
         const hint = opt.hint ? s.dim(` — ${opt.hint}`) : "";
-        process.stdout.write(`  ${s.cyan(String(i + 1))}. ${opt.label}${hint}\n`);
+        process.stderr.write(`  ${s.cyan(String(i + 1))}. ${opt.label}${hint}\n`);
       });
       for (;;) {
         const raw = await ask(s.dim(`選擇 1-${options.length} [1] `));
@@ -206,8 +207,55 @@ export function createTtyPrompter(): Prompter {
         if (Number.isInteger(n) && n >= 1 && n <= options.length) {
           return options[n - 1].value;
         }
-        process.stdout.write(s.yellow(`  請輸入 1 到 ${options.length} 之間的數字。\n`));
+        process.stderr.write(s.yellow(`  請輸入 1 到 ${options.length} 之間的數字。\n`));
       }
+    },
+  };
+}
+
+/** Reporter 收到的事件。--json 就是把這串原樣吐出來,不另外維護一套結構。 */
+export type UiEvent =
+  | { kind: "intro"; title: string; subtitle?: string }
+  | { kind: "step"; status: StepStatus; message: string; detail?: string }
+  | { kind: "note"; title: string; lines: string[] }
+  | { kind: "outro"; lines: string[] }
+  | { kind: "task"; label: string };
+
+/**
+ * 把 Reporter 的呼叫記下來。--json 需要一份機器可讀的輸出,而這支 CLI 的
+ * 「結果」本來就是一連串步驟 —— 硬要為每條 return 路徑再定義一個結果型別,
+ * 是把 600 行的流程改一遍去遷就輸出格式。這裡反過來:事件流就是結果。
+ */
+export function createEventCollector(): {
+  events: UiEvent[];
+  wrap(inner: Reporter): Reporter;
+} {
+  const events: UiEvent[] = [];
+  return {
+    events,
+    wrap(inner) {
+      return {
+        intro(title, subtitle) {
+          events.push({ kind: "intro", title, subtitle });
+          inner.intro(title, subtitle);
+        },
+        step(status, message, detail) {
+          events.push({ kind: "step", status, message, detail });
+          inner.step(status, message, detail);
+        },
+        note(title, lines) {
+          events.push({ kind: "note", title, lines: [...lines] });
+          inner.note(title, lines);
+        },
+        outro(lines) {
+          events.push({ kind: "outro", lines: [...lines] });
+          inner.outro(lines);
+        },
+        task(label, fn) {
+          events.push({ kind: "task", label });
+          return inner.task(label, fn);
+        },
+      };
     },
   };
 }
@@ -216,26 +264,40 @@ export interface UiBundle {
   reporter: Reporter;
   prompter: Prompter;
   styles: StyleSet;
+  /** --json 時非 null;跑完由 cli.ts 序列化到 stdout。 */
+  events: UiEvent[] | null;
 }
 
 /**
  * 依環境組出 UI。interactive=false(--yes / --non-interactive / 非 TTY)時
  * 用 auto prompter —— 流程完全不變,只是每個問題都取預設值。
+ *
+ * **進度與診斷一律走 stderr**,stdout 只留給「結果」(目前只有 --json 的那一份)。
+ * 原本全部寫 stdout,後果是 `setup > log.txt` 會把轉圈字元、顏色碼跟真正想留的
+ * 東西混在同一個檔裡,而任何想 pipe 這支 CLI 的腳本都得先想辦法濾掉它們。
+ * 這也是 sz.ws 生態其他 CLI(@sz-ws/drop)已經在用的分法。
  */
 export function createUi(opts: {
   interactive: boolean;
+  /** 覆寫輸出目的地(測試用)。給了就等同非 TTY:不上色、不轉圈。 */
   write?: (chunk: string) => void;
+  /** --json:仍然把人看的輸出寫到 stderr,另外收集事件供 stdout 用。 */
+  json?: boolean;
 }): UiBundle {
-  const isTty = process.stdout.isTTY === true;
-  const styles = makeStyles(useColor && isTty && opts.write === undefined);
-  const write = opts.write ?? ((chunk: string) => void process.stdout.write(chunk));
+  const piped = opts.write !== undefined;
+  const isTty = process.stderr.isTTY === true;
+  const styles = makeStyles(useColor && isTty && !piped);
+  const write = opts.write ?? ((chunk: string) => void process.stderr.write(chunk));
+  const base = createReporter({
+    write,
+    animate: isTty && !piped,
+    styles,
+  });
+  const collector = opts.json ? createEventCollector() : null;
   return {
     styles,
-    reporter: createReporter({
-      write,
-      animate: isTty && opts.write === undefined,
-      styles,
-    }),
+    reporter: collector ? collector.wrap(base) : base,
     prompter: opts.interactive ? createTtyPrompter() : createAutoPrompter(),
+    events: collector?.events ?? null,
   };
 }

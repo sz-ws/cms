@@ -1,23 +1,23 @@
-# @sz.ws/cms — `sz-cms`
+# @sz-ws/cms — `cms` / `sz-ws-cms`
 
 sz.ws CMS 的命令列工具,兩個指令:
 
 | 指令 | 做什麼 |
 |---|---|
-| `sz-cms setup` | 把 repo 接上你自己的 Cloudflare 帳號:建 D1 / R2、把 id 回填 `wrangler.jsonc`、套 migrations、設 `SECRETS_KEY` |
-| `sz-cms add <id>` | 安裝 code extension:從 registry 抓檔 → 落地 `extensions/<id>/` → patch `extensions/registry.ts` |
+| `sz-ws-cms setup` | 把 repo 接上你自己的 Cloudflare 帳號:建 D1 / R2、把 id 回填 `wrangler.jsonc`、套 migrations、設 `SECRETS_KEY` |
+| `sz-ws-cms add <id>` | 安裝 code extension:從 registry 抓檔 → 落地 `extensions/<id>/` → patch `extensions/registry.ts` |
 
 兩者都可以完全非互動執行(`--yes` / `--non-interactive`),也都有 `--dry-run`。
 
 ---
 
-# `sz-cms setup`
+# `sz-ws-cms setup`
 
 取代 `DEPLOY.md` 的手工流程。在 CMS repo 根目錄執行:
 
 ```bash
 pnpm exec wrangler login    # 這一步仍然要自己來(CLI 不碰你的憑證)
-npx @sz.ws/cms setup
+npx @sz-ws/cms setup
 ```
 
 | 旗標 | 說明 |
@@ -86,7 +86,7 @@ npx @sz.ws/cms setup
 
 ---
 
-# `sz-cms add <id>`
+# `sz-ws-cms add <id>`
 
 code-extension 安裝器。把「從 registry 抓檔 → 落地 `extensions/<id>/`
 → patch `extensions/registry.ts`」自動化;DB row、build、deploy 仍由人類執行
@@ -97,8 +97,8 @@ code-extension 安裝器。把「從 registry 抓檔 → 落地 `extensions/<id>
 在 CMS repo 根目錄執行:
 
 ```bash
-npx @sz.ws/cms add <id>                # 直接跑,免安裝
-sz-cms add <id>                        # 已全域安裝時
+npx @sz-ws/cms add <id>                # 直接跑,免安裝
+sz-ws-cms add <id>                        # 已全域安裝時
 ```
 
 | 旗標 | 說明 |
@@ -153,7 +153,7 @@ registry index entry 有 `files: string[]` 時,那份清單是權威的,CLI 照�
 
 ## 開發
 
-CLI 刻意**零依賴**:`npx @sz.ws/cms` 免安裝、冷啟動快,`pnpm test:cli` 保持純 node 且跑在 1 秒內。
+CLI 刻意**零依賴**:`npx @sz-ws/cms` 免安裝、冷啟動快,`pnpm test:cli` 保持純 node 且跑在 1 秒內。
 終端 UI(`cli/src/ui.ts`)因此是手寫的,沒有引入 `@clack/prompts` 之類的 prompt 套件 ——
 `cli/` 也不是 pnpm workspace 成員,依賴得在根 `package.json` 再宣告一次才裝得到,兩邊版本會漂移。
 
@@ -168,7 +168,7 @@ pnpm cli:typecheck
 pnpm test:cli         # vitest run --config vitest.cli.config.ts(node 環境)
 ```
 
-發佈形狀:`@sz.ws/cms`,`bin: { "sz-cms": "./dist/cli.js" }`。**尚未 publish**
+發佈形狀:`@sz-ws/cms`,`bin: { "sz-ws-cms": "./dist/cli.js" }`。**尚未 publish**
 (2026-07-16 決議:只做套件形狀)。publish 前記得拿掉 `"private": true`。
 
 CLI 完成後仍要人做的事(CLI 會印出):migrations(`pnpm db:migrate:local` /

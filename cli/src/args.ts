@@ -1,10 +1,10 @@
-// CLI 參數解析 —— 手寫小解析器(參數面極小,零依賴讓 `npx @sz.ws/cms` 免安裝)。
+// CLI 參數解析 —— 手寫小解析器(參數面極小,零依賴讓 `npx @sz-ws/cms` 免安裝)。
 //
-//   sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
+//   sz-ws-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
 //                 [--non-interactive] [--skip-core-check]
-//   sz-cms setup [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
+//   sz-ws-cms setup [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
 //                [--skip-migrations] [--skip-secrets]
-//   sz-cms --help | --version
+//   sz-ws-cms --help | --version
 
 export const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 
@@ -29,6 +29,8 @@ export interface ParsedArgs {
   yes: boolean;
   skipMigrations: boolean;
   skipSecrets: boolean;
+  /** 機器可讀輸出:人看的東西照樣走 stderr,stdout 只放一份 JSON。 */
+  json: boolean;
   help: boolean;
   version: boolean;
   /** 解析層錯誤(未知旗標 / 缺旗標值);由呼叫端決定 exit code。 */
@@ -47,6 +49,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     yes: false,
     skipMigrations: false,
     skipSecrets: false,
+    json: false,
     help: false,
     version: false,
   };
@@ -70,6 +73,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.yes = true;
     } else if (arg === "--skip-migrations") {
       out.skipMigrations = true;
+    } else if (arg === "--json") {
+      out.json = true;
     } else if (arg === "--skip-secrets") {
       out.skipSecrets = true;
     } else if (arg === "--allow-shared-default-names") {

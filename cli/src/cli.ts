@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// sz-cms —— sz.ws CMS 的命令列工具。
+// sz-ws-cms —— sz.ws CMS 的命令列工具。
 //
 //   add <id>   code-extension 安裝器:讀 registry 索引 → 抓 extensions/<id>/files/*
 //              → 寫本機 extensions/<id>/ → patch extensions/registry.ts。
@@ -33,7 +33,7 @@ import { EXIT } from "./exit.js";
 import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
 import { WranglerClient } from "./wrangler.js";
 import { runSetup } from "./setup.js";
-import { createUi } from "./ui.js";
+import { createUi, type UiEvent } from "./ui.js";
 
 export const VERSION = "0.2.0";
 
@@ -43,42 +43,74 @@ export { EXIT } from "./exit.js";
 
 export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
 
-const USAGE = `用法:
-  sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
-                  [--non-interactive] [--skip-core-check]
-  sz-cms setup    [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
-                  [--skip-migrations] [--skip-secrets]
+const USAGE = `@sz-ws/cms v${VERSION} —— sz.ws CMS 的命令列工具
 
-add —— 安裝 code extension
-  <id>                安裝的 extension id(^[a-z][a-z0-9-]{1,30}$)
-  --source <url>      registry base URL(預設 ${DEFAULT_SOURCE})
-  --token <t>         registry 存取 token(private repo;亦讀 SZWS_REGISTRY_TOKEN)
-  --force             覆寫已存在的 extensions/<id>/
-  --skip-core-check   跳過 coreApi 相容性檢查(明知故犯用)
+用法:
+  cms setup [選項]              把 repo 接上你自己的 Cloudflare 帳號
+  cms add <id> [選項]           安裝 code extension
+  cms help                      顯示此說明
+  cms version                   顯示版本
 
-setup —— 接上你自己的 Cloudflare 帳號(建 D1/R2、回填設定檔、套 migrations、設 secret)
-  --config <path>     wrangler 設定檔路徑(預設 ./${DEFAULT_CONFIG_FILE})
-  --site-slug <slug>  新站唯一識別(3–48 小寫英數/連字號);衍生 Worker、D1、R2 名稱
-  --allow-shared-default-names
-                      明確允許 cms 等預設共用名稱(僅單站/開發帳號;不可用於多客戶帳號)
-  --skip-migrations   不套用 migrations/
-  --skip-secrets      不處理 SECRETS_KEY
+setup 的選項:
+  --config <path>               wrangler 設定檔路徑(預設 ./${DEFAULT_CONFIG_FILE})
+  --site-slug <slug>            新站唯一識別(3–48 小寫英數/連字號)
+                                Worker、D1、R2 的名稱都由它衍生
+  --allow-shared-default-names  明確允許 cms 等預設共用名稱
+                                僅限單站/開發帳號;多客戶帳號會造成跨站存取
+  --skip-migrations             不套用 migrations/
+  --skip-secrets                不處理 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN
 
-共用
-  --dry-run           只偵測與列出將做的事,不建立資源 / 不寫檔
-  --yes, -y           略過所有確認關卡(CI 用)
-  --non-interactive   不互動(add 時隱含 --force;setup 時等同 --yes)
-  --help, --version`;
+add 的選項:
+  --source <url>                registry base URL(預設 ${DEFAULT_SOURCE})
+  --token <t>                   registry 存取 token(private repo)
+  --force                       覆寫已存在的 extensions/<id>/
+  --skip-core-check             跳過 coreApi 相容性檢查(明知故犯用)
+
+共用選項:
+  --dry-run                     只列出將做的事,不建立資源、不寫檔
+  --yes, -y                     略過所有確認關卡(CI 用)
+  --non-interactive             不互動(add 時隱含 --force;setup 時等同 --yes)
+  --json                        stdout 只放一份機器可讀 JSON
+                                人看的輸出照常走 stderr
+
+範例:
+  npx @sz-ws/cms setup --site-slug acme-taipei
+  npx @sz-ws/cms setup --dry-run
+  npx @sz-ws/cms add blog
+  npx @sz-ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
+
+環境變數:
+  SZWS_REGISTRY_TOKEN           registry 存取 token(等同 --token)
+  CLOUDFLARE_ACCOUNT_ID         帳號不只一個時,指定要用哪一個
+
+文件:https://sz.ws`;
+
+// 輸出分流(對齊 @sz-ws/drop):**人看的東西一律 stderr**,stdout 只留給結果。
+// 原本 log() 寫 stdout,於是 `cms add blog | something` 拿到的是進度訊息而不是
+// 結果,而 `> log.txt` 只留得住一半的輸出(err/warn 走另一邊)。
+//
+// --json 時另外把每一行收進 transcript,最後由 emitJson 一次吐到 stdout ——
+// 這支 CLI 的「結果」本來就是一連串步驟,硬要為每條 return 路徑再定義一個
+// 結果型別,是把流程改一遍去遷就輸出格式。
+let transcript: string[] | null = null;
 
 function log(msg = ""): void {
-  process.stdout.write(`${msg}\n`);
+  transcript?.push(msg);
+  process.stderr.write(`${msg}\n`);
 }
 function err(msg: string): void {
+  transcript?.push(msg);
   process.stderr.write(`${msg}\n`);
 }
-/** 警告 —— 不中止,但走 stderr,別讓它混進被導向的 stdout 裡消失。 */
+/** 警告 —— 不中止,但同樣進 transcript,別讓它在機器可讀輸出裡消失。 */
 function warn(msg: string): void {
+  transcript?.push(msg);
   process.stderr.write(`${msg}\n`);
+}
+
+/** stdout 的唯一使用者。 */
+function emitJson(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -93,7 +125,7 @@ async function exists(p: string): Promise<boolean> {
 async function confirm(question: string): Promise<boolean> {
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout,
+    output: process.stderr,
   });
   try {
     const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
@@ -134,14 +166,38 @@ function nextSteps(
 export async function run(argv: string[], cwd: string): Promise<number> {
   const args = parseArgs(argv);
 
+  // --version / --help 是「被問就答」,答案本身就是結果 —— 這兩個照樣走 stdout,
+  // 否則 `cms version` 沒辦法被 shell 取值,那是這類指令唯一的用途。
   if (args.version) {
-    log(VERSION);
+    process.stdout.write(`@sz-ws/cms v${VERSION}\n`);
     return EXIT.OK;
   }
   if (args.help) {
-    log(USAGE);
+    process.stdout.write(`${USAGE}\n`);
     return EXIT.OK;
   }
+
+  transcript = args.json ? [] : null;
+  const code = await dispatch(args, cwd);
+  if (args.json) {
+    emitJson({
+      ok: code === EXIT.OK,
+      exitCode: code,
+      command: args.command ?? null,
+      ...(args.command === "add" && args.id ? { id: args.id } : {}),
+      ...(setupEvents ? { events: setupEvents } : {}),
+      messages: transcript ?? [],
+    });
+  }
+  transcript = null;
+  setupEvents = null;
+  return code;
+}
+
+/** setup 走 Reporter,事件比純文字精確,--json 時優先用它。 */
+let setupEvents: UiEvent[] | null = null;
+
+async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
   if (args.error) {
     err(`✗ ${args.error}`);
     err(USAGE);
@@ -165,7 +221,9 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
   const assumeYes = args.yes || args.nonInteractive;
   const ui = createUi({
     interactive: !assumeYes && process.stdin.isTTY === true,
+    json: args.json,
   });
+  setupEvents = ui.events;
   const configPath = args.config
     ? path.resolve(cwd, args.config)
     : path.join(cwd, DEFAULT_CONFIG_FILE);
@@ -213,7 +271,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   if (!(await exists(registryPath))) {
     err(
       "✗ 找不到 extensions/registry.ts。" +
-        "請確認你在 CMS repo 根目錄執行 `sz-cms add`。",
+        "請確認你在 CMS repo 根目錄執行 `sz-ws-cms add`。",
     );
     return EXIT.PATCH_FAILED;
   }
@@ -245,7 +303,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
         err(
           "  這個 registry 可能是 private repo(GitHub 對未授權的 private raw 回 404)。請提供 token:",
         );
-        err("    sz-cms add <id> --token <你的 token>");
+        err("    sz-ws-cms add <id> --token <你的 token>");
         err("    或設環境變數 SZWS_REGISTRY_TOKEN=<你的 token>");
         err("  GitHub PAT / Gitea deploy token 皆可(送出時為 `Authorization: token <t>`)。");
         return EXIT.FETCH_FAILED;
@@ -280,7 +338,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
       `「${id}」是 declarative extension(kind=${entry.kind})。`,
     );
     log(
-      "declarative 走 admin UI 的 Browse → Install 熱裝,不需要 `sz-cms add`。",
+      "declarative 走 admin UI 的 Browse → Install 熱裝,不需要 `sz-ws-cms add`。",
     );
     return EXIT.OK;
   }

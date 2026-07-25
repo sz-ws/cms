@@ -104,8 +104,12 @@ afterEach(async () => {
   await rm(repoDir, { recursive: true, force: true });
 });
 
-const out = () => logSpy.mock.calls.map((c) => String(c[0])).join("");
+// 人看的輸出現在全部走 stderr(stdout 只留給 --version / --help / --json 的結果)。
+// out() 因此看 stderr —— 既有的斷言問的是「有沒有講這件事」,那個意圖沒有變。
+// 真的要斷言 stdout 的測試改用 stdoutOut()。
+const out = () => errSpy.mock.calls.map((c) => String(c[0])).join("");
 const errOut = () => errSpy.mock.calls.map((c) => String(c[0])).join("");
+const stdoutOut = () => logSpy.mock.calls.map((c) => String(c[0])).join("");
 
 describe("run — full install path", () => {
   it("installs files and patches registry.ts", async () => {
@@ -316,16 +320,57 @@ describe("run — help / version", () => {
     const code = await run(["--version"], repoDir);
     expect(code).toBe(EXIT.OK);
   });
+  // help / version 走 **stdout**:被問就答,答案本身就是結果。
+  // `cms version` 若寫 stderr,shell 就取不到值 —— 那是這類指令唯一的用途。
   it("--help prints usage", async () => {
     const code = await run(["--help"], repoDir);
     expect(code).toBe(EXIT.OK);
-    expect(out()).toContain("用法");
+    expect(stdoutOut()).toContain("用法");
+    expect(out()).toBe("");
   });
   it("--help 同時涵蓋 add 與 setup", async () => {
     await run(["--help"], repoDir);
-    expect(out()).toContain("sz-cms add <id>");
-    expect(out()).toContain("sz-cms setup");
-    expect(out()).toContain("--skip-migrations");
+    const help = stdoutOut();
+    expect(help).toContain("cms add <id>");
+    expect(help).toContain("cms setup");
+    expect(help).toContain("--skip-migrations");
+    expect(help).toContain("--json");
+  });
+  it("--version 走 stdout 且帶套件名", async () => {
+    const code = await run(["--version"], repoDir);
+    expect(code).toBe(EXIT.OK);
+    expect(stdoutOut()).toContain("@sz-ws/cms v");
+    expect(out()).toBe("");
+  });
+});
+
+// --json 的重點不是「有沒有 JSON」,而是 stdout 有沒有被污染。只要有任何
+// 一行進度訊息漏到 stdout,JSON.parse 就會炸 —— 這條測試就是那個守門。
+describe("run — --json", () => {
+  it("stdout 只有一份可解析的 JSON,進度全部在 stderr", async () => {
+    const code = await run(["add", "demoext", "--source", regUrl, "--json"], repoDir);
+    expect(code).toBe(EXIT.OK);
+
+    const parsed = JSON.parse(stdoutOut());
+    expect(parsed).toMatchObject({ ok: true, exitCode: EXIT.OK, command: "add", id: "demoext" });
+    expect(Array.isArray(parsed.messages)).toBe(true);
+    expect(parsed.messages.join("\n")).toContain("extensions/demoext/");
+
+    // 人看的輸出仍然存在,只是不在 stdout。
+    expect(out()).not.toBe("");
+  });
+
+  it("失敗時一樣是可解析的 JSON,且 ok=false", async () => {
+    const code = await run(["add", "nope", "--source", regUrl, "--json"], repoDir);
+    expect(code).not.toBe(EXIT.OK);
+    const parsed = JSON.parse(stdoutOut());
+    expect(parsed.ok).toBe(false);
+    expect(parsed.exitCode).toBe(code);
+  });
+
+  it("沒有 --json 時 stdout 完全乾淨", async () => {
+    await run(["add", "demoext", "--source", regUrl], repoDir);
+    expect(stdoutOut()).toBe("");
   });
 });
 
