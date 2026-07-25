@@ -77,7 +77,7 @@ const EDITOR = {
 };
 
 const CONTENTS_DDL =
-  "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, slug TEXT, status TEXT NOT NULL DEFAULT 'draft', publish_at INTEGER, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);";
+  "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, locale TEXT NOT NULL DEFAULT 'en', translation_group TEXT NOT NULL DEFAULT '', slug TEXT, status TEXT NOT NULL DEFAULT 'draft', publish_at INTEGER, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);";
 
 // ext-jobs core job(spec-extension-jobs.md)現與 publish-due 併入同一個 CORE_JOBS
 // 迭代;這裡的 rt.enabled 恆空,故 ext-jobs 每次都是 reconcile 0 筆 + 無到期列的
@@ -85,6 +85,14 @@ const CONTENTS_DDL =
 // throw,把 no-op 變成 ok:false,汙染下面每個 reports 的精確比對。
 const EXT_JOBS_DDL =
   "CREATE TABLE IF NOT EXISTS ext_jobs (id TEXT PRIMARY KEY, ext_id TEXT NOT NULL, job_id TEXT NOT NULL, kind TEXT NOT NULL, run_at INTEGER NOT NULL, payload TEXT, attempts INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', last_run INTEGER, last_error TEXT, created_at INTEGER NOT NULL);";
+
+// publish-due 的 WHERE 帶了 `NOT EXISTS (SELECT 1 FROM content_submissions …)`
+// —— 公開表單的收件列永遠不得被排程發佈碰到(見 src/lib/jobs.ts 該處註解與
+// migrations/0014)。表不存在會讓那句 SELECT throw,把 publish-due 變成 ok:false,
+// 汙染下面每個 reports 的精確比對(理由同上面 EXT_JOBS_DDL)。
+// 「收件列真的不會被發佈」的正面斷言住在 test/submissions.test.ts。
+const CONTENT_SUBMISSIONS_DDL =
+  "CREATE TABLE IF NOT EXISTS content_submissions (content_id TEXT PRIMARY KEY, type TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'unread', replied_at INTEGER, updated_at INTEGER NOT NULL);";
 
 /** publish-due 之後,恆為 no-op 的 ext-jobs 報告(此檔的 rt.enabled 恆空)。 */
 const EXT_JOBS_NOOP = { id: "ext-jobs", ok: true, processed: 0 };
@@ -104,12 +112,13 @@ const LICENSE_CHECKIN_NOOP = expect.objectContaining({
 beforeAll(async () => {
   await d1().exec(CONTENTS_DDL);
   await d1().exec(
-    "CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(content_id UNINDEXED, type_key UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2');",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(content_id UNINDEXED, type_key UNINDEXED, locale UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2');",
   );
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
   );
   await d1().exec(EXT_JOBS_DDL);
+  await d1().exec(CONTENT_SUBMISSIONS_DDL);
 });
 
 beforeEach(async () => {

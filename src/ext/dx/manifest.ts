@@ -235,6 +235,13 @@ const contentTypeSchema = z
     // (crud.ts POST 的 ct.public 分支);public 非 true 時無作用 —— 不需 zod 交叉檢查,
     // 執行層自然不會走到(見 dx/notify.ts)。
     notifyOnCreate: z.boolean().optional(),
+    // 1.21.0:此 type 是「內容」還是「收件匣」(別人寄進來、不會被發佈的訊息)。
+    // 注意與頂層的 `kind: "declarative"` 是不同物件上的不同欄位 —— 那個說的是
+    // 「這份 manifest 是哪種 extension」,這個說的是「這個 content type 是什麼」。
+    // 缺省不是 "content" 而是 undefined —— 因為缺省時要跑向後相容推論(public:true
+    // 且無任何 list/detail public route → submission),明寫 "content" 才是關掉推論。
+    // 完整規則與理由見 src/ext/dx/submission.ts 檔頭。
+    kind: z.enum(["content", "submission"]).optional(),
     // Progressive form layout:extensions 可以選擇 baseline(auto2col / single)或
     // 宣告 manual 來自定欄位順序與寬度。沒寫 → 跑 auto2col 的舊邏輯。
     layout: formLayoutSchema.optional(),
@@ -795,12 +802,31 @@ export const manifestSchema = z
         });
       }
     });
+    // 1.21.0:明寫 kind:"submission" 的 type 不得有任何公開可讀路由。收件匣是私人
+    // 訊息,替它宣告 list/detail 等於把別人的詢問掛上公開網站 —— 這在 install 當下就
+    // 要炸,不能等到有人發現自己的客戶資料被 Google 索引才知道。
+    // (推論出來的 submission 不會走到這裡:推論的前提就是「沒有 list/detail」。)
+    const explicitSubmissions = new Set(
+      contentTypes
+        .filter((contentType) => contentType.kind === "submission")
+        .map((contentType) => contentType.name),
+    );
     (m.publicRoutes ?? []).forEach((route, idx) => {
       if (!typeNames.has(route.contentType)) {
         ctx.addIssue({
           code: "custom",
           message: `contentType "${route.contentType}" does not reference a declared content type`,
           path: ["publicRoutes", idx, "contentType"],
+        });
+      }
+      if (
+        explicitSubmissions.has(route.contentType) &&
+        (route.view === "list" || route.view === "detail")
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `contentType "${route.contentType}" is kind "submission" and cannot have a public "${route.view}" route`,
+          path: ["publicRoutes", idx, "view"],
         });
       }
     });

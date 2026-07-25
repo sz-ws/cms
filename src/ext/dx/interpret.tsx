@@ -15,6 +15,8 @@ import type {
 } from "../types";
 import { CollectionView } from "./views/CollectionView";
 import type { CollectionViewProps } from "./views/CollectionView";
+import { InboxView } from "./views/InboxView";
+import type { InboxViewProps } from "./views/InboxView";
 import { FormViewPage } from "./views/FormViewPage";
 import type { FormViewPageProps } from "./views/FormViewPage";
 import { FormView } from "./views/FormView";
@@ -29,6 +31,7 @@ import { makeWebhookHandler } from "./webhook";
 import { surfaceIds } from "./surfaces";
 import { overrideRegistry } from "../overrides";
 import { buildScheduleJobs } from "./schedule-jobs";
+import { allowedPublicRoutes, submissionTypeNames } from "./submission";
 import { getLocale } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { ComponentType } from "react";
@@ -84,6 +87,7 @@ function buildAdminPages(
   extId: string,
   manifest: DeclarativeManifest,
   types: Map<string, DeclarativeContentType>,
+  submissions: Set<string>,
 ): AdminPage[] {
   const pages: AdminPage[] = [];
   for (const ap of manifest.adminPages ?? []) {
@@ -92,6 +96,32 @@ function buildAdminPages(
     const slug = ap.slug;
     const editSlug = slug ? `${slug}/edit` : "edit";
     const contentType = `${extId}.${ct.name}`; // 完整 type key(surface 鍵)
+
+    // 收件匣型別:換成 InboxView,且**不**產生 edit 頁 —— 別人寄來的訊息沒有
+    // 「編輯」這個動作(CRUD 的 PUT 也已收窄成 403,見 dx/crud.ts)。
+    // collection surface 的 override 機制對它一樣有效:同一個 surface id,
+    // 登記了就用登記的,沒登記才用這個 baseline。
+    if (submissions.has(ct.name)) {
+      const Inbox = resolveSurface<InboxViewProps>(
+        extId,
+        surfaceIds.adminCollection(contentType),
+        InboxView,
+      );
+      pages.push({
+        slug,
+        title: ap.title,
+        component: ({ searchParams }) => (
+          <Inbox
+            extId={extId}
+            title={ap.title}
+            adminSlug={slug}
+            contentType={ct}
+            searchParams={searchParams}
+          />
+        ),
+      });
+      continue;
+    }
 
     // §3.6:collection surface —— override(admin:<type>:collection)或泛用 baseline。
     const Collection = resolveSurface<CollectionViewProps>(
@@ -186,7 +216,18 @@ function buildPublicRoutes(
   types: Map<string, DeclarativeContentType>,
 ): PublicRoute[] {
   const routes: PublicRoute[] = [];
-  const byType = manifest.publicRoutes ?? [];
+  // 隱私硬需求:收件匣型別**永遠**不生成公開可讀路由。判定與過濾住在純模組
+  // (dx/submission.ts),因為這是本功能最重要的正確性需求,必須能被測試直接斷言 ——
+  // 而本檔經 views 拉進 next/navigation 等相依,在 workers pool 測試環境載不起來
+  // (同 schedule-jobs.ts / dashboard-cards.ts 的既有決策)。
+  const byType = allowedPublicRoutes(
+    manifest,
+    manifest.publicRoutes ?? [],
+    (route) =>
+      console.error(
+        `[dx:interpret] ext=${extId} refused public "${route.view}" route for submission type "${route.contentType}"`,
+      ),
+  );
   // 1.8.0:manifest.theme(若有)包住每個 public view,注入 --ext-* CSS 變數。admin 無視。
   const theme = manifest.theme;
 
@@ -273,9 +314,13 @@ function buildPublicRoutes(
 
 // ---- api routes ----
 
-function buildApiRoutes(extId: string, manifest: DeclarativeManifest) {
+function buildApiRoutes(
+  extId: string,
+  manifest: DeclarativeManifest,
+  submissions: Set<string>,
+) {
   return (manifest.contentTypes ?? []).flatMap((ct) =>
-    buildCrudRoutes(extId, ct),
+    buildCrudRoutes(extId, ct, submissions.has(ct.name)),
   );
 }
 
@@ -322,6 +367,9 @@ export function interpretManifest(row: DeclarativeRow): Extension | null {
   }
   const manifest = parsed.manifest;
   const types = typeByName(manifest);
+  // 1.21.0:哪些 content type 是收件匣。判定一次、往下傳給三個 surface builder,
+  // 確保 admin / public / API 三邊對「這是不是私人訊息」的認知不可能分叉。
+  const submissions = submissionTypeNames(manifest);
 
   return {
     id: manifest.id,
@@ -332,8 +380,8 @@ export function interpretManifest(row: DeclarativeRow): Extension | null {
     icon: manifest.icon,
     og: manifest.og,
     settings: (manifest.settings ?? []).map(toSettingField),
-    adminPages: buildAdminPages(manifest.id, manifest, types),
-    apiRoutes: buildApiRoutes(manifest.id, manifest),
+    adminPages: buildAdminPages(manifest.id, manifest, types, submissions),
+    apiRoutes: buildApiRoutes(manifest.id, manifest, submissions),
     publicRoutes: buildPublicRoutes(manifest.id, manifest, types),
     hooks: buildHooks(manifest.id, manifest),
     // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth)。

@@ -66,7 +66,7 @@ async function insert(row: {
 beforeAll(async () => {
   // 與 src/lib/schema.ts contents 同形(migrations/0001 內的定義)。
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL, slug TEXT, status TEXT DEFAULT 'draft' NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+    "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL, locale TEXT NOT NULL DEFAULT 'en', translation_group TEXT NOT NULL DEFAULT '', slug TEXT, status TEXT DEFAULT 'draft' NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
   );
   // blog.post: 2 published + 2 draft(其中 p4 無 title,測 id 退回);blog.note: 1 published。
   await insert({ id: "p1", type: "blog.post", status: "published", data: { title: "First post" }, updatedAt: 1000 });

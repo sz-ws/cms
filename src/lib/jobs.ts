@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, lte } from "drizzle-orm";
+import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
 import { db } from "./db";
 import { contents, extJobs } from "./schema";
 import { getSetting, setSettings } from "./settings";
@@ -87,6 +87,8 @@ function errorMessage(e: unknown): string {
 interface DueRow {
   id: string;
   type: string;
+  /** migrations/0011:FTS 重新索引要帶 locale(每個 locale 列各自獨立排程)。 */
+  locale: string;
   data: string;
 }
 
@@ -106,13 +108,27 @@ const publishDueJob: CoreJob = {
   id: "publish-due",
   async run(now: number): Promise<JobRunResult> {
     const due: DueRow[] = await db()
-      .select({ id: contents.id, type: contents.type, data: contents.data })
+      .select({
+        id: contents.id,
+        type: contents.type,
+        locale: contents.locale,
+        data: contents.data,
+      })
       .from(contents)
       .where(
         and(
           eq(contents.status, "draft"),
           isNotNull(contents.publishAt),
           lte(contents.publishAt, now),
+          // 公開表單的收件列**永遠**不得被排程發佈碰到(見 src/lib/submissions.ts)。
+          // 兩層保證,缺一不可:
+          //   結構層 —— 匿名提交走 sanitizePublicCreateBody,publishAt 不是宣告欄位
+          //     故一律被剝除,收件列的 publish_at 恆為 NULL,本 WHERE 的第二個條件
+          //     就已經選不到它。
+          //   明示層 —— 下面這句。萬一有人(手改 DB、未來某條 admin 路徑)真的替一筆
+          //     收件列填了 publish_at,它仍然不會被翻成 published 而外洩到公開站。
+          //     「客戶的私人詢問被自動發佈上網」是隱私事故,不是 bug,所以不靠推論。
+          sql`NOT EXISTS (SELECT 1 FROM content_submissions cs WHERE cs.content_id = ${contents.id})`,
         ),
       );
 
@@ -152,7 +168,7 @@ const publishDueJob: CoreJob = {
 
       // FTS 重建(best-effort,同 CoreContentProvider.index 哲學)。
       try {
-        await indexContentEntry(row.id, row.type, data);
+        await indexContentEntry(row.id, row.type, row.locale, data);
       } catch (e) {
         console.error("[jobs:publish-due] reindex failed", row.id, e);
       }

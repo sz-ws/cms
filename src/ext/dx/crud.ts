@@ -9,6 +9,13 @@ import { sanitizePublicCreateBody } from "./public-create";
 import { notifyOnPublicCreate } from "./notify"; // A:public create 成功後 best-effort 通知信
 import { getRevision, listRevisions } from "@/lib/revisions";
 import { restoreRevision, RevisionRestoreError } from "@/lib/revision-restore";
+import { isSubmissionState } from "./submission";
+import {
+  deleteSubmissionRecord,
+  setSubmissionReplied,
+  setSubmissionState,
+  stampNewSubmission,
+} from "@/lib/submissions";
 
 const HONEYPOT_KEY = "_hp"; // public content create only;填了 → 靜默丟棄(201)
 const PUBLIC_CREATE_LIMIT = 20;
@@ -126,14 +133,69 @@ function errResponse(e: unknown): Response {
   return Response.json({ error: "internal_error" }, { status: 500 });
 }
 
+/**
+ * submission type 專屬的收件狀態路由。PATCH `<type>/:id/inbox`,body 可帶
+ * `{ state?: "unread"|"read"|"archived", replied?: boolean }`(兩者皆可省略/併送)。
+ *
+ * 為什麼是獨立路由而不是沿用 PUT:收件狀態根本不住在 contents 表(見
+ * src/lib/submissions.ts),它不是內容的一部分,而是「站方對這則訊息做了什麼」。
+ * 走 PUT 會逼 provider.update 跑一次欄位驗證、寫一次 data、留一筆版本快照 ——
+ * 三件對「把未讀改成已讀」完全沒有意義的事。
+ */
+function inboxRoute(extId: string, ct: DeclarativeContentType): ApiRoute {
+  const fullType = `${extId}.${ct.name}`;
+  return {
+    method: "PATCH",
+    path: `${ct.name}/:id/inbox`,
+    handler: async (req, params) => {
+      const body = await readJson(req);
+      if (body instanceof Response) return body;
+
+      const nextState = body["state"];
+      const replied = body["replied"];
+      if (nextState === undefined && replied === undefined) {
+        return Response.json({ error: "invalid_input" }, { status: 400 });
+      }
+      if (nextState !== undefined && !isSubmissionState(nextState)) {
+        return Response.json({ error: "invalid_state" }, { status: 400 });
+      }
+      if (replied !== undefined && typeof replied !== "boolean") {
+        return Response.json({ error: "invalid_input" }, { status: 400 });
+      }
+
+      try {
+        // 先 replied(它可能把 unread 自動推進 read),再套明確指定的 state ——
+        // 這樣「標記已回覆並封存」一次送出時,操作者明講的 archived 會贏。
+        if (replied !== undefined) {
+          const ok = await setSubmissionReplied(fullType, params.id, replied);
+          if (!ok) return Response.json({ error: "not_found" }, { status: 404 });
+        }
+        if (nextState !== undefined) {
+          const ok = await setSubmissionState(fullType, params.id, nextState);
+          if (!ok) return Response.json({ error: "not_found" }, { status: 404 });
+        }
+        return Response.json({ ok: true });
+      } catch (e) {
+        return errResponse(e);
+      }
+    },
+  };
+}
+
 export function buildCrudRoutes(
   extId: string,
   ct: DeclarativeContentType,
+  /**
+   * 此 type 是否為收件匣型別。由 interpret 依整份 manifest 判定後傳入(判定需要看
+   * publicRoutes,而本函式只拿得到單一 content type)—— 見 dx/submission.ts。
+   * 省略 = 一般內容(code extension 直接呼叫本函式時的既有行為完全不變)。
+   */
+  isSubmission = false,
 ): ApiRoute[] {
   const def = toTypeDef(extId, ct);
   const typeName = ct.name;
 
-  return [
+  const routes: ApiRoute[] = [
     {
       method: "GET",
       path: typeName,
@@ -183,6 +245,13 @@ export function buildCrudRoutes(
 
           const p = await provider(ctx, def);
           const entry = await p.create(def.type, payload);
+          // 收件匣型別:落庫後補一列側表紀錄(狀態 unread)。best-effort ——
+          // 寫失敗只是讓這則訊息被讀成「未讀」,剛好就是正確答案,絕不能因此讓
+          // 訪客的表單送出失敗(內部已吞例外,見 src/lib/submissions.ts)。
+          // 這一列同時也是 publish-due 的 NOT EXISTS 防護看得見的東西。
+          if (isSubmission) {
+            await stampNewSubmission(entry.id, def.type);
+          }
           // A(docs/spec-declarative-notify-schedule.md):best-effort 通知信,
           // 內部已吞掉所有錯誤(見 notify.ts),絕不影響下面的 201。
           await notifyOnPublicCreate(ct, payload);
@@ -351,11 +420,42 @@ export function buildCrudRoutes(
           if (!existing)
             return Response.json({ error: "not_found" }, { status: 404 });
           await p.delete(def.type, params.id);
+          // 收件紀錄一併清掉。側表已宣告 ON DELETE CASCADE,但 D1 是否開啟 FK
+          // enforcement 不在本層掌控內(同 revisions 的既有處理),故明確再刪一次。
+          if (isSubmission) await deleteSubmissionRecord(params.id);
           return Response.json({ ok: true });
         } catch (e) {
           return errResponse(e);
         }
       },
     },
+  ];
+
+  if (!isSubmission) return routes;
+
+  // ── submission 的路由收窄 ────────────────────────────────────────────────
+  // 訊息是不可變的:站方沒有理由改寫別人寄來的內容。所以 PUT 換成明確的 403
+  // (比讓它落到 matcher 的 404 誠實:呼叫端一看就知道是「這型別不允許」而不是
+  // 「路徑打錯」),revisions 三條路由整組不生成 —— 一則永遠不會被編輯的訊息,
+  // 版本歷史裡只會躺著一筆和本體一模一樣的快照,純粹是浪費那一列的保留額度。
+  //
+  // GET / DELETE / options 原封不動。DELETE 尤其不能動:既有的 declarative
+  // schedule[] deleteOlderThan 保留策略(registry 的 contact 宣告了 180 天清理)
+  // 就是走 provider.delete,側表的 ON DELETE CASCADE 讓收件紀錄跟著一起走。
+  const dropped = new Set([
+    `PUT ${typeName}/:id`,
+    `GET ${typeName}/:id/revisions`,
+    `GET ${typeName}/:id/revisions/:revId`,
+    `POST ${typeName}/:id/revisions/:revId/restore`,
+  ]);
+  return [
+    ...routes.filter((r) => !dropped.has(`${r.method} ${r.path}`)),
+    {
+      method: "PUT",
+      path: `${typeName}/:id`,
+      handler: async () =>
+        Response.json({ error: "immutable_submission" }, { status: 403 }),
+    },
+    inboxRoute(extId, ct),
   ];
 }

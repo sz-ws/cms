@@ -57,6 +57,7 @@ export async function restoreRevision(
     .select({
       id: contents.id,
       type: contents.type,
+      locale: contents.locale,
       slug: contents.slug,
     })
     .from(contents)
@@ -117,7 +118,7 @@ export async function restoreRevision(
     console.error("[revisions] restore hook dispatch failed", contentId, e);
   }
   try {
-    await indexContentEntry(contentId, row.type, data);
+    await indexContentEntry(contentId, row.type, row.locale, data);
   } catch (e) {
     console.error("[revisions] restore reindex failed", contentId, e);
   }

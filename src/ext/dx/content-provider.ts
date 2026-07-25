@@ -16,6 +16,10 @@ import { isMediaKey } from "./media-key";
 import { revalidateContent } from "./cache-invalidate";
 import { indexContentEntry, removeContentIndex } from "@/lib/search";
 import {
+  DEFAULT_CONTENT_LOCALE,
+  getDefaultContentLocale,
+} from "@/lib/settings";
+import {
   captureRevision,
   deleteRevisionsFor,
   revisionKeep,
@@ -366,6 +370,54 @@ function withoutPublishAt(
   return rest;
 }
 
+// ---- locale / translationGroup(migrations/0011;同為 ROW 欄位,非 JSON data)----
+//
+// 兩者**建立後不可變更**:改 locale = 刪除後重建。理由是 slug 唯一性與
+// translation group 的完整性都掛在這兩欄上,允許就地改動會讓既有索引在中途變成
+// 不成立的狀態,而且「這筆到底是哪個語言」的歷史會消失。update() 因此完全不接受
+// 這兩個 key(與 publishAt 的紀律相同,只是更嚴格 —— publishAt 可改,這兩個不行)。
+
+/** 建立時的 locale:未帶 → undefined(由呼叫端套站台預設);帶了就必須是非空字串。 */
+function extractLocale(data: Record<string, unknown>): string | undefined {
+  if (!Object.prototype.hasOwnProperty.call(data, "locale")) return undefined;
+  const v = data["locale"];
+  if (typeof v === "string" && v.trim().length > 0) return v.trim();
+  fail("locale", "invalid_locale");
+}
+
+/** 建立時的 translationGroup:未帶 → undefined(create 以自己的 id 起一個新 group)。 */
+function extractTranslationGroup(
+  data: Record<string, unknown>,
+): string | undefined {
+  if (!Object.prototype.hasOwnProperty.call(data, "translationGroup"))
+    return undefined;
+  const v = data["translationGroup"];
+  if (typeof v === "string" && v.trim().length > 0) return v.trim();
+  fail("translationGroup", "invalid_translation_group");
+}
+
+/** 回傳去掉 locale / translationGroup 的淺複本(不可變):同樣不得漏進 JSON data。 */
+function withoutLocaleKeys(
+  obj: Record<string, unknown>,
+): Record<string, unknown> {
+  const hasLocale = Object.prototype.hasOwnProperty.call(obj, "locale");
+  const hasGroup = Object.prototype.hasOwnProperty.call(obj, "translationGroup");
+  if (!hasLocale && !hasGroup) return obj;
+  const {
+    locale: _locale,
+    translationGroup: _translationGroup,
+    ...rest
+  } = obj;
+  void _locale;
+  void _translationGroup;
+  return rest;
+}
+
+/** create/update 前一次剝除所有 row 層 key,確保 JSON data 只留內容欄位。 */
+function withoutRowKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  return withoutLocaleKeys(withoutPublishAt(obj));
+}
+
 /**
  * row 層 publishAt 讀取(admin 編輯表單載入既有排程用)。ContentEntry 刻意不帶
  * row 排程欄位(capabilities.ts 的 provider 介面不動),故這裡提供一個窄的
@@ -397,6 +449,8 @@ function slugify(input: string): string {
 interface ContentRow {
   id: string;
   type: string;
+  locale: string;
+  translationGroup: string;
   slug: string | null;
   status: string;
   data: string;
@@ -415,6 +469,8 @@ function rowToEntry(row: ContentRow): ContentEntry {
   return {
     id: row.id,
     type: row.type,
+    locale: row.locale,
+    translationGroup: row.translationGroup,
     slug: row.slug,
     status: row.status === "published" ? "published" : "draft",
     data: parsed,
@@ -441,7 +497,12 @@ export class CoreContentProvider implements ContentProvider {
   // 例外(不 throw),但主寫入的成功與否完全由上游的 insert/update/delete 決定。
   private async index(entry: ContentEntry): Promise<void> {
     try {
-      await indexContentEntry(entry.id, entry.type, entry.data);
+      await indexContentEntry(
+        entry.id,
+        entry.type,
+        entry.locale ?? DEFAULT_CONTENT_LOCALE,
+        entry.data,
+      );
     } catch {
       // 見上方註解:FTS 為 best-effort,不阻斷寫入。
     }
@@ -467,30 +528,46 @@ export class CoreContentProvider implements ContentProvider {
     });
   }
 
-  /** slug 於同 type 內唯一:base 撞了試 base-2、base-3…;上限後改 nanoid 後綴。 */
+  /**
+   * slug 於同 (type, locale) 內唯一:base 撞了試 base-2、base-3…;上限後改 nanoid 後綴。
+   *
+   * migrations/0011 起唯一性含 locale —— 少了它,一篇與 en 兄弟共用 slug 的 zh-Hant
+   * 譯本會被誤判為撞號而自動改成 `about-2`,「跨 locale 共用同一個 slug」這個合法的
+   * 雙語慣例就永遠用不了。
+   */
   private async uniqueSlug(
     type: string,
+    locale: string,
     base: string,
     excludeId?: string,
   ): Promise<string> {
     const safeBase = base.length > 0 ? base : type.split(".").pop() ?? "item";
-    if (!(await this.slugTaken(type, safeBase, excludeId))) return safeBase;
+    if (!(await this.slugTaken(type, locale, safeBase, excludeId)))
+      return safeBase;
     for (let n = 2; n <= SLUG_UNIQUE_MAX; n++) {
       const candidate = `${safeBase}-${n}`;
-      if (!(await this.slugTaken(type, candidate, excludeId))) return candidate;
+      if (!(await this.slugTaken(type, locale, candidate, excludeId)))
+        return candidate;
     }
     return `${safeBase}-${nanoid(6)}`;
   }
 
   private async slugTaken(
     type: string,
+    locale: string,
     slug: string,
     excludeId?: string,
   ): Promise<boolean> {
     const rows = await this.conn()
       .select({ id: contents.id })
       .from(contents)
-      .where(and(eq(contents.type, type), eq(contents.slug, slug)))
+      .where(
+        and(
+          eq(contents.type, type),
+          eq(contents.locale, locale),
+          eq(contents.slug, slug),
+        ),
+      )
       .limit(2);
     return rows.some((r) => r.id !== excludeId);
   }
@@ -528,17 +605,30 @@ export class CoreContentProvider implements ContentProvider {
     // publishAt 為 row 欄位(見 extractPublishAt);先驗證再從待存 data 剝除,避免漏進
     // JSON。create 時 undefined(未帶)= 未排程 = NULL。
     const publishAtRaw = extractPublishAt(data);
-    const validated = validateData(def, withoutPublishAt(data));
+    // locale / translationGroup 同為 row 欄位(見 extractLocale 上方說明)。
+    const localeRaw = extractLocale(data);
+    const groupRaw = extractTranslationGroup(data);
+    const validated = validateData(def, withoutRowKeys(data));
     const now = Date.now();
     const id = nanoid();
 
+    // 未指定 locale → 用站台預設(core.content.defaultLocale,預設 "en")。刻意**不**
+    // 讀 core.locale —— 那是「管理介面語言」,拿它當內容語言會讓管理員切換自己的
+    // 介面語言就改變匿名訪客看到的內容。
+    const locale = localeRaw ?? (await getDefaultContentLocale());
+    // 未指定 group → 自己起一個新 group(以自己的 id 當 group id)。
+    // 這一行必須從第一天就正確:沒有 group id 的資料列事後無法重建歸屬。
+    const translationGroup = groupRaw ?? id;
+
     const rawSlug = this.deriveSlug(def, data);
-    const slug = rawSlug ? await this.uniqueSlug(type, rawSlug) : null;
+    const slug = rawSlug ? await this.uniqueSlug(type, locale, rawSlug) : null;
     const status = data["status"] === "published" ? "published" : "draft";
 
     const row = {
       id,
       type,
+      locale,
+      translationGroup,
       slug,
       status,
       publishAt: publishAtRaw ?? null,
@@ -582,12 +672,27 @@ export class CoreContentProvider implements ContentProvider {
     return rows[0] ? rowToEntry(rows[0]) : null;
   }
 
-  async getBySlug(type: string, slug: string): Promise<ContentEntry | null> {
-    const rows = await this.conn()
-      .select()
-      .from(contents)
-      .where(and(eq(contents.type, type), eq(contents.slug, slug)))
-      .limit(1);
+  /**
+   * slug 查單筆。`locale` 省略 = 不限語言(維持 migrations/0011 之前的行為,讓既有
+   * 兩參數呼叫端不變);帶了就精準限定該語言的那一列。
+   *
+   * 注意:雙語站若跨 locale 共用同一個 slug,不帶 locale 會拿到「隨便一列」——
+   * 公開路徑一律要帶。fallback 鏈(L_req → 站台預設 → 404)屬於路由層語意,
+   * 不在 provider 這層做,見 docs 的 locale 設計。
+   */
+  async getBySlug(
+    type: string,
+    slug: string,
+    locale?: string,
+  ): Promise<ContentEntry | null> {
+    const where = locale
+      ? and(
+          eq(contents.type, type),
+          eq(contents.slug, slug),
+          eq(contents.locale, locale),
+        )
+      : and(eq(contents.type, type), eq(contents.slug, slug));
+    const rows = await this.conn().select().from(contents).where(where).limit(1);
     return rows[0] ? rowToEntry(rows[0]) : null;
   }
 
@@ -610,14 +715,23 @@ export class CoreContentProvider implements ContentProvider {
     // publishAt 為 row 欄位:僅在本次 body 明確帶 key 時變更(undefined = 保留既有
     // column)。先驗證,再從 merged 剝除避免漏進 JSON data。
     const publishAtRaw = extractPublishAt(data);
+    // locale / translationGroup 建立後不可變更(見 extractLocale 上方說明)。
+    // 明確帶了就是呼叫端搞錯了 —— fail loud,不要默默忽略。
+    if (Object.prototype.hasOwnProperty.call(data, "locale")) {
+      fail("locale", "locale_immutable");
+    }
+    if (Object.prototype.hasOwnProperty.call(data, "translationGroup")) {
+      fail("translationGroup", "translation_group_immutable");
+    }
     // merge:保留既有 data,套用送入的欄位(§2.4 unknown key 保留)。
-    const merged = withoutPublishAt({ ...existing.data, ...data });
+    const merged = withoutRowKeys({ ...existing.data, ...data });
     const validated = validateData(def, merged);
     const now = Date.now();
 
+    const locale = existing.locale ?? DEFAULT_CONTENT_LOCALE;
     const rawSlug = this.deriveSlug(def, merged);
     const slug = rawSlug
-      ? await this.uniqueSlug(type, rawSlug, id)
+      ? await this.uniqueSlug(type, locale, rawSlug, id)
       : existing.slug;
     const status =
       data["status"] === "published"
@@ -723,6 +837,8 @@ export class CoreContentProvider implements ContentProvider {
         const pattern = `%${escapeLike(contains)}%`;
         if (key === "slug") {
           conds.push(sql`${contents.slug} LIKE ${pattern} ESCAPE '\\'`);
+        } else if (key === "locale" || key === "translationGroup") {
+          continue; // row 欄位不支援模糊比對(語意上也沒有意義)。
         } else {
           conds.push(
             sql`json_extract(${contents.data}, ${"$." + key}) LIKE ${pattern} ESCAPE '\\'`,
@@ -734,6 +850,15 @@ export class CoreContentProvider implements ContentProvider {
         conds.push(eq(contents.status, String(value)));
       } else if (key === "slug") {
         conds.push(eq(contents.slug, String(value)));
+      } else if (key === "locale" || key === "translationGroup") {
+        // migrations/0011:兩者都是 ROW 欄位。**必須**在這裡攔下 —— 否則會掉進
+        // 下面的 json_extract 分支,對著 JSON data 找一個永遠不存在的 key,
+        // 結果是「locale 過濾靜默失效、回傳所有語言」。
+        conds.push(
+          key === "locale"
+            ? eq(contents.locale, String(value))
+            : eq(contents.translationGroup, String(value)),
+        );
       } else {
         conds.push(sql`json_extract(${contents.data}, ${"$." + key}) = ${value}`);
       }

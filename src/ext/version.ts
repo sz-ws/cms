@@ -227,4 +227,55 @@
 //     <title>CMS</title>);icon.svg / apple-icon.png 移到 (admin)/ —— 產品 icon
 //     只代表後台,公開站的 favicon 由架站者自己放(同 Next.js 預設可被覆蓋的語意)。
 //   使用 publicHeader/publicFooter 的 extension 應宣告 coreApi "^1.19.0"。
-export const CORE_API_VERSION = "1.19.0";
+// 1.20.0(內容多語化 —— schema 層;migrations/0011):
+//   - `contents` 新增 `locale` 與 `translation_group` 兩個 ROW 欄位:一列一個
+//     (entry, locale),同一份內容的各語言版本以 translation_group 相連。兩者
+//     **建立後不可變更**(改 locale = 刪除後重建),update() 帶了會 fail loud。
+//   - slug 唯一性從 (type) 範圍移到 (type, locale):雙語站可跨語言共用同一個
+//     slug,也可逐語言用不同 slug(/about vs /關於)—— 兩種慣例皆合法。
+//   - `ContentProvider.getBySlug` 新增第三個參數 `locale?`,`ContentEntry` 新增
+//     `locale?` / `translationGroup?`。**三者皆為 optional,這是刻意的**:設成
+//     必填會讓既有 provider 實作與手工組出的 entry 全部編不過 —— 那是 provider
+//     介面破壞,依本檔頂部規則屬 major。有了 optional 才是 minor。
+//   - 新設定 `core.content.defaultLocale`(預設 "en"),與 `core.locale`
+//     (那是「管理介面語言」)**刻意分開**:合併會造成管理員切換自己的後台語言
+//     就改變匿名訪客看到的內容。
+//   - content_fts 同批重建:加 locale 欄,並修掉 CJK 搜不到的既有 bug
+//     (unicode61 不對中日韓斷詞,「我們」找不到「關於我們」)。修法在應用層逐字
+//     切分 + phrase 查詢,不換 tokenizer —— trigram 需要三字以上,而中文最常見的
+//     正是兩字詞。見 src/lib/search.ts 的 segmentCjk。
+//   讀寫多語內容的 extension 應宣告 coreApi "^1.20.0";只用舊表面者由 caret
+//   range 向前相容,不受影響。
+// 1.21.0(公開表單收件語意:submission ≠ draft):
+//   - manifest 的 `contentTypes[]` 新增可選 `kind`("content" | "submission")。
+//     宣告 submission 的 type 不再被當成「等著發佈的內容」:admin 走收件匣
+//     (未讀 / 已讀 / 已封存 + 已回覆紀錄,狀態住新側表 content_submissions,
+//     見 migrations/0014 與 src/lib/submissions.ts),沒有發佈鈕、沒有編輯表單、
+//     沒有版本歷史(訊息是不可變的,替它留快照只是把同一份內容抄第二遍)。
+//   - **向後相容不靠作者改 manifest**:沒寫 `kind` 時走推論 —— `public:true`
+//     且整份 manifest 沒有任何 list/detail public route 指向它 → submission。
+//     於是 registry 既有的 contact(public + notifyOnCreate + 只宣告 view:"form")
+//     一個字都不用改就自動取得收件匣語意。宣告了公開 list/detail 的 public type
+//     (公開留言板那種 UGC)推論不成立,行為與 1.20.0 之前完全一致。明寫
+//     `kind:"content"` 可退出推論。判定規則只有一份實作:src/ext/dx/submission.ts。
+//   - 隱私硬需求(公開面永不外洩收件內容),四層,彼此獨立:
+//       1. manifest 驗證:明寫 kind:"submission" 又宣告 list/detail public route
+//          → install 當下驗證失敗(fail-loud)。
+//       2. interpret:submission type 的 list/detail public route 一律不生成
+//          (涵蓋推論而來者,以及手改 DB 繞過驗證的情況)。
+//       3. Content API(/api/content/<extId>/<type>):命中 submission type 直接
+//          404,在任何查詢之前。
+//       4. 結構:submission 列的 status 恆為 'draft'、publish_at 恆為 NULL,而
+//          公開 API 強制 filter.status='published' —— 就算前三層全垮也讀不到。
+//     另外 src/lib/jobs.ts 的 publish-due 加上 NOT EXISTS 防護,排程發佈永遠碰不到
+//     收件列(理由同上:被自動發佈的私人詢問是隱私事故,不能靠推論)。
+//   - submission type 的 auto-CRUD 收窄:PUT 回 403 immutable_submission
+//     (別人寄來的訊息不該被站方改寫),改以新的 PATCH `<type>/:id/inbox`
+//     變更收件狀態 / 標記已回覆;revisions 三條路由不生成。GET/DELETE 不變,
+//     所以既有的 schedule[] deleteOlderThan 保留策略原樣繼續生效。
+//   - contents 表**一欄未動**(狀態住側表);既有站台不需要任何資料 backfill——
+//     側表沒有紀錄的舊提交一律讀為「未讀」。
+//   manifestSchema 是 .strict() —— 宣告 `kind` 的 manifest 在 <1.21.0 的 core 會整包
+//   驗證失敗,故使用該欄位的 manifest 其 coreApi 必須宣告 "^1.21.0";不寫 `kind`
+//   而依賴推論的 manifest 不受影響、任何 core 版本都過。
+export const CORE_API_VERSION = "1.21.0";

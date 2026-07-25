@@ -106,6 +106,18 @@ export interface UploadProvider {
 export interface ContentEntry {
   id: string; // nanoid
   type: string;
+  /**
+   * BCP-47 locale tag(migrations/0011,CORE_API 1.20.0)。一列一個 (entry, locale)。
+   * **optional 是刻意的**:若設成必填,所有既有的 ContentProvider 實作與手工組出的
+   * ContentEntry 都會編不過 —— 那是 provider 介面破壞,依 version.ts 的規則屬 major。
+   * core provider 一律填值;第三方 provider 不填就視同站台預設語言。
+   */
+  locale?: string;
+  /**
+   * 同一份內容各語言版本的連結鍵(migrations/0011)。group 第一列 = 自己的 id,
+   * 其譯本原樣複製此值。用來回答「這頁缺哪些語言的版本」。同 locale,optional。
+   */
+  translationGroup?: string;
   slug: string | null;
   status: "draft" | "published";
   data: Record<string, unknown>; // 依 field defs 驗證
@@ -193,7 +205,15 @@ export interface ContentProvider {
   ensureType(def: ContentTypeDef): Promise<void>;
   create(type: string, data: Record<string, unknown>): Promise<ContentEntry>;
   get(type: string, id: string): Promise<ContentEntry | null>;
-  getBySlug(type: string, slug: string): Promise<ContentEntry | null>;
+  /**
+   * slug 查單筆。第三個參數 `locale` 為 optional(CORE_API 1.20.0):省略 = 不限語言
+   * (維持舊行為,既有兩參數實作仍可指派 —— 必填會是 major 破壞)。公開路徑應一律帶。
+   */
+  getBySlug(
+    type: string,
+    slug: string,
+    locale?: string,
+  ): Promise<ContentEntry | null>;
   update(
     type: string,
     id: string,

@@ -62,7 +62,7 @@ beforeAll(async () => {
     "CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'read', last_used_at INTEGER, created_at INTEGER NOT NULL);",
   );
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, slug TEXT, status TEXT NOT NULL DEFAULT 'draft', data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+    "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, locale TEXT NOT NULL DEFAULT 'en', translation_group TEXT NOT NULL DEFAULT '', slug TEXT, status TEXT NOT NULL DEFAULT 'draft', data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
   );
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
@@ -361,8 +361,8 @@ describe("revoke (§6.6)", () => {
 // ---- §6.7:CORE_API 1.9.0;customApiRoutes ^1.9.0 可裝;read-only gate ----
 
 describe("core api 1.9.0 + manifest gate (§6.7)", () => {
-  it("CORE_API_VERSION is 1.19.0 (still ^1.9.0-compatible: same major, newer minor)", () => {
-    expect(CORE_API_VERSION).toBe("1.19.0");
+  it("CORE_API_VERSION is 1.21.0 (still ^1.9.0-compatible: same major, newer minor)", () => {
+    expect(CORE_API_VERSION).toBe("1.21.0");
   });
 
   it("manifest with GET customApiRoutes + ^1.9.0 parses", () => {

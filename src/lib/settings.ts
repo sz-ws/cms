@@ -37,6 +37,23 @@ export type SettingField = SettingFieldBase &
     | { type: "select"; options: { value: string; label: LocalizedString }[] }
   );
 
+/**
+ * 內容的預設語言(migrations/0011)。與 core.locale(管理介面語言)刻意分離 ——
+ * 詳見 CORE_SETTINGS 內 core.content.defaultLocale 的註解。
+ *
+ * 這個常數也是「讀不到設定時」的保底值,故同時被 content-provider 的
+ * update()(既有列缺 locale 的極端情形)與 index 路徑使用。
+ */
+export const DEFAULT_CONTENT_LOCALE = "en";
+
+/** 站台的內容預設語言;未設定 → DEFAULT_CONTENT_LOCALE。 */
+export async function getDefaultContentLocale(): Promise<string> {
+  const v = await getSetting<string>("core.content.defaultLocale");
+  return typeof v === "string" && v.trim().length > 0
+    ? v.trim()
+    : DEFAULT_CONTENT_LOCALE;
+}
+
 // ---- Core settings 定義(05 §3)----
 // Key 慣例:CORE_SETTINGS 的 key 寫「完整 key」(含 core. 前綴,直接等於 D1 key)。
 // 所以 core section 的 keyPrefix=""。
@@ -52,6 +69,23 @@ export const CORE_SETTINGS: SettingField[] = [
       { value: "zh-Hant", label: "繁體中文" },
     ],
     default: "en",
+  },
+  {
+    // migrations/0011:**內容**的預設語言,與上面的 core.locale(管理介面語言)
+    // 刻意分開。合併成一個會造成:管理員把自己的後台切成英文,匿名訪客看到的
+    // 內容也跟著變。新內容未指定 locale 時套用此值;既有內容不受影響
+    //(locale 建立後不可變更)。
+    key: "core.content.defaultLocale",
+    group: "general",
+    label: "Default content language",
+    description:
+      "New content is created in this language unless a locale is given. Separate from the admin interface language above.",
+    type: "select",
+    options: [
+      { value: "en", label: "English" },
+      { value: "zh-Hant", label: "繁體中文" },
+    ],
+    default: DEFAULT_CONTENT_LOCALE,
   },
   {
     key: "core.siteTitle",

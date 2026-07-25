@@ -32,6 +32,8 @@ import {
   extractSearchText,
   buildMatchQuery,
   indexContentEntry,
+  segmentCjk,
+  unsegmentCjk,
   removeContentIndex,
   reindexAll,
   searchContent,
@@ -53,10 +55,10 @@ const EDITOR = {
 // 真實 migration SQL 的鏡像(migrations/0005 + contents 表最小欄位)。
 beforeAll(async () => {
   await d1().exec(
-    "CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(content_id UNINDEXED, type_key UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2');",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(content_id UNINDEXED, type_key UNINDEXED, locale UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2');",
   );
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, slug TEXT, status TEXT NOT NULL DEFAULT 'draft', data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+    "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, locale TEXT NOT NULL DEFAULT 'en', translation_group TEXT NOT NULL DEFAULT '', slug TEXT, status TEXT NOT NULL DEFAULT 'draft', data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
   );
   // GET /api/search 的 hitRateLimit 沿用 login_attempts 計數表。
   await d1().exec(
@@ -87,12 +89,13 @@ async function insertContent(
   status: "draft" | "published",
   data: Record<string, unknown>,
   updatedAt = Date.now(),
+  locale = "en",
 ): Promise<void> {
   await d1()
     .prepare(
-      "INSERT INTO contents (id, type, slug, status, data, created_at, updated_at) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+      "INSERT INTO contents (id, type, locale, translation_group, slug, status, data, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)",
     )
-    .bind(id, type, status, JSON.stringify(data), updatedAt, updatedAt)
+    .bind(id, type, locale, id, status, JSON.stringify(data), updatedAt, updatedAt)
     .run();
 }
 
@@ -210,7 +213,7 @@ describe("buildMatchQuery", () => {
 describe("index functions", () => {
   it("indexContentEntry inserts a searchable row; re-index replaces it", async () => {
     await insertContent("c1", "blog.post", "published", { title: "First Title" });
-    await indexContentEntry("c1", "blog.post", { title: "First Title" });
+    await indexContentEntry("c1", "blog.post", "en", { title: "First Title" });
     let hits = await searchContent("First", 10);
     expect(hits.map((h) => h.id)).toContain("c1");
 
@@ -219,7 +222,7 @@ describe("index functions", () => {
       .prepare("UPDATE contents SET data = ? WHERE id = ?")
       .bind(JSON.stringify({ title: "Second Heading" }), "c1")
       .run();
-    await indexContentEntry("c1", "blog.post", { title: "Second Heading" });
+    await indexContentEntry("c1", "blog.post", "en", { title: "Second Heading" });
 
     expect((await searchContent("First", 10)).length).toBe(0);
     hits = await searchContent("Second", 10);
@@ -234,9 +237,9 @@ describe("index functions", () => {
     // backfill(見 reindexAll 測試)。真實 delete 路徑亦是「先刪 contents 列、
     // 再 unindex」,故此處一併移除 contents 列以貼近真實。
     await insertContent("keep", "blog.post", "published", { title: "Keeper" });
-    await indexContentEntry("keep", "blog.post", { title: "Keeper" });
+    await indexContentEntry("keep", "blog.post", "en", { title: "Keeper" });
     await insertContent("c2", "blog.post", "published", { title: "Removable" });
-    await indexContentEntry("c2", "blog.post", { title: "Removable" });
+    await indexContentEntry("c2", "blog.post", "en", { title: "Removable" });
     expect((await searchContent("Removable", 10)).length).toBe(1);
 
     await d1().prepare("DELETE FROM contents WHERE id = ?").bind("c2").run();
@@ -270,11 +273,11 @@ describe("searchContent", () => {
       { title: "Tea steeping", body: "Green tea and coffee comparison." },
       2000,
     );
-    await indexContentEntry("p1", "blog.post", {
+    await indexContentEntry("p1", "blog.post", "en", {
       title: "Coffee brewing guide",
       body: "<p>All about coffee and espresso techniques.</p>",
     });
-    await indexContentEntry("p2", "blog.post", {
+    await indexContentEntry("p2", "blog.post", "en", {
       title: "Tea steeping",
       body: "Green tea and coffee comparison.",
     });
@@ -304,7 +307,7 @@ describe("searchContent", () => {
       await insertContent(`m${i}`, "blog.post", "published", {
         title: `match ${i}`,
       });
-      await indexContentEntry(`m${i}`, "blog.post", { title: `match ${i}` });
+      await indexContentEntry(`m${i}`, "blog.post", "en", { title: `match ${i}` });
     }
     const two = await searchContent("match", 2);
     expect(two.length).toBe(2);
@@ -315,7 +318,7 @@ describe("searchContent", () => {
 
   it("empty / too-short query returns empty results", async () => {
     await insertContent("s1", "blog.post", "published", { title: "Something" });
-    await indexContentEntry("s1", "blog.post", { title: "Something" });
+    await indexContentEntry("s1", "blog.post", "en", { title: "Something" });
     expect(await searchContent("", 10)).toEqual([]);
     expect(await searchContent("a", 10)).toEqual([]); // < MIN_QUERY_LENGTH
     expect(await searchContent("   ", 10)).toEqual([]);
@@ -323,7 +326,7 @@ describe("searchContent", () => {
 
   it("does not throw on operator-laden queries", async () => {
     await insertContent("o1", "blog.post", "published", { title: "Widgets" });
-    await indexContentEntry("o1", "blog.post", { title: "Widgets" });
+    await indexContentEntry("o1", "blog.post", "en", { title: "Widgets" });
     for (const q of ['wid"get', "widget*", "-widget", "(widget)", "a OR b"]) {
       await expect(searchContent(q, 10)).resolves.toBeInstanceOf(Array);
     }
@@ -368,7 +371,7 @@ describe("GET /api/search", () => {
 
   it("200 with results for an authenticated editor (not admin-only)", async () => {
     await insertContent("a1", "blog.post", "published", { title: "Apisearch hit" });
-    await indexContentEntry("a1", "blog.post", { title: "Apisearch hit" });
+    await indexContentEntry("a1", "blog.post", "en", { title: "Apisearch hit" });
     const res = await GET(searchReq("Apisearch"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { results: Array<{ id: string }> };
@@ -380,5 +383,50 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { results: unknown[] };
     expect(body.results).toEqual([]);
+  });
+});
+
+// ---- CJK 可搜(migrations/0011)----
+//
+// 這一組釘住的是一個「改壞了不會有東西告訴你」的行為:content_fts 用 unicode61,
+// 它不對中日韓斷詞,整串中文會變成單一 token。若哪天有人把 segmentCjk 拿掉或改成
+// 只在寫入端做,下面第一個測試就會紅 —— 那正是它存在的理由。
+
+describe("CJK search", () => {
+  it("segmentCjk splits CJK into per-character tokens and leaves Latin alone", () => {
+    expect(segmentCjk("關於我們")).toBe("關 於 我 們");
+    expect(segmentCjk("Hello world")).toBe("Hello world");
+    // 混排:CJK 逐字切開,Latin 維持整詞。
+    expect(segmentCjk("關於 Suko 工作室")).toBe("關 於 Suko 工 作 室");
+  });
+
+  it("unsegmentCjk restores CJK for display", () => {
+    expect(unsegmentCjk(segmentCjk("關於我們"))).toBe("關於我們");
+    expect(unsegmentCjk("Hello world")).toBe("Hello world");
+  });
+
+  it("finds a mid-string CJK term — the bug this fixes", async () => {
+    await insertContent("zh1", "blog.post", "published", { title: "關於我們" });
+    await indexContentEntry("zh1", "blog.post", "zh-Hant", { title: "關於我們" });
+
+    // 前綴詞:修復前後都找得到。
+    expect((await searchContent("關於", 10)).map((h) => h.id)).toContain("zh1");
+    // 中段詞:**修復前找不到**(unicode61 把整串當一個 token,只有前綴匹配有效)。
+    expect((await searchContent("我們", 10)).map((h) => h.id)).toContain("zh1");
+  });
+
+  it("returns CJK titles unsegmented, not with spaces between characters", async () => {
+    await insertContent("zh2", "blog.post", "published", { title: "時間管理" });
+    await indexContentEntry("zh2", "blog.post", "zh-Hant", { title: "時間管理" });
+    const hits = await searchContent("時間", 10);
+    const hit = hits.find((h) => h.id === "zh2");
+    expect(hit?.title).toBe("時間管理");
+  });
+
+  it("carries locale through to the result", async () => {
+    await insertContent("en1", "blog.post", "published", { title: "Roadmap" }, Date.now(), "en");
+    await indexContentEntry("en1", "blog.post", "en", { title: "Roadmap" });
+    const hits = await searchContent("Roadmap", 10);
+    expect(hits.find((h) => h.id === "en1")?.locale).toBe("en");
   });
 });

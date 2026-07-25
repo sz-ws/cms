@@ -1,5 +1,6 @@
 import { and, eq, lt } from "drizzle-orm";
 import { contents } from "@/lib/schema";
+import { deleteSubmissionRecord } from "@/lib/submissions";
 import type { ContentProvider } from "../capabilities";
 import type { ExtJobRegistration } from "../types";
 import type { DeclarativeContentType, DeclarativeManifest } from "./manifest";
@@ -52,6 +53,11 @@ export function buildScheduleJobs(
         const provider = services.providers.get<ContentProvider>("content");
         for (const row of due) {
           await provider.delete(fullType, row.id);
+          // 收件紀錄一併清掉(這條路徑正是 contact 的 180 天清理所走的)。側表已宣告
+          // ON DELETE CASCADE,但 D1 是否開啟 FK enforcement 不在本層掌控內 ——
+          // 同 revisions 的既有處理,明確再刪一次。非 submission 的型別沒有側表列,
+          // 這一刪影響 0 列,不需要在此判斷型別。
+          await deleteSubmissionRecord(row.id);
         }
       },
     });

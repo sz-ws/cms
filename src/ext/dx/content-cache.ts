@@ -50,14 +50,18 @@ export async function cachedPublicGetBySlug(
   extId: string,
   type: string,
   slug: string,
+  // migrations/0011:locale **必須**進快取鍵。少了它,unstable_cache 會把第一個被
+  // 請求的語言供應給之後所有訪客 —— dev 單語看不出來,production 是「訪客拿到錯的
+  // 語言」的事故。省略 = 不限語言(維持舊行為),此時鍵值用 "*" 標示。
+  locale?: string,
 ): Promise<ContentEntry | null> {
   try {
     const run = unstable_cache(
       async () => {
         const provider = await getContentProvider();
-        return provider.getBySlug(type, slug);
+        return provider.getBySlug(type, slug, locale);
       },
-      ["dx-content-getBySlug", type, slug],
+      ["dx-content-getBySlug", type, slug, locale ?? "*"],
       { tags: [contentTag(type), extTag(extId)] },
     );
     return await run();
@@ -67,7 +71,7 @@ export async function cachedPublicGetBySlug(
       err,
     );
     const provider = await getContentProvider();
-    return provider.getBySlug(type, slug);
+    return provider.getBySlug(type, slug, locale);
   }
 }
 

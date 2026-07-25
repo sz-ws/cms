@@ -134,26 +134,46 @@ export const extMigrations = sqliteTable("ext_migrations", {
 
 // core-v2 §2.4:default ContentProvider 的 JSON document 儲存(免 runtime DDL)。
 // data 為 JSON 字串;filter/sort 用 json_extract(data,'$.field')。unknown key 保留不動。
+//
+// migrations/0011(手寫,見該檔頭):多語內容 = 一列一個 (entry, locale)。同批 migration
+// 亦重建了 content_fts 虛擬表(加 locale UNINDEXED 欄)—— FTS5 在 drizzle 無法建模
+//(見 migrations/0005 檔頭),此處記錄以免那個 raw-SQL 構造失聯。
 export const contents = sqliteTable(
   "contents",
   {
     id: text("id").primaryKey(),
     type: text("type").notNull(), // "<extId>.<typeName>",如 "gallery.item"
+    // migrations/0011:BCP-47 locale tag,canonical token 為 "en" / "zh-Hant"
+    //(src/lib/i18n/index.ts 的 Locale;大小寫是 zh-Hant)。建立後不可變更 ——
+    // 改 locale = 刪除後重建(見 content-provider.ts 的 update())。
+    locale: text("locale").notNull().default("en"),
+    // migrations/0011:sibling 譯本連結。group 第一列 = 自己的 id,譯本原樣複製此值。
+    // 寫入路徑一律明確給值(create 以 `?? id` 保底),DEFAULT '' 僅為 SQLite 的
+    // ADD COLUMN NOT NULL 需要常數預設值,app 端不可達。
+    translationGroup: text("translation_group").notNull().default(""),
     slug: text("slug"),
     status: text("status").notNull().default("draft"),
     // jobs §publish-due:排程發佈時戳(epoch ms)。非 NULL 且 <= now 的 draft 會被
     // core job 轉為 published(轉換後清回 NULL)。ROW 欄位(與 status 同層),不入
-    // JSON data。UI(publish-at 編輯)為後續任務;API 已可透過 create/update 載入。
+    // JSON data。每個 locale 列各自獨立排程 —— 刻意如此(en 先發、zh-Hant 後發)。
     publishAt: integer("publish_at"),
     data: text("data").notNull(), // JSON
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => [
-    // slug 於同 type 內唯一(僅 slug 非 NULL 時);partial unique index。
-    uniqueIndex("contents_type_slug")
-      .on(t.type, t.slug)
+    // slug 於同 (type, locale) 內唯一(僅 slug 非 NULL 時);partial unique index。
+    // 同 slug 跨 locale 合法(/about 的 en 與 zh-Hant 共用),不同 locale 用不同 slug
+    // 亦合法(/about vs /關於)—— 兩種雙語慣例皆可,schema 不偏袒。
+    uniqueIndex("contents_type_locale_slug")
+      .on(t.type, t.locale, t.slug)
       .where(isNotNull(t.slug)),
+    // 完整性不變量:一個 translation group 在同一 locale 至多一列。
+    uniqueIndex("contents_group_locale").on(t.translationGroup, t.locale),
+    // locale-scoped collection/list 排序。
+    index("contents_type_locale_updated").on(t.type, t.locale, t.updatedAt),
+    // locale-agnostic 掃描(seo-cache / dashboard aggregate / widget trend)保留 ——
+    // (type, locale, updated_at) 的前綴不涵蓋 (type, updated_at)。
     index("contents_type_updated").on(t.type, t.updatedAt),
   ],
 );
@@ -224,4 +244,34 @@ export const extJobs = sqliteTable("ext_jobs", {
   lastError: text("last_error"), // 上次失敗訊息(觀測;成功清 NULL)
   createdAt: integer("created_at").notNull(),
 });
+
+// 公開表單收件語意(migrations/0014_content_submissions.sql,手寫,照 0006–0010 precedent)。
+// 「別人寄給你的訊息」與「等著發佈的內容」是兩件事;後者住 contents.status,前者住這張
+// 側表。**contents 一欄未動、一個索引未改** —— 理由(併行工作 + status 的三個既有語意
+// 必須原封不動)寫在該 migration 檔頭,runtime 契約見 src/lib/submissions.ts。
+//
+// 沒有列 = 未讀:舊站台既有的 contact 提交不需要任何 backfill 就能被收件匣正確讀出。
+// ON DELETE CASCADE 讓既有的 schedule[] deleteOlderThan 保留策略原樣繼續生效
+// (內容被清掉時收件紀錄跟著走,不留孤兒、不必另寫第二支清理任務)。
+//
+// 索引與 migration 原生 SQL **同名同欄**(不重蹈 0007 只寫在 SQL 的漂移)。
+export const contentSubmissions = sqliteTable(
+  "content_submissions",
+  {
+    // 一列內容最多一筆收件紀錄,故直接以 content_id 當主鍵。
+    contentId: text("content_id")
+      .primaryKey()
+      .references(() => contents.id, { onDelete: "cascade" }),
+    // 自 contents.type 反正規化("<extId>.<typeName>");寫入後不再變更。
+    type: text("type").notNull(),
+    state: text("state", { enum: ["unread", "read", "archived"] })
+      .notNull()
+      .default("unread"),
+    // 回覆時戳。刻意**不是**第四個狀態:回覆與歸檔正交,壓成單一狀態機會把
+    // 「到底有沒有人回這個人」這筆紀錄弄丟。NULL = 尚未記錄回覆。
+    repliedAt: integer("replied_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("content_submissions_type_state").on(t.type, t.state)],
+);
 

@@ -95,6 +95,44 @@ export function extractSearchText(data: Record<string, unknown>): {
   return { title, body };
 }
 
+// ---- CJK 分詞(寫入與查詢兩端共用)----
+//
+// 問題:content_fts 用 unicode61 tokenizer,它不對中日韓做斷詞 —— 一整串
+// 「關於我們」會變成**一個** token。而 buildMatchQuery 只在最後一個 term 加 `*`,
+// 所以「關於」(前綴)找得到,「我們」(中間)永遠找不到。對中文站等於搜尋半殘。
+//
+// 為什麼不換 tokenizer:FTS5 的 trigram 能做子字串比對,但它要求查詢**至少三個字元**,
+// 而中文最常見的正是兩字詞(我們、時間、公司)。換過去會讓最常見的查詢全部失效,
+// 比現況更糟。
+//
+// 解法:在應用層把 CJK 字元逐字以空白隔開,讓每個字成為獨立 token。查詢端做同樣的
+// 轉換,再把整個 term 包成 phrase("我 們"),FTS5 的 phrase 語意要求 token 連續出現
+// —— 於是「我們」精準命中「關於我們」,而不是鬆散地比對到任何同時含「我」和「們」的
+// 文件。Latin 完全不受影響,remove_diacritics 2 的重音摺疊照舊。
+//
+// 代價:索引變大(每個漢字一個 token),以及儲存的文字帶有插入的空白 —— 故讀取端用
+// unsegmentCjk 還原。還原是「移除兩個 CJK 字元之間的單一空白」,對原文本來就有空白的
+// 情形(如「關於 我們」)會一併吃掉那個空白。中文詞間本來就不用空白,此損失可接受。
+const CJK_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
+const CJK_TEST = new RegExp(`[${CJK_CLASS}]`, "u");
+const CJK_EACH = new RegExp(`[${CJK_CLASS}]`, "gu");
+const CJK_JOINED = new RegExp(`(?<=[${CJK_CLASS}]) (?=[${CJK_CLASS}])`, "gu");
+
+/** CJK 字元逐字以空白隔開;無 CJK 則原樣返回(Latin 零成本)。 */
+export function segmentCjk(input: string): string {
+  if (!CJK_TEST.test(input)) return input;
+  return input
+    .replace(CJK_EACH, (ch) => ` ${ch} `)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** segmentCjk 的反向:移除兩個 CJK 字元之間的單一空白(供顯示用)。 */
+export function unsegmentCjk(input: string): string {
+  if (!CJK_TEST.test(input)) return input;
+  return input.replace(CJK_JOINED, "");
+}
+
 // ---- FTS 行維護(app-layer indexing)----
 
 /**
@@ -104,12 +142,13 @@ export function extractSearchText(data: Record<string, unknown>): {
 export async function indexContentEntry(
   id: string,
   typeKey: string,
+  locale: string,
   data: Record<string, unknown>,
 ): Promise<void> {
   const { title, body } = extractSearchText(data);
   await removeContentIndex(id);
   await db().run(
-    sql`INSERT INTO content_fts (content_id, type_key, title, body) VALUES (${id}, ${typeKey}, ${title}, ${body})`,
+    sql`INSERT INTO content_fts (content_id, type_key, locale, title, body) VALUES (${id}, ${typeKey}, ${locale}, ${segmentCjk(title)}, ${segmentCjk(body)})`,
   );
 }
 
@@ -128,8 +167,9 @@ export async function reindexAll(): Promise<number> {
   const rows = await db().all<{
     id: string;
     type: string;
+    locale: string;
     data: string;
-  }>(sql`SELECT id, type, data FROM contents`);
+  }>(sql`SELECT id, type, locale, data FROM contents`);
   let indexed = 0;
   for (const row of rows) {
     let parsed: Record<string, unknown> = {};
@@ -141,7 +181,7 @@ export async function reindexAll(): Promise<number> {
     }
     const { title, body } = extractSearchText(parsed);
     await db().run(
-      sql`INSERT INTO content_fts (content_id, type_key, title, body) VALUES (${row.id}, ${row.type}, ${title}, ${body})`,
+      sql`INSERT INTO content_fts (content_id, type_key, locale, title, body) VALUES (${row.id}, ${row.type}, ${row.locale}, ${segmentCjk(title)}, ${segmentCjk(body)})`,
     );
     indexed++;
   }
@@ -176,7 +216,10 @@ export function buildMatchQuery(raw: string): string | null {
   const quoted: string[] = [];
   for (const term of terms) {
     if (!/[\p{L}\p{N}]/u.test(term)) continue; // 純標點/運算子:剔除
-    quoted.push(`"${term.replace(/"/g, '""')}"`);
+    // CJK term 先逐字切開再整包引號包起 → FTS5 phrase,要求 token 連續出現。
+    // 「我們」→ "我 們",精準命中「關於我們」而非任何含「我」與「們」的文件。
+    const seg = segmentCjk(term);
+    quoted.push(`"${seg.replace(/"/g, '""')}"`);
   }
   if (quoted.length === 0) return null;
   quoted[quoted.length - 1] = `${quoted[quoted.length - 1]}*`; // prefix on last term
@@ -186,6 +229,8 @@ export function buildMatchQuery(raw: string): string | null {
 export interface SearchResult {
   id: string;
   typeKey: string;
+  /** 該筆內容的 locale(migrations/0011)。雙語站據此區分兩筆同名譯本。 */
+  locale: string;
   title: string;
   snippet: string;
   status: "draft" | "published";
@@ -195,6 +240,7 @@ export interface SearchResult {
 interface SearchRow {
   id: string;
   typeKey: string;
+  locale: string;
   status: string;
   updatedAt: number;
   title: string | null;
@@ -222,14 +268,18 @@ export async function searchContent(
 
   await maybeBackfill();
 
+  // ⚠️ snippet() 的第二個參數是**欄位序號**。migrations/0011 在 type_key 之後插入
+  // locale,故欄位序變成 0=content_id 1=type_key 2=locale 3=title 4=body ——
+  // body 從 3 移到 4。這種東西改錯不會報錯,只會安靜地對錯欄位取片段。
   const rows = await db().all<SearchRow>(sql`
     SELECT
       c.id AS id,
       c.type AS typeKey,
+      c.locale AS locale,
       c.status AS status,
       c.updated_at AS updatedAt,
       content_fts.title AS title,
-      snippet(content_fts, 3, '', '', '…', 12) AS snippet
+      snippet(content_fts, 4, '', '', '…', 12) AS snippet
     FROM content_fts
     JOIN contents AS c ON c.id = content_fts.content_id
     WHERE content_fts MATCH ${match}
@@ -238,12 +288,14 @@ export async function searchContent(
   `);
 
   return rows.map((row) => {
-    const title = row.title ?? "";
-    const snippet =
-      row.snippet && row.snippet.length > 0 ? row.snippet : title;
+    // 存進 FTS 的 title/body 是 CJK 逐字切開過的,顯示前要還原(見 segmentCjk 說明)。
+    const title = unsegmentCjk(row.title ?? "");
+    const rawSnippet = unsegmentCjk(row.snippet ?? "");
+    const snippet = rawSnippet.length > 0 ? rawSnippet : title;
     return {
       id: row.id,
       typeKey: row.typeKey,
+      locale: row.locale,
       title,
       snippet,
       status: row.status === "published" ? "published" : "draft",
