@@ -279,7 +279,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}
-                  placeholder={field.secret ? "已設定,輸入以覆寫" : undefined}
+                  placeholder={field.secret ? t("settings.secretSet") : undefined}
                 />
               )}
               {fullKey === "core.emailFrom" && (

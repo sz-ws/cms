@@ -4,6 +4,10 @@ import { and, eq, lt } from "drizzle-orm";
 import { db } from "./db";
 import { sessions, users } from "./schema";
 import { getSetting, PASSWORD_HASHING_SETTING } from "./settings";
+import {
+  PBKDF2_MIN_ITERATIONS,
+  isSupportedPasswordHashingIterations,
+} from "./password-work-factor";
 
 // ---- 型別 ----
 
@@ -66,13 +70,13 @@ const toHex = (u8: Uint8Array): string =>
 
 // ---- 密碼雜湊(04 §1:PBKDF2-HMAC-SHA256)----
 
-// OWASP 對 PBKDF2-HMAC-SHA256 的現行建議下限。不能為了讓 Free plan 跑得動而
-// 偷降；若這個值在部署端無法存活，該方案就不適合承載 password login。
-export const PBKDF2_MIN_ITERATIONS = 600_000;
-
-// 校準上限是明確的政策界線，不把「找最高可存活值」變成無上限的 CPU / 帳單探測。
-// 四倍 OWASP 基線已足以涵蓋目前 paid Workers 的常見配置；碰到它時 UI 會明說。
-export const PBKDF2_MAX_ITERATIONS = 2_400_000;
+// 界線常數住在 `./password-work-factor`（零 import），因為 client 端的校準精靈
+// 也要用；從這裡 re-export 只是為了讓既有 server 端 import 不必改。
+export {
+  PBKDF2_MAX_ITERATIONS,
+  PBKDF2_MIN_ITERATIONS,
+  isSupportedPasswordHashingIterations,
+} from "./password-work-factor";
 
 export interface PasswordHashingProfile {
   iterations: number;
@@ -90,14 +94,6 @@ const LEGACY_PASSWORD_HASHING_PROFILE: PasswordHashingProfile = {
   dummyHash: LEGACY_DUMMY_PASSWORD_HASH,
 };
 
-export function isSupportedPasswordHashingIterations(value: unknown): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= PBKDF2_MIN_ITERATIONS &&
-    value <= PBKDF2_MAX_ITERATIONS
-  );
-}
 
 /** 從自描述 hash 取工作因子；格式錯誤回 null，供 profile 完整性檢查共用。 */
 export function passwordHashIterations(stored: string): number | null {

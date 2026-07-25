@@ -267,6 +267,7 @@ export const en = {
   "settings.emailDomains.title": "Verified domains",
   "settings.emailDomains.hint": "Domains on your email provider account — click one to use it in the from address.",
   "settings.emailDomains.unverified": "unverified",
+  "settings.secretSet": "Set — type to replace",
 
   // SettingsWorkspace
   "settingsWorkspace.saving": "Saving…",

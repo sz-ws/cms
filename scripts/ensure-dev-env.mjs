@@ -6,9 +6,13 @@
 //                        新手不會把那個錯誤連回 quickstart。
 //   cloudflare-env.d.ts  缺 → src/lib/cf.ts 依賴的全域型別不存在,
 //                        typecheck / lint 直接紅,但 next dev 照樣跑,更難聯想。
+//   .open-next/worker.d.ts
+//                        缺 → `next build` 的 type-check 在 custom-worker.ts 紅,
+//                        而它 import 的正是 opennext build 稍後才產出的檔案。
+//                        新 clone 因此 100% build 不出來(見下方該段註解)。
 //
 // 同 ensure-licensing-stub.mjs 的哲學:只在檔案缺席時寫,已存在就完全不動。
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -57,4 +61,40 @@ if (!existsSync(envTypes)) {
         "在那之前 typecheck 與 lint 會因缺少 CloudflareEnv 型別而失敗。",
     );
   }
+}
+
+// ---- .open-next/worker.d.ts ---------------------------------------------
+// 雞生蛋:custom-worker.ts(wrangler 的 `main`)import `./.open-next/worker.js`,
+// 但那是 `opennextjs-cloudflare build` 的產出物 —— 而它的第一步就是 `next build`。
+// 於是全新 clone 必定卡在 type-check:產出物要 build 才有,build 又要它才過。
+//
+// 不能改用 tsconfig `exclude` 迴避:cloudflare-env.d.ts 會 `import "./custom-worker"`,
+// 被 import 的檔案 TS 一律納入,exclude 管不到(tsc --explainFiles 可複現)。
+//
+// 所以在 type-check 前補一份**只有型別、沒有實作**的 stub。真正的 build 會用實作
+// 覆蓋整個目錄;實作一旦存在就不再寫 stub,避免它反過來蓋掉真實型別。
+const openNextDir = join(root, ".open-next");
+const openNextWorker = join(openNextDir, "worker.js");
+const openNextTypes = join(openNextDir, "worker.d.ts");
+if (!existsSync(openNextWorker) && !existsSync(openNextTypes)) {
+  mkdirSync(openNextDir, { recursive: true });
+  writeFileSync(
+    openNextTypes,
+    [
+      "// 由 scripts/ensure-dev-env.mjs 產生的佔位型別,只為了讓第一次 build 的",
+      "// type-check 過得去。`opennextjs-cloudflare build` 會用真正的產出物覆蓋。",
+      "declare const handler: {",
+      "  fetch(",
+      "    request: Request,",
+      "    env: CloudflareEnv,",
+      "    ctx: ExecutionContext,",
+      "  ): Response | Promise<Response>;",
+      "};",
+      "export default handler;",
+      "",
+    ].join("\n"),
+  );
+  console.log(
+    "[dev-env] .open-next/ 尚無產出物 —— 已放置 worker.d.ts 佔位型別供首次 build 使用。",
+  );
 }

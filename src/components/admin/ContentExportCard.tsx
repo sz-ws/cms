@@ -16,11 +16,16 @@ import { useT } from "@/lib/i18n/I18nProvider";
 // 內容)。這一塊的存在本身就是承諾:資料拿得回去。所以文案講的是「檔案裡有什麼、
 // 沒有什麼」,而不是格式術語。
 //
-// 為什麼是 <form method="post"> 而不是 fetch:
+// 為什麼是 form POST 而不是 fetch:
 //   1. 端點是 POST(見 route 檔頭:同源檢查需要 Origin header,GET 不帶)。
 //   2. form 送出讓瀏覽器**直接把回應串流寫進磁碟**。改用 fetch 就得
 //      res.blob() 把整份匯出先塞進瀏覽器記憶體 —— 大站等於白做串流。
 // 送出後瀏覽器因為 Content-Disposition: attachment 而留在原頁,不需要 target。
+//
+// 為什麼 form 是點擊當下才建、而不是寫在 JSX 裡:這張卡片被 SettingsWorkspace 的
+// <form> 包住,巢狀 <form> 是不合法的 HTML。瀏覽器會把內層丟掉，於是 submit 鈕
+// 會去送**設定表單**而不是匯出，同時 SSR/client 樹不一致造成 hydration 失敗。
+// 建一個 detached form 送出，語意與原本的原生送出完全相同，但不進 React 樹。
 
 const ALL = "__all__";
 
@@ -39,6 +44,18 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
 
   const action =
     type === ALL ? "/api/export" : `/api/export?type=${encodeURIComponent(type)}`;
+
+  function submitExport() {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = action;
+    document.body.appendChild(form);
+    try {
+      form.submit();
+    } finally {
+      form.remove();
+    }
+  }
 
   const included = [
     t("export.included.entries"),
@@ -93,11 +110,7 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
           </div>
         </dl>
 
-        <form
-          method="post"
-          action={action}
-          className="mt-4 flex flex-col gap-3 border-t border-black/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end"
-        >
+        <div className="mt-4 flex flex-col gap-3 border-t border-black/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end">
           <label
             htmlFor="export-scope"
             className="text-[13px] font-medium text-black/55 sm:mr-auto"
@@ -123,11 +136,11 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
               ))}
             </SelectContent>
           </Select>
-          <Button type="submit" className="gap-1.5">
+          <Button type="button" onClick={submitExport} className="gap-1.5">
             <Download className="size-4" />
             {t("export.download")}
           </Button>
-        </form>
+        </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-black/30">

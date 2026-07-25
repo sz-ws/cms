@@ -263,6 +263,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settings.emailDomains.title": "已驗證網域",
   "settings.emailDomains.hint": "email provider 帳號下的網域,點擊即套用到寄件地址。",
   "settings.emailDomains.unverified": "未驗證",
+  "settings.secretSet": "已設定,輸入以覆寫",
   "settings.extensionsDesc": "擴充功能專屬設定。",
 
   // SettingsWorkspace

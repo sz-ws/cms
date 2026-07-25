@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { Gauge, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/legacy";
+// 只取界線常數，不能從 `@/lib/auth` 拿：那個模組依賴 next/headers，會把
+// server-only API 拉進 client bundle 並讓 /setup 直接編譯失敗。
 import {
   PBKDF2_MAX_ITERATIONS,
   PBKDF2_MIN_ITERATIONS,
-} from "@/lib/auth";
+} from "@/lib/password-work-factor";
 import { useT } from "@/lib/i18n/I18nProvider";
 
 const CALIBRATION_GRANULARITY = 25_000;
