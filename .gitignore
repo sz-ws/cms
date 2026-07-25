@@ -57,10 +57,11 @@ dist-ext/
 # markdown:預設進版控 —— 公開 repo 需要 README / DEPLOY 這類文件,
 # 之前的 `*.md` 全域忽略讓 GitHub 上的 repo 一份 markdown 都沒有。
 #
-# 內部 spec 與 audit 紀錄暫時不公開:docs/ 下的 markdown 仍然忽略。
-# 要公開其中某一份,就在下面加一行 allowlist,例如:
-#   !docs/core-v2-architecture.md
+# 內部 spec 與 audit 紀錄不公開:docs/ 下的 markdown 預設忽略。
+# 要公開某一份就在下面加一行 allowlist。
 docs/*.md
+# README 指名這份為架構真相來源,所以它必須進得了 clone。
+!docs/core-v2-architecture.md
 
 # AI coding agent 的本機設定/快取 —— 純屬個人工作環境,不進公開 repo。
 # (取消 `*.md` 全域忽略後,這些目錄裡的 markdown 會整包冒出來。)

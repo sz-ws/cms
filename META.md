@@ -6,4 +6,3 @@
 - `cms/`: mirrored dev seed copies (kept under sync with `registry/`)
 
 Read `docs/core-v2-architecture.md` for the architecture source of truth.
-Read `docs/handoff-notes.md` for the current implementation handoff.

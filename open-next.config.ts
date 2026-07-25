@@ -9,8 +9,10 @@ import d1NextTagCache from "@opennextjs/cloudflare/overrides/tag-cache/d1-next-t
 // content mutation / ext install·enable·disable 呼叫 revalidateTag 後,worker 各 isolate
 // 讀 D1 判斷 tag 是否已失效。dev(`next dev`)走 Next 內建 handler,不需此 override。
 //
-// 部署前置(見 docs/handoff-notes.md「Tag cache (D1) 部署步驟」):必須先 `wrangler d1
-// create` 出 tag DB、建 `revalidations` 表,並把真實 database_id 換進 wrangler.jsonc。
+// 部署前置:必須先 `wrangler d1 create cms-tag-cache`,並把真實 database_id 換進
+// wrangler.jsonc 的第二個 d1_databases 項。`revalidations` 表本身不需要手動建 ——
+// `opennextjs-cloudflare deploy` 會先跑 populate-cache,由它 CREATE TABLE IF NOT
+// EXISTS(該 schema 由 OpenNext 擁有,v1.19 加過 stale/expire 欄位)。見 DEPLOY.md。
 export default defineCloudflareConfig({
   incrementalCache: r2IncrementalCache,
   tagCache: d1NextTagCache,
