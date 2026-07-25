@@ -2,7 +2,7 @@
 
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { fetchText, type IndexEntry } from "./registry.js";
+import { fetchText, RegistryFetchError, type IndexEntry } from "./registry.js";
 import { camelCaseId } from "./patch.js";
 
 // registry index 無 files[] 時的啟發式檔名清單(spec §registry schema 配合:
@@ -63,16 +63,31 @@ export async function resolveFiles(
   }
 
   const found: string[] = [];
+  const probeErrors: string[] = [];
   await Promise.all(
     HEURISTIC_FILENAMES.map(async (name) => {
       try {
         await fetchText(fileUrl(source, entry.id, name), token);
         found.push(name);
-      } catch {
-        // 猜測模式下,某檔不存在(404)不是錯誤 —— 略過。
+      } catch (e) {
+        // 與 spec 失敗模式表(「抓檔途中某檔 404 → 中止 exit 2」)刻意不同:probe 階段的
+        // 404 就是「這個猜的檔名不存在」,是正常結果,不該中止。
+        // 但**只有 404** 能當成不存在 —— 逾時 / 網路錯誤 / 401 / size cap 若也被吞掉,
+        // 結果是靜默少抓檔:人類看到「✓ 裝好了」,拿到的卻是殘缺 extension。那些往上丟,
+        // 由呼叫端 exit 2。
+        if (e instanceof RegistryFetchError && e.status === 404) return;
+        probeErrors.push(
+          `${name}:${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }),
   );
+  if (probeErrors.length > 0) {
+    throw new Error(
+      `探測 extensions/${entry.id}/files/ 時有非 404 的抓取失敗,無法確定檔案清單` +
+        `(繼續下去會靜默少抓檔):${probeErrors.join(";")}`,
+    );
+  }
   if (!found.includes("index.ts")) {
     throw new Error(
       `啟發式找不到 extensions/${entry.id}/files/index.ts —— ` +
@@ -80,6 +95,22 @@ export async function resolveFiles(
     );
   }
   return { files: found.sort(), heuristic: true };
+}
+
+/**
+ * 啟發式模式要對使用者講清楚的話。
+ * HEURISTIC_FILENAMES 是**扁平檔名**清單,probe 不會走進子目錄 —— 例如 cron extension
+ * 的 worker/(三個檔)在這個模式下永遠抓不到,而且因為 404 被當成「不存在」,整個過程
+ * 一個錯誤都不會出現。使用者必須知道手上這份可能是殘缺安裝,而不是以為 CLI 抓全了。
+ */
+export function heuristicWarnings(id: string, files: string[]): string[] {
+  return [
+    "⚠ registry index 這個 entry 沒有 files[],改用啟發式猜檔名 —— 清單不保證完整。",
+    `  猜到 ${files.length} 個檔:${files.join(", ")}`,
+    "  探測只試固定的扁平檔名,**不會進子目錄**(例:cron 的 worker/ 抓不到)。",
+    `  請比對 registry 的 extensions/${id}/files/ 實際內容;有缺就手動補,` +
+      "並請 registry 維護者為此 entry 補上 files[]。",
+  ];
 }
 
 export interface FetchedFile {

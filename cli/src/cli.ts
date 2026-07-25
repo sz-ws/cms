@@ -18,7 +18,13 @@ import {
   fetchAndWriteFiles,
   removeDir,
   hasNamedExport,
+  heuristicWarnings,
 } from "./install.js";
+import {
+  readCoreApiVersion,
+  checkCoreApi,
+  CORE_VERSION_FILE,
+} from "./coreapi.js";
 import { patchRegistryContent, camelCaseId } from "./patch.js";
 
 export const VERSION = "0.1.0";
@@ -31,10 +37,14 @@ export const EXIT = {
   DEST_EXISTS: 3, // extensions/<id>/ 已存在且無 --force
   PATCH_FAILED: 4, // registry.ts patch 失敗
   UNKNOWN: 5,
+  // spec 的結束狀態表只到 5;6 是本 CLI 新增(spec 當時沒有 coreApi 檢查這一關)。
+  // 獨立一碼的理由:「core 版本不合」在 CI 裡要能跟「抓檔失敗 / 找不到」分開處理。
+  CORE_INCOMPATIBLE: 6, // entry.coreApi 不相容本機 CORE_API_VERSION
 } as const;
 
 const USAGE = `用法:
-  sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force] [--non-interactive]
+  sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
+                  [--non-interactive] [--skip-core-check]
 
   <id>                安裝的 extension id(^[a-z][a-z0-9-]{1,30}$)
   --source <url>      registry base URL(預設 ${DEFAULT_SOURCE})
@@ -42,12 +52,17 @@ const USAGE = `用法:
   --dry-run           只印出將做的事,不寫磁碟 / 不改檔
   --force             覆寫已存在的 extensions/<id>/
   --non-interactive   不互動(隱含 --force);多源 / 格式衝突仍中止
+  --skip-core-check   跳過 coreApi 相容性檢查(明知故犯用)
   --help, --version`;
 
 function log(msg = ""): void {
   process.stdout.write(`${msg}\n`);
 }
 function err(msg: string): void {
+  process.stderr.write(`${msg}\n`);
+}
+/** 警告 —— 不中止,但走 stderr,別讓它混進被導向的 stdout 裡消失。 */
+function warn(msg: string): void {
   process.stderr.write(`${msg}\n`);
 }
 
@@ -73,10 +88,22 @@ async function confirm(question: string): Promise<boolean> {
   }
 }
 
-function nextSteps(id: string, fileCount: number, patchNote: string): void {
+function nextSteps(
+  id: string,
+  fileCount: number,
+  patchNote: string,
+  heuristic: boolean,
+): void {
   log();
   log(`✓ 複製了 ${fileCount} 個檔到 extensions/${id}/`);
   log(`✓ ${patchNote}`);
+  if (heuristic) {
+    // 「✓ 複製了 N 個檔」單看很像「抓全了」。啟發式模式沒有這個保證,再講一次。
+    log(
+      `⚠ 這 ${fileCount} 個檔是猜檔名猜出來的(registry 沒給 files[]),` +
+        "可能不完整 —— 子目錄一定沒抓到。",
+    );
+  }
   log();
   // 順序在正式站是硬性的:Enable 讀的是**編譯期**的 registry 陣列,所以必須先
   // deploy 過、新的 bundle 上線之後才啟用得了。而 code extension 的 migrations 是
@@ -202,6 +229,47 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     return EXIT.OK;
   }
 
+  // ---- coreApi 相容性 ----
+  // 沒有這關的話,不相容的 extension 會一路裝完 → rebuild → deploy,直到 admin 按
+  // Enable 那刻才被 src/ext/manager.ts 的 enableExtension() 丟 CoreApiIncompatible。
+  // 失敗點離錯誤來源太遠,所以提前到安裝當下。
+  const verdict = checkCoreApi(await readCoreApiVersion(cwd), entry.coreApi);
+  if (verdict.status === "unknown") {
+    // 讀不到本機版號(版號檔搬家 / 形狀改了)→ 不擋。這是 CLI 讀不到資訊,不是使用者的錯;
+    // 真不相容的話 Enable 那步仍有 core 把關。
+    warn(
+      `⚠ 讀不到本機 core 版號(${CORE_VERSION_FILE} 的 CORE_API_VERSION),` +
+        "略過 coreApi 相容性檢查。",
+    );
+    warn(`  「${id}」宣告需要 core API「${entry.coreApi}」,請自行確認。`);
+  } else if (verdict.status === "incompatible") {
+    if (args.skipCoreCheck) {
+      warn(
+        `⚠ coreApi 不相容(需要「${entry.coreApi}」,本機 core ${verdict.core}),` +
+          "因 --skip-core-check 繼續安裝。",
+      );
+      warn("  裝完之後 admin 按 Enable 仍可能被 core 擋下(CoreApiIncompatible)。");
+    } else {
+      err(
+        `✗ 「${id}」需要 core API「${entry.coreApi}」,本機 core 是 ${verdict.core}` +
+          `(${CORE_VERSION_FILE})。`,
+      );
+      if (verdict.unsupportedRange) {
+        err(
+          "  這個 coreApi range 的形式 core 也解析不了(只支援 1.2.3 / ^1.2.3 / ~1.2.3 / >=1.2.3),",
+        );
+        err("  而 core 對解析不了的 range 一律視為不相容。請 extension 作者修正 manifest。");
+      }
+      err("  現在擋下來,是因為裝下去、rebuild、deploy 之後,admin 按 Enable 時");
+      err("  enableExtension() 一樣會丟 CoreApiIncompatible —— 不如現在就失敗。");
+      err("  可以:");
+      err("    1. 把本機 CMS core 升到滿足此 range 的版本");
+      err("    2. 改裝這個 extension 支援目前 core 的版本");
+      err("    3. 你確定自己在做什麼(squash 期間 / 本機改過版號):加 --skip-core-check");
+      return EXIT.CORE_INCOMPATIBLE;
+    }
+  }
+
   // ---- 目標目錄存在性 ----
   const destDir = path.join(cwd, "extensions", id);
   const destExists = await exists(destDir);
@@ -234,11 +302,20 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     return EXIT.FETCH_FAILED;
   }
 
+  if (resolved.heuristic) {
+    for (const line of heuristicWarnings(id, resolved.files)) warn(line);
+  }
+
   const ident = camelCaseId(id);
 
   if (args.dryRun) {
     log(`[dry-run] 將安裝 code extension「${id}」(${entry.name} v${entry.version})`);
     log(`[dry-run] 來源:${source}`);
+    if (verdict.status === "ok") {
+      log(
+        `[dry-run] coreApi 相容:需要 ${entry.coreApi},本機 core ${verdict.core}`,
+      );
+    }
     if (destExists) {
       log(`[dry-run] extensions/${id}/ 已存在 —— 實跑需 --force 覆寫。`);
     }
@@ -323,7 +400,7 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     patchNote = `Patch 了 extensions/registry.ts(${parts.join(" + ")})`;
   }
 
-  nextSteps(id, written.length, patchNote);
+  nextSteps(id, written.length, patchNote, resolved.heuristic);
   return EXIT.OK;
 }
 

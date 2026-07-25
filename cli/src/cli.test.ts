@@ -19,6 +19,12 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
     `export const demoext = defineExtension({ id: "demoext" });\n`,
   );
   await writeFile(path.join(filesDir, "provider.ts"), `export const p = 1;\n`);
+  const futureDir = path.join(dir, "extensions", "futureext", "files");
+  await mkdir(futureDir, { recursive: true });
+  await writeFile(
+    path.join(futureDir, "index.ts"),
+    `export const futureext = defineExtension({ id: "futureext" });\n`,
+  );
   const registryJson = {
     extensions: [
       {
@@ -28,6 +34,24 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
         version: "1.0.0",
         coreApi: "^1.0.0",
         ...(withFiles ? { files: ["index.ts", "provider.ts"] } : {}),
+      },
+      {
+        // 需要比本機 core 新的 major → 安裝當下就該擋。
+        id: "futureext",
+        kind: "code",
+        name: "From the future",
+        version: "2.0.0",
+        coreApi: "^99.0.0",
+        files: ["index.ts"],
+      },
+      {
+        // range 形式連 core 的 semver 都解析不了(">" 不支援)→ fail closed。
+        id: "weirdext",
+        kind: "code",
+        name: "Weird range",
+        version: "1.0.0",
+        coreApi: ">1.0.0",
+        files: ["index.ts"],
       },
       {
         id: "declme",
@@ -45,10 +69,17 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
   return { dir, url: pathToFileURL(dir).href };
 }
 
-async function makeRepo(): Promise<string> {
+async function makeRepo(withCoreVersion = true): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "szws-repo-"));
   await mkdir(path.join(dir, "extensions"), { recursive: true });
   await writeFile(path.join(dir, "extensions", "registry.ts"), emptyRegistry);
+  if (withCoreVersion) {
+    await mkdir(path.join(dir, "src", "ext"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src", "ext", "version.ts"),
+      `export const CORE_API_VERSION = "1.18.0";\n`,
+    );
+  }
   return dir;
 }
 
@@ -194,11 +225,14 @@ describe("run — error paths", () => {
 });
 
 describe("run — heuristic file resolution (no files[] in index)", () => {
-  it("still installs by probing common filenames", async () => {
+  it("still installs by probing common filenames — 但要大聲警告清單是猜的", async () => {
     const { dir, url } = await makeRegistry(false);
     try {
       const code = await run(["add", "demoext", "--source", url], repoDir);
       expect(code).toBe(EXIT.OK);
+      expect(errOut()).toContain("啟發式");
+      expect(errOut()).toContain("不會進子目錄");
+      expect(out()).toContain("可能不完整");
       const idx = await readFile(
         path.join(repoDir, "extensions", "demoext", "index.ts"),
         "utf8",
@@ -206,6 +240,73 @@ describe("run — heuristic file resolution (no files[] in index)", () => {
       expect(idx).toContain("demoext");
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("run — coreApi 相容性", () => {
+  it("不相容 → exit 6,且沒有落地任何檔案", async () => {
+    const code = await run(["add", "futureext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.CORE_INCOMPATIBLE);
+    expect(errOut()).toContain("^99.0.0");
+    expect(errOut()).toContain("1.18.0");
+    expect(errOut()).toContain("--skip-core-check");
+    await expect(
+      readFile(path.join(repoDir, "extensions", "futureext", "index.ts")),
+    ).rejects.toThrow();
+    // registry.ts 也不能被動到。
+    const reg = await readFile(
+      path.join(repoDir, "extensions", "registry.ts"),
+      "utf8",
+    );
+    expect(reg).toBe(emptyRegistry);
+  });
+
+  it("dry-run 也擋(不相容就是不相容)", async () => {
+    const code = await run(
+      ["add", "futureext", "--source", regUrl, "--dry-run"],
+      repoDir,
+    );
+    expect(code).toBe(EXIT.CORE_INCOMPATIBLE);
+  });
+
+  it("range 形式看不懂 → exit 6,訊息說明支援哪些形式", async () => {
+    const code = await run(["add", "weirdext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.CORE_INCOMPATIBLE);
+    expect(errOut()).toContain("^1.2.3");
+  });
+
+  it("--skip-core-check → 照裝,但警告", async () => {
+    const code = await run(
+      ["add", "futureext", "--source", regUrl, "--skip-core-check"],
+      repoDir,
+    );
+    expect(code).toBe(EXIT.OK);
+    expect(errOut()).toContain("--skip-core-check");
+    const idx = await readFile(
+      path.join(repoDir, "extensions", "futureext", "index.ts"),
+      "utf8",
+    );
+    expect(idx).toContain("futureext");
+  });
+
+  it("相容 → 正常安裝,dry-run 會印出判定結果", async () => {
+    const code = await run(
+      ["add", "demoext", "--source", regUrl, "--dry-run"],
+      repoDir,
+    );
+    expect(code).toBe(EXIT.OK);
+    expect(out()).toContain("coreApi 相容");
+  });
+
+  it("讀不到本機 core 版號 → 只警告,不擋", async () => {
+    const noCore = await makeRepo(false);
+    try {
+      const code = await run(["add", "demoext", "--source", regUrl], noCore);
+      expect(code).toBe(EXIT.OK);
+      expect(errOut()).toContain("src/ext/version.ts");
+    } finally {
+      await rm(noCore, { recursive: true, force: true });
     }
   });
 });

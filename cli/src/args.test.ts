@@ -22,12 +22,18 @@ describe("parseArgs", () => {
       "--dry-run",
       "--force",
       "--non-interactive",
+      "--skip-core-check",
     ]);
     expect(a.source).toBe("https://example.com/reg");
     expect(a.token).toBe("abc123");
     expect(a.dryRun).toBe(true);
     expect(a.force).toBe(true);
     expect(a.nonInteractive).toBe(true);
+    expect(a.skipCoreCheck).toBe(true);
+  });
+
+  it("--skip-core-check 預設關閉", () => {
+    expect(parseArgs(["add", "cron"]).skipCoreCheck).toBe(false);
   });
 
   it("supports --flag=value form", () => {

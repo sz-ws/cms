@@ -8,6 +8,7 @@ import {
   hasNamedExport,
   resolveFiles,
   fetchAndWriteFiles,
+  heuristicWarnings,
 } from "./install.js";
 import type { IndexEntry } from "./registry.js";
 
@@ -89,6 +90,24 @@ describe("resolveFiles", () => {
     expect(r.files).toContain("index.ts");
     expect(r.files).toContain("provider.ts");
     expect(r.files).not.toContain("adapter.ts"); // absent in fixture
+  });
+
+  it("啟發式抓不到子目錄(已知缺口,靠警告告知使用者)", async () => {
+    const r = await resolveFiles(regUrl, codeEntry(), undefined);
+    // fixture 有 worker/index.js,但扁平檔名 probe 看不到它 —— 這正是 cron 少三個檔的成因。
+    expect(r.files).not.toContain("worker/index.js");
+    const warnings = heuristicWarnings("cron", r.files).join("\n");
+    expect(warnings).toContain("不會進子目錄");
+    expect(warnings).toContain("files[]");
+  });
+
+  it("probe 遇到非 404 的錯誤時中止(不靜默少抓檔)", async () => {
+    // 用目錄冒充 adapter.ts:讀它會得到 EISDIR(不是 404)—— 代表「這檔可能存在但讀不到」。
+    // 舊行為會把它跟 404 一起吞掉,結果安裝少一個檔卻毫無徵兆。
+    await mkdir(path.join(regDir, "extensions", "demoext", "files", "adapter.ts"));
+    await expect(resolveFiles(regUrl, codeEntry(), undefined)).rejects.toThrow(
+      /非 404/,
+    );
   });
 
   it("rejects unsafe paths in files[]", async () => {
