@@ -361,11 +361,16 @@ function FeaturedCard({
           <img
             src={bannerUrl}
             alt=""
-            className="aspect-[5/2] w-full object-cover md:aspect-[3/1]"
+            className="aspect-[5/2] w-full min-h-52 object-cover md:aspect-[3/1]"
           />
         ) : (
           <div
-            className="relative aspect-[5/2] w-full overflow-hidden md:aspect-[3/1]"
+            // min-h-52:`md:aspect-[3/1]` 的 md 看的是**視窗**寬度而不是卡片寬度。
+            // 卡片在滑軌裡只佔一半寬,視窗卻仍然寬,於是選到最扁的比例、主視覺
+            // 高度掉到 ~154px:扣掉 p-6 的 24 與讓給玻璃列的 pb-20 的 80,只剩
+            // 50px,標題(行高 ~37)加 gap 就吃光了,description 一行都放不下。
+            // 給一個地板值,讓比例再扁也不會壓掉文字。
+            className="relative aspect-[5/2] w-full min-h-52 overflow-hidden md:aspect-[3/1]"
             style={{
               backgroundImage: `linear-gradient(135deg, ${tintA}, ${tintB})`,
             }}
@@ -554,8 +559,17 @@ function FeaturedShelf({
         // min-w-0:橫向捲動容器該有的自保,讓它的內容寬度不往祖先傳。
         // (真正讓整頁能左右捲的是外殼 SidebarInset 的 `lg:min-w-0`,已在該處
         //  改為無條件 min-w-0;這裡保留是為了不依賴外層的正確性。)
-        // pb-1 + -mb-1:留出 hover 陰影的空間,又不讓它撐開版面高度。
-        className="no-scrollbar -mb-1 flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-1"
+        // overflow-x:auto 會把 overflow-y 也變成 auto,所以卡片的圓角光暈與陰影
+        // 一定會被裁掉。內距就是留給陰影的空間,四邊都要:
+        //   pt-2.5 / pb-7  —— 陰影主要往下(hover 是 0 16px 48px -12px),下面給多一點
+        //   px-3.5         —— 首尾兩張的側邊陰影
+        // 水平方向用 -mx-3.5 把內距抵銷掉,卡片才會跟下面的搜尋框、列表切齊;
+        // scroll-px-3.5 讓 snap 對齊到內距之內,而不是貼著容器邊。
+        //
+        // 垂直方向不能比照辦理:負的上邊距會讓這個框蓋住箭頭、負的下邊距會蓋住
+        // 搜尋框,兩者都會擋掉點擊(實測過)。所以上方改用外層 gap-1 來收窄,
+        // 下方就讓它多留一點呼吸空間。
+        className="no-scrollbar -mx-3.5 flex min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-3.5 pt-2.5 pb-7 scroll-px-3.5"
       >
         {children}
       </div>
@@ -856,7 +870,9 @@ export function RegistryBrowser() {
       {/* Featured */}
       {featured.length > 0 && (
         // 同上:這層也要 min-w-0,否則寬度會沿著祖先鏈一路傳到 <main>。
-        <div className="flex min-w-0 flex-col gap-3">
+        // gap-1 而非 gap-3:滑軌自帶 pt-2.5 的陰影空間,標題列與卡片之間的
+        // 視覺間距由兩者相加,gap 維持 gap-3 會顯得太鬆。
+        <div className="flex min-w-0 flex-col gap-1">
           <FeaturedShelf
             header={
               <>
