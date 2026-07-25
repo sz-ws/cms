@@ -40,11 +40,15 @@ You do not need to create the `revalidations` table inside `cms-tag-cache`.
 OpenNext (it gained `stale` / `expire` columns in v1.19), so don't hand-copy a
 copy of it into this repo — it would drift.
 
-## 4. Set the production encryption key
+## 4. Set the two production secrets
+
+Both are **generate once, never rotate**. Do **not** reuse the development
+values from `.dev.vars`.
+
+### `SECRETS_KEY`
 
 Every `secret: true` setting — registry tokens, the Resend API key, OIDC client
-secrets, payment gateway keys — is AES-GCM encrypted with this. Do **not** reuse
-the development value from `.dev.vars`.
+secrets, payment gateway keys — is AES-GCM encrypted with this.
 
 ```bash
 openssl rand -base64 32
@@ -53,7 +57,30 @@ pnpm exec wrangler secret put SECRETS_KEY   # paste the value
 
 > The encrypted envelope carries no key id and there is no gradual migration
 > path, so rotating `SECRETS_KEY` later turns every stored secret into garbage.
-> Decide now where this value lives.
+
+### `AUTH_PEPPER`
+
+HMAC-SHA256 applied to a password *before* it enters PBKDF2. workerd caps
+PBKDF2 at 100,000 iterations per call, so the pepper is what makes an offline
+attack against a leaked database impossible to even begin: the attacker would
+first have to steal a Worker secret, which never appears in D1.
+
+```bash
+openssl rand -base64 32
+pnpm exec wrangler secret put AUTH_PEPPER   # paste the value
+```
+
+> **Set this before you open `/setup`.** Each stored hash records whether it was
+> peppered, and verification follows that flag — so adding the pepper later does
+> not lock anyone out, but every password created before it stays unpeppered
+> until its owner resets it.
+>
+> Removing the pepper afterwards *does* lock everyone out: those hashes can no
+> longer be computed. There is no recovery path.
+
+`sz-ws-cms setup` generates and sets both for you. It cannot do so on the very
+first run — the Worker does not exist yet, so there is nothing to attach a
+secret to. Deploy once, then re-run `setup`; it skips everything already done.
 
 ## 5. Migrate and deploy
 

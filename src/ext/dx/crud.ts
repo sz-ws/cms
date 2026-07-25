@@ -9,6 +9,7 @@ import { sanitizePublicCreateBody } from "./public-create";
 import { notifyOnPublicCreate } from "./notify"; // A:public create 成功後 best-effort 通知信
 import { getRevision, listRevisions } from "@/lib/revisions";
 import { restoreRevision, RevisionRestoreError } from "@/lib/revision-restore";
+import { readBoundedJsonObject } from "@/lib/body-limit";
 import { isSubmissionState } from "./submission";
 import {
   deleteSubmissionRecord,
@@ -102,21 +103,14 @@ async function provider(
 async function readJson(
   req: Request,
 ): Promise<Record<string, unknown> | Response> {
-  const contentLength = req.headers.get("content-length");
-  if (contentLength !== null) {
-    const bytes = Number(contentLength);
-    if (Number.isFinite(bytes) && bytes > MAX_BODY_BYTES) {
-      return Response.json({ error: "payload_too_large" }, { status: 413 });
-    }
-  }
-  try {
-    const j = (await req.json()) as unknown;
-    if (!j || typeof j !== "object" || Array.isArray(j))
-      return Response.json({ error: "invalid_input" }, { status: 400 });
-    return j as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "invalid_input" }, { status: 400 });
-  }
+  // 上限由 readBoundedJsonObject 以**實際讀到的位元組**強制,不是 Content-Length。
+  // 這條路徑對未登入者開放(declarative 的 public create),所以不能相信 header:
+  // 不送 Content-Length 的 chunked 請求可以完全繞過純 header 檢查。
+  const r = await readBoundedJsonObject(req, MAX_BODY_BYTES, "dx/crud");
+  if (r.ok) return r.value;
+  return r.reason === "too_large"
+    ? Response.json({ error: "payload_too_large" }, { status: 413 })
+    : Response.json({ error: "invalid_input" }, { status: 400 });
 }
 
 function errResponse(e: unknown): Response {

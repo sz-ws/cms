@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { recordingExecutor, type ExecResult, type RecordedCall } from "./exec.js";
 import { PLACEHOLDER_ID, WranglerClient } from "./wrangler.js";
-import { runSetup, SECRETS_KEY, type SetupOptions } from "./setup.js";
+import { runSetup, SECRETS_KEY, AUTH_PEPPER, type SetupOptions } from "./setup.js";
 import { createReporter, makeStyles, type Prompter } from "./ui.js";
 import { EXIT } from "./exit.js";
 
@@ -177,7 +177,10 @@ describe("runSetup — 全新帳號的完整流程", () => {
     expect(sent).toContain("d1 create cms-tag-cache");
     expect(sent).toContain("r2 bucket create cms-storage");
     expect(sent).toContain("r2 bucket create cms-next-cache");
-    expect(sent).toContain("secret put SECRETS_KEY");
+    expect(sent).toContain(`secret put ${SECRETS_KEY}`);
+    // pepper 必須跟 SECRETS_KEY 一樣是全新站台的預設產物 —— 漏掉它,第一批
+    // 密碼就會以無 pepper 的形式落地,事後只能靠逐一重設密碼補回來。
+    expect(sent).toContain(`secret put ${AUTH_PEPPER}`);
 
     // migrations 只對宣告了 migrations_dir 的 cms-db 跑。
     expect(sent).toContain("d1 migrations apply cms-db --remote");
@@ -305,7 +308,7 @@ describe("runSetup — 冪等 / 可重跑", () => {
         { name: "cms-tag-cache", uuid: TAG_UUID },
       ],
       r2Existing: ["cms-storage", "cms-next-cache"],
-      secrets: [SECRETS_KEY],
+      secrets: [SECRETS_KEY, AUTH_PEPPER],
     };
     const first = await setup({ account });
     expect(first.code).toBe(EXIT.OK);
@@ -371,10 +374,20 @@ describe("runSetup — 冪等 / 可重跑", () => {
     expect(written).not.toContain("99999999-9999-9999-9999-999999999999");
   });
 
-  it("已存在的 SECRETS_KEY 絕不覆寫", async () => {
-    const { calls, out } = await setup({ account: { secrets: [SECRETS_KEY] } });
+  it("已存在的 secret 絕不覆寫", async () => {
+    const { calls, out } = await setup({
+      account: { secrets: [SECRETS_KEY, AUTH_PEPPER] },
+    });
     expect(argsOf(calls).some((s) => s.startsWith("secret put"))).toBe(false);
     expect(out).toContain("不覆寫");
+  });
+
+  // 兩把是分開判斷的:已經有 SECRETS_KEY 的既有站台,重跑 setup 應該只補
+  // AUTH_PEPPER,而不是連帶把 SECRETS_KEY 也重設(那會讓既存的加密設定全毀)。
+  it("既有站台重跑:只補上缺的 AUTH_PEPPER,不動 SECRETS_KEY", async () => {
+    const { calls } = await setup({ account: { secrets: [SECRETS_KEY] } });
+    const puts = argsOf(calls).filter((s) => s.startsWith("secret put"));
+    expect(puts).toEqual([`secret put ${AUTH_PEPPER}`]);
   });
 });
 

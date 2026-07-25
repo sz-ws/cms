@@ -17,6 +17,10 @@ import {
   isRateLimited,
   recordLoginFailure,
 } from "@/lib/rate-limit";
+import { readBoundedJsonObject } from "@/lib/body-limit";
+
+// email + password;未驗證入口,body 上限訂死在遠小於任何合法請求的值。
+const MAX_BODY_BYTES = 16_000;
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -40,7 +44,13 @@ export async function POST(req: Request): Promise<Response> {
 
   let parsed: z.infer<typeof bodySchema>;
   try {
-    parsed = bodySchema.parse(await req.json());
+    const body = await readBoundedJsonObject(req, MAX_BODY_BYTES, "login");
+    if (!body.ok) {
+      return body.reason === "too_large"
+        ? Response.json({ error: "payload_too_large" }, { status: 413 })
+        : Response.json({ error: "invalid_input" }, { status: 400 });
+    }
+    parsed = bodySchema.parse(body.value);
   } catch {
     return Response.json({ error: "invalid_credentials" }, { status: 401 });
   }

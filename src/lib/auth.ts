@@ -272,13 +272,22 @@ export async function verifyPassword(
     const iterations = Number(parts[2]);
     if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 32) return false;
     if (!isSupportedPasswordHashingIterations(iterations)) return false;
-    // hash 記錄了當初有沒有用 pepper。現在的 env 與當初不一致就直接失敗 ——
-    // 若忽略這點,拔掉 pepper 會讓所有密碼安靜地驗不過而查不出原因。
+    // hash 記錄了當初有沒有用 pepper,**驗證就照著它走**,而不是照現在的 env。
+    //
+    // 曾經是「旗標與現在的 env 不符就直接 false」。那個作法有個致命後果:標準
+    // 部署流程從來沒設過 AUTH_PEPPER(CLI 與 DEPLOY.md 都只產 SECRETS_KEY),
+    // 所以現實中每一個站台的密碼都是 flag=0。哪天想補上 pepper,全站立刻登不進去,
+    // 而且沒有任何遷移路徑 —— 等於這個 pepper 功能永遠不能被啟用。
+    //
+    // 照旗標走之後四種組合都正確:
+    //   0 / 無 → 直接驗       0 / 有 → 不加 pepper 驗(可事後 rehash 升級)
+    //   1 / 有 → 加 pepper 驗  1 / 無 → false(**算不出來**,不是政策選擇)
+    // 最後一種仍然失敗,所以「pepper 設了就不能再拔掉」這條規則沒有放寬。
     const wasPeppered = parts[3] === "1";
-    if (wasPeppered !== (passwordPepper() !== null)) return false;
+    if (wasPeppered && passwordPepper() === null) return false;
     const salt = unb64(parts[4]);
     const expected = unb64(parts[5]);
-    const material = await applyPepper(password);
+    const material = wasPeppered ? await applyPepper(password) : enc(password);
     const out = await deriveChained(material, salt, iterations, rounds);
     return constantTimeEqual(out, expected);
   }

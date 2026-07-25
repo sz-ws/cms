@@ -8,6 +8,10 @@ import {
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { finishAuthentication } from "@/lib/passkey";
+import { readBoundedJsonObject } from "@/lib/body-limit";
+
+// WebAuthn 的 attestation/assertion 遠小於此;未驗證入口一律封頂。
+const MAX_BODY_BYTES = 64_000;
 
 // 同 login route:本地 next dev 無 CF-Connecting-IP,fallback "local"。
 function clientIp(req: Request): string {
@@ -37,7 +41,8 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    const body = await req.json().catch(() => null);
+    const parsedBody = await readBoundedJsonObject(req, MAX_BODY_BYTES, "passkey-login");
+    const body = parsedBody.ok ? parsedBody.value : null;
     const user = await finishAuthentication(req, body);
 
     await purgeExpiredSessions(user.id);

@@ -3,47 +3,10 @@ import { buildProviderRegistry } from "@/ext/services";
 import { isCallbackReceiver } from "@/ext/capabilities";
 import type { Capability } from "@/ext/capabilities";
 import { hitRateLimit } from "@/lib/rate-limit";
+import { declaredLengthExceeds, readBoundedText } from "@/lib/body-limit";
 
 const MAX_BODY_BYTES = 64_000;
 
-/**
- * 讀取未驗證 callback 的 raw body，但不讓任一請求累積超過上限。
- * 回傳 null 代表過大；reader.cancel 失敗仍記錄，避免掩蓋 runtime 異常。
- */
-async function readBoundedRawBody(req: Request): Promise<string | null> {
-  if (!req.body) return "";
-
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
-        try {
-          await reader.cancel("payload_too_large");
-        } catch (e) {
-          console.error("[callback] unable to cancel oversized request body", e);
-        }
-        return null;
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(body);
-}
 
 // core-v2 §2.5:Unified inbound callback / webhook ingress。
 //
@@ -94,16 +57,14 @@ async function handleCallback(
 
   // 0b. Content-Length 只能作為提早拒絕的提示；缺席或非數字一律不可信，仍由
   // 下方 reader 的累計位元組數強制上限。
-  const contentLength = req.headers.get("content-length");
-  const declaredLength = contentLength === null ? NaN : Number(contentLength);
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+  if (declaredLengthExceeds(req, MAX_BODY_BYTES)) {
     return Response.json({ error: "payload_too_large" }, { status: 413 });
   }
 
   // 1. raw body 只讀一次、串流封頂後才解碼，原樣保留供簽章驗證(§5 raw body preserved)。
   //    不觸發 Miniflare 對非 text/* Content-Type(如 payment gateway 的
   //    application/x-www-form-urlencoded)呼叫 .text() 的噪音警告。
-  const rawBody = await readBoundedRawBody(req);
+  const rawBody = await readBoundedText(req, MAX_BODY_BYTES, "callback");
   if (rawBody === null) {
     return Response.json({ error: "payload_too_large" }, { status: 413 });
   }

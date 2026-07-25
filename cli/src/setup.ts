@@ -1,7 +1,7 @@
 // `sz-cms setup` —— 從「本機跑得起來」到「線上跑得起來」的引導流程。
 //
 // 取代 DEPLOY.md 的手工步驟:建兩組 D1 + 兩組 R2、把回傳的 id 貼回 wrangler.jsonc、
-// 套 migrations、設 SECRETS_KEY。
+// 套 migrations、設 SECRETS_KEY 與 AUTH_PEPPER。
 //
 // 冪等性怎麼保證的:每一步都先「看帳號上有什麼」再決定要不要動作,而不是記錄自己做過什麼。
 //   - 先把這份 repo 的 site slug 寫成唯一資源名稱;只有這個本地租戶邊界已驗證後,
@@ -9,7 +9,8 @@
 //   - R2 先 `r2 bucket info`;真的去建到已存在的 bucket 也被當成成功。
 //   - wrangler.jsonc 的值已經對了就完全不產生編輯。
 //   - migrations 本來就有 applied 紀錄表,重跑是 no-op。
-//   - SECRETS_KEY 已存在就跳過(**絕不覆寫** —— 換掉它等於把所有既存的加密設定變成亂碼)。
+//   - SECRETS_KEY / AUTH_PEPPER 已存在就跳過(**絕不覆寫** —— 換掉任一把都是不可逆的災難,
+//     見 MANAGED_SECRETS 的說明)。
 // 所以跑到一半斷掉的人,直接再跑一次就好。
 
 import { randomBytes } from "node:crypto";
@@ -30,6 +31,34 @@ import {
 import { JsoncParseError } from "./jsonc.js";
 
 export const SECRETS_KEY = "SECRETS_KEY";
+export const AUTH_PEPPER = "AUTH_PEPPER";
+
+/**
+ * setup 會產生的 worker secret。兩把都是**產生後就不能換**的:
+ *
+ *   SECRETS_KEY  換掉 → 所有已加密的設定同時變亂碼(信封沒有 key id)。
+ *   AUTH_PEPPER  它會被 HMAC 進每一次密碼雜湊,而雜湊字串裡記著「當初有沒有
+ *                pepper」。設了之後再拔掉,所有既存密碼都算不出來 = 全站鎖死。
+ *
+ * AUTH_PEPPER 一定要在**建立第一個管理員之前**就存在,否則第一批密碼會以
+ * 無 pepper 的形式落地。核心對這種情況是容忍的(照雜湊裡的旗標驗證,不會鎖死),
+ * 但那些密碼在重設之前一直享受不到 pepper 的保護 —— 而 pepper 正是 Workers
+ * 只能跑 100k iteration 這件事最需要的補償。
+ */
+const MANAGED_SECRETS = [
+  {
+    name: SECRETS_KEY,
+    why: "加密所有 secret: true 的設定(registry token、Resend key、OIDC secret、金流金鑰)",
+    neverRotate:
+      "不覆寫 —— 換金鑰會讓既存的加密設定全部失效,且沒有漸進遷移路徑。",
+  },
+  {
+    name: AUTH_PEPPER,
+    why: "密碼雜湊前先做 HMAC;DB 單獨外洩時,沒有它連離線爆破都無從開始",
+    neverRotate:
+      "不覆寫 —— 換掉會讓所有既存密碼算不出來,等於全站鎖死。",
+  },
+] as const;
 
 /** R2 最長名稱是 63;最長衍生值 cms-<slug>-next-cache 需要保留 15 字元。 */
 export const SITE_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/;
@@ -210,10 +239,14 @@ function deployNextSteps(): string[] {
     // 一定要是 `pnpm run deploy`:`deploy` 是 pnpm 的內建指令,`pnpm deploy`
     // 會被它接走而不是跑 package.json 的 script(ERR_PNPM_CANNOT_DEPLOY)。
     "  1. pnpm run deploy                 # opennextjs-cloudflare build + deploy",
-    "  2. 開正式站的 /setup 建第一個管理員帳號(正式 D1 是空的,跟本機不共用)",
-    "  3. Settings → core.siteUrl 設成你的公開網址",
+    // pepper 一定要卡在建第一個管理員之前。晚一步設,那批密碼就永遠是無 pepper 的
+    // 形式(還是登得進去,core 照雜湊裡的旗標驗證),但要拿回保護只能逐一重設密碼。
+    `  2. 確認 ${SECRETS_KEY} 與 ${AUTH_PEPPER} 都已設定(第一次跑 setup 時 Worker 還不存在,`,
+    "     所以那一步會被延後;現在重跑一次 setup 就會補上)",
+    "  3. 開正式站的 /setup 建第一個管理員帳號(正式 D1 是空的,跟本機不共用)",
+    "  4. Settings → core.siteUrl 設成你的公開網址",
     "     (OIDC redirect_uri、SEO canonical/sitemap/feed、金流 return URL 都需要絕對網址)",
-    "  4. /admin/extensions 啟用一個 extension,建一筆內容,確認公開路由渲染得出來",
+    "  5. /admin/extensions 啟用一個 extension,建一筆內容,確認公開路由渲染得出來",
   ];
 }
 
@@ -376,7 +409,9 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       o.skipMigrations
         ? "套用 migrations:略過(--skip-migrations)"
         : `套用 migrations:${migrationTargets.map((e) => e.databaseName).join("、") || "(無)"}`,
-      o.skipSecrets ? "設定 SECRETS_KEY:略過(--skip-secrets)" : "設定 SECRETS_KEY:視現況",
+      o.skipSecrets
+        ? `設定 ${SECRETS_KEY} / ${AUTH_PEPPER}:略過(--skip-secrets)`
+        : `設定 ${SECRETS_KEY} / ${AUTH_PEPPER}:視現況`,
     ]);
     r.outro(["預演結束,什麼都沒有改動。拿掉 --dry-run 就會實際執行。"]);
     return EXIT.OK;
@@ -481,12 +516,16 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     }
   }
 
-  // ---- 8. SECRETS_KEY ----
+  // ---- 8. worker secrets ----
   let secretNote: string[];
   if (o.skipSecrets) {
-    r.step("skip", `略過 ${SECRETS_KEY}(--skip-secrets)`);
+    r.step("skip", `略過 ${SECRETS_KEY} / ${AUTH_PEPPER}(--skip-secrets)`);
     secretNote = [
-      `記得在部署後設定:openssl rand -base64 32 | pnpm exec wrangler secret put ${SECRETS_KEY}`,
+      "記得在部署後設定這兩把(都是設了就不能再換的):",
+      ...MANAGED_SECRETS.map(
+        (s) => `  openssl rand -base64 32 | pnpm exec wrangler secret put ${s.name}`,
+      ),
+      `  ${AUTH_PEPPER} 要趕在開 /setup 建第一個管理員之前。`,
     ];
   } else {
     secretNote = await ensureSecretsKey(o, generateSecret);
@@ -559,53 +598,72 @@ async function ensureSecretsKey(
   generateSecret: () => string,
 ): Promise<string[]> {
   const { reporter: r } = o;
-  const secrets = await r.task(`檢查 ${SECRETS_KEY}`, () => o.client.listSecrets());
+  const names = MANAGED_SECRETS.map((s) => s.name).join(" / ");
+  // 一次列舉,兩把都用同一份清單判斷 —— 不必為了第二把再打一次 wrangler。
+  const secrets = await r.task(`檢查 ${names}`, () => o.client.listSecrets());
 
   if (secrets === null) {
     // 最常見的原因是 Worker 還沒 deploy 過,帳號上根本沒有這個 Worker 可以掛 secret。
     // 這時候不能猜「沒設定」就硬寫,也不能說「已設定好」—— 誠實講清楚順序。
-    r.step("warn", `查不到目前的 secret 清單`, "Worker 可能還沒 deploy 過。");
+    r.step("warn", "查不到目前的 secret 清單", "Worker 可能還沒 deploy 過。");
     return [
-      `${SECRETS_KEY} 這一步留到部署之後(現在還沒有 Worker 可以掛 secret):`,
+      `${names} 這一步留到部署之後(現在還沒有 Worker 可以掛 secret):`,
       "  pnpm run deploy",
-      `  openssl rand -base64 32 | pnpm exec wrangler secret put ${SECRETS_KEY}`,
+      ...MANAGED_SECRETS.map(
+        (s) => `  openssl rand -base64 32 | pnpm exec wrangler secret put ${s.name}`,
+      ),
       "",
-      "⚠ 不要沿用 .dev.vars 裡的開發金鑰。加密信封沒有 key id,",
-      "  之後換掉這把金鑰會讓所有既存的加密設定同時變成亂碼,且無漸進遷移路徑。",
+      `⚠ ${AUTH_PEPPER} 必須在你開 /setup 建第一個管理員**之前**就設好,`,
+      "  否則第一批密碼會以無 pepper 的形式落地(能登入,但少了那層保護)。",
+      "",
+      "⚠ 不要沿用 .dev.vars 裡的開發金鑰。兩把都是設了就不能再換的:",
+      `  ${SECRETS_KEY} 換掉 → 既存的加密設定全部變亂碼(信封沒有 key id)。`,
+      `  ${AUTH_PEPPER} 換掉 → 既存密碼全部算不出來,等於全站鎖死。`,
     ];
   }
 
-  if (secrets.includes(SECRETS_KEY)) {
-    // 絕不覆寫。覆寫 = 所有已加密的設定同時報廢。
-    r.step("ok", `${SECRETS_KEY} 已設定`, "不覆寫 —— 換金鑰會讓既存的加密設定全部失效。");
+  const notes: string[] = [];
+  for (const spec of MANAGED_SECRETS) {
+    notes.push(...(await ensureOneSecret(o, spec, secrets, generateSecret)));
+  }
+  return notes;
+}
+
+/** 單一把 secret 的「有就跳過、沒有就產生」。絕不覆寫。 */
+async function ensureOneSecret(
+  o: SetupOptions,
+  spec: (typeof MANAGED_SECRETS)[number],
+  existing: readonly string[],
+  generateSecret: () => string,
+): Promise<string[]> {
+  const { reporter: r } = o;
+  const { name } = spec;
+  const manual = `  openssl rand -base64 32 | pnpm exec wrangler secret put ${name}`;
+
+  if (existing.includes(name)) {
+    r.step("ok", `${name} 已設定`, spec.neverRotate);
     return [];
   }
 
   if (!o.assumeYes) {
     const go = await o.prompter.confirm(
-      `要現在產生並設定 ${SECRETS_KEY} 嗎?(32 byte 隨機值,不會顯示在畫面上)`,
+      `要現在產生並設定 ${name} 嗎?(${spec.why};32 byte 隨機值,不會顯示在畫面上)`,
       true,
     );
     if (!go) {
-      r.step("skip", `略過 ${SECRETS_KEY}`);
-      return [
-        `記得設定 ${SECRETS_KEY},否則第一個「儲存加密設定」的動作就會失敗:`,
-        `  openssl rand -base64 32 | pnpm exec wrangler secret put ${SECRETS_KEY}`,
-      ];
+      r.step("skip", `略過 ${name}`);
+      return [`記得設定 ${name} —— ${spec.why}:`, manual];
     }
   }
 
   // 值走 stdin 進 wrangler,不進 argv、不印到畫面 —— argv 會被 ps 看到,也會留在 history。
-  const outcome = await r.task(`設定 ${SECRETS_KEY}`, () =>
-    o.client.putSecret(SECRETS_KEY, generateSecret()),
+  const outcome = await r.task(`設定 ${name}`, () =>
+    o.client.putSecret(name, generateSecret()),
   );
   if (outcome.status === "failed") {
-    r.step("fail", `設定 ${SECRETS_KEY} 失敗`, outcome.detail);
-    return [
-      `${SECRETS_KEY} 還沒設定好。部署之後手動補上:`,
-      `  openssl rand -base64 32 | pnpm exec wrangler secret put ${SECRETS_KEY}`,
-    ];
+    r.step("fail", `設定 ${name} 失敗`, outcome.detail);
+    return [`${name} 還沒設定好。部署之後手動補上:`, manual];
   }
-  r.step("ok", `${SECRETS_KEY} 已產生並設定`, "值只存在 Cloudflare,本機沒有留副本。");
+  r.step("ok", `${name} 已產生並設定`, "值只存在 Cloudflare,本機沒有留副本。");
   return [];
 }
