@@ -23,6 +23,7 @@
   },
   "registries": {
     "@intentui": "https://intentui.com/r/{name}",
-    "@aicanvas": "https://aicanvas.me/r/{name}.json"
+    "@aicanvas": "https://aicanvas.me/r/{name}.json",
+    "@dotmatrix": "https://dotmatrix.zzzzshawn.cloud/r/{name}.json"
   }
 }
