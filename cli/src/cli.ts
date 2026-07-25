@@ -78,14 +78,15 @@ function nextSteps(id: string, fileCount: number, patchNote: string): void {
   log(`✓ 複製了 ${fileCount} 個檔到 extensions/${id}/`);
   log(`✓ ${patchNote}`);
   log();
+  // 順序在正式站是硬性的:Enable 讀的是**編譯期**的 registry 陣列,所以必須先
+  // deploy 過、新的 bundle 上線之後才啟用得了。而 code extension 的 migrations 是
+  // enableExtension() 在 worker 內用單一 D1 batch 跑的(src/ext/manager.ts),
+  // 不是 `wrangler d1 migrations apply` —— 那支只管 core 自己的 migrations/。
   log("接下來(CLI 不代跑):");
-  log("  1. 跑 migrations(若此 extension 需要):");
-  log("       pnpm db:migrate:local    # 本機 D1");
-  log("       pnpm db:migrate:remote   # 正式 D1");
-  log("  2. 在 admin Installed 分頁為此 extension 啟用(INSERT extensions row)。");
-  log("  3. pnpm build && wrangler deploy");
-  log(`  4. cron / webhook 等需外部伴侶的 extension:見 extensions/${id}/worker/`);
-  log("     或 manifest 附帶的部署說明。");
+  log("  1. pnpm build && pnpm deploy       # Enable 讀編譯期 registry,必須先上線");
+  log("  2. admin → Extensions → Installed → Enable");
+  log("     (此 extension 自帶的 migrations 會在這一步以單一 D1 batch 原子執行)");
+  log("  3. 需要外部伴侶的(cron 之類):另見該 extension 的部署說明。");
 }
 
 export async function run(argv: string[], cwd: string): Promise<number> {

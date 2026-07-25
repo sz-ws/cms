@@ -1,6 +1,5 @@
 import type { Extension } from "@/ext/types";
 import { cron } from "./cron";
-import { aiSmokeTest } from "./ai-smoke-test";
 import { newebpay } from "./newebpay";
 
 // core-v2 §3.6 DEMO ONLY:progressive「程式碼強化層」的 side-effect import。
@@ -20,4 +19,6 @@ import "./blog/layout";
 // 陣列順序 = hook 執行順序 = 公開路由匹配優先序(先註冊先贏)。
 
 /** 所有已「安裝」(編譯進 bundle)的 extensions */
-export const registry: Extension[] = [cron, aiSmokeTest, newebpay];
+// ai-smoke-test 刻意**不**在預設陣列裡:它是 ai:generate capability 的內部驗證用
+// extension,不是產品功能。要試 AI capability 的人自己加一行 import 與陣列項。
+export const registry: Extension[] = [cron, newebpay];
