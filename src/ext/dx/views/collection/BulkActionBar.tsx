@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import NumberFlow from "@number-flow/react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/I18nProvider";
 
 // 選取 ≥1 列時浮現的動作列:Publish / Unpublish / Delete(二段確認)。
 // 逐 id 呼叫 CRUD API(PUT status / DELETE),完成後 router.refresh()。
@@ -25,6 +26,7 @@ export function BulkActionBar({
   onDone,
 }: BulkActionBarProps) {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState<Busy>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,11 +49,11 @@ export function BulkActionBar({
           }),
         ),
       );
-      if (results.some((r) => !r.ok)) setError("Some updates failed.");
+      if (results.some((r) => !r.ok)) setError(t("collection.bulk.updateFailed"));
       onDone();
       router.refresh();
     } catch {
-      setError("Network error.");
+      setError(t("collection.bulk.networkError"));
     } finally {
       setBusy(null);
     }
@@ -66,12 +68,12 @@ export function BulkActionBar({
           fetch(`${base}/${encodeURIComponent(id)}`, { method: "DELETE" }),
         ),
       );
-      if (results.some((r) => !r.ok)) setError("Some deletes failed.");
+      if (results.some((r) => !r.ok)) setError(t("collection.bulk.deleteFailed"));
       setConfirmingDelete(false);
       onDone();
       router.refresh();
     } catch {
-      setError("Network error.");
+      setError(t("collection.bulk.networkError"));
     } finally {
       setBusy(null);
     }
@@ -90,7 +92,7 @@ export function BulkActionBar({
           value={count}
           className="tabular-nums font-medium text-black/90"
         />
-        <span className="text-black/45">selected</span>
+        <span className="text-black/45">{t("collection.bulk.selected")}</span>
       </span>
 
       <span className="h-5 w-px bg-black/10" />
@@ -99,7 +101,9 @@ export function BulkActionBar({
 
       {confirmingDelete ? (
         <>
-          <span className="text-[13px] text-black/55">Delete {count}?</span>
+          <span className="text-[13px] text-black/55">
+            {t("collection.bulk.deleteCount", { count })}
+          </span>
           <button
             type="button"
             disabled={busy !== null}
@@ -109,7 +113,7 @@ export function BulkActionBar({
               "bg-red-50 text-red-700 shadow-[0_0_0_1px_rgba(220,38,38,0.15)] hover:bg-red-100",
             )}
           >
-            {busy === "delete" ? "…" : "Confirm delete"}
+            {busy === "delete" ? "…" : t("collection.bulk.confirmDelete")}
           </button>
           <button
             type="button"
@@ -117,7 +121,7 @@ export function BulkActionBar({
             onClick={() => setConfirmingDelete(false)}
             className={cn(btn, "text-black/55 hover:text-black/80")}
           >
-            Cancel
+            {t("collection.bulk.cancel")}
           </button>
         </>
       ) : (
@@ -131,7 +135,7 @@ export function BulkActionBar({
               "bg-white text-black/80 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.22)]",
             )}
           >
-            {busy === "publish" ? "…" : "Publish"}
+            {busy === "publish" ? "…" : t("collection.bulk.publish")}
           </button>
           <button
             type="button"
@@ -142,7 +146,7 @@ export function BulkActionBar({
               "bg-white text-black/80 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.22)]",
             )}
           >
-            {busy === "unpublish" ? "…" : "Unpublish"}
+            {busy === "unpublish" ? "…" : t("collection.bulk.unpublish")}
           </button>
           <button
             type="button"
@@ -150,14 +154,14 @@ export function BulkActionBar({
             onClick={() => setConfirmingDelete(true)}
             className={cn(btn, "text-red-700/80 hover:text-red-700")}
           >
-            Delete
+            {t("collection.bulk.delete")}
           </button>
           <button
             type="button"
             onClick={onDone}
             className={cn(btn, "text-black/40 hover:text-black/70")}
           >
-            Clear
+            {t("collection.bulk.clear")}
           </button>
         </>
       )}

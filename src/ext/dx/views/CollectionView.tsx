@@ -165,6 +165,7 @@ export async function CollectionView({
           createHref={editHref()}
           filtered={hasFilters}
           clearHref={base}
+          locale={locale}
         />
       ) : (
         <>

@@ -1,13 +1,21 @@
 import Link from "next/link";
+import { getMessages } from "@/lib/i18n/index";
+import { format } from "@/lib/i18n/index";
+import type { Locale } from "@/lib/i18n/index";
+import { inlineLabel } from "../field-utils";
 
 // 設計過的空狀態:ring-dot 記號 + 一句話 + 一顆主要 CTA。無空表格、無 kit spinner。
 // 兩種語境:完全沒有資料(showCreate)vs filter 無命中(引導清除)。
+//
+// server component:locale 由 CollectionView 的 getLocale() 傳下來(與 fieldLabel /
+// typeLabel 同一個 resolve 點),字典直接以 getMessages(locale) 取,不依賴 I18nProvider。
 
 interface EmptyStateProps {
   typeLabel: string;
   createHref: string;
   filtered: boolean;
   clearHref: string;
+  locale: Locale;
 }
 
 export function EmptyState({
@@ -15,7 +23,10 @@ export function EmptyState({
   createHref,
   filtered,
   clearHref,
+  locale,
 }: EmptyStateProps) {
+  const m = getMessages(locale);
+  const type = inlineLabel(typeLabel, locale);
   return (
     <div className="flex flex-col items-center justify-center gap-4 rounded-[14px] bg-white px-6 py-16 text-center shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)]">
       <span
@@ -27,26 +38,25 @@ export function EmptyState({
       {filtered ? (
         <>
           <p className="max-w-sm text-[14px] text-black/55">
-            No {typeLabel.toLowerCase()} match these filters.
+            {format(m["collection.empty.noMatch"], { type })}
           </p>
           <Link
             href={clearHref}
             className="inline-flex h-10 items-center rounded-[8px] bg-white px-4 text-[14px] font-medium text-black/80 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] transition-[box-shadow,transform] active:scale-[0.96] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.22)]"
           >
-            Clear filters
+            {m["collection.empty.clearFilters"]}
           </Link>
         </>
       ) : (
         <>
           <p className="max-w-sm text-[14px] text-black/55">
-            No {typeLabel.toLowerCase()} yet. Create the first one to get
-            started.
+            {format(m["collection.empty.none"], { type })}
           </p>
           <Link
             href={createHref}
             className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-black px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85"
           >
-            Create {typeLabel.toLowerCase()}
+            {format(m["collection.empty.create"], { type })}
             <span className="text-white/70">→</span>
           </Link>
         </>

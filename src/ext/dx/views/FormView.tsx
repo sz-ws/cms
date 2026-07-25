@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { Stepper, StepperItem, StepperList } from "@/components/ui/stepper";
@@ -9,6 +9,7 @@ import type { DeclarativeContentType, DeclarativeField } from "../manifest";
 import { fieldLabel } from "./field-utils";
 import { ExtLocaleProvider } from "../ext-locale";
 import type { Locale } from "@/lib/i18n/index";
+import { getMessages, format } from "@/lib/i18n/index";
 import { FIELD_COMPONENTS } from "../fields";
 import { getFieldComponent } from "../fields";
 import type { ErasedFieldComponentProps } from "../fields";
@@ -32,6 +33,15 @@ import { TextMorph } from "torph/react";
 //   - anonymous create against auto-CRUD POST on a public:true content type
 //   - no status picker, no dirty guard, success message after submit
 //   - only renders the safe public field subset (no media/relation/json/etc.)
+//
+// i18n (spec-extension-i18n.md §2.3): every user-visible string in this file comes
+// from the core dictionary, looked up with `getMessages(props.locale)`. It CANNOT use
+// useT()/useLocale() — public routes render outside core's I18nProvider — so the
+// locale arrives as a prop, server-resolved by FormViewPage (admin) or
+// PublicFormBody in interpret.tsx (public), exactly like the `locale` handed to
+// ExtLocaleProvider below. This replaces the old `isPublic ? "中文" : "English"`
+// ternaries, which picked a LANGUAGE by MODE and so were wrong on both sides
+// (English site → Chinese public form; Chinese site → English admin form).
 //
 // Value contract: FieldValues holds each field's native stored shape
 // (string | number | boolean | unknown for json), matching
@@ -79,6 +89,7 @@ interface PublicFormModeProps extends FormViewBaseProps {
 export type FormViewProps = AdminFormViewProps | PublicFormModeProps;
 
 type FieldValues = Record<string, unknown>;
+type Messages = ReturnType<typeof getMessages>;
 
 // AS.3: see the `dirty` state comment in FormView — outlasts RichtextEditor's
 // own 300ms onChange debounce so its mount-time value normalisation never
@@ -110,7 +121,6 @@ function publicRenderableFields(fields: DeclarativeField[]): DeclarativeField[] 
 // rest of the render path doesn't need a separate branch.
 const MAX_STEP_FIELDS = 3;
 const STEPPED_MIN_FIELDS = 4;
-const STEP_REQUIRED_MESSAGE = "此欄位為必填。";
 
 function chunkFields(fields: DeclarativeField[]): DeclarativeField[][] {
   if (fields.length < STEPPED_MIN_FIELDS) return [fields];
@@ -154,9 +164,11 @@ type EntryStatus = "draft" | "published";
 function StatusToggle({
   value,
   onChange,
+  m,
 }: {
   value: EntryStatus;
   onChange: (next: EntryStatus) => void;
+  m: Messages;
 }) {
   const options: EntryStatus[] = ["draft", "published"];
   const selectedIndex = options.indexOf(value);
@@ -180,7 +192,7 @@ function StatusToggle({
   return (
     <div
       role="radiogroup"
-      aria-label="Entry status"
+      aria-label={m["extForm.admin.entryStatus"]}
       onKeyDown={onKey}
       className="inline-flex rounded-[10px] bg-black/[0.04] p-0.5"
     >
@@ -201,7 +213,9 @@ function StatusToggle({
                 : "text-black/55 hover:text-black/85 focus-visible:text-black/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]")
             }
           >
-            {opt === "draft" ? "Draft" : "Published"}
+            {opt === "draft"
+              ? m["collection.filter.draft"]
+              : m["collection.filter.published"]}
           </button>
         );
       })}
@@ -236,6 +250,8 @@ export function FormView(props: FormViewProps) {
 function FormViewInner(props: FormViewProps) {
   const router = useRouter();
   const isPublic = props.mode === "public";
+  // 字典查表(public 頁無 I18nProvider,故不能用 useT();locale 由 prop 傳入)。
+  const m = useMemo(() => getMessages(props.locale), [props.locale]);
   const fields = isPublic ? publicRenderableFields(props.fields) : props.fields;
   const initialData = isPublic ? {} : (props.initialData ?? {});
   const initialEntryStatus = isPublic
@@ -321,7 +337,7 @@ function FormViewInner(props: FormViewProps) {
 
   function confirmDiscard(): boolean {
     if (isPublic || !dirty) return true;
-    return window.confirm("Discard unsaved changes?");
+    return window.confirm(m["extForm.admin.discardConfirm"]);
   }
 
   function setField(key: string, value: unknown) {
@@ -383,7 +399,12 @@ function FormViewInner(props: FormViewProps) {
         !Number.isFinite(Number(raw))
       ) {
         setError(
-          `Field "${fieldLabel(f, props.locale)}" must be a ${f.type === "number" ? "number" : "date"}.`,
+          format(
+            f.type === "number"
+              ? m["extForm.error.mustBeNumber"]
+              : m["extForm.error.mustBeDate"],
+            { field: fieldLabel(f, props.locale) },
+          ),
         );
         return null;
       }
@@ -455,16 +476,20 @@ function FormViewInner(props: FormViewProps) {
             : -1;
           if (stepIdx >= 0) goToStep(stepIdx);
         }
-        setError(isPublic ? "請先修正標示的欄位。" : "Fix the highlighted fields.");
+        setError(m["extForm.error.fixHighlighted"]);
       } else if (isPublic && res.status === 403) {
-        setError("此頁面禁止跨來源提交。");
+        setError(m["extForm.error.crossOrigin"]);
       } else if (isPublic && res.status === 429) {
-        setError("提交過於頻繁,請稍後再試。");
+        setError(m["extForm.error.tooManyRequests"]);
       } else {
-        setError(isPublic ? "提交失敗,請稍後再試。" : "Save failed.");
+        setError(
+          isPublic
+            ? m["extForm.error.submitFailed"]
+            : m["extForm.error.saveFailed"],
+        );
       }
     } catch {
-      setError(isPublic ? "網路錯誤,請稍後再試。" : "Network error.");
+      setError(m["extForm.error.network"]);
     } finally {
       setPending(false);
     }
@@ -507,7 +532,8 @@ function FormViewInner(props: FormViewProps) {
     if (missing.length > 0) {
       setFieldErrors((prev) => {
         const next = { ...prev };
-        for (const f of missing) next[f.key] = STEP_REQUIRED_MESSAGE;
+        for (const f of missing)
+          next[f.key] = m["extForm.public.requiredField"];
         return next;
       });
       return;
@@ -526,7 +552,7 @@ function FormViewInner(props: FormViewProps) {
               {props.title}
             </h1>
             <p className="mt-2 text-[14px] leading-relaxed text-black/70">
-              {props.successMessage ?? "提交成功,謝謝!"}
+              {props.successMessage ?? m["extForm.public.successDefault"]}
             </p>
           </div>
         </div>
@@ -547,9 +573,12 @@ function FormViewInner(props: FormViewProps) {
               </h1>
               <p className="mt-0.5 text-[13px] text-black/45">
                 {isMultiStep
-                  ? `第 ${stepIndex + 1} 步,共 ${fieldSteps.length} 步`
+                  ? format(m["extForm.public.stepOfTotal"], {
+                      current: stepIndex + 1,
+                      total: fieldSteps.length,
+                    })
                   : // 訪客可見文案,不得出現內部行話(冷眼回報 2026-07-16)。
-                    "填妥下方表單送出,我們會盡快與您聯繫。"}
+                    m["extForm.public.intro"]}
               </p>
             </div>
 
@@ -589,7 +618,7 @@ function FormViewInner(props: FormViewProps) {
                         completed={i < stepIndex}
                         disabled={i > stepIndex}
                       >
-                        {`第 ${i + 1} 步`}
+                        {format(m["extForm.public.step"], { n: i + 1 })}
                       </StepperItem>
                     ))}
                   </StepperList>
@@ -648,7 +677,7 @@ function FormViewInner(props: FormViewProps) {
                     disabled={pending}
                     className="inline-flex h-10 items-center justify-center rounded-[8px] px-4 text-[14px] font-medium text-black/55 transition-colors duration-150 ease-out hover:bg-black/[0.04] hover:text-black/85 disabled:opacity-50"
                   >
-                    上一步
+                    {m["extForm.public.back"]}
                   </button>
                 )}
                 {isMultiStep && !isLastStep ? (
@@ -663,7 +692,7 @@ function FormViewInner(props: FormViewProps) {
                     }}
                     className="inline-flex h-10 items-center justify-center gap-1.5 px-4 text-[14px] font-medium text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:opacity-50"
                   >
-                    下一步
+                    {m["extForm.public.next"]}
                   </button>
                 ) : (
                   // 送出鈕改用 vendored StatusButton(1.7.0),映射既有 pending/error 狀態;
@@ -672,7 +701,11 @@ function FormViewInner(props: FormViewProps) {
                   // <form onSubmit> 流程(而非重複一份提交邏輯)。
                   <StatusButton
                     status={pending ? "loading" : error ? "error" : "idle"}
-                    label={pending ? "送出中…" : (props.submitLabel ?? "送出")}
+                    label={
+                      pending
+                        ? m["extForm.public.submitting"]
+                        : (props.submitLabel ?? m["extForm.public.submit"])
+                    }
                     onClick={() => publicFormRef.current?.requestSubmit()}
                     // 1.8.0:accent token tint(fallback 為現行黑色實心)。
                     style={{ background: "var(--ext-accent, #000)" }}
@@ -702,11 +735,14 @@ function FormViewInner(props: FormViewProps) {
         props,
         body: (
           <div className="col-span-full flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-black/55">Status</span>
+            <span className="text-[13px] font-medium text-black/55">
+              {m["extForm.admin.status"]}
+            </span>
             <div className="flex flex-wrap items-center gap-2">
               <StatusToggle
                 value={entryStatus}
                 onChange={setEntryStatusDirty}
+                m={m}
               />
               {entryStatus === "draft" && (
                 <PublishScheduleControl
@@ -732,23 +768,23 @@ function FormViewInner(props: FormViewProps) {
                     {/* 同位置狀態切換 → TextMorph(同 ExtensionsManager StatusPill)。 */}
                     <TextMorph respectReducedMotion>
                       {pending
-                        ? "Saving…"
+                        ? m["extForm.admin.saving"]
                         : saved
-                          ? "Saved"
+                          ? m["extForm.admin.saved"]
                           : dirty
                             ? entryStatus === "draft" && publishAt !== null
-                              ? "Ready to schedule"
-                              : "Ready to save"
-                            : "Up to date"}
+                              ? m["extForm.admin.readyToSchedule"]
+                              : m["extForm.admin.readyToSave"]
+                            : m["extForm.admin.upToDate"]}
                     </TextMorph>
                   </span>
                   <span className="text-[11px] text-black/35">
                     {error ??
                       (saved
-                        ? "Your changes have been applied."
+                        ? m["extForm.admin.changesApplied"]
                         : dirty
-                          ? "Unsaved changes in this entry."
-                          : "No changes yet.")}
+                          ? m["extForm.admin.unsavedChanges"]
+                          : m["extForm.admin.noChanges"])}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -762,7 +798,7 @@ function FormViewInner(props: FormViewProps) {
                     disabled={!dirty}
                     className="inline-flex h-9 items-center rounded-[8px] px-3 text-[13px] font-medium text-black/55 transition-colors hover:bg-black/[0.03] hover:text-black/85 disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    Discard
+                    {m["extForm.admin.discard"]}
                   </button>
                   <button
                     type="submit"
@@ -770,7 +806,7 @@ function FormViewInner(props: FormViewProps) {
                     className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-black pr-3 pl-3.5 text-[14px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.15)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <TextMorph respectReducedMotion>
-                      {pending ? "Saving…" : "Save"}
+                      {pending ? m["extForm.admin.saving"] : m["extForm.admin.save"]}
                     </TextMorph>
                     {!pending && (
                       <span aria-hidden className="text-white/70">→</span>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "../StatusBadge";
 import { BulkActionBar } from "./BulkActionBar";
+import { useT } from "@/lib/i18n/I18nProvider";
 
 // core-v2 §3.5:admin grid renderer(sibling of CollectionTable)。同樣擁有 row
 // selection state 並復用 BulkActionBar。每張卡 = cover(image outline + aspect box,
@@ -113,6 +114,7 @@ function CardCover({ coverKey, title }: { coverKey: string | null; title: string
 
 export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const t = useT();
   const allIds = useMemo(() => cards.map((c) => c.id), [cards]);
   const allSelected = selected.size > 0 && selected.size === cards.length;
 
@@ -143,7 +145,9 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
           onClick={toggleAll}
           className="text-[12px] font-medium text-black/45 transition-colors hover:text-black/70"
         >
-          {allSelected ? "Deselect all" : "Select all"}
+          {allSelected
+            ? t("collection.deselectAll")
+            : t("collection.selectAll")}
         </button>
       </div>
 

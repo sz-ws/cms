@@ -25,6 +25,17 @@ export function blockLabel(
 }
 
 /**
+ * 把一個 label(content type label / field label)嵌進句子中間時的大小寫處理。
+ * 只有大小寫敏感的語言才需要 lower-case:英文的 "New Posts" 讀起來要是 "New posts",
+ * 但中文沒有大小寫,`.toLowerCase()` 對中文是無意義操作(且對未來的德文/土耳其文等
+ * 語言會是錯的)。CollectionToolbar 原本就是這樣寫的,抽出來給 EmptyState /
+ * CollectionHeader 共用,避免各處再長出裸 `.toLowerCase()`。
+ */
+export function inlineLabel(label: string, locale: Locale): string {
+  return locale === "en" ? label.toLowerCase() : label;
+}
+
+/**
  * 08 §2:某 content type 的「標題欄位」——關聯 picker、cell、detail 用它把 entry
  * 顯示成人類可讀的一句話。策略同 DetailView / selectColumns:slugField 指向的欄位
  * 優先,否則第一個 text 欄位,否則第一個欄位。無欄位 → undefined。

@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
+import { inlineLabel } from "../field-utils";
 import type { StatusFilter } from "./params";
 import { useCollectionParams } from "./useCollectionParams";
 
@@ -133,7 +134,7 @@ function SearchBox({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={t("collection.searchPlaceholder", {
-          field: locale === "en" ? field.label.toLowerCase() : field.label,
+          field: inlineLabel(field.label, locale),
         })}
         className="h-9 w-56 rounded-[8px] bg-white px-3 text-[13px] text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] outline-none transition-[box-shadow] placeholder:text-black/25 focus:shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_0_0_3px_rgba(0,0,0,0.05)]"
       />

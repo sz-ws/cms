@@ -4,7 +4,8 @@ import { getContentPublishAt } from "../content-provider";
 import type { DeclarativeContentType } from "../manifest";
 import { AdminFormSurface } from "./AdminFormSurface";
 import { inferCardConfig } from "./collection/card-config";
-import { getLocale } from "@/lib/i18n/server";
+import { getLocale, getMessages } from "@/lib/i18n/server";
+import { format } from "@/lib/i18n/index";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { LocalizedString } from "@/lib/i18n/localized";
 
@@ -29,6 +30,7 @@ export async function FormViewPage({
   entryId,
 }: FormViewPageProps) {
   const locale = await getLocale();
+  const m = getMessages(locale);
   const resolvedTitle = resolveLocalizedString(title, locale) ?? contentType.name;
   const def = toTypeDef(extId, contentType);
   const base = `/admin/ext/${extId}${adminSlug ? `/${adminSlug}` : ""}`;
@@ -64,9 +66,9 @@ export async function FormViewPage({
       <PageTitle>
         {entryId
           ? entryTitle
-            ? `Edit: ${entryTitle}`
-            : `Edit ${resolvedTitle}`
-          : `New ${resolvedTitle}`}
+            ? format(m["extForm.admin.editEntry"], { title: entryTitle })
+            : format(m["extForm.admin.editType"], { type: resolvedTitle })
+          : format(m["collection.new"], { type: resolvedTitle })}
       </PageTitle>
       <AdminFormSurface
         extId={extId}

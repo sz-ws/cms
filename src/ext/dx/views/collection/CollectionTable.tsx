@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "../StatusBadge";
 import { SortableHeader } from "./SortableHeader";
 import { BulkActionBar } from "./BulkActionBar";
+import { useT } from "@/lib/i18n/I18nProvider";
 
 // 表格(client):擁有 row selection state,渲染 server 傳入的 cell ReactNode。
 // 表頭可排序欄位用 SortableHeader,其餘為靜態標籤。checkbox 欄與列連結不重疊
@@ -80,6 +81,7 @@ export function CollectionTable({
   activeSort,
 }: CollectionTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const t = useT();
 
   const allIds = useMemo(() => rows.map((r) => r.id), [rows]);
   const allSelected = selected.size > 0 && selected.size === rows.length;
@@ -113,7 +115,7 @@ export function CollectionTable({
                 <RingCheckbox
                   checked={allSelected}
                   onChange={toggleAll}
-                  label="Select all rows"
+                  label={t("collection.selectAllRows")}
                 />
               </th>
               {columns.map((col) => (
