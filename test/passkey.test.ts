@@ -139,7 +139,7 @@ function makeReq(
 async function seedUser(
   id: string,
   email: string,
-  role: "admin" | "editor" = "admin",
+  role: "admin" | "editor" | "guest" = "admin",
 ): Promise<void> {
   await d1()
     .prepare(
@@ -389,6 +389,31 @@ describe("login verify success (§6.3)", () => {
     expect(pk?.counter).toBe(42);
     expect(pk?.last_used_at).not.toBeNull();
   });
+});
+
+// role 必須原樣穿過 passkey 這條路,不能被「猜」。曾經寫的是
+// `row.role === "admin" ? "admin" : "editor"`,於是 guest 在這裡被升成 editor。
+// 當時沒造成實際越權,是因為 session 在下一個 request 會重新從 D1 讀真正的 role
+// 把它蓋回去 —— 但那是別段程式碼剛好補救了,不是這裡對。
+describe("login verify 的 role 對應", () => {
+  for (const role of ["admin", "editor", "guest"] as const) {
+    it(`${role} 登入後拿到的就是 ${role}`, async () => {
+      await seedUser("u1", "a@t.co", role);
+      await seedPasskey("cred-1", "u1", { counter: 0 });
+      wa.genAuthOpts.mockResolvedValue({ challenge: "authchal", allowCredentials: [] });
+      wa.verifyAuth.mockResolvedValue({
+        verified: true,
+        authenticationInfo: { newCounter: 1 },
+      });
+      await startAuthentication(makeReq("/api/auth/passkey/login/options"));
+
+      const user = await finishAuthentication(
+        makeReq("/api/auth/passkey/login/verify"),
+        authBody("cred-1", "authchal"),
+      );
+      expect(user.role).toBe(role);
+    });
+  }
 });
 
 // ---- §6.4:未知 credential → 401;rate limit 第 11 次 → 429 ----

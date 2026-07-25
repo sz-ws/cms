@@ -1,0 +1,60 @@
+# 這個 repo 過去沒有 CI,而它最貴的兩次事故都是 CI 抓得到的類型:
+#   - 產品在目標平台上建不出第一個管理員,而 777 個測試全綠
+#   - 全新 clone 根本 build 不起來(本機工作目錄有殘留物,所以看不見)
+# 所以這裡不只跑測試,也跑「全新 clone 到底 build 不 build 得起來」——
+# 那正是測試涵蓋不到的那一類。
+#
+# manifest schema 的漂移檢查**不在這裡**:scripts/gen-manifest-schema.mts 寫的是
+# 兄弟 repo(../su-registry、../registry),單獨 checkout 這個 repo 時那些路徑
+# 不存在,--check 會判定為漂移而必定失敗。那一關屬於 registry repo 自己的 CI。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一個 branch 連推多次時,只留最後一次 —— 前面那些的結果沒人會看。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # 版本刻意不寫死在這裡:packageManager 已經釘了 pnpm@9.4.0,
+        # 寫兩份就是等著它們哪天不一致。
+      - uses: actions/setup-node@v4
+        with:
+          # .node-version 是唯一真相(rolldown 要求 ^20.19 || >=22.12)。
+          node-version-file: .node-version
+          cache: pnpm
+
+      # --frozen-lockfile:lockfile 與 package.json 不同步時直接失敗,
+      # 而不是安靜地解出一組跟本機不同的依賴。
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Typecheck (CLI)
+        run: pnpm run cli:typecheck
+
+      - name: Lint
+        run: pnpm exec eslint
+
+      - name: Test
+        run: pnpm run test:run
+
+      - name: Test (CLI)
+        run: pnpm run test:cli
+
+      # 這一步是為了那個「777 個測試全綠但產品 build 不出來」的類別。
+      # 測試跑的是原始碼;build 跑的是實際會被部署的那條路徑。
+      - name: Build
+        run: pnpm run build

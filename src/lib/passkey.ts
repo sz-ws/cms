@@ -264,6 +264,17 @@ interface PasskeyAuthRow {
   avatar_key: string | null;
 }
 
+/**
+ * D1 的 role 欄位型別是 text —— 型別系統管不到它,所以進到 SessionUser 之前
+ * 必須自己收斂。認不得的值一律當 guest(最小權限),而不是預設 editor:
+ * 未知的值代表資料異常或 schema 漂移,那種時候給多不給少是錯的方向。
+ */
+function normalizeRole(role: string): SessionUser["role"] {
+  return role === "admin" || role === "editor" || role === "guest"
+    ? role
+    : "guest";
+}
+
 export async function finishAuthentication(
   req: Request,
   body: unknown,
@@ -321,7 +332,12 @@ export async function finishAuthentication(
     id: row.user_id,
     email: row.email,
     name: row.name,
-    role: row.role === "admin" ? "admin" : "editor",
+    // 忠實還原 D1 裡的 role。原本寫的是 `row.role === "admin" ? "admin" : "editor"`,
+    // 於是 guest 會在這裡被升成 editor。今天沒有造成越權 —— session 在下一個
+    // request 會重新從 D1 讀真正的 role,把它蓋回去 —— 但那是「另一段程式碼剛好
+    // 補救了」,不是這裡對。只要有任何路徑在同一個 request 內拿這個回傳值做授權
+    // 判斷,它就直接是越權。認得的三個值原樣傳回,認不得的才退回最小權限。
+    role: normalizeRole(row.role),
     avatarKey: row.avatar_key,
   };
 }
