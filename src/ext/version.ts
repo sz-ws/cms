@@ -278,4 +278,20 @@
 //   manifestSchema 是 .strict() —— 宣告 `kind` 的 manifest 在 <1.21.0 的 core 會整包
 //   驗證失敗,故使用該欄位的 manifest 其 coreApi 必須宣告 "^1.21.0";不寫 `kind`
 //   而依賴推論的 manifest 不受影響、任何 core 版本都過。
-export const CORE_API_VERSION = "1.21.0";
+// 1.22.0(媒體服務層 —— 圖片變體):
+//   - `/api/files/<key>` 新增 `?w=`(寬度)與 `?f=`(格式)兩個查詢參數,extension
+//     組得出來的 URL 契約,故屬 CORE_API 表面。寬度是**封閉白名單**
+//     (320/640/960/1280/1920),`?w=` 會被 snap 進去 —— 開放任意值等於讓
+//     `?w=1..2000` 的迴圈刷出兩千次計費轉檔並灌爆邊緣快取。
+//   - `StoredFile` 新增 `width` / `height`(選填):上傳當下以純 JS parser 從檔頭
+//     嗅出並存進 R2 customMetadata(沿用 alt text 的前例,不建表)。刻意不用
+//     env.IMAGES.info() —— 上傳是不可逆的寫入路徑,把它綁在一個可選的付費功能上,
+//     等於「開通之前上傳的檔案永遠沒有尺寸」。既有物件沒有這兩個值,讀取端視為
+//     undefined 並省略 width/height 屬性。
+//   - 轉檔走 env.IMAGES binding 而非 /cdn-cgi/image:後者是 zone 層級功能,而
+//     DEPLOY.md 帶著人走到的是純 *.workers.dev,那不是 zone,URL 形式不適用。
+//     binding 早就宣告在 wrangler.jsonc 裡(從未被使用),故部署者無需新增任何
+//     binding。Images 未啟用時原樣回傳原檔(X-Image-Transform: none),永不 404/500。
+//   讀 StoredFile 尺寸或組 ?w=/?f= 的 extension 應宣告 coreApi "^1.22.0";
+//   舊 extension 不受影響(參數被忽略、欄位為 undefined)。
+export const CORE_API_VERSION = "1.22.0";

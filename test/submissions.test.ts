@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { env } from "cloudflare:test";
 
-// 公開表單收件語意(CORE_API 1.21.0)的整合測試。
+// 公開表單收件語意(CORE_API 1.22.0)的整合測試。
 //
 // 本檔最重要的三組斷言,順序即重要性:
 //   1. 收件內容**無法**經由公開路由讀到。
@@ -214,7 +214,7 @@ describe("submission kind resolution", () => {
   });
 
   it("does NOT infer a submission when the type has a public list route", () => {
-    // 公開留言板那種 UGC:匿名可寫、也公開可讀 → 仍是內容,行為與 1.21.0 之前一致。
+    // 公開留言板那種 UGC:匿名可寫、也公開可讀 → 仍是內容,行為與 1.22.0 之前一致。
     const m: SubmissionManifestShape = {
       contentTypes: [{ name: "guestbook", public: true }],
       publicRoutes: [{ pattern: "/wall", view: "list", contentType: "guestbook" }],
