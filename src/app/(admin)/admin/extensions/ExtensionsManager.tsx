@@ -7,6 +7,7 @@ import { TextMorph } from "torph/react";
 import { Power, Trash2 } from "lucide-react";
 import { CoreTable, RowIconButton, type CoreColumn } from "@/components/admin/core-table";
 import { RegistryBrowser } from "./RegistryBrowser";
+import { DevInstallTrigger } from "./DevInstallDialog";
 import { ExtensionSheet } from "./ExtensionSheet";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -272,6 +273,7 @@ export function ExtensionsManager({ extensions }: ExtensionsManagerProps) {
         >
           {t("extensions.browse")}
         </button>
+        <DevInstallTrigger />
       </div>
       {tab === "installed" ? (
         <InstalledTab extensions={extensions} />
