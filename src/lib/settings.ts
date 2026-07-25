@@ -20,9 +20,11 @@ export interface SettingFieldBase {
   required?: boolean;
   secret?: boolean;
   /**
-   * 顯示分組(settings 頁一組一張卡)。目前僅 CORE_SETTINGS 使用
-   * ("general" | "email" | "advanced");省略 → 落到 "general"。extension
-   * settings 不分組(單卡),此欄位對其無效。
+   * 顯示分組(settings 頁一組一張卡)。設定頁的卡片完全由此欄位推導:任何
+   * group id 都會長出自己的卡,不必另外登記;省略 → 落到
+   * DEFAULT_SETTING_GROUP("general")。卡片順序與標題/說明取自
+   * src/lib/settings-ui.ts 的 SETTING_GROUPS(未登記的 group 排在最後,
+   * 標題由 id 推導)。extension settings 不分組(單卡),此欄位對其無效。
    */
   group?: string;
 }
@@ -137,7 +139,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.mode",
-    group: "advanced",
+    group: "ai",
     label: "AI provider mode",
     description:
       'Enables the ai:generate capability. "off" leaves it unconfigured; openai / anthropic route through their chat/completions-style APIs; workers-ai uses the Cloudflare Workers AI binding (add it to wrangler.jsonc yourself — not managed by this setting).',
@@ -152,7 +154,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.baseUrl",
-    group: "advanced",
+    group: "ai",
     label: "AI base URL",
     description:
       'Empty uses the mode default (openai → "https://api.openai.com/v1"; anthropic → "https://api.anthropic.com"). Ignored in workers-ai mode.',
@@ -161,7 +163,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.apiKey",
-    group: "advanced",
+    group: "ai",
     label: "AI API key",
     description:
       "Required for openai / anthropic mode; not needed for workers-ai. Stored encrypted.",
@@ -171,7 +173,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.model",
-    group: "advanced",
+    group: "ai",
     label: "AI model",
     description:
       'e.g. "gpt-4o-mini", "claude-haiku-4-5-20251001", or "@cf/meta/llama-3.1-8b-instruct".',

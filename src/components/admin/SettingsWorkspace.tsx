@@ -22,7 +22,8 @@ import { settingControlId } from "@/lib/settings-ui";
 export interface SettingsSection {
   id: string;
   title: string;
-  description: string;
+  /** 空/省略 → 卡片只出標題(未登記文案的 group 走這條)。 */
+  description?: string;
   keyPrefix: string;
   fields: SettingField[];
 }
@@ -306,7 +307,9 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
             <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
               {section.title}
             </h3>
-            <p className="text-[12px] text-black/40">{section.description}</p>
+            {section.description && (
+              <p className="text-[12px] text-black/40">{section.description}</p>
+            )}
           </div>
           {renderSectionFields(section)}
         </div>

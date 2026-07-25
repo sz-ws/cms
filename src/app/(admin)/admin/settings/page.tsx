@@ -4,6 +4,7 @@ import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { settings } from "@/lib/schema";
 import { CORE_SETTINGS, maskSecrets, getRegistryTokenMap } from "@/lib/settings";
+import { groupSettingFields } from "@/lib/settings-ui";
 import { getExtRuntime } from "@/ext/loader";
 import {
   SettingsWorkspace,
@@ -46,22 +47,20 @@ export default async function SettingsPage() {
       field.key !== "core.dashboard.insights",
   );
 
-  // Core 依 SettingField.group 分卡(順序固定);沒 group 的欄位落到 general。
-  const CORE_GROUPS = [
-    { group: "general", title: m["settings.group.general"], description: m["settings.group.generalDesc"] },
-    { group: "seo", title: m["settings.group.seo"], description: m["settings.group.seoDesc"] },
-    { group: "email", title: m["settings.group.email"], description: m["settings.group.emailDesc"] },
-    { group: "advanced", title: m["settings.group.advanced"], description: m["settings.group.advancedDesc"] },
-  ];
+  // Core 卡片完全由 SettingField.group 推導(見 settings-ui.ts):有欄位的 group
+  // 才長卡,順序由 SETTING_GROUPS 的 order 決定,標題/說明優先取 i18n 的
+  // settings.group.<id> / settings.group.<id>Desc,缺 key 時退回表裡的英文字面值。
+  // 新增一個帶新 group 的 core setting 不需要動這一頁。
+  const coreGroups = groupSettingFields(coreFields, m);
 
   const sections: SettingsSection[] = [
-    ...CORE_GROUPS.flatMap(({ group, title, description }) => {
-      const fields = coreFields.filter(
-        (f) => (f.group ?? "general") === group,
-      );
-      if (fields.length === 0) return [];
-      return [{ id: `core-${group}`, title, description, fields, keyPrefix: "" }];
-    }),
+    ...coreGroups.map(({ id, title, description, fields }) => ({
+      id: `core-${id}`,
+      title,
+      description,
+      fields,
+      keyPrefix: "",
+    })),
     ...extSections.map((ext) => ({
       id: ext.id,
       // §1 #1:extension section 標題可 localize(ext.name = LocalizedString)。
