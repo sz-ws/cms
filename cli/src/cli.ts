@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-// `sz-cms add <id>` —— code-extension 安裝器。
-// 自動化:讀 registry 索引 → 抓 extensions/<id>/files/* → 寫本機 extensions/<id>/
-//        → patch extensions/registry.ts。DB row / build / deploy 仍由人類做。
+// sz-cms —— sz.ws CMS 的命令列工具。
+//
+//   add <id>   code-extension 安裝器:讀 registry 索引 → 抓 extensions/<id>/files/*
+//              → 寫本機 extensions/<id>/ → patch extensions/registry.ts。
+//   setup      把 repo 接上自己的 Cloudflare 帳號:建 D1 / R2、回填 wrangler.jsonc、
+//              套 migrations、設 SECRETS_KEY(見 setup.ts)。
 
 import { readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import * as readline from "node:readline/promises";
-import { parseArgs, ID_RE } from "./args.js";
+import { parseArgs, ID_RE, type ParsedArgs } from "./args.js";
 import {
   DEFAULT_SOURCE,
   fetchIndex,
@@ -26,33 +29,42 @@ import {
   CORE_VERSION_FILE,
 } from "./coreapi.js";
 import { patchRegistryContent, camelCaseId } from "./patch.js";
+import { EXIT } from "./exit.js";
+import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
+import { WranglerClient } from "./wrangler.js";
+import { runSetup } from "./setup.js";
+import { createUi } from "./ui.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
-// spec §結束狀態
-export const EXIT = {
-  OK: 0,
-  NOT_FOUND: 1, // <id> 找不到 / 缺 id / path traversal / 多源衝突
-  FETCH_FAILED: 2, // 網路 / 404 / size cap
-  DEST_EXISTS: 3, // extensions/<id>/ 已存在且無 --force
-  PATCH_FAILED: 4, // registry.ts patch 失敗
-  UNKNOWN: 5,
-  // spec 的結束狀態表只到 5;6 是本 CLI 新增(spec 當時沒有 coreApi 檢查這一關)。
-  // 獨立一碼的理由:「core 版本不合」在 CI 裡要能跟「抓檔失敗 / 找不到」分開處理。
-  CORE_INCOMPATIBLE: 6, // entry.coreApi 不相容本機 CORE_API_VERSION
-} as const;
+// 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
+// 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
+export { EXIT } from "./exit.js";
+
+export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
 
 const USAGE = `用法:
   sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
                   [--non-interactive] [--skip-core-check]
+  sz-cms setup    [--config <path>] [--dry-run] [--yes]
+                  [--skip-migrations] [--skip-secrets]
 
+add —— 安裝 code extension
   <id>                安裝的 extension id(^[a-z][a-z0-9-]{1,30}$)
   --source <url>      registry base URL(預設 ${DEFAULT_SOURCE})
   --token <t>         registry 存取 token(private repo;亦讀 SZWS_REGISTRY_TOKEN)
-  --dry-run           只印出將做的事,不寫磁碟 / 不改檔
   --force             覆寫已存在的 extensions/<id>/
-  --non-interactive   不互動(隱含 --force);多源 / 格式衝突仍中止
   --skip-core-check   跳過 coreApi 相容性檢查(明知故犯用)
+
+setup —— 接上你自己的 Cloudflare 帳號(建 D1/R2、回填設定檔、套 migrations、設 secret)
+  --config <path>     wrangler 設定檔路徑(預設 ./${DEFAULT_CONFIG_FILE})
+  --skip-migrations   不套用 migrations/
+  --skip-secrets      不處理 SECRETS_KEY
+
+共用
+  --dry-run           只偵測與列出將做的事,不建立資源 / 不寫檔
+  --yes, -y           略過所有確認關卡(CI 用)
+  --non-interactive   不互動(add 時隱含 --force;setup 時等同 --yes)
   --help, --version`;
 
 function log(msg = ""): void {
@@ -132,12 +144,51 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     err(USAGE);
     return EXIT.NOT_FOUND;
   }
+  if (args.command === "setup") return runSetupCommand(args, cwd);
   if (args.command !== "add") {
     err(`✗ 未知指令:${args.command ?? "(無)"}`);
     err(USAGE);
     return EXIT.NOT_FOUND;
   }
+  return runAdd(args, cwd);
+}
 
+/**
+ * `setup` 的接線:把真實的 spawn executor 包成 WranglerClient,再交給純流程邏輯。
+ * 流程本身(setup.ts)完全不知道子程序長什麼樣,所以測試注入假的就能整條跑完。
+ */
+async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
+  const { cmd, prefix } = resolveWranglerCommand(cwd);
+  const assumeYes = args.yes || args.nonInteractive;
+  const ui = createUi({
+    interactive: !assumeYes && process.stdin.isTTY === true,
+  });
+  const configPath = args.config
+    ? path.resolve(cwd, args.config)
+    : path.join(cwd, DEFAULT_CONFIG_FILE);
+
+  return runSetup({
+    cwd,
+    configPath,
+    client: new WranglerClient({
+      exec: spawnExecutor,
+      cwd,
+      cmd,
+      prefix,
+      dryRun: args.dryRun,
+      // wrangler 的 --config 只在使用者明確指定時才傳,否則沿用它自己的搜尋規則。
+      configPath: args.config ? configPath : undefined,
+    }),
+    reporter: ui.reporter,
+    prompter: ui.prompter,
+    dryRun: args.dryRun,
+    assumeYes,
+    skipMigrations: args.skipMigrations,
+    skipSecrets: args.skipSecrets,
+  });
+}
+
+async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const id = args.id;
   if (!id) {
     err("✗ 缺少 <id>。");

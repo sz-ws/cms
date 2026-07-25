@@ -1,6 +1,94 @@
-# @sz.ws/cms — `sz-cms add <id>`
+# @sz.ws/cms — `sz-cms`
 
-sz.ws CMS 的 code-extension 安裝器。把「從 registry 抓檔 → 落地 `extensions/<id>/`
+sz.ws CMS 的命令列工具,兩個指令:
+
+| 指令 | 做什麼 |
+|---|---|
+| `sz-cms setup` | 把 repo 接上你自己的 Cloudflare 帳號:建 D1 / R2、把 id 回填 `wrangler.jsonc`、套 migrations、設 `SECRETS_KEY` |
+| `sz-cms add <id>` | 安裝 code extension:從 registry 抓檔 → 落地 `extensions/<id>/` → patch `extensions/registry.ts` |
+
+兩者都可以完全非互動執行(`--yes` / `--non-interactive`),也都有 `--dry-run`。
+
+---
+
+# `sz-cms setup`
+
+取代 `DEPLOY.md` 的手工流程。在 CMS repo 根目錄執行:
+
+```bash
+pnpm exec wrangler login    # 這一步仍然要自己來(CLI 不碰你的憑證)
+npx @sz.ws/cms setup
+```
+
+| 旗標 | 說明 |
+|---|---|
+| `--config <path>` | wrangler 設定檔路徑(預設 `./wrangler.jsonc`) |
+| `--dry-run` | 只偵測與列出計畫。**偵測指令照跑**(不跑的話印出來的計畫是編的),但一個資源都不建、一個檔都不改 |
+| `--yes`, `-y` | 略過所有確認關卡(CI 用);`--non-interactive` 同義 |
+| `--skip-migrations` | 不套用 `migrations/` |
+| `--skip-secrets` | 不處理 `SECRETS_KEY`(收尾仍會提醒你補) |
+
+## 它做了什麼
+
+依 `wrangler.jsonc` 的 `d1_databases` / `r2_buckets` 逐項處理 —— 資源清單來自設定檔本身,
+不寫死在 CLI 裡,所以之後增減 binding 不用改 CLI。
+
+1. **登入檢查**(`wrangler whoami`)—— 沒登入就停在這裡,並告訴你跑什麼。
+2. **盤點**:`wrangler d1 list --json` 比對名字、`wrangler r2 bucket info` 逐個確認。
+3. **建缺的**:`wrangler d1 create` / `wrangler r2 bucket create`。
+4. **回填 id** 到 `wrangler.jsonc`(見下節)。
+5. **套 migrations**:只對**宣告了 `migrations_dir`** 的 D1 跑。`cms-tag-cache` 沒有那個欄位,
+   它的 `revalidations` 表由 `opennextjs-cloudflare deploy` 的 populate-cache 自己建
+   (schema 屬於 OpenNext,手抄一份進版控會漂移)。
+6. **`SECRETS_KEY`**:已存在就跳過,**絕不覆寫**。要新設時由 CLI 產生 32 byte 隨機值,
+   經 **stdin** 餵給 `wrangler secret put` —— 不進 argv(會被 `ps` 看到)、不留在 shell history、
+   不印在畫面上、本機不留副本。
+
+## 冪等 / 跑到一半斷掉
+
+每一步都先「看帳號上有什麼」再決定要不要動作,而不是記錄自己做過什麼。所以**直接重跑就好**:
+
+- D1 用**名字**去 `d1 list` 找,找到就沿用既有 uuid —— 不會建出第二個。
+- R2 先 `bucket info`;真的建到已存在的 bucket,`already exists` 也被當成成功。
+- `wrangler.jsonc` 的值已經正確就完全不產生編輯(檔案 mtime 都不動)。
+- migrations 本來就有 applied 紀錄,重跑是 no-op。
+- 中途失敗時,**已經拿到的 id 仍會先寫回設定檔** —— 否則使用者會以為什麼都沒成功。
+
+## 為什麼不用 `JSON.parse` 改 `wrangler.jsonc`
+
+那份設定檔幾乎每個欄位上面都壓著一段註解(為什麼 `main` 指向 `custom-worker.ts`、
+為什麼有第二個 `database_id` 佔位值……),註解就是它的文件本體。
+`JSON.parse` → 改 → `JSON.stringify` 會把註解全部吃掉並重排版面。
+
+所以 `cli/src/jsonc.ts` 是一個會記錄**字元位移**的 JSONC parser:要改某個值時只替換
+「那個值的字面量」所佔的區間,其餘 byte 一個都不動 —— 註解、縮排、尾逗號、鍵的順序全部原樣保留。
+
+副作用是安全性:編輯區間結構上只可能落在 `d1_databases[].database_id` 上,
+`main` / `triggers` / `assets` / `services` **改不到**。寫入前還會重讀一次檔案再重算位移,
+避免與其他正在改同一份設定檔的人打架。
+
+## Exit codes(setup)
+
+| code | 意義 |
+|---|---|
+| 0 | 成功(含「全部都已就緒、什麼都不用做」) |
+| 7 | 前置條件不足:未登入、讀不到 / 解析不了設定檔、`d1 list` 查不到 |
+| 8 | 某個 wrangler 操作失敗(建資源 / migrations / 寫檔) |
+| 9 | 使用者在確認關卡選擇中止(零副作用) |
+
+`d1 list` 查不到時刻意**不硬做** —— 沒有那份清單就無法判斷哪些資源已存在,
+硬建下去可能產生重複的資料庫。
+
+## 它不做的事
+
+`wrangler login`(碰憑證)、`pnpm deploy`、開 `/setup` 建第一個管理員、設 `core.siteUrl`。
+這些會列在收尾訊息裡,由人執行。
+
+---
+
+# `sz-cms add <id>`
+
+code-extension 安裝器。把「從 registry 抓檔 → 落地 `extensions/<id>/`
 → patch `extensions/registry.ts`」自動化;DB row、build、deploy 仍由人類執行
 (spec:`docs/spec-szws-cms-cli.md`)。
 
@@ -22,7 +110,7 @@ sz-cms add <id>                        # 已全域安裝時
 | `--non-interactive` | 不互動(隱含 `--force`);衝突仍中止 |
 | `--skip-core-check` | 跳過 coreApi 相容性檢查(見下節)。squash 期間、或本機自行改過 `CORE_API_VERSION` 時的逃生門;不相容仍會警告 |
 
-## Exit codes
+## Exit codes(add)
 
 | code | 意義 |
 |---|---|
@@ -64,6 +152,13 @@ registry index entry 有 `files: string[]` 時,那份清單是權威的,CLI 照�
 不靜默少抓檔。長期解法是 registry 每個 code entry 都補上 `files[]`。
 
 ## 開發
+
+CLI 刻意**零依賴**:`npx @sz.ws/cms` 免安裝、冷啟動快,`pnpm test:cli` 保持純 node 且跑在 1 秒內。
+終端 UI(`cli/src/ui.ts`)因此是手寫的,沒有引入 `@clack/prompts` 之類的 prompt 套件 ——
+`cli/` 也不是 pnpm workspace 成員,依賴得在根 `package.json` 再宣告一次才裝得到,兩邊版本會漂移。
+
+所有會動到 Cloudflare 的指令都走**可注入的 Executor**(`cli/src/exec.ts`),
+測試一律對假 executor 斷言「送出了哪些指令」,不會碰到任何真實帳號。
 
 CLI 是純 Node 程式(不進 cloudflare workers 測試池),原始碼在 `cli/src/`:
 

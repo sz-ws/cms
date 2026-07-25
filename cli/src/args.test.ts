@@ -57,6 +57,52 @@ describe("parseArgs", () => {
     expect(parseArgs(["--version"]).version).toBe(true);
     expect(parseArgs(["-v"]).version).toBe(true);
   });
+
+  it("parses `setup` 與它的旗標", () => {
+    const a = parseArgs([
+      "setup",
+      "--config",
+      "custom.jsonc",
+      "--dry-run",
+      "--yes",
+      "--skip-migrations",
+      "--skip-secrets",
+    ]);
+    expect(a.command).toBe("setup");
+    expect(a.config).toBe("custom.jsonc");
+    expect(a.dryRun).toBe(true);
+    expect(a.yes).toBe(true);
+    expect(a.skipMigrations).toBe(true);
+    expect(a.skipSecrets).toBe(true);
+  });
+
+  it("setup 旗標預設全關", () => {
+    const a = parseArgs(["setup"]);
+    expect(a.config).toBeUndefined();
+    expect(a.yes).toBe(false);
+    expect(a.skipMigrations).toBe(false);
+    expect(a.skipSecrets).toBe(false);
+  });
+
+  it("-y 是 --yes 的簡寫", () => {
+    expect(parseArgs(["setup", "-y"]).yes).toBe(true);
+  });
+
+  it("--config=value 形式", () => {
+    expect(parseArgs(["setup", "--config=a/b.jsonc"]).config).toBe("a/b.jsonc");
+  });
+
+  it("--config 缺值時報錯", () => {
+    expect(parseArgs(["setup", "--config"]).error).toContain("--config");
+  });
+
+  it("add 的旗標語意沒有被 setup 影響(既有契約不破)", () => {
+    const a = parseArgs(["add", "cron", "--force"]);
+    expect(a.command).toBe("add");
+    expect(a.id).toBe("cron");
+    expect(a.force).toBe(true);
+    expect(a.yes).toBe(false);
+  });
 });
 
 describe("ID_RE", () => {

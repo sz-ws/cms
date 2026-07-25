@@ -321,4 +321,31 @@ describe("run — help / version", () => {
     expect(code).toBe(EXIT.OK);
     expect(out()).toContain("用法");
   });
+  it("--help 同時涵蓋 add 與 setup", async () => {
+    await run(["--help"], repoDir);
+    expect(out()).toContain("sz-cms add <id>");
+    expect(out()).toContain("sz-cms setup");
+    expect(out()).toContain("--skip-migrations");
+  });
+});
+
+describe("run — 指令派送", () => {
+  it("未知指令仍是 exit 1", async () => {
+    expect(await run(["frobnicate"], repoDir)).toBe(EXIT.NOT_FOUND);
+    expect(errOut()).toContain("未知指令");
+  });
+
+  it("setup 走 setup 流程 —— 沒有 wrangler 設定檔就 exit 7", async () => {
+    // repoDir 是個沒有 wrangler.jsonc 的臨時目錄,所以會停在前置檢查,
+    // 一次 wrangler 都不會被叫到(絕不能真的去動 Cloudflare 帳號)。
+    const code = await run(["setup"], repoDir);
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(out()).toContain("讀不到 wrangler.jsonc");
+  });
+
+  it("setup --config 指到不存在的檔一樣是 exit 7", async () => {
+    const code = await run(["setup", "--config", "nope.jsonc"], repoDir);
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(out()).toContain("nope.jsonc");
+  });
 });

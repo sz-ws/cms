@@ -2,6 +2,8 @@
 //
 //   sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
 //                 [--non-interactive] [--skip-core-check]
+//   sz-cms setup [--config <path>] [--dry-run] [--yes]
+//                [--skip-migrations] [--skip-secrets]
 //   sz-cms --help | --version
 
 export const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
@@ -16,13 +18,20 @@ export interface ParsedArgs {
   nonInteractive: boolean;
   /** 跳過 coreApi 相容性檢查(squash 期間 / 本機改過 CORE_API_VERSION 的逃生門)。 */
   skipCoreCheck: boolean;
+  // ---- setup ----
+  /** 覆寫 wrangler 設定檔路徑(預設 <cwd>/wrangler.jsonc)。 */
+  config?: string;
+  /** 略過所有確認關卡。CI 用;與 --non-interactive 同義。 */
+  yes: boolean;
+  skipMigrations: boolean;
+  skipSecrets: boolean;
   help: boolean;
   version: boolean;
   /** 解析層錯誤(未知旗標 / 缺旗標值);由呼叫端決定 exit code。 */
   error?: string;
 }
 
-const FLAGS_WITH_VALUE = new Set(["--source", "--token"]);
+const FLAGS_WITH_VALUE = new Set(["--source", "--token", "--config"]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
@@ -30,6 +39,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     force: false,
     nonInteractive: false,
     skipCoreCheck: false,
+    yes: false,
+    skipMigrations: false,
+    skipSecrets: false,
     help: false,
     version: false,
   };
@@ -49,6 +61,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.nonInteractive = true;
     } else if (arg === "--skip-core-check") {
       out.skipCoreCheck = true;
+    } else if (arg === "--yes" || arg === "-y") {
+      out.yes = true;
+    } else if (arg === "--skip-migrations") {
+      out.skipMigrations = true;
+    } else if (arg === "--skip-secrets") {
+      out.skipSecrets = true;
     } else if (FLAGS_WITH_VALUE.has(arg)) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("-")) {
@@ -57,11 +75,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       if (arg === "--source") out.source = value;
       if (arg === "--token") out.token = value;
+      if (arg === "--config") out.config = value;
       i++;
     } else if (arg.startsWith("--source=")) {
       out.source = arg.slice("--source=".length);
     } else if (arg.startsWith("--token=")) {
       out.token = arg.slice("--token=".length);
+    } else if (arg.startsWith("--config=")) {
+      out.config = arg.slice("--config=".length);
     } else if (arg.startsWith("-")) {
       out.error = `未知旗標:${arg}`;
       return out;

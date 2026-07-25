@@ -1,7 +1,7 @@
 {
   "name": "@sz.ws/cms",
-  "version": "0.1.0",
-  "description": "sz.ws CMS code-extension installer — `npx @sz.ws/cms add <id>`.",
+  "version": "0.2.0",
+  "description": "sz.ws CMS 的命令列工具:`setup` 接上 Cloudflare 帳號,`add` 安裝 code extension。",
   "type": "module",
   "bin": {
     "sz-cms": "./dist/cli.js"
