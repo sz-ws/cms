@@ -43,15 +43,25 @@ caring which provider backs it.
 
 ## Quickstart
 
-Requires Node 20+, pnpm 9, and a Cloudflare account.
+Requires Node 20+ and pnpm 9. You do **not** need a Cloudflare account to run
+it locally.
 
 ```bash
-pnpm install
+pnpm install          # also writes .dev.vars and cloudflare-env.d.ts if absent
 pnpm db:migrate:local
 pnpm dev
 ```
 
 Open `/setup` to create the first admin account.
+
+`pnpm install` generates two gitignored files a fresh clone doesn't have: a
+`.dev.vars` holding a freshly generated development `SECRETS_KEY` (every
+`secret: true` setting is AES-GCM encrypted with it), and `cloudflare-env.d.ts`
+from `wrangler types`. If you'd rather do it yourself, see
+[`.dev.vars.example`](./.dev.vars.example) and run `pnpm cf-typegen`.
+
+Schema changes are hand-written SQL in `migrations/` — `db:generate` is
+deliberately disabled and will tell you why if you run it.
 
 To deploy to your own Cloudflare account, see [DEPLOY.md](./DEPLOY.md) — it
 walks through creating the D1 database and R2 buckets, setting the secrets

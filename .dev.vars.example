@@ -1,0 +1,16 @@
+# 複製成 `.dev.vars` 即可(或什麼都不做 —— `pnpm install` 會自動產生一份,
+# 內含隨機的開發用 SECRETS_KEY,見 scripts/ensure-dev-env.mjs)。
+#
+# .dev.vars 本身是 gitignored,只作用於本機 `next dev` 與 `wrangler` 的本機模式。
+
+NEXTJS_ENV=development
+
+# AES-GCM 金鑰,32-byte base64。所有 `secret: true` 的設定(registry token、
+# Resend API key、OIDC client secret、金流 hashKey…)都用它加密後存進 D1。
+#
+# 產生方式:openssl rand -base64 32
+#
+# ⚠️ production 請用 `wrangler secret put SECRETS_KEY` 另外設定,絕不沿用本機這把。
+#    加密信封裡沒有 key id,換金鑰 = 所有既存的加密設定同時變成亂碼,而且沒有
+#    漸進遷移路徑(getSetting 是 throw 不是降級)。
+SECRETS_KEY=<執行 openssl rand -base64 32 貼上結果>
