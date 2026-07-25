@@ -6,6 +6,8 @@ export interface StoredFileDTO {
   key: string;
   size: number;
   contentType: string;
+  /** Alt text from the R2 object's customMetadata; undefined = not set. */
+  alt?: string;
 }
 
 const IMAGE_CT_RE = /^image\//;
@@ -39,11 +41,13 @@ export function typeLabelOf(file: StoredFileDTO): string {
   return ct || "file";
 }
 
-/** Client-side filter over an already-loaded page: filename/key/type substring match. */
+/** Client-side filter over an already-loaded page: filename/key/type/alt substring match. */
 export function matchesQuery(file: StoredFileDTO, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (q.length === 0) return true;
   return (
-    file.key.toLowerCase().includes(q) || file.contentType.toLowerCase().includes(q)
+    file.key.toLowerCase().includes(q) ||
+    file.contentType.toLowerCase().includes(q) ||
+    (file.alt ?? "").toLowerCase().includes(q)
   );
 }

@@ -72,6 +72,32 @@ export function MediaLibrary({ initialFiles, initialCursor }: MediaLibraryProps)
 
   const clearSelection = useCallback(() => setSelected(new Set()), []);
 
+  // Alt text: POST /api/media/alt persists it into the R2 object's
+  // customMetadata (no D1 table) and echoes the updated StoredFile back, which
+  // we merge into local state so the grid + the <img alt> update without a
+  // refetch. Returns false on failure so the card's editor can stay open and
+  // show its own inline error instead of a page-level one.
+  const saveAlt = useCallback(async (key: string, alt: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch("/api/media/alt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, alt }),
+      });
+      if (!res.ok) return false;
+      const data = (await res.json()) as { ok: boolean; file: StoredFileDTO };
+      // Assign `alt` explicitly (not a spread): a cleared alt comes back absent,
+      // and a spread would leave the stale value in place.
+      setFiles((prev) =>
+        prev.map((f) => (f.key === key ? { ...f, alt: data.file?.alt } : f)),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const deleteSelected = useCallback(async () => {
     const keys = Array.from(selected);
     if (keys.length === 0) return;
@@ -126,7 +152,12 @@ export function MediaLibrary({ initialFiles, initialCursor }: MediaLibraryProps)
       {visible.length === 0 ? (
         <MediaEmpty filtered={query.trim().length > 0} onClearFilter={() => setQuery("")} />
       ) : (
-        <MediaGrid files={visible} selected={selected} onToggle={toggleSelect} />
+        <MediaGrid
+          files={visible}
+          selected={selected}
+          onToggle={toggleSelect}
+          onAltSave={saveAlt}
+        />
       )}
 
       {cursor && query.trim().length === 0 && (
