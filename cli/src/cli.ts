@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `suko add <id>` —— code-extension 安裝器。
+// `sz-cms add <id>` —— code-extension 安裝器。
 // 自動化:讀 registry 索引 → 抓 extensions/<id>/files/* → 寫本機 extensions/<id>/
 //        → patch extensions/registry.ts。DB row / build / deploy 仍由人類做。
 
@@ -34,11 +34,11 @@ export const EXIT = {
 } as const;
 
 const USAGE = `用法:
-  suko add <id> [--source <url>] [--token <t>] [--dry-run] [--force] [--non-interactive]
+  sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force] [--non-interactive]
 
   <id>                安裝的 extension id(^[a-z][a-z0-9-]{1,30}$)
   --source <url>      registry base URL(預設 ${DEFAULT_SOURCE})
-  --token <t>         registry 存取 token(private repo;亦讀 SUKO_REGISTRY_TOKEN)
+  --token <t>         registry 存取 token(private repo;亦讀 SZWS_REGISTRY_TOKEN)
   --dry-run           只印出將做的事,不寫磁碟 / 不改檔
   --force             覆寫已存在的 extensions/<id>/
   --non-interactive   不互動(隱含 --force);多源 / 格式衝突仍中止
@@ -129,13 +129,13 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   if (!(await exists(registryPath))) {
     err(
       "✗ 找不到 extensions/registry.ts。" +
-        "請確認你在 CMS repo 根目錄執行 `suko add`。",
+        "請確認你在 CMS repo 根目錄執行 `sz-cms add`。",
     );
     return EXIT.PATCH_FAILED;
   }
 
   // ---- sources ----
-  const token = args.token ?? process.env.SUKO_REGISTRY_TOKEN;
+  const token = args.token ?? process.env.SZWS_REGISTRY_TOKEN;
   const sources: SourceConfig[] = [
     { url: args.source ?? DEFAULT_SOURCE, token },
   ];
@@ -161,8 +161,8 @@ export async function run(argv: string[], cwd: string): Promise<number> {
         err(
           "  這個 registry 可能是 private repo(GitHub 對未授權的 private raw 回 404)。請提供 token:",
         );
-        err("    suko add <id> --token <你的 token>");
-        err("    或設環境變數 SUKO_REGISTRY_TOKEN=<你的 token>");
+        err("    sz-cms add <id> --token <你的 token>");
+        err("    或設環境變數 SZWS_REGISTRY_TOKEN=<你的 token>");
         err("  GitHub PAT / Gitea deploy token 皆可(送出時為 `Authorization: token <t>`)。");
         return EXIT.FETCH_FAILED;
       }
@@ -196,7 +196,7 @@ export async function run(argv: string[], cwd: string): Promise<number> {
       `「${id}」是 declarative extension(kind=${entry.kind})。`,
     );
     log(
-      "declarative 走 admin UI 的 Browse → Install 熱裝,不需要 `suko add`。",
+      "declarative 走 admin UI 的 Browse → Install 熱裝,不需要 `sz-cms add`。",
     );
     return EXIT.OK;
   }

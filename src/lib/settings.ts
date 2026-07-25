@@ -112,7 +112,7 @@ export const CORE_SETTINGS: SettingField[] = [
     group: "email",
     label: "Email from address",
     description:
-      'Sender for all outgoing mail, e.g. "Suko <noreply@yourdomain.com>". The domain must be verified with the email provider.',
+      'Sender for all outgoing mail, e.g. "Acme <noreply@yourdomain.com>". The domain must be verified with the email provider.',
     type: "text",
     default: "",
   },
@@ -218,7 +218,7 @@ export const CORE_SETTINGS: SettingField[] = [
     type: "textarea",
     // SettingField 目前無專用陣列 type;沿用 textarea + JSON 字串(值本身仍是 JSON.stringify 的陣列,
     // 與其他 setting 相同儲存慣例),讀取端 JSON.parse 後即為 string[]。
-    default: ["https://raw.githubusercontent.com/kuosuko/registry/main"],
+    default: ["https://raw.githubusercontent.com/sz-ws/registry/main"],
   },
   {
     key: "core.registryTokens",

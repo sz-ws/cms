@@ -94,7 +94,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
     return new Response("Unknown OG template", { status: 404 });
   }
 
-  const brand = og.brand ?? "Suko";
+  const brand = og.brand ?? "";
   const fallbackTitle = slug.replace(/[-_]/g, " ");
 
   const props: Record<string, unknown> = {};

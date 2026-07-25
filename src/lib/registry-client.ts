@@ -6,7 +6,7 @@ import type { ServiceRequirement } from "@/ext/service-requirements";
 // https only、1 MB response cap、8s timeout、單一來源失敗不得中斷其他來源。
 
 const DEFAULT_SOURCES = [
-  "https://raw.githubusercontent.com/kuosuko/registry/main",
+  "https://raw.githubusercontent.com/sz-ws/registry/main",
 ];
 
 const FETCH_TIMEOUT_MS = 8_000;

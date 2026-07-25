@@ -5,7 +5,7 @@ import type { HookHandler } from "../types";
 
 // core-v2 §3.3 / §5:declarative "on" 綁定 → hook handler。v1 僅 webhook。
 // 對目標 POST JSON { hook, payload, timestamp },帶 header
-//   X-Suko-Signature: HMAC-SHA256 hex over the raw body(secret 讀自 secretSetting)。
+//   X-SZWS-Signature: HMAC-SHA256 hex over the raw body(secret 讀自 secretSetting)。
 // 約束:https only、outbound only、5s AbortSignal timeout、失敗 console.error(絕不 throw)。
 
 const TIMEOUT_MS = 5000;
@@ -59,7 +59,7 @@ export function makeWebhookHandler(
             "",
           );
           if (secret) {
-            headers["X-Suko-Signature"] = await hmacHex(secret, body);
+            headers["X-SZWS-Signature"] = await hmacHex(secret, body);
           }
         }
         const controller = new AbortController();

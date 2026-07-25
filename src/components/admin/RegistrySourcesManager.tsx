@@ -335,7 +335,7 @@ export function RegistrySourcesManager({
                     setNewUrl(e.target.value);
                     setTestResult({ status: "idle" });
                   }}
-                  placeholder="https://raw.githubusercontent.com/kuosuko/registry/main"
+                  placeholder="https://raw.githubusercontent.com/sz-ws/registry/main"
                   className="font-mono text-[13px]"
                 />
               </div>

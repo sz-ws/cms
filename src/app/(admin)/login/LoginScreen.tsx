@@ -58,7 +58,7 @@ export function LoginScreen({
             rel="noopener noreferrer"
             className="pointer-events-auto text-black/30 underline decoration-black/10 underline-offset-2 transition-colors hover:text-black/55 hover:decoration-black/30"
           >
-            suko cms · @kuosuko
+            sz.ws cms · @kuosuko
           </a>
         </div>
       </div>

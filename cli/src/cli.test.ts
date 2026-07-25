@@ -11,7 +11,7 @@ const emptyRegistry =
 
 // ---- fixtures ----
 async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: string }> {
-  const dir = await mkdtemp(path.join(tmpdir(), "suko-reg-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "szws-reg-"));
   const filesDir = path.join(dir, "extensions", "demoext", "files");
   await mkdir(filesDir, { recursive: true });
   await writeFile(
@@ -46,7 +46,7 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
 }
 
 async function makeRepo(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "suko-repo-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "szws-repo-"));
   await mkdir(path.join(dir, "extensions"), { recursive: true });
   await writeFile(path.join(dir, "extensions", "registry.ts"), emptyRegistry);
   return dir;
@@ -160,7 +160,7 @@ describe("run — error paths", () => {
   });
 
   it("exit 4 when not in a CMS repo (no registry.ts)", async () => {
-    const empty = await mkdtemp(path.join(tmpdir(), "suko-empty-"));
+    const empty = await mkdtemp(path.join(tmpdir(), "szws-empty-"));
     try {
       const code = await run(["add", "demoext", "--source", regUrl], empty);
       expect(code).toBe(EXIT.PATCH_FAILED);

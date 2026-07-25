@@ -39,7 +39,7 @@ describe("hasNamedExport", () => {
 
 // ---- file:// registry fixtures ----
 async function makeRegistry(): Promise<{ dir: string; url: string }> {
-  const dir = await mkdtemp(path.join(tmpdir(), "suko-reg-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "szws-reg-"));
   const filesDir = path.join(dir, "extensions", "demoext", "files");
   await mkdir(path.join(filesDir, "worker"), { recursive: true });
   await writeFile(
@@ -59,7 +59,7 @@ beforeEach(async () => {
   const r = await makeRegistry();
   regDir = r.dir;
   regUrl = r.url;
-  workDir = await mkdtemp(path.join(tmpdir(), "suko-work-"));
+  workDir = await mkdtemp(path.join(tmpdir(), "szws-work-"));
 });
 afterEach(async () => {
   await rm(regDir, { recursive: true, force: true });

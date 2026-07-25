@@ -1,10 +1,10 @@
 {
-  "name": "@sz.ws/suko",
+  "name": "@sz.ws/cms",
   "version": "0.1.0",
-  "description": "Suko CMS code-extension installer — `npx suko add <id>`.",
+  "description": "sz.ws CMS code-extension installer — `npx @sz.ws/cms add <id>`.",
   "type": "module",
   "bin": {
-    "suko": "./dist/cli.js"
+    "sz-cms": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -17,6 +17,13 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "license": "UNLICENSED",
+  "author": "Suko Kuo (@kuosuko)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sz-ws/cms.git",
+    "directory": "cli"
+  },
+  "homepage": "https://sz.ws",
+  "license": "Apache-2.0",
   "private": true
 }

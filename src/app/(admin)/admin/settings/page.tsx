@@ -104,7 +104,7 @@ export default async function SettingsPage() {
     : [];
 
   if (registrySources.length === 0) {
-    registrySources.push({ url: "https://raw.githubusercontent.com/kuosuko/registry/main" });
+    registrySources.push({ url: "https://raw.githubusercontent.com/sz-ws/registry/main" });
   }
 
   // roadmap #1 §5:API tokens 列表(永不含 raw / hash;只給 prefix / scope / 時間)。
@@ -135,7 +135,7 @@ export default async function SettingsPage() {
       {/* About 標記:版本/作者的正統棲身處 —— 設定頁最底,安靜但找得到
           (sidebar 常駐 chrome 太吵,已搬離)。 */}
       <p className="pt-2 text-center text-[11px] tracking-[0.02em] text-black/25">
-        Suko CMS v{version} · crafted by{" "}
+        sz.ws CMS v{version} · crafted by{" "}
         <a
           href="https://okuso.uk"
           target="_blank"

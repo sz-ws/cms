@@ -9,6 +9,6 @@ export function applyEmailDomain(value: string, domain: string): string {
   if (bare) return `${bare[1]}@${domain}`;
   const trimmed = value.trim();
   if (trimmed.length === 0) return `noreply@${domain}`;
-  // 只有顯示名稱(如 "Suko")→ 補成 "Suko <noreply@domain>"。
+  // 只有顯示名稱(如 "Acme")→ 補成 "Acme <noreply@domain>"。
   return `${trimmed} <noreply@${domain}>`;
 }

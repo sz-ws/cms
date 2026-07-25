@@ -29,7 +29,7 @@ function subscribeNoop(): () => void {
 // 冷眼回報 2026-07-16:passkey 主 CTA 對「從沒註冊過 passkey」的新管理員是誤導 ——
 // 必撞一次失敗才找到密碼欄。改成「記憶式對調」:哪種方式上次登入成功,哪種就當主 CTA。
 // 只記成功,不記嘗試;OAuth 按鈕不記(次要方式,不參與主 CTA 對調)。
-const LAST_LOGIN_KEY = "suko.lastLogin";
+const LAST_LOGIN_KEY = "szws.lastLogin";
 type LastLoginMethod = "password" | "passkey";
 
 function readLastLogin(): LastLoginMethod | null {

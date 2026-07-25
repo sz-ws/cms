@@ -240,7 +240,7 @@ function entryUnmetServices(
 }
 
 // manifest id 允許連字號但 JS 識別字不行:import 名慣例 = camelCase(id)
-// (extensions/<id>/index.ts 的 named export,同 suko-add-cli-spec)。
+// (extensions/<id>/index.ts 的 named export,同 szws-cms-cli-spec)。
 function importIdent(id: string): string {
   return id.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
@@ -1033,9 +1033,9 @@ function ExtensionDetail({
       )}
 
       {/* Manual install (code kind):cards 上的灰標籤只給視覺提示,
-          真實步驟放這裡。canonical 安裝指令為 `npx suko add <id>`(cli/)。
+          真實步驟放這裡。canonical 安裝指令為 `npx @sz.ws/cms add <id>`(cli/)。
           import 識別字:manifest id 允許連字號,但 JS 識別字不行 —— 慣例為
-          camelCase(id) 的 named export(同 suko-add-cli-spec)。 */}
+          camelCase(id) 的 named export(同 szws-cms-cli-spec)。 */}
       {entry.kind === "code" && (
         <div className={`rounded-[14px] bg-white px-6 py-5 ${CARD}`}>
           <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
@@ -1075,7 +1075,7 @@ function ExtensionDetail({
               {t("registryBrowser.manualInstall.canonicalLabel")}
             </div>
             <code className="block font-mono text-[13px] text-black/85">
-              npx suko add {entry.id}
+              npx @sz.ws/cms add {entry.id}
             </code>
             <div className="mt-1 text-[11.5px] text-black/40">
               {t("registryBrowser.manualInstall.canonicalNote")}

@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_SOURCE =
-  "https://raw.githubusercontent.com/kuosuko/registry/main";
+  "https://raw.githubusercontent.com/sz-ws/registry/main";
 
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_BYTES = 1024 * 1024; // 1 MB / 檔(code extension files/ 通常 KB 級)

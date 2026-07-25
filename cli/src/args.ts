@@ -1,8 +1,8 @@
-// CLI 參數解析 —— 手寫小解析器(參數面極小,零依賴讓 `npx suko` 免安裝)。
+// CLI 參數解析 —— 手寫小解析器(參數面極小,零依賴讓 `npx @sz.ws/cms` 免安裝)。
 //
-//   suko add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
+//   sz-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
 //                 [--non-interactive]
-//   suko --help | --version
+//   sz-cms --help | --version
 
 export const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 
