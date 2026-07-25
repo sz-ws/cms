@@ -50,13 +50,32 @@ import type { BatchItem } from "drizzle-orm/batch";
 // body { id, source, promptValues? }。install 與 update 共用(upsert semantics)。
 // promptValues:對應 manifest.installPrompts 的使用者填值(見 validatePromptValues);
 // 未宣告 installPrompts 的 manifest 忽略此欄位(空物件驗證一律通過)。
+//
+// 開發模式另接受 { id, manifest } —— 直接給 manifest 物件,不經 registry。
+// 動機:正式路徑要求 manifest 出現在某個已註冊 source 的 https raw URL 上,
+// 於是「寫自己的 manifest」變成每改一次就要 push 一次,沒有本機迭代迴圈。
+// 而 manifest 正是這套系統的產品本體,那條迴圈斷掉的代價很高。
+//
+// 安全性:這條分支由 `process.env.NODE_ENV !== "production"` 守住,而該判斷
+// 在 next build 會被靜態求值並做 dead-code elimination —— **這段程式碼不會存在
+// 於正式 bundle 裡**,不是執行期檢查。這是刻意的:新增一條繞過 SSRF 護欄的
+// 安裝路徑,唯一可接受的閘門就是「它在正式環境根本不存在」。
+const DEV_INSTALL = process.env.NODE_ENV !== "production";
+
 const bodySchema = z
   .object({
     id: z.string().min(1),
-    source: z.string().min(1),
+    source: z.string().min(1).optional(),
+    // 未型別化:一律交給下游的 parseManifest 做完整 zod 驗證,與 registry
+    // 路徑走同一套驗證,不因為來源不同而放寬。
+    manifest: z.unknown().optional(),
     promptValues: z.record(z.string(), z.unknown()).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (b) => (b.source === undefined) !== (b.manifest === undefined),
+    { message: "provide exactly one of `source` or `manifest`" },
+  );
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -96,16 +115,25 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { id, source, promptValues } = parsed;
+  const inlineManifest = parsed.manifest;
+
+  if (inlineManifest !== undefined && !DEV_INSTALL) {
+    // 正式 bundle 走不到這裡(整段會被 DCE 掉),留著是為了「萬一」——
+    // 語意上等同於「這個欄位不存在」。
+    return Response.json({ error: "invalid_input" }, { status: 400 });
+  }
 
   // SSRF guard(§5):source 必須完全等於已設定的 core.registrySources 其中一個,
-  // 絕不接受 request body 內任意 URL。
-  try {
-    await assertKnownRegistrySource(source);
-  } catch (e) {
-    if (e instanceof UnknownRegistrySource) {
-      return Response.json({ error: "unknown_source" }, { status: 400 });
+  // 絕不接受 request body 內任意 URL。inline manifest 沒有遠端來源可抓,略過。
+  if (source !== undefined) {
+    try {
+      await assertKnownRegistrySource(source);
+    } catch (e) {
+      if (e instanceof UnknownRegistrySource) {
+        return Response.json({ error: "unknown_source" }, { status: 400 });
+      }
+      throw e;
     }
-    throw e;
   }
 
   // id collision with an existing code extension → refuse(declarative 永不覆寫 code)。
@@ -122,8 +150,11 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   let rawManifest: unknown;
+  if (inlineManifest !== undefined) {
+    rawManifest = inlineManifest;
+  } else {
   try {
-    rawManifest = await fetchManifest(source, id);
+    rawManifest = await fetchManifest(source as string, id);
   } catch (e) {
     return Response.json(
       {
@@ -132,6 +163,7 @@ export async function POST(req: Request): Promise<Response> {
       },
       { status: 502 },
     );
+  }
   }
 
   const result = parseManifest(rawManifest);
@@ -288,6 +320,18 @@ export async function POST(req: Request): Promise<Response> {
   // stylesheet-guard.ts;第三方 CSS 於本站同源執行,故所有逃逸向量都擋在安裝時。
   let validatedStylesheet: string | null = null;
   if (manifest.stylesheet) {
+    if (source === undefined) {
+      // inline manifest 沒有 registry 來源,style.css 無處可抓。明確拒絕,
+      // 不要靜默裝成「沒有 stylesheet」——那會讓 extension 少一塊卻無聲無息。
+      return Response.json(
+        {
+          error: "invalid_stylesheet",
+          message:
+            "manifest declares `stylesheet` but was installed inline; a registry source is required to fetch it",
+        },
+        { status: 400 },
+      );
+    }
     let rawCss: string;
     try {
       rawCss = await fetchExtensionAsset(source, id, manifest.stylesheet);
@@ -386,7 +430,7 @@ export async function POST(req: Request): Promise<Response> {
         manifest: JSON.stringify(manifest),
         version: manifest.version,
         enabled: 1,
-        source,
+        source: source ?? null,
         stylesheet: validatedStylesheet,
         installedAt: now,
         updatedAt: now,
@@ -397,7 +441,7 @@ export async function POST(req: Request): Promise<Response> {
           manifest: JSON.stringify(manifest),
           version: manifest.version,
           enabled: 1,
-          source,
+          source: source ?? null,
           stylesheet: validatedStylesheet,
           updatedAt: now,
         },
