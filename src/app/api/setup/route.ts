@@ -5,7 +5,6 @@ import { getDB } from "@/lib/cf";
 import {
   SESSION_COOKIE,
   createSession,
-  getConfiguredPasswordHashingProfile,
   hashPassword,
   sessionCookieOptions,
 } from "@/lib/auth";
@@ -36,15 +35,10 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const email = parsed.email.toLowerCase();
-  // 首次建立前必須先在實際部署端完成存活校準；絕不能默默退回較低 work factor。
-  const passwordProfile = await getConfiguredPasswordHashingProfile();
-  if (!passwordProfile) {
-    return Response.json(
-      { error: "password_work_factor_not_calibrated" },
-      { status: 409 },
-    );
-  }
-  const passwordHash = await hashPassword(parsed.password, passwordProfile);
+  // 工作因子由平台上限與鏈式輪數決定,不是可設定值,所以這裡沒有「校準完成了嗎」
+  // 的關卡。曾經有過:它要求先跑出 600k,而 Workers 永遠做不到,於是任何人都
+  // 建不出第一個管理員。見 src/lib/password-work-factor.ts。
+  const passwordHash = await hashPassword(parsed.password);
   const id = nanoid();
   const now = Date.now();
 

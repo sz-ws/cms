@@ -5,7 +5,6 @@ import {
   allowedSettingFields,
   allowedSettingKeys,
   isValidRegistrySources,
-  PASSWORD_HASHING_SETTING,
   setSettings,
   splitRegistrySourceTokens,
 } from "@/lib/settings";
@@ -46,12 +45,6 @@ export async function PUT(req: Request): Promise<Response> {
     if (!allowed.has(key)) {
       return Response.json({ error: "invalid_key" }, { status: 400 });
     }
-  }
-
-  // 這筆設定不是一般表單欄位：iterations 與 dummy hash 必須由同一支校準流程
-  // 一起生成，否則不存在帳號的登入成本會和真帳號脫鉤。
-  if (PASSWORD_HASHING_SETTING in parsed.entries) {
-    return Response.json({ error: "managed_setting" }, { status: 403 });
   }
 
   // core.registrySources 特別處理:token 拆到 core.registryTokens(secret 管線

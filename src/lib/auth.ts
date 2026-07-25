@@ -3,9 +3,10 @@ import { cookies } from "next/headers";
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "./db";
 import { sessions, users } from "./schema";
-import { getSetting, PASSWORD_HASHING_SETTING } from "./settings";
+import { getEnv } from "./cf";
 import {
-  PBKDF2_MIN_ITERATIONS,
+  PBKDF2_ITERATIONS,
+  PBKDF2_ROUNDS,
   isSupportedPasswordHashingIterations,
 } from "./password-work-factor";
 
@@ -73,8 +74,11 @@ const toHex = (u8: Uint8Array): string =>
 // 界線常數住在 `./password-work-factor`（零 import），因為 client 端的校準精靈
 // 也要用；從這裡 re-export 只是為了讓既有 server 端 import 不必改。
 export {
+  PBKDF2_EFFECTIVE_ITERATIONS,
+  PBKDF2_ITERATIONS,
   PBKDF2_MAX_ITERATIONS,
   PBKDF2_MIN_ITERATIONS,
+  PBKDF2_ROUNDS,
   isSupportedPasswordHashingIterations,
 } from "./password-work-factor";
 
@@ -83,25 +87,35 @@ export interface PasswordHashingProfile {
   dummyHash: string;
 }
 
-const LEGACY_DUMMY_PASSWORD_HASH =
-  "pbkdf2$600000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-const DUMMY_PASSWORD = "__cms_password_hashing_dummy_never_a_user_password__";
 
-// 升版前的資料庫沒有 profile；舊寫入端固定是 600k，因此這個 fallback 是相容
-// 行為，不是新的降級策略。管理員登入後必須從設定頁重新校準。
-const LEGACY_PASSWORD_HASHING_PROFILE: PasswordHashingProfile = {
-  iterations: PBKDF2_MIN_ITERATIONS,
-  dummyHash: LEGACY_DUMMY_PASSWORD_HASH,
-};
+/**
+ * 帳號不存在時拿來燒掉等量時間的假 hash。內容永遠比不中,重點是**驗證它的成本
+ * 要跟驗證真 hash 一樣**,否則回應時間就是帳號列舉的 oracle。
+ *
+ * 所以 pepper 旗標必須跟著目前的 env 走:verifyPassword 對旗標不符的 hash 會
+ * 提早回 false(而且不做 derivation),那條捷徑一旦被夾在這裡,快慢差異就把
+ * 「這個 email 不存在」洩出去了。
+ */
+function defaultDummyPasswordHash(): string {
+  const peppered = passwordPepper() !== null ? 1 : 0;
+  return `${CHAINED_PREFIX}$${PBKDF2_ROUNDS}$${PBKDF2_ITERATIONS}$${peppered}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`;
+}
 
 
-/** 從自描述 hash 取工作因子；格式錯誤回 null，供 profile 完整性檢查共用。 */
+/**
+ * 從自描述 hash 取「每輪」的工作因子;格式錯誤回 null,供 profile 完整性檢查共用。
+ * 同時認得鏈式格式(pbkdf2c$rounds$iterations$…)與舊的單輪格式。
+ */
 export function passwordHashIterations(stored: string): number | null {
   const parts = stored.split("$");
-  if (parts.length !== 4 || parts[0] !== "pbkdf2" || !/^\d+$/.test(parts[1])) {
-    return null;
-  }
-  const iterations = Number(parts[1]);
+  const raw =
+    parts[0] === CHAINED_PREFIX && parts.length === 6
+      ? parts[2]
+      : parts.length === 4 && parts[0] === "pbkdf2"
+        ? parts[1]
+        : null;
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const iterations = Number(raw);
   return Number.isSafeInteger(iterations) && iterations > 0 ? iterations : null;
 }
 
@@ -121,47 +135,95 @@ export function isPasswordHashingProfile(
   );
 }
 
+/**
+ * Pepper —— Worker secret `AUTH_PEPPER`,**不存在資料庫裡**。
+ *
+ * 它的價值只在一種情境:DB 被單獨拿走(dump 外洩、備份掉出去、D1 被讀)。
+ * 沒有 pepper,離線爆破連開始都不可能 —— 攻擊者得先拿到 Worker 的 secret。
+ * 這正好補上「每輪只能 100k」這件事最痛的地方:離線攻擊。
+ *
+ * 用 HMAC 而不是字串相接:相接會讓 pepper 與密碼的邊界可被構造(密碼裡塞
+ * 分隔字元就能製造碰撞),HMAC 沒有這個問題,且輸出定長。
+ *
+ * 沒設定時回 null —— 本機開發不該被迫先設 secret。有沒有用 pepper 會記在
+ * hash 字串裡,所以驗證端不需要猜。
+ */
+function passwordPepper(): string | null {
+  let env: { AUTH_PEPPER?: string };
+  try {
+    env = getEnv() as unknown as { AUTH_PEPPER?: string };
+  } catch {
+    // 沒有 Cloudflare request context(單元測試、build 期預算)。這裡不能 throw:
+    // 雜湊與驗證都會走到這條路,一 throw 就變成 500。回 null 代表「沒有 pepper」,
+    // 而 hash 裡的旗標會忠實記下這件事 —— 用 pepper 產生的 hash 不會被誤判為通過。
+    return null;
+  }
+  const raw = env.AUTH_PEPPER;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+async function applyPepper(password: string): Promise<Uint8Array<ArrayBuffer>> {
+  const pepper = passwordPepper();
+  if (!pepper) return enc(password);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc(pepper),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, enc(password));
+  const out = bytes(mac.byteLength);
+  out.set(new Uint8Array(mac));
+  return out;
+}
+
+/**
+ * 鏈式 PBKDF2:跑 `rounds` 輪,每輪 `iterations` 次,前一輪的輸出當下一輪的
+ * 輸入密碼。每輪都在 Workers 的 100,000 上限之內,而攻擊者要重現一次猜測仍要
+ * 付出全部輪數 —— 有效工作因子 = rounds × iterations。
+ *
+ * 每輪用同一個 salt:輪與輪之間的區隔已經由「上一輪的輸出」提供,再造不同 salt
+ * 只是增加需要儲存的狀態,不增加安全性。
+ */
+async function deriveChained(
+  material: Uint8Array<ArrayBuffer>,
+  salt: Uint8Array<ArrayBuffer>,
+  iterations: number,
+  rounds: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  let block = material;
+  for (let i = 0; i < rounds; i++) {
+    const key = await crypto.subtle.importKey("raw", block, "PBKDF2", false, [
+      "deriveBits",
+    ]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+      key,
+      256,
+    );
+    const next = bytes(bits.byteLength);
+    next.set(new Uint8Array(bits));
+    block = next;
+  }
+  return block;
+}
+
+// 儲存格式(自描述,所以換方案不需要 migration):
+//   pbkdf2c$<rounds>$<iterationsPerRound>$<pepper 0|1>$<salt b64>$<key b64>
+// 舊的單輪格式 `pbkdf2$<iterations>$<salt>$<key>` 仍可驗證(見 verifyPassword)。
+const CHAINED_PREFIX = "pbkdf2c";
+
 async function derivePasswordHash(
   password: string,
   iterations: number,
+  rounds: number = PBKDF2_ROUNDS,
 ): Promise<string> {
   const salt = randomBytes(16);
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
-    key,
-    256,
-  );
-  return `pbkdf2$${iterations}$${b64(salt)}$${b64(new Uint8Array(bits))}`;
-}
-
-/** 校準 probe 與登入 dummy 共用的唯一 profile 產生器。 */
-export async function createPasswordHashingProfile(
-  iterations: number,
-): Promise<PasswordHashingProfile> {
-  if (!isSupportedPasswordHashingIterations(iterations)) {
-    throw new RangeError("unsupported PBKDF2 iteration count");
-  }
-  return {
-    iterations,
-    dummyHash: await derivePasswordHash(DUMMY_PASSWORD, iterations),
-  };
-}
-
-/** 校準階段只測試一次同成本 derivation；成功前不改動任何已生效的 profile。 */
-export async function probePasswordHashingWorkFactor(
-  iterations: number,
-): Promise<void> {
-  if (!isSupportedPasswordHashingIterations(iterations)) {
-    throw new RangeError("unsupported PBKDF2 iteration count");
-  }
-  await derivePasswordHash(DUMMY_PASSWORD, iterations);
+  const peppered = passwordPepper() !== null;
+  const material = await applyPepper(password);
+  const out = await deriveChained(material, salt, iterations, rounds);
+  return `${CHAINED_PREFIX}$${rounds}$${iterations}$${peppered ? 1 : 0}$${b64(salt)}$${b64(out)}`;
 }
 
 /**
@@ -178,21 +240,15 @@ export async function hashPassword(
   );
 }
 
-/** 只讀取真正校準完成的 profile；setup 用它拒絕未校準的首次寫入。 */
-export async function getConfiguredPasswordHashingProfile(): Promise<PasswordHashingProfile | null> {
-  const value = await getSetting<unknown>(PASSWORD_HASHING_SETTING, null);
-  return isPasswordHashingProfile(value) ? value : null;
-}
-
 /**
- * 已有站升版前仍可用舊 600k dummy 登入；一旦校準成功，登入 dummy 與所有新
- * password hash 都只能從同一個 profile 取值。
+ * 工作因子由平台上限與 PBKDF2_ROUNDS 決定,不是可設定值,所以這裡沒有讀設定,
+ * 也沒有「已校準 / 未校準」兩種狀態。
  */
 export async function getActivePasswordHashingProfile(): Promise<PasswordHashingProfile> {
-  return (
-    (await getConfiguredPasswordHashingProfile()) ??
-    LEGACY_PASSWORD_HASHING_PROFILE
-  );
+  return {
+    iterations: PBKDF2_ITERATIONS,
+    dummyHash: defaultDummyPasswordHash(),
+  };
 }
 
 /** 逐 byte XOR 累積的 constant-time 比對(04 §1)。 */
@@ -208,10 +264,32 @@ export async function verifyPassword(
   stored: string,
 ): Promise<boolean> {
   const parts = stored.split("$");
-  // 格式:pbkdf2$<iterations>$<salt b64>$<hash b64>
+
+  // 新格式:pbkdf2c$<rounds>$<iterations>$<pepper>$<salt>$<key>
+  if (parts[0] === CHAINED_PREFIX) {
+    if (parts.length !== 6) return false;
+    const rounds = Number(parts[1]);
+    const iterations = Number(parts[2]);
+    if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 32) return false;
+    if (!isSupportedPasswordHashingIterations(iterations)) return false;
+    // hash 記錄了當初有沒有用 pepper。現在的 env 與當初不一致就直接失敗 ——
+    // 若忽略這點,拔掉 pepper 會讓所有密碼安靜地驗不過而查不出原因。
+    const wasPeppered = parts[3] === "1";
+    if (wasPeppered !== (passwordPepper() !== null)) return false;
+    const salt = unb64(parts[4]);
+    const expected = unb64(parts[5]);
+    const material = await applyPepper(password);
+    const out = await deriveChained(material, salt, iterations, rounds);
+    return constantTimeEqual(out, expected);
+  }
+
+  // 舊格式(單輪、無 pepper):pbkdf2$<iterations>$<salt>$<key>
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
   const iterations = passwordHashIterations(stored);
-  if (iterations === null) return false;
+  // 上限必須擋在 deriveBits 之前。存著超過平台上限的 hash(例如早期在 Node 上
+  // 跑 next dev 產生的 600k / 2.4M)時,直接送進 deriveBits 會拋
+  // NotSupportedError 讓整個登入請求 500,而不是回「密碼不對」。
+  if (!isSupportedPasswordHashingIterations(iterations)) return false;
   const salt = unb64(parts[2]);
   const expected = unb64(parts[3]);
   const key = await crypto.subtle.importKey(

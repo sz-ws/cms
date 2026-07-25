@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
-import { getConfiguredPasswordHashingProfile } from "@/lib/auth";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import { SetupForm } from "./SetupForm";
@@ -16,7 +15,6 @@ export default async function SetupPage() {
 
   const locale = await getLocale();
   const messages = getMessages(locale);
-  const passwordProfile = await getConfiguredPasswordHashingProfile();
 
   return (
     <I18nProvider locale={locale} messages={messages}>
@@ -25,7 +23,7 @@ export default async function SetupPage() {
           <h1 className="mb-6 text-center text-2xl font-semibold text-foreground">
             {messages["setup.title"]}
           </h1>
-          <SetupForm initialPasswordIterations={passwordProfile?.iterations ?? null} />
+          <SetupForm />
         </div>
       </div>
     </I18nProvider>
