@@ -589,4 +589,22 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "revisions.restoreFailed": "還原失敗。",
   "revisions.slugKept": "舊的網址代稱已被佔用,因此沿用目前的代稱。",
   "revisions.isCurrent": "這就是目前線上的版本。",
+
+  // content export (ContentExportCard.tsx)
+  "export.title": "匯出內容",
+  "export.desc": "把這個網站的資料下載成一個檔案。是你的東西,想帶去哪裡都可以。",
+  "export.includedTitle": "檔案裡有",
+  "export.included.entries": "每一筆內容(含草稿)與它的所有欄位",
+  "export.included.media": "所有上傳檔案的清單,每個都附連結",
+  "export.included.settings": "網站標題、說明、網址與語言",
+  "export.excludedTitle": "檔案裡永遠沒有",
+  "export.excluded.secrets": "API 金鑰等機密 —— 連遮罩後的佔位符都不會出現",
+  "export.excluded.users": "帳號、電子郵件與密碼",
+  "export.excluded.revisions": "版本紀錄(每筆內容的目前版本仍會匯出)",
+  "export.excluded.mediaBytes": "上傳檔案本身 —— 請用清單裡的連結下載",
+  "export.scope": "要匯出什麼",
+  "export.scopeAll": "全部",
+  "export.download": "下載",
+  "export.formatNote":
+    "每行一筆 JSON(.ndjson)—— 試算表工具、程式與其他平台都讀得懂。最後一行是 \"end\",沒有它就代表下載中斷了。內容很多的網站會分次下載,檔案裡會告訴你怎麼接續。",
 };

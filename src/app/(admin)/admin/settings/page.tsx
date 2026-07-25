@@ -12,6 +12,10 @@ import {
 } from "@/components/admin/SettingsWorkspace";
 import { RegistrySourcesManager, type RegistrySource } from "@/components/admin/RegistrySourcesManager";
 import { ApiTokensManager } from "@/components/admin/ApiTokensManager";
+import {
+  ContentExportCard,
+  type ExportContentType,
+} from "@/components/admin/ContentExportCard";
 import { listApiTokens } from "@/lib/api-token";
 // named import 讓打包只留 version 欄位(同 AdminSidebar 曾用的手法)。
 import { version } from "../../../../../package.json";
@@ -109,6 +113,17 @@ export default async function SettingsPage() {
   // roadmap #1 §5:API tokens 列表(永不含 raw / hash;只給 prefix / scope / 時間)。
   const apiTokens = await listApiTokens();
 
+  // 匯出的「只匯出某個 type」選單。來源是已啟用 extension 宣告的 content type;
+  // 匯出端點本身不受此清單限制(它讀的是 contents 表,連停用 extension 留下的
+  // 資料都拿得到)—— 這裡只是給人選的方便入口。
+  const exportTypes: ExportContentType[] = rt.enabled.flatMap((ext) =>
+    (ext.contentTypes ?? []).map((ct) => ({
+      type: `${ext.id}.${ct.name}`,
+      label:
+        resolveLocalizedString(ct.label, locale) ?? `${ext.id}.${ct.name}`,
+    })),
+  );
+
   return (
     <div className="relative flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1.5">
@@ -127,6 +142,7 @@ export default async function SettingsPage() {
           <>
             <RegistrySourcesManager initialSources={registrySources} />
             <ApiTokensManager initialTokens={apiTokens} />
+            <ContentExportCard types={exportTypes} />
           </>
         }
       />

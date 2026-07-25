@@ -600,4 +600,23 @@ export const en = {
   "revisions.restoreFailed": "Restore failed.",
   "revisions.slugKept": "The old slug was already taken, so the current one was kept.",
   "revisions.isCurrent": "This is the version currently live.",
+
+  // content export (ContentExportCard.tsx)
+  "export.title": "Export your content",
+  "export.desc":
+    "Download everything this site holds as one file. Yours to keep, yours to move elsewhere.",
+  "export.includedTitle": "In the file",
+  "export.included.entries": "Every entry, drafts included, with all its fields",
+  "export.included.media": "A list of every uploaded file, with a link to each one",
+  "export.included.settings": "Site title, description, address and language",
+  "export.excludedTitle": "Never in the file",
+  "export.excluded.secrets": "API keys and other secrets — not even masked",
+  "export.excluded.users": "Accounts, email addresses and passwords",
+  "export.excluded.revisions": "Version history (the current version of each entry is included)",
+  "export.excluded.mediaBytes": "The uploaded files themselves — download them from the links",
+  "export.scope": "What to export",
+  "export.scopeAll": "Everything",
+  "export.download": "Download",
+  "export.formatNote":
+    "One line of JSON per record (.ndjson) — readable by spreadsheet tools, scripts and other platforms. The last line says \"end\"; if it is missing, the download was cut short. Very large sites arrive in parts and the file tells you how to fetch the rest.",
 } as const;
