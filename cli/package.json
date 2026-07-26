@@ -4,8 +4,8 @@
   "description": "CLI for sz.ws CMS — `setup` wires the repo to your Cloudflare account, `add` installs code extensions.",
   "type": "module",
   "bin": {
-    "cms": "./dist/cli.js",
-    "sz-ws-cms": "./dist/cli.js"
+    "cms": "dist/cli.js",
+    "sz-ws-cms": "dist/cli.js"
   },
   "files": [
     "dist",
