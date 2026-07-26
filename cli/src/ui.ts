@@ -4,7 +4,7 @@
 //   1. cli/ 不是 pnpm workspace 成員(repo 沒有 pnpm-workspace.yaml,也沒有 cli/node_modules)。
 //      在 cli/package.json 宣告依賴不會被安裝,實際要能 import 得在**根** package.json
 //      再宣告一次 —— 兩邊各一份、版本各自漂移,是個維護陷阱。
-//   2. args.ts 開頭就寫著這支 CLI 刻意零依賴,讓 `npx @sz-ws/cms` 免安裝、冷啟動快。
+//   2. args.ts 開頭就寫著這支 CLI 刻意零依賴,讓 `npx @sz.ws/cms` 免安裝、冷啟動快。
 //   3. `pnpm test:cli` 是純 node 且跑在半秒內,那個速度是資產。零依賴 = 零額外解析成本。
 //
 // 介面(Reporter / Prompter)是抽象的,所以 setup 流程完全不知道自己在對誰講話:

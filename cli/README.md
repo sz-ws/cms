@@ -1,4 +1,4 @@
-# @sz-ws/cms — `cms` / `sz-ws-cms`
+# @sz.ws/cms — `cms` / `sz-ws-cms`
 
 CLI for the sz.ws CMS. Two commands:
 
@@ -17,7 +17,7 @@ Replaces manual steps in `DEPLOY.md`. Run in the CMS repo root:
 
 ```bash
 pnpm exec wrangler login    # Manual step — CLI does not touch credentials
-npx @sz-ws/cms setup
+npx @sz.ws/cms setup
 ```
 
 | Flag | Meaning |
@@ -83,7 +83,7 @@ Code-extension installer. Automates "fetch files from registry → write to `ext
 Run in the CMS repo root:
 
 ```bash
-npx @sz-ws/cms add <id>                # Direct run, no install needed
+npx @sz.ws/cms add <id>                # Direct run, no install needed
 cms add <id>                            # If globally installed
 ```
 
@@ -148,7 +148,7 @@ turning it on. `events` is present for `setup` (structured step records);
 
 ## Develop
 
-CLI is intentionally **zero-dependency**: `npx @sz-ws/cms` installs on-demand with fast cold startup, `pnpm test:cli` stays pure Node and completes in under 1 second. Terminal UI (`cli/src/ui.ts`) is hand-written, no prompt package like `@clack/prompts` — `cli/` is not a pnpm workspace member, so dependencies must be declared again in root `package.json` to install, and versions drift. 
+CLI is intentionally **zero-dependency**: `npx @sz.ws/cms` installs on-demand with fast cold startup, `pnpm test:cli` stays pure Node and completes in under 1 second. Terminal UI (`cli/src/ui.ts`) is hand-written, no prompt package like `@clack/prompts` — `cli/` is not a pnpm workspace member, so dependencies must be declared again in root `package.json` to install, and versions drift. 
 
 All Cloudflare-touching commands use an **injected Executor** (`cli/src/exec.ts`); tests assert against a fake executor "what commands were sent", never touching real accounts.
 
@@ -160,6 +160,6 @@ pnpm cli:typecheck
 pnpm test:cli         # vitest run --config vitest.cli.config.ts (node environment)
 ```
 
-Published as `@sz-ws/cms`, with two bins: `cms` and the long alias `sz-ws-cms`.
+Published as `@sz.ws/cms`, with two bins: `cms` and the long alias `sz-ws-cms`.
 
 Manual steps after CLI completes (CLI prints these): apply migrations (`pnpm db:migrate:local` / `:remote`), INSERT extensions row in admin's Installed tab, `pnpm build && wrangler deploy`.

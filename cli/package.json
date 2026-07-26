@@ -1,5 +1,5 @@
 {
-  "name": "@sz-ws/cms",
+  "name": "@sz.ws/cms",
   "version": "0.2.0",
   "description": "CLI for sz.ws CMS — `setup` wires the repo to your Cloudflare account, `add` installs code extensions.",
   "type": "module",

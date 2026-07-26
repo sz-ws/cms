@@ -297,7 +297,7 @@ conventions; keep files <400 lines each.
   (`contents` rows with type prefix `<id>.`) — ask via a `purgeContent` flag.
 - Admin UI: `/admin/extensions` gains a **Browse** tab listing registry
   entries; declarative entries get Install/Update buttons; code entries show
-  the CLI command to copy (`npx @sz-ws/cms add <id>`), disabled install.
+  the CLI command to copy (`npx @sz.ws/cms add <id>`), disabled install.
 
 ### 3.5 Collection / list layout (declarable)
 

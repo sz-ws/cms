@@ -120,7 +120,7 @@ Install**. Nothing else is needed.
 Code extensions have to be compiled in, so they go through a CLI:
 
 ```bash
-npx @sz-ws/cms add <id>
+npx @sz.ws/cms add <id>
 ```
 
 > **Not published yet.** The CLI lives in [`cli/`](./cli) and works, but the

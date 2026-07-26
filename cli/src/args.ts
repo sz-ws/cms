@@ -1,4 +1,4 @@
-// CLI 參數解析 —— 手寫小解析器(參數面極小,零依賴讓 `npx @sz-ws/cms` 免安裝)。
+// CLI 參數解析 —— 手寫小解析器(參數面極小,零依賴讓 `npx @sz.ws/cms` 免安裝)。
 //
 //   sz-ws-cms add <id> [--source <url>] [--token <t>] [--dry-run] [--force]
 //                 [--non-interactive] [--skip-core-check]

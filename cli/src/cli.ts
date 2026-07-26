@@ -43,7 +43,7 @@ export { EXIT } from "./exit.js";
 
 export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
 
-const USAGE = `@sz-ws/cms v${VERSION} — sz.ws CMS command-line tool
+const USAGE = `@sz.ws/cms v${VERSION} — sz.ws CMS command-line tool
 
 Usage:
   cms setup [options]           connect this repo to your Cloudflare account
@@ -76,10 +76,10 @@ shared options:
                                 human output goes to stderr as normal
 
 examples:
-  npx @sz-ws/cms setup --site-slug acme-taipei
-  npx @sz-ws/cms setup --dry-run
-  npx @sz-ws/cms add blog
-  npx @sz-ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
+  npx @sz.ws/cms setup --site-slug acme-taipei
+  npx @sz.ws/cms setup --dry-run
+  npx @sz.ws/cms add blog
+  npx @sz.ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
 
 environment variables:
   SZWS_REGISTRY_TOKEN           registry access token (same as --token)
@@ -171,7 +171,7 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   // --version / --help 是「被問就答」,答案本身就是結果 —— 這兩個照樣走 stdout,
   // 否則 `cms version` 沒辦法被 shell 取值,那是這類指令唯一的用途。
   if (args.version) {
-    process.stdout.write(`@sz-ws/cms v${VERSION}\n`);
+    process.stdout.write(`@sz.ws/cms v${VERSION}\n`);
     return EXIT.OK;
   }
   if (args.help) {

@@ -339,7 +339,7 @@ describe("run — help / version", () => {
   it("--version 走 stdout 且帶套件名", async () => {
     const code = await run(["--version"], repoDir);
     expect(code).toBe(EXIT.OK);
-    expect(stdoutOut()).toContain("@sz-ws/cms v");
+    expect(stdoutOut()).toContain("@sz.ws/cms v");
     expect(out()).toBe("");
   });
 });
