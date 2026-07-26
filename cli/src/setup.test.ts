@@ -223,7 +223,7 @@ describe("runSetup — site slug 租戶邊界", () => {
     const { code, calls, out } = await setup({ allowSharedDefaultNames: false });
     expect(code).toBe(EXIT.SETUP_PREREQ);
     expect(calls).toHaveLength(0);
-    expect(out).toContain("必須提供 site slug");
+    expect(out).toContain("site slug required");
     expect(out).toContain("--allow-shared-default-names");
   });
 
@@ -236,7 +236,7 @@ describe("runSetup — site slug 租戶邊界", () => {
     expect(code).toBe(EXIT.SETUP_PREREQ);
     expect(calls).toHaveLength(0);
     expect(prompter.asked[0]).toContain("site slug");
-    expect(out).toContain("小寫英數或連字號");
+    expect(out).toContain("lowercase alphanumeric/hyphen");
   });
 
   it("設定過的 site 重跑不再問 slug、不改名也不重建", async () => {
@@ -269,7 +269,7 @@ describe("runSetup — site slug 租戶邊界", () => {
   it("預設 cms 名稱在未明示單站模式時拒絕", async () => {
     const { code, out } = await setup({ allowSharedDefaultNames: false });
     expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out).toContain("預設共用名稱");
+    expect(out).toContain("shared default names");
   });
 
   it("新的 clone 撞到同 slug 的 D1 時拒絕認領,且不改設定檔", async () => {
@@ -280,7 +280,7 @@ describe("runSetup — site slug 租戶邊界", () => {
       account: { d1: [{ name: "cms-client-a-db", uuid: DB_UUID }] },
     });
     expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out).toContain("不會認領");
+    expect(out).toContain("will not claim existing D1");
     expect(await readFile(configPath, "utf8")).toBe(before);
     expect(argsOf(calls).some((s) => s.startsWith("d1 create"))).toBe(false);
   });
@@ -401,7 +401,7 @@ describe("runSetup — 冪等 / 可重跑", () => {
       account: { secrets: [SECRETS_KEY, AUTH_PEPPER, SETUP_TOKEN] },
     });
     expect(argsOf(calls).some((s) => s.startsWith("secret put"))).toBe(false);
-    expect(out).toContain("不覆寫");
+    expect(out).toContain("Not overwriting");
   });
 
   // 兩把是分開判斷的:已經有 SECRETS_KEY 的既有站台,重跑 setup 應該只補
@@ -430,9 +430,9 @@ describe("runSetup — dry-run", () => {
     expect(sent.some((s) => s.startsWith("secret put"))).toBe(false);
     expect(sent.some((s) => s.startsWith("d1 migrations"))).toBe(false);
 
-    expect(out).toContain("新建 D1:2 個");
-    expect(out).toContain("新建 R2:2 個");
-    expect(out).toContain("什麼都沒有改動");
+    expect(out).toContain("create D1: 2");
+    expect(out).toContain("create R2: 2");
+    expect(out).toContain("nothing changed");
   });
 });
 
@@ -447,7 +447,7 @@ describe("runSetup — 前置條件與中止", () => {
   it("讀不到 D1 清單 → exit 7,不硬做(會建出重複資料庫)", async () => {
     const { code, calls, out } = await setup({ account: { d1: "error" } });
     expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out).toContain("重複");
+    expect(out).toContain("duplicate databases");
     expect(argsOf(calls).some((s) => s.startsWith("d1 create"))).toBe(false);
   });
 
@@ -455,14 +455,14 @@ describe("runSetup — 前置條件與中止", () => {
     await rm(configPath);
     const { code, out } = await setup();
     expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out).toContain("CMS repo 根目錄");
+    expect(out).toContain("CMS repo root");
   });
 
   it("設定檔格式壞掉 → exit 7,訊息帶位移", async () => {
     await writeFile(configPath, `{ "d1_databases": [ `, "utf8");
     const { code, out } = await setup();
     expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out).toContain("解析失敗");
+    expect(out).toContain("failed to parse");
   });
 
   it("使用者在確認關卡說不 → exit 9,零副作用", async () => {
@@ -481,7 +481,7 @@ describe("runSetup — 前置條件與中止", () => {
       account: { secrets: [] },
     });
     expect(code).toBe(EXIT.OK);
-    expect(prompter.asked[0]).toMatch(/要建立 2 個 D1、2 個 R2/);
+    expect(prompter.asked[0]).toMatch(/create 2 D1 databases, 2 R2 buckets/);
   });
 });
 
@@ -506,7 +506,7 @@ describe("runSetup — 失敗時仍給得出下一步", () => {
       },
     });
     expect(code).toBe(EXIT.SETUP_FAILED);
-    expect(out).toContain("重跑");
+    expect(out).toContain("rerun");
   });
 
   it("設定檔唯讀寫不進去 → exit 8,並把 id 印出來讓人手動填", async () => {
@@ -514,7 +514,7 @@ describe("runSetup — 失敗時仍給得出下一步", () => {
     try {
       const { code, out } = await setup();
       expect(code).toBe(EXIT.SETUP_FAILED);
-      expect(out).toContain("請手動填入以下 database_id");
+      expect(out).toContain("manually fill in these database_ids");
       expect(out).toContain(DB_UUID);
     } finally {
       await chmod(configPath, 0o644);
@@ -525,7 +525,7 @@ describe("runSetup — 失敗時仍給得出下一步", () => {
     const { code, calls, out } = await setup({ account: { secrets: "error" } });
     expect(code).toBe(EXIT.OK);
     expect(argsOf(calls).some((s) => s.startsWith("secret put"))).toBe(false);
-    expect(out).toContain("Worker 可能還沒 deploy 過");
+    expect(out).toContain("worker may not be deployed yet");
     expect(out).toContain(`wrangler secret put ${SECRETS_KEY}`);
   });
 });

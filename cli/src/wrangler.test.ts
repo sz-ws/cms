@@ -159,7 +159,7 @@ describe("WranglerClient — 寫入操作", () => {
     expect(res.outcome.status).toBe("failed");
     expect(
       res.outcome.status === "failed" ? res.outcome.detail : "",
-    ).toMatch(/已建立 D1「cms-db」/);
+    ).toMatch(/created D1 "cms-db"/);
   });
 
   it("createR2 把 already exists 視為成功(冪等)", async () => {

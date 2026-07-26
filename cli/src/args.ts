@@ -82,7 +82,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (FLAGS_WITH_VALUE.has(arg)) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("-")) {
-        out.error = `旗標 ${arg} 需要一個值`;
+        out.error = `flag ${arg} requires a value`;
         return out;
       }
       if (arg === "--source") out.source = value;
@@ -99,7 +99,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (arg.startsWith("--site-slug=")) {
       out.siteSlug = arg.slice("--site-slug=".length);
     } else if (arg.startsWith("-")) {
-      out.error = `未知旗標:${arg}`;
+      out.error = `unknown flag: ${arg}`;
       return out;
     } else {
       positionals.push(arg);

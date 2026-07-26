@@ -43,47 +43,49 @@ export { EXIT } from "./exit.js";
 
 export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
 
-const USAGE = `@sz-ws/cms v${VERSION} —— sz.ws CMS 的命令列工具
+const USAGE = `@sz-ws/cms v${VERSION} — sz.ws CMS command-line tool
 
-用法:
-  cms setup [選項]              把 repo 接上你自己的 Cloudflare 帳號
-  cms add <id> [選項]           安裝 code extension
-  cms help                      顯示此說明
-  cms version                   顯示版本
+Usage:
+  cms setup [options]           connect this repo to your Cloudflare account
+  cms add <id> [options]        install a code extension
+  cms help                      show this help
+  cms version                   show version
 
-setup 的選項:
-  --config <path>               wrangler 設定檔路徑(預設 ./${DEFAULT_CONFIG_FILE})
-  --site-slug <slug>            新站唯一識別(3–48 小寫英數/連字號)
-                                Worker、D1、R2 的名稱都由它衍生
-  --allow-shared-default-names  明確允許 cms 等預設共用名稱
-                                僅限單站/開發帳號;多客戶帳號會造成跨站存取
-  --skip-migrations             不套用 migrations/
-  --skip-secrets                不處理 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN
+setup options:
+  --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
+  --site-slug <slug>            new site id (3–48 lowercase alnum/hyphen);
+                                Worker, D1 and R2 names derive from it
+  --allow-shared-default-names  allow the shipped shared names (cms, cms-db, …);
+                                single-site or dev accounts only — on a
+                                multi-tenant account this causes cross-site access
+  --skip-migrations             skip applying migrations/
+  --skip-secrets                skip setting SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN
 
-add 的選項:
-  --source <url>                registry base URL(預設 ${DEFAULT_SOURCE})
-  --token <t>                   registry 存取 token(private repo)
-  --force                       覆寫已存在的 extensions/<id>/
-  --skip-core-check             跳過 coreApi 相容性檢查(明知故犯用)
+add options:
+  --source <url>                registry base URL
+                                (default ${DEFAULT_SOURCE})
+  --token <t>                   registry access token (private repos)
+  --force                       overwrite existing extensions/<id>/
+  --skip-core-check             skip coreApi compatibility check (use with caution)
 
-共用選項:
-  --dry-run                     只列出將做的事,不建立資源、不寫檔
-  --yes, -y                     略過所有確認關卡(CI 用)
-  --non-interactive             不互動(add 時隱含 --force;setup 時等同 --yes)
-  --json                        stdout 只放一份機器可讀 JSON
-                                人看的輸出照常走 stderr
+shared options:
+  --dry-run                     list what would be done; create nothing, write nothing
+  --yes, -y                     skip all confirmations (CI use)
+  --non-interactive             no prompts (add: implies --force; setup: same as --yes)
+  --json                        stdout gets a single machine-readable JSON
+                                human output goes to stderr as normal
 
-範例:
+examples:
   npx @sz-ws/cms setup --site-slug acme-taipei
   npx @sz-ws/cms setup --dry-run
   npx @sz-ws/cms add blog
   npx @sz-ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
 
-環境變數:
-  SZWS_REGISTRY_TOKEN           registry 存取 token(等同 --token)
-  CLOUDFLARE_ACCOUNT_ID         帳號不只一個時,指定要用哪一個
+environment variables:
+  SZWS_REGISTRY_TOKEN           registry access token (same as --token)
+  CLOUDFLARE_ACCOUNT_ID         specify which account to use when logged in to multiple
 
-文件:https://sz.ws`;
+docs: https://sz.ws`;
 
 // 輸出分流(對齊 @sz-ws/drop):**人看的東西一律 stderr**,stdout 只留給結果。
 // 原本 log() 寫 stdout,於是 `cms add blog | something` 拿到的是進度訊息而不是
@@ -142,13 +144,13 @@ function nextSteps(
   heuristic: boolean,
 ): void {
   log();
-  log(`✓ 複製了 ${fileCount} 個檔到 extensions/${id}/`);
+  log(`✓ copied ${fileCount} files to extensions/${id}/`);
   log(`✓ ${patchNote}`);
   if (heuristic) {
     // 「✓ 複製了 N 個檔」單看很像「抓全了」。啟發式模式沒有這個保證,再講一次。
     log(
-      `⚠ 這 ${fileCount} 個檔是猜檔名猜出來的(registry 沒給 files[]),` +
-        "可能不完整 —— 子目錄一定沒抓到。",
+      `⚠ these ${fileCount} files were guessed by name (registry didn't provide files[]),` +
+        " may be incomplete — subdirectories definitely not included.",
     );
   }
   log();
@@ -156,11 +158,11 @@ function nextSteps(
   // deploy 過、新的 bundle 上線之後才啟用得了。而 code extension 的 migrations 是
   // enableExtension() 在 worker 內用單一 D1 batch 跑的(src/ext/manager.ts),
   // 不是 `wrangler d1 migrations apply` —— 那支只管 core 自己的 migrations/。
-  log("接下來(CLI 不代跑):");
-  log("  1. pnpm build && pnpm run deploy       # Enable 讀編譯期 registry,必須先上線");
+  log("next steps (not automated by this CLI):");
+  log("  1. pnpm build && pnpm run deploy       # Enable reads compile-time registry, must deploy first");
   log("  2. admin → Extensions → Installed → Enable");
-  log("     (此 extension 自帶的 migrations 會在這一步以單一 D1 batch 原子執行)");
-  log("  3. 需要外部伴侶的(cron 之類):另見該 extension 的部署說明。");
+  log("     (extension-specific migrations run here as a single D1 batch)");
+  log("  3. for external integrations (like cron): see that extension's deployment guide.");
 }
 
 export async function run(argv: string[], cwd: string): Promise<number> {
@@ -205,7 +207,7 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
   }
   if (args.command === "setup") return runSetupCommand(args, cwd);
   if (args.command !== "add") {
-    err(`✗ 未知指令:${args.command ?? "(無)"}`);
+    err(`✗ unknown command: ${args.command ?? "(none)"}`);
     err(USAGE);
     return EXIT.NOT_FOUND;
   }
@@ -254,14 +256,14 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
 async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const id = args.id;
   if (!id) {
-    err("✗ 缺少 <id>。");
+    err("✗ missing <id>");
     err(USAGE);
     return EXIT.NOT_FOUND;
   }
   if (!ID_RE.test(id)) {
     err(
-      `✗ 無效的 extension id:「${id}」。` +
-        "必須符合 ^[a-z][a-z0-9-]{1,30}$(不得含 /、.. 等路徑字元)。",
+      `✗ invalid extension id: "${id}"` +
+        " must match ^[a-z][a-z0-9-]{1,30}$ (no /, .., or other path characters).",
     );
     return EXIT.NOT_FOUND;
   }
@@ -270,8 +272,8 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const registryPath = path.join(cwd, "extensions", "registry.ts");
   if (!(await exists(registryPath))) {
     err(
-      "✗ 找不到 extensions/registry.ts。" +
-        "請確認你在 CMS repo 根目錄執行 `sz-ws-cms add`。",
+      "✗ could not find extensions/registry.ts" +
+        " — make sure you are running `sz-ws-cms add` from the CMS repo root.",
     );
     return EXIT.PATCH_FAILED;
   }
@@ -298,25 +300,25 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
         errors.find((e) => e.status === 401 || e.status === 403) ?? tokenless404;
       if (auth) {
         err(
-          `✗ registry 回應 ${auth.status}${auth.status === 404 ? "" : "(未授權)"}:${auth.source}`,
+          `✗ registry responded with ${auth.status}${auth.status === 404 ? "" : " (unauthorized)"}: ${auth.source}`,
         );
         err(
-          "  這個 registry 可能是 private repo(GitHub 對未授權的 private raw 回 404)。請提供 token:",
+          "  this registry may be a private repo (GitHub returns 404 for unauthorized private raw). provide a token:",
         );
-        err("    sz-ws-cms add <id> --token <你的 token>");
-        err("    或設環境變數 SZWS_REGISTRY_TOKEN=<你的 token>");
-        err("  GitHub PAT / Gitea deploy token 皆可(送出時為 `Authorization: token <t>`)。");
+        err("    sz-ws-cms add <id> --token <your-token>");
+        err("    or set env var SZWS_REGISTRY_TOKEN=<your-token>");
+        err("  GitHub PAT or Gitea deploy token both work (sent as `Authorization: token <t>`).");
         return EXIT.FETCH_FAILED;
       }
       for (const e of errors) {
-        err(`✗ 讀取 registry 失敗(${e.source}):${e.error}`);
+        err(`✗ failed to read registry (${e.source}): ${e.error}`);
       }
       return EXIT.FETCH_FAILED;
     }
-    err(`✗ registry 索引裡找不到 id「${id}」。`);
+    err(`✗ id "${id}" not found in registry index.`);
     if (entries.length > 0) {
       const ids = [...new Set(entries.map((e) => e.id))].sort();
-      err(`  可用的 id:${ids.join(", ")}`);
+      err(`  available ids: ${ids.join(", ")}`);
     }
     return EXIT.NOT_FOUND;
   }
@@ -324,7 +326,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   // 同 id 出現在多個不同 source → 讓使用者用 --source 挑。
   const distinctSources = [...new Set(matches.map((m) => m.source))];
   if (distinctSources.length > 1) {
-    err(`✗ id「${id}」在多個 source 都存在,請用 --source 指定其一:`);
+    err(`✗ id "${id}" exists in multiple sources, use --source to pick one:`);
     for (const s of distinctSources) err(`    ${s}`);
     return EXIT.NOT_FOUND;
   }
@@ -335,10 +337,10 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   // declarative → 走 admin UI,不是這支 CLI 的範疇。
   if (entry.kind !== "code") {
     log(
-      `「${id}」是 declarative extension(kind=${entry.kind})。`,
+      `"${id}" is a declarative extension (kind=${entry.kind}).`,
     );
     log(
-      "declarative 走 admin UI 的 Browse → Install 熱裝,不需要 `sz-ws-cms add`。",
+      "declarative extensions are hot-installed via admin UI (Browse → Install), `sz-ws-cms add` not needed.",
     );
     return EXIT.OK;
   }
@@ -352,34 +354,34 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     // 讀不到本機版號(版號檔搬家 / 形狀改了)→ 不擋。這是 CLI 讀不到資訊,不是使用者的錯;
     // 真不相容的話 Enable 那步仍有 core 把關。
     warn(
-      `⚠ 讀不到本機 core 版號(${CORE_VERSION_FILE} 的 CORE_API_VERSION),` +
-        "略過 coreApi 相容性檢查。",
+      `⚠ could not read local core version (CORE_API_VERSION in ${CORE_VERSION_FILE}),` +
+        " skipping coreApi compatibility check.",
     );
-    warn(`  「${id}」宣告需要 core API「${entry.coreApi}」,請自行確認。`);
+    warn(`  "${id}" requires core API "${entry.coreApi}", please verify manually.`);
   } else if (verdict.status === "incompatible") {
     if (args.skipCoreCheck) {
       warn(
-        `⚠ coreApi 不相容(需要「${entry.coreApi}」,本機 core ${verdict.core}),` +
-          "因 --skip-core-check 繼續安裝。",
+        `⚠ coreApi incompatible (requires "${entry.coreApi}", local core is ${verdict.core}),` +
+          " continuing due to --skip-core-check.",
       );
-      warn("  裝完之後 admin 按 Enable 仍可能被 core 擋下(CoreApiIncompatible)。");
+      warn("  enable may still be blocked by core (CoreApiIncompatible) in admin.");
     } else {
       err(
-        `✗ 「${id}」需要 core API「${entry.coreApi}」,本機 core 是 ${verdict.core}` +
-          `(${CORE_VERSION_FILE})。`,
+        `✗ "${id}" requires core API "${entry.coreApi}", local core is ${verdict.core}` +
+          ` (${CORE_VERSION_FILE}).`,
       );
       if (verdict.unsupportedRange) {
         err(
-          "  這個 coreApi range 的形式 core 也解析不了(只支援 1.2.3 / ^1.2.3 / ~1.2.3 / >=1.2.3),",
+          "  this coreApi range format is not supported by core either (only 1.2.3 / ^1.2.3 / ~1.2.3 / >=1.2.3),",
         );
-        err("  而 core 對解析不了的 range 一律視為不相容。請 extension 作者修正 manifest。");
+        err("  and core treats unsupported ranges as incompatible. please have the extension author fix the manifest.");
       }
-      err("  現在擋下來,是因為裝下去、rebuild、deploy 之後,admin 按 Enable 時");
-      err("  enableExtension() 一樣會丟 CoreApiIncompatible —— 不如現在就失敗。");
-      err("  可以:");
-      err("    1. 把本機 CMS core 升到滿足此 range 的版本");
-      err("    2. 改裝這個 extension 支援目前 core 的版本");
-      err("    3. 你確定自己在做什麼(squash 期間 / 本機改過版號):加 --skip-core-check");
+      err("  blocking now because after install, rebuild, and deploy, enable would fail anyway");
+      err("  with CoreApiIncompatible from enableExtension() — fail fast instead.");
+      err("  you can:");
+      err("    1. upgrade local CMS core to satisfy this range");
+      err("    2. downgrade this extension to support current core version");
+      err("    3. if you know what you're doing (squash period / local version change): add --skip-core-check");
       return EXIT.CORE_INCOMPATIBLE;
     }
   }
@@ -393,15 +395,15 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   if (destExists && !force && !args.dryRun) {
     const interactive = process.stdin.isTTY && !args.nonInteractive;
     if (interactive) {
-      const ok = await confirm(`extensions/${id}/ 已存在,要覆寫嗎?`);
+      const ok = await confirm(`extensions/${id}/ already exists, overwrite?`);
       if (!ok) {
-        err("✗ 已中止(未覆寫)。");
+        err("✗ cancelled (not overwritten).");
         return EXIT.DEST_EXISTS;
       }
       force = true;
     } else {
       err(
-        `✗ extensions/${id}/ 已存在。加 --force 覆寫,或先手動移除。`,
+        `✗ extensions/${id}/ already exists. add --force to overwrite or remove manually.`,
       );
       return EXIT.DEST_EXISTS;
     }
@@ -412,7 +414,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   try {
     resolved = await resolveFiles(source, entry, token);
   } catch (e) {
-    err(`✗ 無法決定要抓哪些檔:${e instanceof Error ? e.message : String(e)}`);
+    err(`✗ could not determine which files to fetch: ${e instanceof Error ? e.message : String(e)}`);
     return EXIT.FETCH_FAILED;
   }
 
@@ -423,19 +425,19 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const ident = camelCaseId(id);
 
   if (args.dryRun) {
-    log(`[dry-run] 將安裝 code extension「${id}」(${entry.name} v${entry.version})`);
-    log(`[dry-run] 來源:${source}`);
+    log(`[dry-run] will install code extension "${id}" (${entry.name} v${entry.version})`);
+    log(`[dry-run] source: ${source}`);
     if (verdict.status === "ok") {
       log(
-        `[dry-run] coreApi 相容:需要 ${entry.coreApi},本機 core ${verdict.core}`,
+        `[dry-run] coreApi compatible: requires ${entry.coreApi}, local core is ${verdict.core}`,
       );
     }
     if (destExists) {
-      log(`[dry-run] extensions/${id}/ 已存在 —— 實跑需 --force 覆寫。`);
+      log(`[dry-run] extensions/${id}/ already exists — --force needed to overwrite.`);
     }
     log(
-      `[dry-run] 將寫入 ${resolved.files.length} 個檔${
-        resolved.heuristic ? "(啟發式猜檔名)" : ""
+      `[dry-run] will write ${resolved.files.length} files${
+        resolved.heuristic ? " (guessed filenames)" : ""
       }:`,
     );
     for (const f of resolved.files) log(`             extensions/${id}/${f}`);
@@ -443,15 +445,15 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     const original = await readFile(registryPath, "utf8");
     const patch = patchRegistryContent(original, id);
     if (!patch.ok) {
-      log(`[dry-run] registry.ts patch 會失敗(${patch.reason}),需手動插入:`);
+      log(`[dry-run] registry.ts patch would fail (${patch.reason}), manual insertion needed:`);
       log(`             ${patch.importLine}`);
-      log(`             registry 陣列加入:${patch.ident}`);
+      log(`             add to registry array: ${patch.ident}`);
     } else if (patch.alreadyUpToDate) {
-      log("[dry-run] registry.ts 已含此 extension(idempotent,不會改動)。");
+      log("[dry-run] registry.ts already contains this extension (idempotent, no changes).");
     } else {
-      log("[dry-run] 會 patch extensions/registry.ts:");
+      log("[dry-run] will patch extensions/registry.ts:");
       if (patch.importAdded) log(`             + import { ${ident} } from "./${id}";`);
-      if (patch.arrayAdded) log(`             + registry 陣列加入 ${ident}`);
+      if (patch.arrayAdded) log(`             + add ${ident} to registry array`);
     }
     return EXIT.OK;
   }
@@ -472,10 +474,10 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     });
   } catch (e) {
     err(
-      `✗ 抓檔失敗:${e instanceof Error ? e.message : String(e)}`,
+      `✗ failed to fetch files: ${e instanceof Error ? e.message : String(e)}`,
     );
     err(
-      "  已寫入的檔保留(部分安裝)。請檢查 registry 此 extension 是否完整。",
+      "  partially written files remain (partial install). check if this extension is complete in the registry.",
     );
     return EXIT.FETCH_FAILED;
   }
@@ -484,10 +486,10 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const indexFile = written.find((f) => f.rel === "index.ts");
   if (!indexFile || !hasNamedExport(indexFile.content, id)) {
     err(
-      `✗ extensions/${id}/index.ts 缺少名為「${ident}」的 named export,無法接線。`,
+      `✗ extensions/${id}/index.ts missing named export "${ident}", cannot wire up.`,
     );
     err(
-      `  registry.ts 需要 \`import { ${ident} } from "./${id}"\`;請確認此 extension 的 index.ts。`,
+      `  registry.ts needs \`import { ${ident} } from "./${id}"\`; verify this extension's index.ts.`,
     );
     return EXIT.PATCH_FAILED;
   }
@@ -496,22 +498,22 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const original = await readFile(registryPath, "utf8");
   const patch = patchRegistryContent(original, id);
   if (!patch.ok) {
-    err("✗ 無法自動 patch extensions/registry.ts(格式辨識不出來)。");
-    err("  請手動插入以下兩處:");
+    err("✗ could not automatically patch extensions/registry.ts (format not recognized).");
+    err("  manual insertion needed in two places:");
     err(`    ${patch.importLine}`);
-    err(`    在 registry 陣列末端加入:${patch.ident}`);
+    err(`    add to end of registry array: ${patch.ident}`);
     return EXIT.PATCH_FAILED;
   }
 
   let patchNote: string;
   if (patch.alreadyUpToDate) {
-    patchNote = "extensions/registry.ts 已是最新(idempotent,未改動)";
+    patchNote = "extensions/registry.ts up to date (idempotent, no changes)";
   } else {
     await writeFile(registryPath, patch.content, "utf8");
     const parts: string[] = [];
-    if (patch.importAdded) parts.push("加了 import");
-    if (patch.arrayAdded) parts.push("加進 registry 陣列");
-    patchNote = `Patch 了 extensions/registry.ts(${parts.join(" + ")})`;
+    if (patch.importAdded) parts.push("added import");
+    if (patch.arrayAdded) parts.push("added to registry array");
+    patchNote = `patched extensions/registry.ts (${parts.join(" + ")})`;
   }
 
   nextSteps(id, written.length, patchNote, resolved.heuristic);
@@ -529,7 +531,7 @@ if (invokedDirectly) {
       process.exitCode = code;
     })
     .catch((e) => {
-      err(`✗ 未預期錯誤:${e instanceof Error ? e.message : String(e)}`);
+      err(`✗ unexpected error: ${e instanceof Error ? e.message : String(e)}`);
       process.exitCode = EXIT.UNKNOWN;
     });
 }

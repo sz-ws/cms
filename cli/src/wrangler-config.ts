@@ -66,15 +66,15 @@ function readD1(node: JsoncNode): D1Entry[] {
   const member = getMember(node, "d1_databases");
   if (!member) return [];
   if (member.value.kind !== "array") {
-    throw new ConfigShapeError("wrangler.jsonc 的 d1_databases 不是陣列");
+    throw new ConfigShapeError("wrangler.jsonc d1_databases is not an array");
   }
   return member.value.items.map((item, i) => {
     if (item.kind !== "object") {
-      throw new ConfigShapeError(`d1_databases[${i}] 不是物件`);
+      throw new ConfigShapeError(`d1_databases[${i}] is not an object`);
     }
     const databaseName = getStringMember(item, "database_name");
     if (!databaseName) {
-      throw new ConfigShapeError(`d1_databases[${i}] 缺少 database_name`);
+      throw new ConfigShapeError(`d1_databases[${i}] missing database_name`);
     }
     const idMember = getMember(item, "database_id");
     const nameMember = getMember(item, "database_name");
@@ -96,15 +96,15 @@ function readR2(node: JsoncNode): R2Entry[] {
   const member = getMember(node, "r2_buckets");
   if (!member) return [];
   if (member.value.kind !== "array") {
-    throw new ConfigShapeError("wrangler.jsonc 的 r2_buckets 不是陣列");
+    throw new ConfigShapeError("wrangler.jsonc r2_buckets is not an array");
   }
   return member.value.items.map((item, i) => {
     if (item.kind !== "object") {
-      throw new ConfigShapeError(`r2_buckets[${i}] 不是物件`);
+      throw new ConfigShapeError(`r2_buckets[${i}] is not an object`);
     }
     const bucketName = getStringMember(item, "bucket_name");
     if (!bucketName) {
-      throw new ConfigShapeError(`r2_buckets[${i}] 缺少 bucket_name`);
+      throw new ConfigShapeError(`r2_buckets[${i}] missing bucket_name`);
     }
     return {
       binding: getStringMember(item, "binding") ?? `r2_buckets[${i}]`,
@@ -145,7 +145,7 @@ function readSiteSlug(node: JsoncNode): { slug: string | undefined; span: Span |
 export function readWranglerConfig(text: string): WranglerConfig {
   const root = parseJsonc(text);
   if (root.kind !== "object") {
-    throw new ConfigShapeError("wrangler.jsonc 的根節點不是物件");
+    throw new ConfigShapeError("wrangler.jsonc root is not an object");
   }
   const workerNameMember = getMember(root, "name");
   const selfReference = readSelfReference(root);
@@ -181,11 +181,11 @@ export function writeSiteResources(text: string, target: SiteResources): ConfigW
   const config = readWranglerConfig(text);
   if (!config.workerNameSpan || !config.selfReferenceServiceSpan || !config.siteSlugSpan) {
     throw new ConfigShapeError(
-      "wrangler.jsonc 缺少 name、WORKER_SELF_REFERENCE.service 或 vars.CMS_SITE_SLUG",
+      "wrangler.jsonc missing name, WORKER_SELF_REFERENCE.service, or vars.CMS_SITE_SLUG",
     );
   }
   if (config.d1.length !== target.d1Names.length || config.r2.length !== target.r2Names.length) {
-    throw new ConfigShapeError("wrangler.jsonc 的 D1/R2 數量不是 CMS 預期的兩組,拒絕改名");
+    throw new ConfigShapeError("wrangler.jsonc D1/R2 count not two of each as expected, refusing to rename");
   }
 
   const edits: JsoncEdit[] = [];
@@ -256,7 +256,7 @@ export function writeD1Ids(
       });
     } else {
       throw new ConfigShapeError(
-        `無法定位 ${entry.databaseName} 的 database_id 欄位,請手動填入 ${target}`,
+        `could not locate database_id field for ${entry.databaseName}, manually enter ${target}`,
       );
     }
     changed.push(entry.databaseName);

@@ -72,14 +72,14 @@ async function followRedirects(
     const location = res.headers.get("location");
     await res.body?.cancel();
     res = null;
-    if (!location) throw new RegistryFetchError("redirect 缺 location header");
+    if (!location) throw new RegistryFetchError("redirect is missing a location header");
     const next = new URL(location, current);
     if (next.protocol !== "https:" || next.host !== originHost) {
-      throw new RegistryFetchError(`拒絕跨站 redirect:${next.host}`);
+      throw new RegistryFetchError(`refusing cross-site redirect: ${next.host}`);
     }
     current = next.toString();
   }
-  if (!res) throw new RegistryFetchError("redirect 次數過多");
+  if (!res) throw new RegistryFetchError("too many redirects");
   if (!res.ok) throw new RegistryFetchError(`HTTP ${res.status}`, res.status);
   return res;
 }
@@ -87,11 +87,11 @@ async function followRedirects(
 async function readBounded(res: Response): Promise<string> {
   const contentLength = res.headers.get("content-length");
   if (contentLength && Number(contentLength) > MAX_BYTES) {
-    throw new RegistryFetchError("回應過大(超過 1 MB 上限)");
+    throw new RegistryFetchError("response too large (exceeds 1 MB limit)");
   }
   if (!res.body) {
     const text = await res.text();
-    if (text.length > MAX_BYTES) throw new RegistryFetchError("回應過大");
+    if (text.length > MAX_BYTES) throw new RegistryFetchError("response too large");
     return text;
   }
   const reader = res.body.getReader();
@@ -104,7 +104,7 @@ async function readBounded(res: Response): Promise<string> {
       total += value.byteLength;
       if (total > MAX_BYTES) {
         await reader.cancel();
-        throw new RegistryFetchError("回應過大(超過 1 MB 上限)");
+        throw new RegistryFetchError("response too large (exceeds 1 MB limit)");
       }
       chunks.push(value);
     }
@@ -127,7 +127,7 @@ async function fetchHttpOnce(url: string, token?: string): Promise<string> {
   } catch (e) {
     if (e instanceof RegistryFetchError) throw e;
     if (e instanceof Error && e.name === "AbortError") {
-      throw new RegistryFetchError("請求逾時");
+      throw new RegistryFetchError("request timeout");
     }
     throw new RegistryFetchError(
       e instanceof Error ? e.message : "network error",
@@ -143,26 +143,26 @@ export async function fetchText(url: string, token?: string): Promise<string> {
   try {
     u = new URL(url);
   } catch {
-    throw new RegistryFetchError(`無效 URL:${url}`);
+    throw new RegistryFetchError(`invalid URL: ${url}`);
   }
 
   if (u.protocol === "file:") {
     try {
       const buf = await readFile(fileURLToPath(u));
-      if (buf.byteLength > MAX_BYTES) throw new RegistryFetchError("回應過大");
+      if (buf.byteLength > MAX_BYTES) throw new RegistryFetchError("response too large");
       return buf.toString("utf8");
     } catch (e) {
       if (e instanceof RegistryFetchError) throw e;
       const code = (e as NodeJS.ErrnoException).code;
       if (code === "ENOENT") throw new RegistryFetchError("not found", 404);
       throw new RegistryFetchError(
-        e instanceof Error ? e.message : "讀檔失敗",
+        e instanceof Error ? e.message : "failed to read file",
       );
     }
   }
 
   if (u.protocol !== "http:" && u.protocol !== "https:") {
-    throw new RegistryFetchError(`不支援的 source protocol:${u.protocol}`);
+    throw new RegistryFetchError(`unsupported source protocol: ${u.protocol}`);
   }
 
   try {
@@ -243,7 +243,7 @@ export async function fetchIndex(sources: SourceConfig[]): Promise<IndexResult> 
       if (text === null) {
         errors.push({
           source: url,
-          error: lastError?.message ?? "抓取 registry.json 失敗",
+          error: lastError?.message ?? "failed to fetch registry.json",
           status: lastError?.status,
         });
         return;
@@ -252,7 +252,7 @@ export async function fetchIndex(sources: SourceConfig[]): Promise<IndexResult> 
       try {
         json = JSON.parse(text);
       } catch {
-        errors.push({ source: url, error: "registry.json 不是合法 JSON" });
+        errors.push({ source: url, error: "registry.json is not valid JSON" });
         return;
       }
       entries.push(...parseIndex(json, url));

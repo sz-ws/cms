@@ -99,7 +99,7 @@ export class WranglerClient {
     try {
       const parsed = JSON.parse(r.stdout) as unknown;
       if (!Array.isArray(parsed)) {
-        return { dbs: null, detail: "wrangler 回傳的不是 JSON 陣列。" };
+        return { dbs: null, detail: "wrangler returned non-array JSON." };
       }
       const out: D1Database[] = [];
       for (const raw of parsed as { name?: unknown; uuid?: unknown }[]) {
@@ -109,7 +109,7 @@ export class WranglerClient {
       }
       return { dbs: out, detail: null };
     } catch {
-      return { dbs: null, detail: "wrangler 的輸出不是合法 JSON。" };
+      return { dbs: null, detail: "wrangler output is not valid JSON." };
     }
   }
 
@@ -120,12 +120,12 @@ export class WranglerClient {
   static accountAmbiguityHint(detail: string | null): string[] | null {
     if (!detail || !/More than one account/i.test(detail)) return null;
     return [
-      "你的 wrangler 登入了多個 Cloudflare 帳號,非互動模式無法自行選定。",
-      "指定其中一個之後再重跑:",
+      "your wrangler is logged in to multiple Cloudflare accounts, non-interactive mode cannot auto-select.",
+      "specify one and rerun:",
       "",
       "  CLOUDFLARE_ACCOUNT_ID=<account_id> pnpm exec sz-ws-cms setup ...",
       "",
-      "或把 account_id 寫進 wrangler.jsonc。可用帳號:",
+      "or write account_id to wrangler.jsonc. available accounts:",
       "",
       "  pnpm exec wrangler whoami",
     ];
@@ -149,8 +149,8 @@ export class WranglerClient {
           status: "failed",
           // 這裡最危險:資源已經建起來了,但我們讀不到 id。絕不能靜默略過。
           detail:
-            `已建立 D1「${name}」,但從 wrangler 的輸出裡讀不到 database_id。` +
-            `請執行 \`wrangler d1 list\` 取得 id 並手動填進 wrangler.jsonc。`,
+            `created D1 "${name}" but could not read database_id from wrangler output.` +
+            ` run \`wrangler d1 list\` to get the id and manually enter it in wrangler.jsonc.`,
         },
         uuid: null,
       };

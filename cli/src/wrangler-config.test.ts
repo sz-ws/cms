@@ -56,9 +56,9 @@ describe("readWranglerConfig", () => {
   it("形狀不對時給得出人看得懂的錯誤", () => {
     expect(() => readWranglerConfig(`{ "d1_databases": {} }`)).toThrow(ConfigShapeError);
     expect(() => readWranglerConfig(`{ "d1_databases": [{ "binding": "DB" }] }`)).toThrow(
-      /缺少 database_name/,
+      /missing database_name/,
     );
-    expect(() => readWranglerConfig(`[]`)).toThrow(/根節點不是物件/);
+    expect(() => readWranglerConfig(`[]`)).toThrow(/root is not an object/);
   });
 });
 

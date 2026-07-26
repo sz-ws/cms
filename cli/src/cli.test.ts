@@ -178,7 +178,7 @@ describe("run — dest exists (exit 3) and --force idempotent", () => {
     // idempotent:registry.ts 不再變動,且無重複 import。
     expect(regAfterForce).toBe(regAfterFirst);
     expect(regAfterForce.match(/import \{ demoext \}/g)?.length).toBe(1);
-    expect(out()).toContain("已是最新");
+    expect(out()).toContain("up to date");
   });
 });
 
@@ -191,7 +191,7 @@ describe("run — error paths", () => {
   it("exit 1 on invalid id (traversal)", async () => {
     const code = await run(["add", "../etc", "--source", regUrl], repoDir);
     expect(code).toBe(EXIT.NOT_FOUND);
-    expect(errOut()).toMatch(/無效/);
+    expect(errOut()).toMatch(/invalid extension id/);
   });
 
   it("exit 4 when not in a CMS repo (no registry.ts)", async () => {
@@ -234,9 +234,9 @@ describe("run — heuristic file resolution (no files[] in index)", () => {
     try {
       const code = await run(["add", "demoext", "--source", url], repoDir);
       expect(code).toBe(EXIT.OK);
-      expect(errOut()).toContain("啟發式");
-      expect(errOut()).toContain("不會進子目錄");
-      expect(out()).toContain("可能不完整");
+      expect(errOut()).toContain("heuristic name guessing");
+      expect(errOut()).toContain("does not recurse into subdirectories");
+      expect(out()).toContain("may be incomplete");
       const idx = await readFile(
         path.join(repoDir, "extensions", "demoext", "index.ts"),
         "utf8",
@@ -300,7 +300,7 @@ describe("run — coreApi 相容性", () => {
       repoDir,
     );
     expect(code).toBe(EXIT.OK);
-    expect(out()).toContain("coreApi 相容");
+    expect(out()).toContain("coreApi compatible");
   });
 
   it("讀不到本機 core 版號 → 只警告,不擋", async () => {
@@ -325,7 +325,7 @@ describe("run — help / version", () => {
   it("--help prints usage", async () => {
     const code = await run(["--help"], repoDir);
     expect(code).toBe(EXIT.OK);
-    expect(stdoutOut()).toContain("用法");
+    expect(stdoutOut()).toContain("Usage:");
     expect(out()).toBe("");
   });
   it("--help 同時涵蓋 add 與 setup", async () => {
@@ -377,7 +377,7 @@ describe("run — --json", () => {
 describe("run — 指令派送", () => {
   it("未知指令仍是 exit 1", async () => {
     expect(await run(["frobnicate"], repoDir)).toBe(EXIT.NOT_FOUND);
-    expect(errOut()).toContain("未知指令");
+    expect(errOut()).toContain("unknown command");
   });
 
   it("setup 走 setup 流程 —— 沒有 wrangler 設定檔就 exit 7", async () => {
@@ -385,7 +385,7 @@ describe("run — 指令派送", () => {
     // 一次 wrangler 都不會被叫到(絕不能真的去動 Cloudflare 帳號)。
     const code = await run(["setup"], repoDir);
     expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out()).toContain("讀不到 wrangler.jsonc");
+    expect(out()).toContain("wrangler.jsonc");
   });
 
   it("setup --config 指到不存在的檔一樣是 exit 7", async () => {

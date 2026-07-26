@@ -57,7 +57,7 @@ export async function resolveFiles(
   if (entry.files && entry.files.length > 0) {
     const unsafe = entry.files.find((f) => !isSafeRelPath(f));
     if (unsafe) {
-      throw new Error(`registry 提供了不安全的檔案路徑:${unsafe}`);
+      throw new Error(`registry provided unsafe file path: ${unsafe}`);
     }
     return { files: entry.files, heuristic: false };
   }
@@ -84,14 +84,14 @@ export async function resolveFiles(
   );
   if (probeErrors.length > 0) {
     throw new Error(
-      `探測 extensions/${entry.id}/files/ 時有非 404 的抓取失敗,無法確定檔案清單` +
-        `(繼續下去會靜默少抓檔):${probeErrors.join(";")}`,
+      `probing extensions/${entry.id}/files/ found fetch failures other than 404, cannot determine file list` +
+        ` (continuing would silently fetch incomplete files): ${probeErrors.join(";")}`,
     );
   }
   if (!found.includes("index.ts")) {
     throw new Error(
-      `啟發式找不到 extensions/${entry.id}/files/index.ts —— ` +
-        `如果你懷疑此 extension 有更多檔,請手動檢查 registry repo`,
+      `heuristic probe could not find extensions/${entry.id}/files/index.ts —` +
+        ` if you suspect this extension has more files, manually check the registry repo`,
     );
   }
   return { files: found.sort(), heuristic: true };
@@ -105,11 +105,11 @@ export async function resolveFiles(
  */
 export function heuristicWarnings(id: string, files: string[]): string[] {
   return [
-    "⚠ registry index 這個 entry 沒有 files[],改用啟發式猜檔名 —— 清單不保證完整。",
-    `  猜到 ${files.length} 個檔:${files.join(", ")}`,
-    "  探測只試固定的扁平檔名,**不會進子目錄**(例:cron 的 worker/ 抓不到)。",
-    `  請比對 registry 的 extensions/${id}/files/ 實際內容;有缺就手動補,` +
-      "並請 registry 維護者為此 entry 補上 files[]。",
+    "⚠ registry index entry has no files[], using heuristic name guessing — list may be incomplete.",
+    `  guessed ${files.length} files: ${files.join(", ")}`,
+    "  probe only tries fixed flat filenames, **does not recurse into subdirectories** (e.g., cron worker/ not fetched).",
+    `  compare against registry's actual extensions/${id}/files/ contents; manually add missing files,` +
+      " and ask registry maintainer to add files[] to this entry.",
   ];
 }
 
@@ -134,7 +134,7 @@ export async function fetchAndWriteFiles(opts: {
   const written: FetchedFile[] = [];
   for (const rel of files) {
     if (!isSafeRelPath(rel)) {
-      throw new Error(`不安全的檔案路徑,拒絕寫入:${rel}`);
+      throw new Error(`unsafe file path, refusing to write: ${rel}`);
     }
     const content = await fetchText(fileUrl(source, entry.id, rel), token);
     if (!dryRun) {

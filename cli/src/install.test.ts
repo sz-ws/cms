@@ -97,7 +97,7 @@ describe("resolveFiles", () => {
     // fixture 有 worker/index.js,但扁平檔名 probe 看不到它 —— 這正是 cron 少三個檔的成因。
     expect(r.files).not.toContain("worker/index.js");
     const warnings = heuristicWarnings("cron", r.files).join("\n");
-    expect(warnings).toContain("不會進子目錄");
+    expect(warnings).toContain("does not recurse into subdirectories");
     expect(warnings).toContain("files[]");
   });
 
@@ -106,14 +106,14 @@ describe("resolveFiles", () => {
     // 舊行為會把它跟 404 一起吞掉,結果安裝少一個檔卻毫無徵兆。
     await mkdir(path.join(regDir, "extensions", "demoext", "files", "adapter.ts"));
     await expect(resolveFiles(regUrl, codeEntry(), undefined)).rejects.toThrow(
-      /非 404/,
+      /other than 404/,
     );
   });
 
   it("rejects unsafe paths in files[]", async () => {
     await expect(
       resolveFiles(regUrl, codeEntry(["../../../etc/passwd"]), undefined),
-    ).rejects.toThrow(/不安全/);
+    ).rejects.toThrow(/unsafe file path/);
   });
 });
 

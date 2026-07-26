@@ -153,7 +153,7 @@ export function createAutoPrompter(
       return defaultValue ?? "";
     },
     async select(question, options) {
-      if (options.length === 0) throw new Error("select 需要至少一個選項");
+      if (options.length === 0) throw new Error("select requires at least one option");
       onAnswer?.(question, options[0].label);
       return options[0].value;
     },
@@ -194,20 +194,20 @@ export function createTtyPrompter(): Prompter {
       return answer === "" ? (defaultValue ?? "") : answer;
     },
     async select(question, options) {
-      if (options.length === 0) throw new Error("select 需要至少一個選項");
+      if (options.length === 0) throw new Error("select requires at least one option");
       process.stderr.write(`${question}\n`);
       options.forEach((opt, i) => {
         const hint = opt.hint ? s.dim(` — ${opt.hint}`) : "";
         process.stderr.write(`  ${s.cyan(String(i + 1))}. ${opt.label}${hint}\n`);
       });
       for (;;) {
-        const raw = await ask(s.dim(`選擇 1-${options.length} [1] `));
+        const raw = await ask(s.dim(`choose 1-${options.length} [1] `));
         if (raw === "") return options[0].value;
         const n = Number.parseInt(raw, 10);
         if (Number.isInteger(n) && n >= 1 && n <= options.length) {
           return options[n - 1].value;
         }
-        process.stderr.write(s.yellow(`  請輸入 1 到 ${options.length} 之間的數字。\n`));
+        process.stderr.write(s.yellow(`  enter a number between 1 and ${options.length}.\n`));
       }
     },
   };

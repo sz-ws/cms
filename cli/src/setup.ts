@@ -49,20 +49,20 @@ export const SETUP_TOKEN = "SETUP_TOKEN";
 const MANAGED_SECRETS = [
   {
     name: SECRETS_KEY,
-    why: "加密所有 secret: true 的設定(registry token、Resend key、OIDC secret、金流金鑰)",
+    why: "encrypts every `secret: true` setting (registry tokens, Resend key, OIDC secret, payment keys)",
     neverRotate:
-      "不覆寫 —— 換金鑰會讓既存的加密設定全部失效,且沒有漸進遷移路徑。",
+      "Not overwriting — rotating the key invalidates every stored encrypted setting, with no gradual migration path.",
   },
   {
     name: AUTH_PEPPER,
-    why: "密碼雜湊前先做 HMAC;DB 單獨外洩時,沒有它連離線爆破都無從開始",
+    why: "HMACs the password before hashing; without it an offline attack on a leaked database cannot even start",
     neverRotate:
-      "不覆寫 —— 換掉會讓所有既存密碼算不出來,等於全站鎖死。",
+      "Not overwriting — rotating it makes every existing password uncomputable, locking everyone out.",
   },
   {
     name: SETUP_TOKEN,
-    why: "/setup 的 bootstrap 憑證,擋掉「誰先找到網址誰就是管理員」",
-    neverRotate: "不覆寫 —— 站台可能還沒建管理員,換掉會讓你自己也進不去。",
+    why: "bootstrap credential for /setup; stops whoever finds the URL first from claiming the admin account",
+    neverRotate: "Not overwriting — the site may have no admin yet; rotating it locks you out too.",
     // 唯一會被印出來的一把:它的用途就是給人貼進 /setup 的表單,而且建完
     // 第一個管理員之後就完全失效(那個端點從此一律回 403)。另外兩把印出來
     // 只有壞處 —— 它們的值永遠不需要被人眼看到。
@@ -143,7 +143,7 @@ export function siteResourcesForSlug(siteSlug: string): SiteResources {
 
 export function validateSiteSlug(siteSlug: string): string | null {
   if (!SITE_SLUG_RE.test(siteSlug)) {
-    return "site slug 必須是 3–48 字元的小寫英數或連字號,首尾不可是連字號。";
+    return "site slug must be 3–48 characters, lowercase alphanumeric/hyphen, no hyphens at start or end.";
   }
   return null;
 }
@@ -186,58 +186,58 @@ async function prepareSiteConfig(
   const state = siteConfigState(config);
   if (state === "configured") {
     if (o.siteSlug && o.siteSlug !== config.siteSlug) {
-      r.step("fail", `這個 repo 已設定為 site slug「${config.siteSlug}」,拒絕改成「${o.siteSlug}」`);
-      r.outro(["若這是不同客戶站,請從乾淨的 scaffold clone 開始,不要在既有站上改名。"]);
+      r.step("fail", `this repo is already configured for site slug "${config.siteSlug}", refusing to change to "${o.siteSlug}"`);
+      r.outro(["if this is a different customer site, start with a clean scaffold clone, don't rename an existing site."]);
       return EXIT.SETUP_PREREQ;
     }
-    r.step("ok", `site slug 已設定為「${config.siteSlug}」,保留既有資源名稱`);
+    r.step("ok", `site slug configured as "${config.siteSlug}", keeping existing resource names`);
     return { config, pending: null };
   }
 
   if (state === "unsafe") {
-    r.step("fail", "wrangler.jsonc 的租戶命名不完整或不一致");
+    r.step("fail", "wrangler.jsonc tenant naming incomplete or inconsistent");
     r.outro([
-      "為避免 setup 猜測並接管別站資源,拒絕依名稱推斷 site slug。",
-      "請還原成乾淨 scaffold 後以 --site-slug <slug> 執行,或手動讓六個名稱與 vars.CMS_SITE_SLUG 一致。",
+      "to prevent setup from guessing and taking over another site's resources, refusing to infer site slug from names.",
+      "restore to clean scaffold and run with --site-slug <slug>, or manually make all six names match vars.CMS_SITE_SLUG.",
     ]);
     return EXIT.SETUP_PREREQ;
   }
 
   if (o.allowSharedDefaultNames) {
     if (o.siteSlug) {
-      r.step("fail", "--allow-shared-default-names 不能和 --site-slug 一起使用");
+      r.step("fail", "--allow-shared-default-names cannot be used with --site-slug");
       return EXIT.SETUP_PREREQ;
     }
-    r.step("warn", "使用預設共用名稱", "僅限明確的單站或開發帳號;多站帳號會造成跨站資料存取。");
+    r.step("warn", "using shared default names", "only for single-site or dev accounts; multi-tenant accounts will cause cross-site access.");
     return { config, pending: null };
   }
 
   let slug = o.siteSlug;
   if (!slug) {
     if (o.assumeYes) {
-      r.step("fail", "新的 scaffold clone 仍是預設共用名稱,必須提供 site slug");
+      r.step("fail", "new scaffold clone still uses shared default names, site slug required");
       r.outro([
-        "CI / --yes 請加:sz-ws-cms setup --site-slug <小寫站點識別> --yes",
-        "只有明確的單站或開發帳號才可用:--allow-shared-default-names",
+        "for CI / --yes: add sz-ws-cms setup --site-slug <lowercase-site-id> --yes",
+        "shared names only work with: --allow-shared-default-names",
       ]);
       return EXIT.SETUP_PREREQ;
     }
-    slug = await o.prompter.text("這是新的 CMS site;請輸入 site slug", "");
+    slug = await o.prompter.text("this is a new CMS site; enter site slug", "");
   }
   const invalid = validateSiteSlug(slug);
   if (invalid) {
-    r.step("fail", `無效的 site slug「${slug}」`, invalid);
-    r.outro(["例如:acme-taipei(不可用大寫、底線、句點或開頭/結尾連字號)。"]);
+    r.step("fail", `invalid site slug "${slug}"`, invalid);
+    r.outro(["example: acme-taipei (no uppercase, underscores, dots, or leading/trailing hyphens)."]);
     return EXIT.SETUP_PREREQ;
   }
 
   const target = siteResourcesForSlug(slug);
   try {
     const preview = writeSiteResources(configText, target);
-    r.step("todo", `site slug「${slug}」會寫入 ${relConfig}`, "Worker、self-reference、兩組 D1、兩組 R2 全部改為此站專屬名稱。");
+    r.step("todo", `site slug "${slug}" will be written to ${relConfig}`, "worker, self-reference, D1 pair, R2 pair all become site-specific names.");
     return { config: readWranglerConfig(preview.text), pending: target };
   } catch (e) {
-    r.step("fail", `無法安全設定 ${relConfig}`, e instanceof Error ? e.message : String(e));
+    r.step("fail", `could not safely configure ${relConfig}`, e instanceof Error ? e.message : String(e));
     return EXIT.SETUP_PREREQ;
   }
 }
@@ -245,20 +245,20 @@ async function prepareSiteConfig(
 /** 給每個步驟收尾用:一定要講「現在該做什麼」,不能只說失敗。 */
 function deployNextSteps(): string[] {
   return [
-    "接下來:",
+    "next steps:",
     // 一定要是 `pnpm run deploy`:`deploy` 是 pnpm 的內建指令,`pnpm deploy`
     // 會被它接走而不是跑 package.json 的 script(ERR_PNPM_CANNOT_DEPLOY)。
     "  1. pnpm run deploy                 # opennextjs-cloudflare build + deploy",
     // pepper 一定要卡在建第一個管理員之前。晚一步設,那批密碼就永遠是無 pepper 的
     // 形式(還是登得進去,core 照雜湊裡的旗標驗證),但要拿回保護只能逐一重設密碼。
-    `  2. 確認 ${SECRETS_KEY} / ${AUTH_PEPPER} / ${SETUP_TOKEN} 都已設定(第一次跑 setup 時`,
-    "     Worker 還不存在,所以那一步會被延後;現在重跑一次 setup 就會補上,",
-    `     並印出 ${SETUP_TOKEN} 的值)`,
-    `  3. 開正式站的 /setup 建第一個管理員帳號,表單要填 ${SETUP_TOKEN}`,
-    "     (正式 D1 是空的,跟本機不共用)",
-    "  4. Settings → core.siteUrl 設成你的公開網址",
-    "     (OIDC redirect_uri、SEO canonical/sitemap/feed、金流 return URL 都需要絕對網址)",
-    "  5. /admin/extensions 啟用一個 extension,建一筆內容,確認公開路由渲染得出來",
+    `  2. verify ${SECRETS_KEY} / ${AUTH_PEPPER} / ${SETUP_TOKEN} are all set (first setup run:`,
+    "     worker doesn't exist yet so this step gets deferred; rerun setup now to complete,",
+    `     and it will print the ${SETUP_TOKEN} value)`,
+    `  3. open /setup on the live site to create first admin account, enter ${SETUP_TOKEN} in form`,
+    "     (live D1 is empty, separate from local)",
+    "  4. Settings → core.siteUrl set to your public URL",
+    "     (OIDC redirect_uri, SEO canonical/sitemap/feed, payment return URLs all need absolute URLs)",
+    "  5. /admin/extensions enable one extension, create a piece of content, verify public route renders",
   ];
 }
 
@@ -270,8 +270,8 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   r.intro(
     "sz-ws-cms setup",
     o.dryRun
-      ? "預演模式:只偵測與列出計畫,不建立任何資源、不改任何檔案。"
-      : "把這個 repo 接上你自己的 Cloudflare 帳號。",
+      ? "rehearsal mode: detect and list plan, create no resources, modify no files."
+      : "connect this repo to your Cloudflare account.",
   );
 
   // ---- 1. 讀設定檔 ----
@@ -279,10 +279,10 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   try {
     configText = await readFile(o.configPath, "utf8");
   } catch (e) {
-    r.step("fail", `讀不到 ${relConfig}`, e instanceof Error ? e.message : String(e));
+    r.step("fail", `could not read ${relConfig}`, e instanceof Error ? e.message : String(e));
     r.outro([
-      "請確認你在 CMS repo 根目錄執行 `sz-ws-cms setup`,",
-      "或用 --config <路徑> 指定 wrangler 設定檔。",
+      "verify you are running `sz-ws-cms setup` from the CMS repo root,",
+      "or use --config <path> to specify the wrangler config file.",
     ]);
     return EXIT.SETUP_PREREQ;
   }
@@ -295,14 +295,14 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       e instanceof JsoncParseError || e instanceof ConfigShapeError
         ? e.message
         : String(e);
-    r.step("fail", `${relConfig} 解析失敗`, detail);
-    r.outro(["請先修好設定檔的格式,再重跑 `sz-ws-cms setup`。"]);
+    r.step("fail", `failed to parse ${relConfig}`, detail);
+    r.outro(["fix the config file format first, then rerun `sz-ws-cms setup`."]);
     return EXIT.SETUP_PREREQ;
   }
 
   if (config.d1.length === 0 && config.r2.length === 0) {
-    r.step("warn", `${relConfig} 裡沒有 d1_databases 也沒有 r2_buckets`);
-    r.outro(["沒有需要建立的資源。若這不是預期結果,請確認設定檔內容。"]);
+    r.step("warn", `${relConfig} has neither d1_databases nor r2_buckets`);
+    r.outro(["no resources to create. if this is unexpected, verify config file contents."]);
     return EXIT.OK;
   }
 
@@ -312,32 +312,32 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   config = prepared.config;
 
   // ---- 2. 登入狀態 ----
-  const who = await r.task("檢查 wrangler 登入狀態", () => client.whoami());
+  const who = await r.task("checking wrangler login status", () => client.whoami());
   if (!who.authenticated) {
-    r.step("fail", "wrangler 尚未登入");
+    r.step("fail", "wrangler not logged in");
     r.outro([
-      "先登入,再重跑:",
+      "log in first, then rerun:",
       "  pnpm exec wrangler login",
       "  sz-ws-cms setup",
-      who.detail ? `\nwrangler 說:${who.detail}` : "",
+      who.detail ? `\nwrangler said: ${who.detail}` : "",
     ].filter(Boolean));
     return EXIT.SETUP_PREREQ;
   }
-  r.step("ok", `wrangler 已登入${who.detail ? `(${who.detail})` : ""}`);
+  r.step("ok", `wrangler logged in${who.detail ? ` (${who.detail})` : ""}`);
 
   // ---- 3. 偵測現況 ----
-  const d1List = await r.task("盤點帳號上的 D1", () => client.listD1());
+  const d1List = await r.task("checking account D1 databases", () => client.listD1());
   const accountDbs = d1List?.dbs ?? null;
   if (accountDbs === null) {
     const detail = d1List?.detail ?? null;
-    r.step("fail", "讀不到帳號的 D1 清單", detail ?? undefined);
+    r.step("fail", "could not read D1 list for account", detail ?? undefined);
     // 多帳號是最常見的原因,而且解法明確 —— 給指令,不要只丟原始訊息。
     const hint = WranglerClient.accountAmbiguityHint(detail);
     r.outro(
       hint ?? [
-        "`wrangler d1 list --json` 失敗 —— 沒有這份清單就無法判斷哪些資源已經存在,",
-        "硬做下去可能建出重複的資料庫。請先確認網路與帳號權限,再重跑。",
-        ...(detail ? ["", "wrangler 的訊息:", detail] : []),
+        "`wrangler d1 list --json` failed — without this list we cannot determine which resources exist,",
+        "proceeding could create duplicate databases. verify network and account permissions, then rerun.",
+        ...(detail ? ["", "wrangler message:", detail] : []),
       ],
     );
     return EXIT.SETUP_PREREQ;
@@ -347,10 +347,10 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   if (prepared.pending) {
     const collisions = d1Plans.filter((p) => p.existingUuid).map((p) => p.entry.databaseName);
     if (collisions.length > 0) {
-      r.step("fail", "新的 scaffold 不會認領帳號上已存在的 D1", collisions.join("、"));
+      r.step("fail", "new scaffold will not claim existing D1 databases on account", collisions.join(", "));
       r.outro([
-        "這代表 site slug 已被使用,或資源屬於另一個站。請改用新的 --site-slug。",
-        "為保護租戶資料,只有已寫入相同 slug 的既有 repo 重跑時才會沿用同名資源。",
+        "this means site slug is already in use or resources belong to another site. use a new --site-slug instead.",
+        "to protect tenant data, existing resources are only reused when rerunning an existing repo with same slug.",
       ]);
       return EXIT.SETUP_PREREQ;
     }
@@ -359,31 +359,31 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     if (p.existingUuid) {
       r.step(
         p.needsConfigWrite ? "todo" : "ok",
-        `D1 ${p.entry.databaseName}(${p.entry.binding})已存在`,
+        `D1 ${p.entry.databaseName} (${p.entry.binding}) exists`,
         p.needsConfigWrite
-          ? `設定檔要更新成 ${p.existingUuid}`
-          : `設定檔的 database_id 已正確`,
+          ? `config needs update to ${p.existingUuid}`
+          : `config database_id is correct`,
       );
     } else {
-      r.step("todo", `D1 ${p.entry.databaseName}(${p.entry.binding})要新建`);
+      r.step("todo", `D1 ${p.entry.databaseName} (${p.entry.binding}) needs to be created`);
     }
   }
 
   const r2States = new Map<string, boolean | null>();
   for (const bucket of config.r2) {
-    const exists = await r.task(`檢查 R2 ${bucket.bucketName}`, () =>
+    const exists = await r.task(`checking R2 ${bucket.bucketName}`, () =>
       client.r2Exists(bucket.bucketName),
     );
     r2States.set(bucket.bucketName, exists);
     if (exists === true) {
-      r.step("ok", `R2 ${bucket.bucketName}(${bucket.binding})已存在`);
+      r.step("ok", `R2 ${bucket.bucketName} (${bucket.binding}) exists`);
     } else if (exists === false) {
-      r.step("todo", `R2 ${bucket.bucketName}(${bucket.binding})要新建`);
+      r.step("todo", `R2 ${bucket.bucketName} (${bucket.binding}) needs to be created`);
     } else {
       r.step(
         "warn",
-        `R2 ${bucket.bucketName}(${bucket.binding})狀態查不到`,
-        "會嘗試建立;若其實已存在,wrangler 會回報 already exists,視為成功。",
+        `R2 ${bucket.bucketName} (${bucket.binding}) status unknown`,
+        "will attempt creation; if it already exists, wrangler will report already exists and succeed.",
       );
     }
   }
@@ -393,12 +393,12 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     if (collisions.length > 0) {
       r.step(
         "fail",
-        "新的 scaffold 無法確認 R2 名稱尚未使用",
-        collisions.join("、"),
+        "new scaffold cannot confirm R2 names are unused",
+        collisions.join(", "),
       );
       r.outro([
-        "請改用新的 --site-slug;查詢失敗時也必須先修正帳號權限或網路,不能冒險建立或認領 bucket。",
-        "只有已寫入相同 slug 的既有 repo 重跑時才會沿用同名資源。",
+        "use a new --site-slug instead; also fix account permissions or network before trying to create or claim buckets.",
+        "existing resources are only reused when rerunning an existing repo with same slug.",
       ]);
       return EXIT.SETUP_PREREQ;
     }
@@ -411,34 +411,34 @@ export async function runSetup(o: SetupOptions): Promise<number> {
 
   // ---- 4. 確認 ----
   if (o.dryRun) {
-    r.note("預演結果", [
-      `新建 D1:${willCreateD1} 個`,
-      `新建 R2:${willCreateR2} 個`,
-      `更新 ${relConfig} 的 database_id:${willWriteConfig} 處`,
+    r.note("rehearsal results", [
+      `create D1: ${willCreateD1}`,
+      `create R2: ${willCreateR2}`,
+      `update database_id in ${relConfig}: ${willWriteConfig} fields`,
       prepared.pending
-        ? `設定 site slug:${prepared.pending.siteSlug}(會原子更新 7 個租戶欄位)`
-        : "設定 site slug:沿用既有設定",
+        ? `set site slug: ${prepared.pending.siteSlug} (atomically updates 7 tenant fields)`
+        : "set site slug: use existing config",
       o.skipMigrations
-        ? "套用 migrations:略過(--skip-migrations)"
-        : `套用 migrations:${migrationTargets.map((e) => e.databaseName).join("、") || "(無)"}`,
+        ? "apply migrations: skipped (--skip-migrations)"
+        : `apply migrations: ${migrationTargets.map((e) => e.databaseName).join(", ") || "(none)"}`,
       o.skipSecrets
-        ? `設定 ${SECRETS_KEY} / ${AUTH_PEPPER}:略過(--skip-secrets)`
-        : `設定 ${SECRETS_KEY} / ${AUTH_PEPPER}:視現況`,
+        ? `set ${SECRETS_KEY} / ${AUTH_PEPPER}: skipped (--skip-secrets)`
+        : `set ${SECRETS_KEY} / ${AUTH_PEPPER}: based on current state`,
     ]);
-    r.outro(["預演結束,什麼都沒有改動。拿掉 --dry-run 就會實際執行。"]);
+    r.outro(["rehearsal complete, nothing changed. remove --dry-run to actually proceed."]);
     return EXIT.OK;
   }
 
   if (willCreateD1 + willCreateR2 + willWriteConfig === 0) {
-    r.step("ok", "資源與設定檔都已就緒,沒有要新建的東西。");
+    r.step("ok", "resources and config are ready, nothing to create.");
   } else if (!o.assumeYes) {
     const go = await prompter.confirm(
-      `要建立 ${willCreateD1} 個 D1、${willCreateR2} 個 R2,並更新 ${relConfig} 嗎?`,
+      `create ${willCreateD1} D1 databases, ${willCreateR2} R2 buckets, and update ${relConfig}?`,
       true,
     );
     if (!go) {
-      r.step("skip", "已中止,沒有建立任何資源、沒有改任何檔案。");
-      r.outro(["想先看看會做什麼:sz-ws-cms setup --dry-run"]);
+      r.step("skip", "cancelled, no resources created, no files modified.");
+      r.outro(["to preview what would happen: sz-ws-cms setup --dry-run"]);
       return EXIT.SETUP_ABORTED;
     }
   }
@@ -455,17 +455,17 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       assignments.set(p.entry.databaseName, p.existingUuid);
       continue;
     }
-    const created = await r.task(`建立 D1 ${p.entry.databaseName}`, () =>
+    const created = await r.task(`creating D1 ${p.entry.databaseName}`, () =>
       client.createD1(p.entry.databaseName),
     );
     if (created.outcome.status === "failed") {
-      r.step("fail", `建立 D1 ${p.entry.databaseName} 失敗`, created.outcome.detail);
-      failed = `建立 D1 ${p.entry.databaseName} 失敗`;
+      r.step("fail", `failed to create D1 ${p.entry.databaseName}`, created.outcome.detail);
+      failed = `failed to create D1 ${p.entry.databaseName}`;
       break;
     }
     if (created.uuid) {
       assignments.set(p.entry.databaseName, created.uuid);
-      r.step("ok", `建立 D1 ${p.entry.databaseName}`, created.uuid);
+      r.step("ok", `created D1 ${p.entry.databaseName}`, created.uuid);
     }
   }
 
@@ -475,24 +475,24 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   if (configResult !== null) return configResult;
 
   if (failed) {
-    r.outro([`✗ ${failed}`, "修掉上面的錯誤之後直接重跑 `sz-ws-cms setup`,已完成的步驟會自動略過。"]);
+    r.outro([`✗ ${failed}`, "fix the error above and rerun `sz-ws-cms setup` directly, completed steps will be skipped."]);
     return EXIT.SETUP_FAILED;
   }
 
   // ---- 6. 建 R2 ----
   for (const bucket of config.r2) {
     if (r2States.get(bucket.bucketName) === true) continue;
-    const outcome = await r.task(`建立 R2 ${bucket.bucketName}`, () =>
+    const outcome = await r.task(`creating R2 ${bucket.bucketName}`, () =>
       client.createR2(bucket.bucketName),
     );
     if (outcome.status === "failed") {
-      r.step("fail", `建立 R2 ${bucket.bucketName} 失敗`, outcome.detail);
+      r.step("fail", `failed to create R2 ${bucket.bucketName}`, outcome.detail);
       r.outro([
-        "修掉上面的錯誤之後重跑 `sz-ws-cms setup`;已建好的資源會被偵測到並略過。",
+        "fix the error above and rerun `sz-ws-cms setup`; already-created resources will be detected and skipped.",
       ]);
       return EXIT.SETUP_FAILED;
     }
-    r.step("ok", `建立 R2 ${bucket.bucketName}`);
+    r.step("ok", `created R2 ${bucket.bucketName}`);
   }
 
   // ---- 7. migrations ----
@@ -500,29 +500,29 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   // revalidations 表由 opennextjs-cloudflare deploy 的 populate-cache 自己建
   // (schema 屬於 OpenNext,手抄一份進版控會漂移)。
   if (o.skipMigrations) {
-    r.step("skip", "略過 migrations(--skip-migrations)");
+    r.step("skip", "skipped migrations (--skip-migrations)");
   } else {
     for (const entry of migrationTargets) {
-      const outcome = await r.task(`套用 migrations → ${entry.databaseName}`, () =>
+      const outcome = await r.task(`applying migrations to ${entry.databaseName}`, () =>
         client.applyMigrations(entry.databaseName),
       );
       if (outcome.status === "failed") {
-        r.step("fail", `套用 migrations 到 ${entry.databaseName} 失敗`, outcome.detail);
+        r.step("fail", `failed to apply migrations to ${entry.databaseName}`, outcome.detail);
         r.outro([
-          "資源都已建好,只差 migrations。修正後可單獨重跑:",
+          "resources are created, only migrations failed. after fixing, run separately:",
           `  pnpm exec wrangler d1 migrations apply ${entry.databaseName} --remote`,
-          "或直接重跑 `sz-ws-cms setup`(已完成的步驟會略過)。",
+          "or rerun `sz-ws-cms setup` directly (completed steps will be skipped).",
         ]);
         return EXIT.SETUP_FAILED;
       }
-      r.step("ok", `migrations 已套用到 ${entry.databaseName}`);
+      r.step("ok", `migrations applied to ${entry.databaseName}`);
     }
     for (const entry of config.d1) {
       if (!entry.hasMigrationsDir) {
         r.step(
           "skip",
-          `${entry.databaseName} 不跑 migrations`,
-          "設定檔沒宣告 migrations_dir;tag cache 的表由 OpenNext 部署時自建。",
+          `${entry.databaseName} skipping migrations`,
+          "config doesn't declare migrations_dir; tag cache tables are created by OpenNext on deploy.",
         );
       }
     }
@@ -531,13 +531,13 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   // ---- 8. worker secrets ----
   let secretNote: string[];
   if (o.skipSecrets) {
-    r.step("skip", `略過 ${SECRETS_KEY} / ${AUTH_PEPPER}(--skip-secrets)`);
+    r.step("skip", `skipped ${SECRETS_KEY} / ${AUTH_PEPPER} (--skip-secrets)`);
     secretNote = [
-      "記得在部署後設定這兩把(都是設了就不能再換的):",
+      "remember to set these after deploying (both cannot be rotated once set):",
       ...MANAGED_SECRETS.map(
         (s) => `  openssl rand -base64 32 | pnpm exec wrangler secret put ${s.name}`,
       ),
-      `  ${AUTH_PEPPER} 要趕在開 /setup 建第一個管理員之前。`,
+      `  ${AUTH_PEPPER} must be set before opening /setup to create the first admin.`,
     ];
   } else {
     secretNote = await ensureSecretsKey(o, generateSecret);
@@ -560,16 +560,16 @@ async function persistSiteResources(
     const fresh = await readFile(o.configPath, "utf8");
     const current = readWranglerConfig(fresh);
     if (siteConfigState(current) !== "fresh") {
-      throw new ConfigShapeError("設定檔在確認後已變更,拒絕覆寫租戶命名;請重新執行 setup");
+      throw new ConfigShapeError("config was modified after confirmation, refusing to overwrite tenant names; rerun setup");
     }
     const { text, changed } = writeSiteResources(fresh, target);
     await writeFile(o.configPath, text, "utf8");
-    o.reporter.step("ok", `更新 ${relConfig}`, changed.join("、"));
+    o.reporter.step("ok", `updated ${relConfig}`, changed.join(", "));
     return null;
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    o.reporter.step("fail", `寫入 ${relConfig} 的租戶命名失敗`, detail);
-    o.reporter.outro(["沒有建立任何 Cloudflare 資源;修正後可直接重跑 `sz-ws-cms setup`。"]);
+    o.reporter.step("fail", `failed to write tenant names to ${relConfig}`, detail);
+    o.reporter.outro(["no Cloudflare resources created; after fixing, rerun `sz-ws-cms setup` directly."]);
     return EXIT.SETUP_FAILED;
   }
 }
@@ -587,19 +587,19 @@ async function persistIds(
     const fresh = await readFile(o.configPath, "utf8");
     const { text, changed } = writeD1Ids(fresh, assignments);
     if (changed.length === 0) {
-      o.reporter.step("skip", `${relConfig} 的 database_id 已正確,未改動`);
+      o.reporter.step("skip", `${relConfig} database_id already correct, no changes`);
       return null;
     }
     await writeFile(o.configPath, text, "utf8");
-    o.reporter.step("ok", `更新 ${relConfig}`, `database_id:${changed.join("、")}`);
+    o.reporter.step("ok", `updated ${relConfig}`, `database_id: ${changed.join(", ")}`);
     return null;
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    o.reporter.step("fail", `寫入 ${relConfig} 失敗`, detail);
-    o.reporter.note("請手動填入以下 database_id", [
+    o.reporter.step("fail", `failed to write to ${relConfig}`, detail);
+    o.reporter.note("manually fill in these database_ids", [
       ...[...assignments].map(([name, uuid]) => `${name}: ${uuid}`),
     ]);
-    o.reporter.outro(["填好之後重跑 `sz-ws-cms setup`,已建立的資源會被偵測到並略過。"]);
+    o.reporter.outro(["after filling, rerun `sz-ws-cms setup`, created resources will be detected and skipped."]);
     return EXIT.SETUP_FAILED;
   }
 }
@@ -612,27 +612,27 @@ async function ensureSecretsKey(
   const { reporter: r } = o;
   const names = MANAGED_SECRETS.map((s) => s.name).join(" / ");
   // 一次列舉,兩把都用同一份清單判斷 —— 不必為了第二把再打一次 wrangler。
-  const secrets = await r.task(`檢查 ${names}`, () => o.client.listSecrets());
+  const secrets = await r.task(`checking ${names}`, () => o.client.listSecrets());
 
   if (secrets === null) {
     // 最常見的原因是 Worker 還沒 deploy 過,帳號上根本沒有這個 Worker 可以掛 secret。
     // 這時候不能猜「沒設定」就硬寫,也不能說「已設定好」—— 誠實講清楚順序。
-    r.step("warn", "查不到目前的 secret 清單", "Worker 可能還沒 deploy 過。");
+    r.step("warn", "could not retrieve secret list", "worker may not be deployed yet.");
     return [
-      `${names} 這一步留到部署之後(現在還沒有 Worker 可以掛 secret):`,
+      `${names} step deferred to after deploy (no worker exists yet to attach secrets):`,
       "  pnpm run deploy",
       ...MANAGED_SECRETS.map(
         (s) => `  openssl rand -base64 32 | pnpm exec wrangler secret put ${s.name}`,
       ),
       "",
-      `⚠ ${AUTH_PEPPER} 必須在你開 /setup 建第一個管理員**之前**就設好,`,
-      "  否則第一批密碼會以無 pepper 的形式落地(能登入,但少了那層保護)。",
-      `⚠ ${SETUP_TOKEN} 沒設定的話 /setup 一律回 503 —— 這是刻意的:`,
-      "  沒有它,「誰先找到這個網址誰就是管理員」。",
+      `⚠ ${AUTH_PEPPER} must be set **before** opening /setup to create first admin,`,
+      "  otherwise first batch of passwords will lack pepper protection (can still login, but less secure).",
+      `⚠ if ${SETUP_TOKEN} is not set, /setup always returns 503 — this is intentional:`,
+      "  without it, first person to find the URL becomes admin.",
       "",
-      "⚠ 不要沿用 .dev.vars 裡的開發金鑰。兩把都是設了就不能再換的:",
-      `  ${SECRETS_KEY} 換掉 → 既存的加密設定全部變亂碼(信封沒有 key id)。`,
-      `  ${AUTH_PEPPER} 換掉 → 既存密碼全部算不出來,等於全站鎖死。`,
+      "⚠ don't reuse dev keys from .dev.vars. both cannot be rotated once set:",
+      `  rotate ${SECRETS_KEY} → all encrypted settings become gibberish (envelope has no key id).`,
+      `  rotate ${AUTH_PEPPER} → all existing passwords become uncomputable, site completely locked.`,
     ];
   }
 
@@ -655,41 +655,41 @@ async function ensureOneSecret(
   const manual = `  openssl rand -base64 32 | pnpm exec wrangler secret put ${name}`;
 
   if (existing.includes(name)) {
-    r.step("ok", `${name} 已設定`, spec.neverRotate);
+    r.step("ok", `${name} already set`, spec.neverRotate);
     return [];
   }
 
   if (!o.assumeYes) {
     const go = await o.prompter.confirm(
-      `要現在產生並設定 ${name} 嗎?(${spec.why};32 byte 隨機值,不會顯示在畫面上)`,
+      `generate and set ${name} now? (${spec.why}; 32-byte random, not shown on screen)`,
       true,
     );
     if (!go) {
-      r.step("skip", `略過 ${name}`);
-      return [`記得設定 ${name} —— ${spec.why}:`, manual];
+      r.step("skip", `skipped ${name}`);
+      return [`remember to set ${name} — ${spec.why}:`, manual];
     }
   }
 
   // 值走 stdin 進 wrangler,不進 argv、不印到畫面 —— argv 會被 ps 看到,也會留在 history。
   const value = generateSecret();
-  const outcome = await r.task(`設定 ${name}`, () => o.client.putSecret(name, value));
+  const outcome = await r.task(`setting ${name}`, () => o.client.putSecret(name, value));
   if (outcome.status === "failed") {
-    r.step("fail", `設定 ${name} 失敗`, outcome.detail);
-    return [`${name} 還沒設定好。部署之後手動補上:`, manual];
+    r.step("fail", `failed to set ${name}`, outcome.detail);
+    return [`${name} not yet configured. manually set after deploy:`, manual];
   }
 
   const reveal = "reveal" in spec && spec.reveal === true;
   r.step(
     "ok",
-    `${name} 已產生並設定`,
-    reveal ? "下面會印出這個值 —— 只有這一次。" : "值只存在 Cloudflare,本機沒有留副本。",
+    `${name} generated and set`,
+    reveal ? "value will be printed below — only once." : "value exists only on Cloudflare, no local copy.",
   );
   if (!reveal) return [];
 
   // 這一把非印不可:CLI 不會替使用者開瀏覽器填表,而 wrangler 事後也讀不回
   // secret 的值。不印 = 使用者永遠建不出第一個管理員,只能自己覆寫一把。
   return [
-    `${name}(建第一個管理員時要貼進 /setup;之後就自動失效):`,
+    `${name} (paste in /setup form when creating first admin; auto-expires after):`,
     `  ${value}`,
   ];
 }

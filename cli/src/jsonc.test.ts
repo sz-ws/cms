@@ -53,8 +53,8 @@ describe("parseJsonc", () => {
   it("格式錯誤丟 JsoncParseError 並帶位移", () => {
     expect(() => parseJsonc(`{ "a": }`)).toThrow(JsoncParseError);
     expect(() => parseJsonc(`{ "a": 1 `)).toThrow(JsoncParseError);
-    expect(() => parseJsonc(`{ "a": 1 } trailing`)).toThrow(/多餘內容/);
-    expect(() => parseJsonc(`{ /* 沒關 `)).toThrow(/區塊註解沒有結尾/);
+    expect(() => parseJsonc(`{ "a": 1 } trailing`)).toThrow(/extra content after root node/);
+    expect(() => parseJsonc(`{ /* 沒關 `)).toThrow(/block comment missing closing/);
   });
 });
 
@@ -90,7 +90,7 @@ describe("applyEdits", () => {
         { span: { start: 0, end: 5 }, replacement: "x" },
         { span: { start: 3, end: 8 }, replacement: "y" },
       ]),
-    ).toThrow(/重疊/);
+    ).toThrow(/edit spans overlap/);
   });
 
   it("空區間 = 插入", () => {

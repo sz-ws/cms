@@ -35,7 +35,7 @@ export type JsoncNode =
 export class JsoncParseError extends Error {
   offset: number;
   constructor(message: string, offset: number) {
-    super(`${message}(位移 ${offset})`);
+    super(`${message} (offset ${offset})`);
     this.name = "JsoncParseError";
     this.offset = offset;
   }
@@ -52,7 +52,7 @@ function skipTrivia(text: string, i: number): number {
     }
     if (text[i] === "/" && text[i + 1] === "*") {
       const close = text.indexOf("*/", i + 2);
-      if (close === -1) throw new JsoncParseError("區塊註解沒有結尾", i);
+      if (close === -1) throw new JsoncParseError("block comment missing closing", i);
       i = close + 2;
       continue;
     }
@@ -102,14 +102,14 @@ function parseString(text: string, start: number): { value: string; next: number
         case "u": {
           const hex = text.slice(i + 2, i + 6);
           if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
-            throw new JsoncParseError("無效的 \\u escape", i);
+            throw new JsoncParseError("invalid \\u escape", i);
           }
           out += String.fromCharCode(Number.parseInt(hex, 16));
           i += 6;
           break;
         }
         default:
-          throw new JsoncParseError(`無效的 escape:\\${esc ?? ""}`, i);
+          throw new JsoncParseError(`invalid escape: \\${esc ?? ""}`, i);
       }
       continue;
     }
@@ -117,13 +117,13 @@ function parseString(text: string, start: number): { value: string; next: number
     out += ch;
     i++;
   }
-  throw new JsoncParseError("字串沒有結尾", start);
+  throw new JsoncParseError("string missing closing quote", start);
 }
 
 function parseValue(text: string, i0: number): Parsed {
   const start = skipTrivia(text, i0);
   const ch = text[start];
-  if (ch === undefined) throw new JsoncParseError("內容提前結束", start);
+  if (ch === undefined) throw new JsoncParseError("content ends prematurely", start);
 
   if (ch === '"') {
     const { value, next } = parseString(text, start);
@@ -139,11 +139,11 @@ function parseValue(text: string, i0: number): Parsed {
     for (;;) {
       i = skipTrivia(text, i);
       if (text[i] === "}") break; // 容忍尾逗號
-      if (text[i] !== '"') throw new JsoncParseError("物件的鍵必須是字串", i);
+      if (text[i] !== '"') throw new JsoncParseError("object keys must be strings", i);
       const keyStart = i;
       const { value: key, next: afterKey } = parseString(text, i);
       i = skipTrivia(text, afterKey);
-      if (text[i] !== ":") throw new JsoncParseError("鍵之後缺少 :", i);
+      if (text[i] !== ":") throw new JsoncParseError("missing colon after key", i);
       const parsedValue = parseValue(text, i + 1);
       members.push({
         key,
@@ -158,7 +158,7 @@ function parseValue(text: string, i0: number): Parsed {
       break;
     }
     i = skipTrivia(text, i);
-    if (text[i] !== "}") throw new JsoncParseError("物件沒有結尾 }", i);
+    if (text[i] !== "}") throw new JsoncParseError("object missing closing brace", i);
     return { node: { kind: "object", span: { start, end: i + 1 }, members }, next: i + 1 };
   }
 
@@ -181,7 +181,7 @@ function parseValue(text: string, i0: number): Parsed {
       break;
     }
     i = skipTrivia(text, i);
-    if (text[i] !== "]") throw new JsoncParseError("陣列沒有結尾 ]", i);
+    if (text[i] !== "]") throw new JsoncParseError("array missing closing bracket", i);
     return { node: { kind: "array", span: { start, end: i + 1 }, items }, next: i + 1 };
   }
 
@@ -210,7 +210,7 @@ function parseValue(text: string, i0: number): Parsed {
     };
   }
 
-  throw new JsoncParseError(`無法解析的字元「${ch}」`, start);
+  throw new JsoncParseError(`unparseable character: "${ch}"`, start);
 }
 
 /** 解析 JSONC(允許註解與尾逗號),回傳帶字元位移的節點樹。 */
@@ -218,7 +218,7 @@ export function parseJsonc(text: string): JsoncNode {
   const { node, next } = parseValue(text, 0);
   const rest = skipTrivia(text, next);
   if (rest < text.length) {
-    throw new JsoncParseError("根節點之後還有多餘內容", rest);
+    throw new JsoncParseError("extra content after root node", rest);
   }
   return node;
 }
@@ -257,7 +257,7 @@ export function applyEdits(text: string, edits: readonly JsoncEdit[]): string {
   let previousStart = Number.POSITIVE_INFINITY;
   for (const edit of sorted) {
     if (edit.span.end > previousStart) {
-      throw new Error("編輯區間重疊,拒絕寫入");
+      throw new Error("edit spans overlap, refusing to write");
     }
     out = out.slice(0, edit.span.start) + edit.replacement + out.slice(edit.span.end);
     previousStart = edit.span.start;

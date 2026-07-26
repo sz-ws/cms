@@ -104,6 +104,6 @@ describe("createAutoPrompter", () => {
   });
 
   it("select 沒有選項是程式錯誤,不是靜默回 undefined", async () => {
-    await expect(createAutoPrompter().select("空", [])).rejects.toThrow(/至少一個選項/);
+    await expect(createAutoPrompter().select("空", [])).rejects.toThrow(/at least one option/);
   });
 });
