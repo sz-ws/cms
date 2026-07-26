@@ -7,6 +7,8 @@
 //              套 migrations、設 SECRETS_KEY(見 setup.ts)。
 
 import { readFile, writeFile, stat } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import * as readline from "node:readline/promises";
 import { parseArgs, ID_RE, type ParsedArgs } from "./args.js";
@@ -35,7 +37,7 @@ import { WranglerClient } from "./wrangler.js";
 import { runSetup } from "./setup.js";
 import { createUi, type UiEvent } from "./ui.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
@@ -520,12 +522,33 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   return EXIT.OK;
 }
 
-// 直接執行(bin)時跑 main;被 import(測試)時不跑。
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  import.meta.url === `file://${process.argv[1]}`;
+/**
+ * 直接執行(bin)時跑 main;被 import(測試)時不跑。
+ *
+ * 曾經寫的是 `import.meta.url === \`file://${process.argv[1]}\``,而那個比較在
+ * **實際安裝之後永遠不成立**:npm 把 bin 連成 node_modules/.bin/cms → 真實檔案的
+ * symlink,所以 argv[1] 是那條 symlink,import.meta.url 卻是 Node 解析過的真實
+ * 路徑。兩者不相等 → main 不跑 → 每個指令都靜默 exit 0 什麼都不做。
+ * 本機 `node dist/cli.js` 測得到、裝起來就死,而且死得像成功。
+ *
+ * 順帶修掉同一行的第二個問題:`file://${path}` 沒有做 URL 編碼,路徑含空白或
+ * 非 ASCII 時字串同樣對不起來。fileURLToPath 走的是正規的反向轉換。
+ */
+export function isDirectRun(
+  entry: string | undefined,
+  moduleUrl: string,
+): boolean {
+  if (entry === undefined) return false;
+  try {
+    // realpath 兩邊都解到底,symlink、相對路徑、大小寫差異一次抹平。
+    return realpathSync(entry) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    // 任一邊指到不存在的東西(不該發生)—— 當成不是直接執行,寧可少跑也不誤跑。
+    return false;
+  }
+}
 
-if (invokedDirectly) {
+if (isDirectRun(process.argv[1], import.meta.url)) {
   run(process.argv.slice(2), process.cwd())
     .then((code) => {
       process.exitCode = code;

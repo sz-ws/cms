@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { run, EXIT } from "./cli.js";
+import { run, EXIT, isDirectRun } from "./cli.js";
 
 const REGISTRY_HEADER = `import type { Extension } from "@/ext/types";\n`;
 const emptyRegistry =
@@ -392,5 +392,59 @@ describe("run — 指令派送", () => {
     const code = await run(["setup", "--config", "nope.jsonc"], repoDir);
     expect(code).toBe(EXIT.SETUP_PREREQ);
     expect(out()).toContain("nope.jsonc");
+  });
+});
+
+// bin 入口偵測。0.2.0 發布出去是完全不能用的,原因就在這裡:當時比較的是
+//   import.meta.url === `file://${process.argv[1]}`
+// 而 npm 把 bin 連成 node_modules/.bin/cms → 真實檔案的 symlink,所以 argv[1]
+// 是 symlink 路徑、import.meta.url 是 Node 解析後的真實路徑,兩者永遠不等。
+// main 因此不跑,每個指令都靜默 exit 0 —— 本機 `node dist/cli.js` 測得到,
+// 裝起來就死,而且死得像成功。
+describe("isDirectRun", () => {
+  it("symlink 指向本檔時算直接執行", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "szws-bin-"));
+    try {
+      const real = path.join(dir, "cli.js");
+      const link = path.join(dir, "cms");
+      await writeFile(real, "// entry\n", "utf8");
+      await symlink(real, link);
+
+      const url = pathToFileURL(real).href;
+      expect(isDirectRun(link, url)).toBe(true);
+      expect(isDirectRun(real, url)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("路徑含空白或非 ASCII 時仍然算得對", async () => {
+    // 舊寫法用字串樣板組 `file://${path}`,沒有 URL 編碼 —— 這種路徑同樣對不起來。
+    const dir = await mkdtemp(path.join(tmpdir(), "szws bin 測試-"));
+    try {
+      const real = path.join(dir, "cli.js");
+      await writeFile(real, "// entry\n", "utf8");
+      expect(isDirectRun(real, pathToFileURL(real).href)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("被別的檔 import 時不算直接執行", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "szws-bin-"));
+    try {
+      const me = path.join(dir, "cli.js");
+      const other = path.join(dir, "other.js");
+      await writeFile(me, "// entry\n", "utf8");
+      await writeFile(other, "// importer\n", "utf8");
+      expect(isDirectRun(other, pathToFileURL(me).href)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("argv[1] 不存在 / 指到不存在的檔 → false,而不是拋錯", () => {
+    expect(isDirectRun(undefined, "file:///nope.js")).toBe(false);
+    expect(isDirectRun("/definitely/not/here", "file:///nope.js")).toBe(false);
   });
 });
