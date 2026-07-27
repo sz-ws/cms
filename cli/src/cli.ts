@@ -144,6 +144,7 @@ function nextSteps(
   fileCount: number,
   patchNote: string,
   heuristic: boolean,
+  enhancement = false,
 ): void {
   log();
   log(`✓ copied ${fileCount} files to extensions/${id}/`);
@@ -160,6 +161,15 @@ function nextSteps(
   // deploy 過、新的 bundle 上線之後才啟用得了。而 code extension 的 migrations 是
   // enableExtension() 在 worker 內用單一 D1 batch 跑的(src/ext/manager.ts),
   // 不是 `wrangler d1 migrations apply` —— 那支只管 core 自己的 migrations/。
+  if (enhancement) {
+    // 強化層沒有自己的 Enable / migrations —— 那些屬於宣告式那一半,而它是在後台
+    // 熱安裝的。這裡唯一要做的事就是 deploy,之後被標記的 surface 會換成自訂元件。
+    log("next steps (not automated by this CLI):");
+    log("  1. pnpm build && pnpm run deploy       # overrides register at module load, so a deploy is what lights them up");
+    log(`  2. install "${id}" itself in admin → Extensions → Browse (if you have not already)`);
+    log("     (the declarative half hot-installs and works on its own; this layer only upgrades its views)");
+    return;
+  }
   log("next steps (not automated by this CLI):");
   log("  1. pnpm build && pnpm run deploy       # Enable reads compile-time registry, must deploy first");
   log("  2. admin → Extensions → Installed → Enable");
@@ -336,11 +346,19 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const entry: IndexEntry = matches[0];
   const source = entry.source;
 
-  // declarative → 走 admin UI,不是這支 CLI 的範疇。
-  if (entry.kind !== "code") {
-    log(
-      `"${id}" is a declarative extension (kind=${entry.kind}).`,
-    );
+  // 宣告式 extension 本體一律走 admin UI 熱安裝 —— 這支 CLI 不碰它。
+  //
+  // 但 CORE_API 1.25.0 起,宣告式 manifest 可以宣告 files[]:一層**選配**的程式碼
+  // 強化層(core-v2 §3.6)。那一層是真的要落地成檔案 + 進 bundle 的,所以這裡分兩路:
+  //
+  //   沒有 files[] → 沒東西可裝,照舊指路到後台。
+  //   有 files[]   → 抓下強化層,但接法是 side-effect import(它不是 Extension)。
+  //
+  // 先後順序仍然是:先在後台把宣告式那一半裝起來(立刻可用、泛用版面),再跑這個
+  // 指令 + rebuild 把強化層點亮。反過來做也不會壞,只是在 enable 之前看不到效果。
+  const isEnhancement = entry.kind !== "code";
+  if (isEnhancement && (entry.files ?? []).length === 0) {
+    log(`"${id}" is a declarative extension (kind=${entry.kind}).`);
     log(
       "declarative extensions are hot-installed via admin UI (Browse → Install), `sz-ws-cms add` not needed.",
     );
@@ -485,8 +503,11 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   }
 
   // ---- 驗證 index.ts named export ----
+  // 只對 code extension 有意義:registry 陣列要拿到那個具名 export。強化層剛好相反
+  // —— 它**刻意**沒有 export,整包的作用就是 module load 時的 side effect(把自訂
+  // 元件登記進 overrides registry)。對它要求具名 export 會把正確的東西擋下來。
   const indexFile = written.find((f) => f.rel === "index.ts");
-  if (!indexFile || !hasNamedExport(indexFile.content, id)) {
+  if (!isEnhancement && (!indexFile || !hasNamedExport(indexFile.content, id))) {
     err(
       `✗ extensions/${id}/index.ts missing named export "${ident}", cannot wire up.`,
     );
@@ -495,15 +516,31 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     );
     return EXIT.PATCH_FAILED;
   }
+  // 強化層仍然必須有 index.ts —— side-effect import 指的就是它,沒有這個檔,
+  // 那行 import 會在 build 期解析失敗。
+  if (isEnhancement && !indexFile) {
+    err(`✗ extensions/${id}/index.ts not found; an enhancement layer needs one.`);
+    err(`  registry.ts will \`import "./${id}"\`, which resolves to that file.`);
+    return EXIT.PATCH_FAILED;
+  }
 
   // ---- patch registry.ts ----
   const original = await readFile(registryPath, "utf8");
-  const patch = patchRegistryContent(original, id);
+  const patch = patchRegistryContent(
+    original,
+    id,
+    isEnhancement ? "enhancement" : "extension",
+  );
   if (!patch.ok) {
     err("✗ could not automatically patch extensions/registry.ts (format not recognized).");
-    err("  manual insertion needed in two places:");
-    err(`    ${patch.importLine}`);
-    err(`    add to end of registry array: ${patch.ident}`);
+    if (isEnhancement) {
+      err("  manual insertion needed (side-effect import only — an enhancement layer is not an Extension):");
+      err(`    ${patch.importLine}`);
+    } else {
+      err("  manual insertion needed in two places:");
+      err(`    ${patch.importLine}`);
+      err(`    add to end of registry array: ${patch.ident}`);
+    }
     return EXIT.PATCH_FAILED;
   }
 
@@ -518,7 +555,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     patchNote = `patched extensions/registry.ts (${parts.join(" + ")})`;
   }
 
-  nextSteps(id, written.length, patchNote, resolved.heuristic);
+  nextSteps(id, written.length, patchNote, resolved.heuristic, isEnhancement);
   return EXIT.OK;
 }
 

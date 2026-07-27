@@ -146,3 +146,73 @@ describe("patchRegistryContent — broken format", () => {
     expect(r.reason).toBe("no-imports");
   });
 });
+
+// ---- CORE_API 1.25.0:宣告式 extension 的程式碼強化層 ----
+//
+// 強化層**不是** Extension:它在 module load 時把自訂元件登記進 overrides registry,
+// 而 extension 本體是宣告式的、住在 DB 裡。所以接法是純 side-effect import。
+
+describe("patchRegistryContent — enhancement mode", () => {
+  const file =
+    HEADER + `export const registry: Extension[] = [cron];\n`;
+
+  it("只加 side-effect import,不碰 registry 陣列", () => {
+    const r = patchRegistryContent(file, "catalog", "enhancement");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.importAdded).toBe(true);
+    expect(r.arrayAdded).toBe(false);
+    expect(r.content).toContain(`import "./catalog";`);
+    // 陣列原樣不動 —— 把強化層加進去會讓 core 拿到一個沒有 id/version 的東西
+    expect(r.content).toContain(`export const registry: Extension[] = [cron];`);
+    expect(r.content).not.toContain("catalog]");
+    expect(r.content).not.toContain(", catalog");
+  });
+
+  it("不產生具名 import(那會是 undefined,build 才炸)", () => {
+    const r = patchRegistryContent(file, "catalog", "enhancement");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.content).not.toContain(`import { catalog }`);
+  });
+
+  it("重跑不會重複插入", () => {
+    const once = patchRegistryContent(file, "catalog", "enhancement");
+    expect(once.ok).toBe(true);
+    if (!once.ok) return;
+    const twice = patchRegistryContent(once.content, "catalog", "enhancement");
+    expect(twice.ok).toBe(true);
+    if (!twice.ok) return;
+    expect(twice.alreadyUpToDate).toBe(true);
+    expect(twice.content).toBe(once.content);
+    expect(twice.content.match(/import "\.\/catalog";/g)).toHaveLength(1);
+  });
+
+  it("registry 陣列格式認不出來也照樣成功 —— 強化層根本不需要它", () => {
+    const noArray = HEADER + `const registry = new Map();\n`;
+    const r = patchRegistryContent(noArray, "catalog", "enhancement");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.content).toContain(`import "./catalog";`);
+  });
+
+  it("預設仍是 extension 模式(既有呼叫端行為不變)", () => {
+    const r = patchRegistryContent(file, "posts");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.content).toContain(`import { posts } from "./posts";`);
+    expect(r.arrayAdded).toBe(true);
+  });
+
+  it("同一個 id 兩種模式的 import 行不同,不會互相誤判為已存在", () => {
+    const asExt = patchRegistryContent(file, "catalog", "extension");
+    expect(asExt.ok).toBe(true);
+    if (!asExt.ok) return;
+    // 已經以 extension 形式接過,再以 enhancement 形式接 → 仍會加 side-effect import。
+    // 這是刻意的:兩者語意不同,靜默略過會讓人以為裝好了。
+    const asEnh = patchRegistryContent(asExt.content, "catalog", "enhancement");
+    expect(asEnh.ok).toBe(true);
+    if (!asEnh.ok) return;
+    expect(asEnh.importAdded).toBe(true);
+  });
+});

@@ -18,6 +18,18 @@ const TYPE_NAME_RE = /^[a-z][a-z0-9-]{0,30}$/;
 const FIELD_KEY_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 // route pattern:純 segment 字串,允許字面段 /foo 或 param 段 /:name,無 regex 特殊字元。
 const ROUTE_PATTERN_RE = /^(\/[a-z0-9-]+|\/:[a-zA-Z][a-zA-Z0-9]*)+$/;
+// 1.25.0 `files[]`:相對路徑,允許一層以上子目錄(如 "views/card.tsx")。
+// **白名單而非黑名單** —— 這些字串會被 CLI 拿去組本機檔案路徑並寫檔,而 manifest
+// 可能來自任何一個被加進 registrySources 的來源。只放行 [a-zA-Z0-9._-] 與 "/",
+// 於是 "..", "\\", 開頭 "/", "C:" 全都不可能通過(下面的 refine 再擋掉 ".." 段本身,
+// 因為 "a/../b" 的每個字元都在白名單裡)。
+const REL_PATH_RE = /^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/;
+const safeRelativePath = z
+  .string()
+  .min(1)
+  .max(120)
+  .regex(REL_PATH_RE, "invalid file path")
+  .refine((p) => !p.split("/").includes(".."), "path must not traverse upward");
 const DECLARATIVE_HOOK_NAMES = [
   "ext:enabled",
   "ext:disabled",
@@ -530,6 +542,21 @@ export const manifestSchema = z
     screenshots: z.array(z.string()).optional(),
     // 部署類型：instant（立即可用）、progressive（安裝後可用但 rebuild 後體驗完整）、code-only（必須 rebuild）
     deployment: z.enum(["instant", "progressive", "code-only"]).optional(),
+    // 1.25.0:程式碼強化層的檔案清單(core-v2 §3.6 progressive 的**打包**那一半)。
+    //
+    // 在此之前 §3.6 只有執行期那一半:overrides.ts 的 registry 存在、interpret 也
+    // 會查它,但沒有任何辦法把強化層**送到**站台 —— repo 裡那兩個示範
+    //(extensions/blog/layout.tsx、extensions/gallery-enhance/)是手動放進去的,
+    // CLI 對 kind !== "code" 直接拒絕。宣告出 files 的宣告式 extension 從此可以被
+    // `sz-ws-cms add <id>` 抓下強化層,以純 side-effect import 接進 bundle。
+    //
+    // 語意分工不變:宣告式那一半照樣 hot-install(裝完立刻能用泛用版面),files
+    // 是**選配**,而且只有 rebuild + deploy 之後才會點亮。移除它就退回 baseline。
+    //
+    // 路徑是相對於 registry 的 extensions/<id>/files/,會被 CLI 寫進本機檔案系統,
+    // 所以這裡就把逃逸形狀擋掉(絕對路徑、..、反斜線、開頭斜線)。CLI 端另有一道
+    // 同樣的檢查 —— 兩道互相獨立,因為這份 manifest 也可能來自不受信任的 registry。
+    files: z.array(safeRelativePath).max(64).optional(),
     // 安裝時需要 prompt user 輸入的欄位（線上商店會顯示表單）
     installPrompts: z
       .array(
@@ -1034,6 +1061,9 @@ export interface DeclarativeManifest {
   screenshots?: string[];
   /** 部署類型:instant=立即可用;progressive=安裝後可用,重建後體驗完整;code-only=必須重建。 */
   deployment?: "instant" | "progressive" | "code-only";
+  /** 1.25.0:程式碼強化層的檔案清單(相對 registry 的 extensions/<id>/files/)。
+   * 宣告式那一半照樣 hot-install;這些檔案由 CLI 抓下、rebuild 後才點亮覆寫。 */
+  files?: string[];
   /** 安裝時需要 prompt user 輸入的欄位(線上商店會顯示表單)。 */
   installPrompts?: Array<{
     key: string;

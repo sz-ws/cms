@@ -25,6 +25,13 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
     path.join(futureDir, "index.ts"),
     `export const futureext = defineExtension({ id: "futureext" });\n`,
   );
+  // 1.25.0 強化層:只有 side effect,沒有 export。
+  const progDir = path.join(dir, "extensions", "progext", "files");
+  await mkdir(progDir, { recursive: true });
+  await writeFile(
+    path.join(progDir, "index.ts"),
+    `overrideRegistry.register("progext", "public:progext.thing:list", Card);\n`,
+  );
   const registryJson = {
     extensions: [
       {
@@ -59,6 +66,16 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
         name: "Decl",
         version: "1.0.0",
         coreApi: "^1.0.0",
+      },
+      {
+        // 1.25.0:宣告式 + 程式碼強化層。本體照樣後台熱安裝,files[] 這一層要落地。
+        id: "progext",
+        kind: "declarative",
+        name: "Progressive",
+        version: "1.0.0",
+        coreApi: "^1.0.0",
+        deployment: "progressive",
+        files: ["index.ts"],
       },
     ],
   };
@@ -209,6 +226,70 @@ describe("run — error paths", () => {
     const code = await run(["add", "declme", "--source", regUrl], repoDir);
     expect(code).toBe(EXIT.OK);
     expect(out()).toContain("declarative");
+  });
+
+  // ---- 1.25.0:宣告式 + files[] = 程式碼強化層 ----
+
+  it("宣告式但有 files[] → 真的安裝,且接法是 side-effect import", async () => {
+    const code = await run(["add", "progext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.OK);
+
+    const written = await readFile(
+      path.join(repoDir, "extensions", "progext", "index.ts"),
+      "utf8",
+    );
+    expect(written).toContain("overrideRegistry.register");
+
+    const reg = await readFile(
+      path.join(repoDir, "extensions", "registry.ts"),
+      "utf8",
+    );
+    expect(reg).toContain(`import "./progext";`);
+    // 強化層不是 Extension,不該進陣列
+    expect(reg).not.toContain(`import { progext }`);
+    expect(reg).not.toMatch(/registry: Extension\[\] = \[[^\]]*progext/);
+  });
+
+  it("強化層的 next steps 不叫人去按 Enable(那是宣告式那一半的事)", async () => {
+    await run(["add", "progext", "--source", regUrl], repoDir);
+    expect(out()).toContain("deploy");
+    expect(out()).not.toContain("Installed → Enable");
+  });
+
+  it("強化層少了 index.ts → 擋下來(那行 side-effect import 會解析失敗)", async () => {
+    // 把 registry 的 files[] 指到一個不存在 index.ts 的 extension
+    const { dir, url } = await makeRegistry(true);
+    const reg = JSON.parse(
+      await readFile(path.join(dir, "registry.json"), "utf8"),
+    ) as { extensions: Array<Record<string, unknown>> };
+    for (const e of reg.extensions) {
+      if (e.id === "progext") e.files = ["helper.ts"];
+    }
+    await writeFile(
+      path.join(dir, "registry.json"),
+      JSON.stringify(reg, null, 2),
+    );
+    await writeFile(
+      path.join(dir, "extensions", "progext", "files", "helper.ts"),
+      `export const x = 1;\n`,
+    );
+    try {
+      const code = await run(["add", "progext", "--source", url], repoDir);
+      expect(code).toBe(EXIT.PATCH_FAILED);
+      expect(errOut()).toContain("index.ts");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("宣告式但沒有 files[] → 維持原本的指路,不寫任何檔案", async () => {
+    const code = await run(["add", "declme", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.OK);
+    const reg = await readFile(
+      path.join(repoDir, "extensions", "registry.ts"),
+      "utf8",
+    );
+    expect(reg).not.toContain("declme");
   });
 
   it("exit 2 when source registry.json is unreachable", async () => {

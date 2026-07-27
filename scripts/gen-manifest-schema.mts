@@ -611,6 +611,8 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   p.screenshots.description = "Screenshots list (relative paths).";
   p.deployment.description =
     "instant = usable immediately; progressive = usable after install but full experience needs a rebuild; code-only = must rebuild.";
+  p.files.description =
+    "1.25.0: optional code-enhancement layer, as paths relative to the registry's extensions/<id>/files/. The declarative half still hot-installs and works on its own; these files are fetched by `sz-ws-cms add <id>` and only light up after a rebuild + deploy, registering view overrides via the (extId, surfaceId) registry in src/ext/overrides.ts. Removing them falls back to the generic views -- progressive is additive, never a one-way eject. Paths are allow-listed ([a-zA-Z0-9._-] and '/'); zod additionally rejects any '..' segment, which this pattern alone cannot express. A manifest using this field must declare coreApi \"^1.25.0\".";
   p.customApiRoutes.description =
     "1.9.0: custom read-only API endpoints other apps may call. Acts as an allow-list of which content types are exposed publicly. v1 is read-only: method must be 'GET'.";
   p.capabilities.description =
@@ -693,7 +695,7 @@ const DEF_ORDER = [
 
 const PROPERTY_ORDER = [
   "kind", "id", "name", "version", "coreApi", "description", "icon", "iconUrl", "banner", "screenshots",
-  "deployment", "installPrompts", "customApiRoutes", "capabilities", "requires",
+  "deployment", "files", "installPrompts", "customApiRoutes", "capabilities", "requires",
   "author", "homepage", "repository", "license", "tags", "category", "support",
   "theme", "stylesheet", "contentTypes", "settings", "adminPages", "publicRoutes", "og",
   "migrations", "on", "dashboardCards", "schedule", "loginProvider",
@@ -711,6 +713,15 @@ function orderedProperties(): Record<string, Json> {
   const props = (root as MutableSchema).properties as Record<string, Json>;
   const missing = PROPERTY_ORDER.filter((name) => !(name in props));
   assert(missing.length === 0, `top-level properties missing after extraction: ${missing.join(", ")}`);
+  // 反向檢查:zod 有、PROPERTY_ORDER 沒有的欄位。少了這道,在 manifest.ts 新增一個
+  // 欄位而忘了列進來,鏡像檔會**靜默少掉那個欄位** —— 而它是 additionalProperties:
+  // false 的,所以外部用 JSON Schema 驗證的人會拿到「你這個欄位不合法」,錯得毫無
+  // 線索。1.25.0 的 files[] 就是這樣掉的,補上檢查免得下一個人再踩。
+  const unlisted = Object.keys(props).filter((name) => !PROPERTY_ORDER.includes(name));
+  assert(
+    unlisted.length === 0,
+    `top-level properties present in manifest.ts but missing from PROPERTY_ORDER: ${unlisted.join(", ")} -- add them (order matters, it is the emitted key order)`,
+  );
   const out: Record<string, Json> = {};
   for (const name of PROPERTY_ORDER) out[name] = props[name];
   return out;

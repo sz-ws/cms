@@ -35,12 +35,31 @@ const REGISTRY_ARRAY_RE =
   /export const registry: Extension\[\] = \[([^\]]*)\];/;
 
 /**
+ * 接法有兩種,差別在「這包程式碼是不是一個 Extension」。
+ *
+ * - `extension`(預設,code extension):`import { foo } from "./foo"` + 加進
+ *   registry 陣列。core 從陣列拿到 Extension 物件。
+ * - `enhancement`(宣告式 extension 的程式碼強化層):**只有 side-effect import**
+ *   `import "./foo"`。強化層不是 Extension —— 它在 module load 時把自訂元件登記進
+ *   overrides registry,而該 extension 本體是宣告式的、住在 DB 裡。把它加進陣列會
+ *   讓 core 收到一個沒有 id/version 的東西,load 期就炸。
+ */
+export type PatchMode = "extension" | "enhancement";
+
+/**
  * 把 <id> 接進 registry.ts 內容。回傳新內容或格式辨識失敗。
  * 不做磁碟 I/O —— 呼叫端負責讀寫。
  */
-export function patchRegistryContent(content: string, id: string): PatchResult {
+export function patchRegistryContent(
+  content: string,
+  id: string,
+  mode: PatchMode = "extension",
+): PatchResult {
   const ident = camelCaseId(id);
-  const importLine = `import { ${ident} } from "./${id}";`;
+  const importLine =
+    mode === "enhancement"
+      ? `import "./${id}";`
+      : `import { ${ident} } from "./${id}";`;
   let out = content;
   let importAdded = false;
   let arrayAdded = false;
@@ -58,6 +77,18 @@ export function patchRegistryContent(content: string, id: string): PatchResult {
   }
 
   // ---- registry 陣列 ----
+  // 強化層到此為止:它沒有 Extension 可以加進陣列。此時也不檢查陣列是否存在 ——
+  // 那個 regex 對不上不該擋住一個根本不需要它的安裝。
+  if (mode === "enhancement") {
+    return {
+      ok: true,
+      content: out,
+      importAdded,
+      arrayAdded: false,
+      alreadyUpToDate: !importAdded,
+    };
+  }
+
   const arrayMatch = out.match(REGISTRY_ARRAY_RE);
   if (!arrayMatch) {
     return { ok: false, reason: "no-array", importLine, ident };

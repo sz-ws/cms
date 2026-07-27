@@ -320,4 +320,20 @@
 //     失敗模式必須是「少一個浮層」,不是整個公開站白畫面。
 //   註冊 publicWidgets 的 extension 應宣告 coreApi "^1.24.0";在更舊的 core 上該
 //   filter 沒有消費端,handler 不會被呼叫(不會壞,只是浮層不出現)。
-export const CORE_API_VERSION = "1.24.0";
+// 1.25.0(progressive 的打包那一半):
+//   - 宣告式 manifest 新增可選 `files[]`。在此之前 core-v2 §3.6 只做完了**執行期**
+//     那一半:overrides.ts 的 registry 在、interpret 也會查它,但沒有任何辦法把
+//     強化層送到站台 —— repo 裡那兩個示範(extensions/blog/layout.tsx、
+//     extensions/gallery-enhance/)是**手動**放進去的,而 CLI 對 kind !== "code"
+//     直接拒絕。於是 `deployment: "progressive"` 這個列舉值自 1.0 起就存在,卻沒有
+//     任何 extension 能真的用它。files[] 補上的就是這條路。
+//   - 語意分工刻意不變:宣告式那一半照樣 hot-install(裝完立刻能用泛用版面),
+//     files 是**選配**,而且只有 rebuild + deploy 後才點亮。移除檔案就退回 baseline
+//     —— 這是 §3.6 的「additive, never a one-way eject」承諾,現在有打包路徑撐著它。
+//   - 路徑安全:files[] 的字串會被 CLI 拿去組本機路徑並寫檔,而 manifest 可能來自
+//     任何一個被加進 registrySources 的來源。schema 走**白名單**([a-zA-Z0-9._-] 與
+//     "/"),再加一道 ".." 段的 refine。CLI 端另有同樣的檢查 —— 兩道互相獨立,因為
+//     這兩端會被不同的攻擊面觸及(hot-install 走 core,檔案落地走 CLI)。
+//   manifestSchema 是 .strict() —— 宣告 files 的 manifest 在 <1.25.0 的 core 會整包
+//   驗證失敗,故使用該欄位的 manifest 其 coreApi 必須宣告 "^1.25.0"。
+export const CORE_API_VERSION = "1.25.0";
