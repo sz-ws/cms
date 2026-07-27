@@ -166,6 +166,17 @@ const localizedStringSchema = z.union([
     }),
 ]);
 
+// name 是 admin 列表、settings 分頁標題、dashboard 卡署名唯一的人類可讀識別;
+// 空字串等於沒有名字(消費端只剩 `?? ext.id` 的機器 key 可退)。string 分支已由
+// localizedStringSchema 的 .min(1) 擋住 "",物件分支則只被 refine 過「至少一鍵」——
+// `{ "zh-Hant": "" }` 有鍵但沒有值,會安靜地變成沒有名字,所以在這裡補一道。
+const nonEmptyLocalizedString = localizedStringSchema.refine(
+  (value) =>
+    typeof value === "string" ||
+    Object.values(value).some((v) => typeof v === "string" && v.length > 0),
+  { message: "localized string requires at least one non-empty locale" },
+);
+
 const settingSchema = z
   .object({
     key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, "invalid setting key"),
@@ -260,10 +271,15 @@ const jobsSchema = z
 const manifestSchema = z
   .object({
     id: z.string().regex(ID_RE, "invalid extension id"),
-    name: z.string().min(1),
+    // spec-extension-i18n.md §1 #1/#2:頂層 name/description 與 label/title 一樣是
+    // LocalizedString。Extension 介面自 1.17.0 起就這樣宣告了,但這裡的 zod 還停在
+    // 純 z.string() —— 於是寫物件形式的 code extension 過得了 tsc、卻要等到
+    // `next build` 的 collecting page data 才在一個看似無關的路由上炸開。驗證跟上
+    // 型別,失敗點才會回到 defineExtension 本身。
+    name: nonEmptyLocalizedString,
     version: z.string().regex(SEMVER_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(RANGE_RE, "invalid coreApi range"),
-    description: z.string().optional(),
+    description: localizedStringSchema.optional(),
     migrations: z.array(migrationSchema).optional(),
     uninstall: z.array(migrationSchema).optional(),
     settings: z.array(settingSchema).optional(),
