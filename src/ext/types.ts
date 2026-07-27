@@ -367,7 +367,19 @@ export type HookName =
   // 這兩個 filter 存在的意義:讓站台自訂頁首頁尾**不必改 core 檔案** —— 客戶站與
   // 正本的分歧維持在零,日後 merge 上游修正才不會衝突。
   | "filter:publicHeader" // (component: ComponentType | null) => ComponentType | null
-  | "filter:publicFooter"; // (component: ComponentType | null) => ComponentType | null
+  | "filter:publicFooter" // (component: ComponentType | null) => ComponentType | null
+  // 1.24.0:公開站的浮層插槽 —— 不佔版位、疊在頁面上的東西(購買通知、cookie
+  // 橫幅、回到頂端、客服泡泡)。
+  //
+  // 為什麼不叫 extension 去接 publicFooter 就好:那兩個 filter 的語意是「取代」,
+  // 而實務上頁尾 extension 幾乎都寫成 `() => MyFooter`,直接無視傳進來的值。於是
+  // 「誰先註冊」決定了浮層是否存活 —— 一個安裝順序造成的靜默消失。所以浮層自己
+  // 一個插槽,而且值是**陣列**:約定俗成是 `(w) => [...w, MyWidget]`,append 沒有
+  // 順序風險,N 個 extension 可以共存。
+  //
+  // core 對浮層不做任何包裝(不加容器、不給 class):每個 widget 自己 `fixed`
+  // 自己的角落與 z-index。core 一旦加了外框,就等於替所有 widget 決定了堆疊脈絡。
+  | "filter:publicWidgets"; // (widgets: ComponentType[]) => ComponentType[]
 // v1 刻意不含 head/meta 注入 filter(App Router 的 <head> 管理方式不同,留待未來)
 
 export interface AdminMenuItem {

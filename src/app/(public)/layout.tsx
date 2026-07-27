@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import { getExtRuntime } from "@/ext/loader";
+import { normalizePublicWidgets } from "@/ext/public-widgets";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,12 @@ export const dynamic = "force-dynamic";
 //      這樣 core 與客戶站的分歧維持在零,`git merge upstream/main` 永遠不會衝突。
 //      同一套機制首頁已經在用了(filter:publicHome,見 ./page.tsx)。
 //
+//      不佔版位的浮層(購買通知、cookie 橫幅、回到頂端)走另一個插槽,值是陣列:
+//
+//        hooks.addFilter("filter:publicWidgets", (w) => [...w, MyWidget]);
+//
+//      一定要 append(`[...w, X]`)不要整包換掉,否則會把別的 extension 的浮層吃掉。
+//
 //   2)【退而求其次】真的需要這個站獨有、又不值得包成 extension 的東西,才直接改
 //      下面的 JSX。改了就要有心理準備:core 之後動到這個檔時要手動合併。
 //
@@ -41,19 +48,29 @@ export default async function PublicLayout({
 
   // 兩個 filter 都預設 null = 不渲染。沒有任何 extension 註冊時,公開站就是
   // 「只有內容、沒有外框」—— 對還沒設計過頁首頁尾的新站來說是正確的預設。
-  const [header, footer] = await Promise.all([
+  //
+  // publicWidgets(1.24.0)是浮層插槽,預設空陣列。與上面兩個不同的是它**累加**:
+  // extension 約定寫 `(w) => [...w, MyWidget]`,所以多個浮層可以共存,且不受
+  // 安裝順序影響。core 不替它們加任何容器 —— 每個 widget 自己決定角落與 z-index。
+  const [header, footer, widgets] = await Promise.all([
     rt.hooks.applyFilters<ComponentType | null>("filter:publicHeader", null),
     rt.hooks.applyFilters<ComponentType | null>("filter:publicFooter", null),
+    rt.hooks.applyFilters<unknown>("filter:publicWidgets", []),
   ]);
 
   const Header = header;
   const Footer = footer;
+  // 回傳值來自別人寫的 handler,不保證是陣列 —— 收斂理由見 ext/public-widgets.ts。
+  const Widgets = normalizePublicWidgets(widgets);
 
   return (
     <div className="flex min-h-screen flex-col">
       {Header && <Header />}
       <div className="flex-1">{children}</div>
       {Footer && <Footer />}
+      {Widgets.map((W, i) => (
+        <W key={i} />
+      ))}
     </div>
   );
 }

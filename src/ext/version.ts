@@ -303,4 +303,21 @@
 //     binding。Images 未啟用時原樣回傳原檔(X-Image-Transform: none),永不 404/500。
 //   讀 StoredFile 尺寸或組 ?w=/?f= 的 extension 應宣告 coreApi "^1.22.0";
 //   舊 extension 不受影響(參數被忽略、欄位為 undefined)。
-export const CORE_API_VERSION = "1.23.0";
+// 1.24.0(公開站浮層插槽):
+//   - 新 filter hook `filter:publicWidgets`,由 src/app/(public)/layout.tsx 消費,
+//     值是 `ComponentType[]`,渲染在頁尾之後、不參與版面流。給的是「疊在頁面上、
+//     不佔版位」那一類東西:購買通知、cookie 橫幅、回到頂端、客服泡泡。
+//   - 為什麼不重用 publicHeader/publicFooter:那兩個的語意是**取代**(值為單一
+//     component),而實務上頁尾 extension 幾乎都寫成 `() => MyFooter`、無視傳進來
+//     的值。浮層若寄生在 publicFooter,是否活著就由「誰先註冊」決定 —— 一個由安裝
+//     順序造成的靜默消失,而且症狀是「東西沒出現」,最難查。所以浮層自己一個插槽,
+//     且值是陣列,約定 `(w) => [...w, MyWidget]`:append 沒有順序風險,N 個浮層
+//     可以共存。
+//   - core **不替浮層加任何容器或 class**。一旦 core 包一層,就等於替所有 widget
+//     決定了 stacking context 與 pointer-events,而那正是浮層最需要自己掌握的兩件
+//     事。每個 widget 自己 `fixed` 自己的角落與 z-index。
+//   - layout 端對 filter 回傳值做防禦:非陣列或非 function 的項目一律略過。外框的
+//     失敗模式必須是「少一個浮層」,不是整個公開站白畫面。
+//   註冊 publicWidgets 的 extension 應宣告 coreApi "^1.24.0";在更舊的 core 上該
+//   filter 沒有消費端,handler 不會被呼叫(不會壞,只是浮層不出現)。
+export const CORE_API_VERSION = "1.24.0";
