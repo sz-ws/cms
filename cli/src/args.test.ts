@@ -139,3 +139,13 @@ describe("ID_RE", () => {
     }
   });
 });
+
+describe("help / version 的子指令形式", () => {
+  // 回歸測試:help 文字一直宣告 `cms help` 與 `cms version`,但解析器只認旗標,
+  // 子指令會掉進 unknown command。文件宣告過的用法必須真的能跑。
+  it.each(["help", "version"])("cms %s 等同於旗標形式", (cmd) => {
+    const a = parseArgs([cmd]);
+    expect(cmd === "help" ? a.help : a.version).toBe(true);
+    expect(a.error).toBeUndefined();
+  });
+});

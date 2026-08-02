@@ -170,7 +170,9 @@ export function createReporter(o: StreamReporterOptions): Reporter {
     },
     note(title, lines) {
       write(`\n${s.bold(title)}\n`);
-      for (const line of lines) write(`  ${line}\n`);
+      // 空行不補縮排 —— 否則區塊裡每個分隔行都會留下兩個尾隨空白,
+      // 貼進 issue / diff 的時候很醜,有些編輯器還會標成錯誤。
+      for (const line of lines) write(line ? `  ${line}\n` : "\n");
     },
     outro(lines) {
       write("\n");

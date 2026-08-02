@@ -139,6 +139,8 @@ afterEach(async () => {
 });
 
 interface HarnessOverrides extends Partial<SetupOptions> {
+  /** select 題目的答案(索引);不給則一律挑第一個。 */
+  selectAnswers?: number[];
   account?: FakeAccount;
   answers?: boolean[];
   textAnswers?: string[];
@@ -175,6 +177,7 @@ async function setup(overrides: HarnessOverrides = {}): Promise<{
     }),
     prompter,
     dryRun: false,
+    interactive: false,
     assumeYes: true,
     skipMigrations: false,
     skipSecrets: false,
@@ -232,6 +235,62 @@ describe("runSetup — 全新帳號的完整流程", () => {
     expect(out).toContain("pnpm run deploy");
     expect(out).toContain("/setup");
     expect(out).toContain("core.siteUrl");
+  });
+});
+
+// 收尾曾經是一坨扁平的行(next steps + 延後的金鑰 + 三段警告全塞進 outro),
+// 結果是使用者掃不到那三段「做錯會鎖死整站」的警告。這一組守的是分區與內容。
+describe("runSetup — 收尾輸出的結構", () => {
+  const NOTE_TITLES = [
+    "next steps",
+    "⚠ before you create the first admin",
+    "⚠ these keys can never be rotated",
+  ];
+
+  it("分成有標題的區塊,「接下來做什麼」與「危險警告」是分開的", async () => {
+    const { out } = await setup({ account: { secrets: [] } });
+    for (const title of NOTE_TITLES) expect(out).toContain(title);
+    // 順序:先做什麼,再警告什麼。倒過來的話警告會被下一步沖走。
+    expect(out.indexOf("next steps")).toBeLessThan(
+      out.indexOf("⚠ before you create the first admin"),
+    );
+    expect(out.indexOf("⚠ before you create the first admin")).toBeLessThan(
+      out.indexOf("⚠ these keys can never be rotated"),
+    );
+  });
+
+  // 這三段每一句都是「照做才不會把整站鎖死」的資訊。刪字等於刪掉那個保護。
+  it("三段警告一個字都沒少", async () => {
+    const { out } = await setup({ account: { secrets: [] } });
+    for (const line of [
+      `⚠ ${AUTH_PEPPER} must be set **before** opening /setup to create first admin,`,
+      "otherwise first batch of passwords will lack pepper protection (can still login, but less secure).",
+      `⚠ if ${SETUP_TOKEN} is not set, /setup always returns 503 — this is intentional:`,
+      "without it, first person to find the URL becomes admin.",
+      "⚠ don't reuse dev keys from .dev.vars. both cannot be rotated once set:",
+      `rotate ${SECRETS_KEY} → all encrypted settings become gibberish (envelope has no key id).`,
+      `rotate ${AUTH_PEPPER} → all existing passwords become uncomputable, site completely locked.`,
+    ]) {
+      expect(out).toContain(line);
+    }
+  });
+
+  // `cms secrets` + postdeploy 之後,「deploy 完再跑一次 setup」這個往返不存在了。
+  // 留著那句話會讓人做一次完全白工的重跑。
+  it("不再叫使用者回頭重跑 setup 補金鑰", async () => {
+    const { out } = await setup({ account: { secrets: "error" } });
+    expect(out).not.toContain("rerun setup now to complete");
+    expect(out).toContain("postdeploy");
+  });
+
+  // openssl 那三行是備援,不是主要路徑 —— 它必須排在「跑 deploy 就會自動補」之後。
+  it("手動 openssl 指令降級成備援,排在自動路徑後面", async () => {
+    const { out } = await setup({ account: { secrets: "error" } });
+    const auto = out.indexOf("will be set right after the first deploy");
+    const fallback = out.indexOf("fallback — only if that automatic step fails");
+    expect(auto).toBeGreaterThanOrEqual(0);
+    expect(fallback).toBeGreaterThan(auto);
+    expect(out.indexOf("openssl rand -base64 32")).toBeGreaterThan(fallback);
   });
 });
 
@@ -587,7 +646,7 @@ describe("runSetup — 登入多個 Cloudflare 帳號", () => {
             listCalls++;
             return { code: 1, stdout: "", stderr: AMBIGUITY };
           }
-          return null;
+          return undefined;
         },
       },
     });
@@ -617,7 +676,7 @@ describe("runSetup — 登入多個 Cloudflare 帳號", () => {
             // 第一次撞多帳號,設好之後第二次成功。
             if (listCalls === 1) return { code: 1, stdout: "", stderr: AMBIGUITY };
           }
-          return null;
+          return undefined;
         },
       },
     });

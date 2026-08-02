@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { run, EXIT, isDirectRun } from "./cli.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { run, EXIT, isDirectRun, VERSION } from "./cli.js";
 
 const REGISTRY_HEADER = `import type { Extension } from "@/ext/types";\n`;
 const emptyRegistry =
@@ -149,9 +149,9 @@ afterEach(async () => {
 // 人看的輸出現在全部走 stderr(stdout 只留給 --version / --help / --json 的結果)。
 // out() 因此看 stderr —— 既有的斷言問的是「有沒有講這件事」,那個意圖沒有變。
 // 真的要斷言 stdout 的測試改用 stdoutOut()。
-const out = () => errSpy.mock.calls.map((c) => String(c[0])).join("");
-const errOut = () => errSpy.mock.calls.map((c) => String(c[0])).join("");
-const stdoutOut = () => logSpy.mock.calls.map((c) => String(c[0])).join("");
+const out = () => errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+const errOut = () => errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+const stdoutOut = () => logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
 
 describe("run — full install path", () => {
   it("installs files and patches registry.ts", async () => {
@@ -447,6 +447,23 @@ describe("run — help / version", () => {
     expect(code).toBe(EXIT.OK);
     expect(stdoutOut()).toContain("@sz.ws/cms v");
     expect(out()).toBe("");
+  });
+  // secrets 不是「進階選項」——它是 postdeploy hook 的實作,使用者遲早會在
+  // deploy 的輸出裡看到它的名字然後來查 help。查不到會比沒有這個指令更困惑。
+  it("--help 涵蓋 secrets", async () => {
+    await run(["--help"], repoDir);
+    const help = stdoutOut();
+    expect(help).toContain("cms secrets");
+    expect(help).toContain("SETUP_TOKEN");
+    expect(help).toContain("postdeploy");
+  });
+  // CLI 自己回報的版號與 cli/package.json 曾經漂移過(0.3.0 vs 0.4.1),而那個
+  // 漂移是靜默的:`cms --version` 說謊,沒有任何測試會紅。
+  it("VERSION 與 cli/package.json 一致", async () => {
+    const pkg = JSON.parse(
+      await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+    ) as { version: string };
+    expect(VERSION).toBe(pkg.version);
   });
 });
 

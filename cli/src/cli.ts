@@ -5,6 +5,8 @@
 //              → 寫本機 extensions/<id>/ → patch extensions/registry.ts。
 //   setup      把 repo 接上自己的 Cloudflare 帳號:建 D1 / R2、回填 wrangler.jsonc、
 //              套 migrations、設 SECRETS_KEY(見 setup.ts)。
+//   secrets    確保三把受管金鑰在**已部署的** Worker 上存在(見 secrets.ts)。
+//              `pnpm run deploy` 的 postdeploy hook 跑的就是這一支。
 //   preflight  deploy 前的唯讀盤點:extension 宣告了哪些 settings、哪些還沒填
 //              (見 preflight.ts)。`--gate` 給 predeploy 用。
 
@@ -37,6 +39,7 @@ import { EXIT } from "./exit.js";
 import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
 import { WranglerClient } from "./wrangler.js";
 import { runSetup } from "./setup.js";
+import { runSecrets } from "./secrets.js";
 import { runPreflight } from "./preflight.js";
 import {
   runCreate,
@@ -46,7 +49,7 @@ import {
 import { configureExtension } from "./configure.js";
 import { createUi, type UiEvent } from "./ui.js";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.5.0";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
@@ -59,6 +62,8 @@ const USAGE = `@sz.ws/cms v${VERSION} — sz.ws CMS command-line tool
 Usage:
   cms create <dir> [options]    scaffold a new CMS project (clones the template)
   cms setup [options]           connect this repo to your Cloudflare account
+  cms secrets [options]         ensure SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN exist
+                                on the deployed Worker (run by the postdeploy hook)
   cms add <id> [options]        install a code extension
   cms preflight [options]       list extension settings that are still unset
   cms help                      show this help
@@ -80,6 +85,11 @@ setup options:
                                 multi-tenant account this causes cross-site access
   --skip-migrations             skip applying migrations/
   --skip-secrets                skip setting SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN
+                                (pnpm run deploy fills them in afterwards anyway)
+
+secrets options:
+  --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
+  --dry-run                     report which keys are missing, generate nothing
 
 add options:
   --source <url>                registry base URL
@@ -105,6 +115,8 @@ examples:
   npx @sz.ws/cms create acme-taipei --template https://github.com/me/my-fork.git
   npx @sz.ws/cms setup --site-slug acme-taipei
   npx @sz.ws/cms setup --dry-run
+  npx @sz.ws/cms secrets
+  npx @sz.ws/cms secrets --dry-run
   npx @sz.ws/cms add blog
   npx @sz.ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
   npx @sz.ws/cms preflight
@@ -250,6 +262,7 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
   }
   if (args.command === "create") return runCreateCommand(args, cwd);
   if (args.command === "setup") return runSetupCommand(args, cwd);
+  if (args.command === "secrets") return runSecretsCommand(args, cwd);
   if (args.command === "preflight") return runPreflightCommand(args, cwd);
   if (args.command !== "add") {
     err(`✗ unknown command: ${args.command ?? "(none)"}`);
@@ -351,6 +364,33 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
     skipSecrets: args.skipSecrets,
     siteSlug: args.siteSlug,
     allowSharedDefaultNames: args.allowSharedDefaultNames,
+  });
+}
+
+/**
+ * `secrets` 的接線。
+ *
+ * 刻意**不接 prompter**:這支指令的正常呼叫者是 `pnpm run deploy` 的 postdeploy
+ * hook,那裡沒有人在鍵盤前面。它做的事只有一件(補齊缺的受管金鑰),而那件事在
+ * 任何情況下都是正確的 —— 沒有需要問的選擇。
+ */
+async function runSecretsCommand(args: ParsedArgs, cwd: string): Promise<number> {
+  const { cmd, prefix } = resolveWranglerCommand(cwd);
+  const ui = createUi({ interactive: false, json: args.json });
+  setupEvents = ui.events;
+  const configPath = args.config ? path.resolve(cwd, args.config) : undefined;
+
+  return runSecrets({
+    client: new WranglerClient({
+      exec: spawnExecutor,
+      cwd,
+      cmd,
+      prefix,
+      dryRun: args.dryRun,
+      configPath,
+    }),
+    reporter: ui.reporter,
+    dryRun: args.dryRun,
   });
 }
 

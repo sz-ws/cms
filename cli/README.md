@@ -1,10 +1,11 @@
 # @sz.ws/cms — `cms` / `sz-ws-cms`
 
-CLI for the sz.ws CMS. Three commands:
+CLI for the sz.ws CMS. Four commands:
 
 | Command | Purpose |
 |---|---|
 | `cms setup` | Connect repo to your Cloudflare account: create D1 / R2, fill ids back into `wrangler.jsonc`, apply migrations, set three secrets (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`) |
+| `cms secrets` | Ensure those three secrets exist on the **deployed** Worker. Run automatically by the repo's `postdeploy` hook, because `wrangler secret put` needs a Worker that already exists |
 | `cms add <id>` | Install code extension: fetch files from registry → write to `extensions/<id>/` → patch `extensions/registry.ts`, then ask for the extension's declared settings |
 | `cms preflight` | Read-only: list extension settings that are still unset. `--gate` exits non-zero on missing required ones (used by the repo's `predeploy`) |
 
@@ -38,7 +39,7 @@ Processes each D1 / R2 resource from `wrangler.jsonc` — resource list comes fr
 3. **Create missing resources**: `wrangler d1 create` / `wrangler r2 bucket create`.
 4. **Fill IDs back into** `wrangler.jsonc` (see next section).
 5. **Apply migrations**: only for D1 databases that **declare `migrations_dir`**. `cms-tag-cache` has no such field; its `revalidations` table is created by `opennextjs-cloudflare deploy`'s populate-cache step (schema belongs to OpenNext; hand-copying into version control drifts).
-6. **Three secrets** (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`): if already present, skipped and **never overwritten**. When newly set, CLI generates 32-byte random values and pipes them via **stdin** to `wrangler secret put` — not passed via argv (visible to `ps`), not left in shell history, not printed to the terminal, no local copy kept.
+6. **Three secrets** (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`): if already present, skipped and **never overwritten**. When newly set, CLI generates 32-byte random values and pipes them via **stdin** to `wrangler secret put` — not passed via argv (visible to `ps`), not left in shell history, not printed to the terminal, no local copy kept. On a **first** setup the Worker does not exist yet, so this step cannot run at all; `cms secrets` (below) picks it up right after the first deploy.
 
 ## Idempotent / interrupted midway
 
@@ -72,6 +73,23 @@ When `d1 list` fails, the command deliberately **does not proceed** — without 
 ## What it does not do
 
 `wrangler login` (touches credentials), `pnpm run deploy`, open `/setup` to create the first admin, set `core.siteUrl`. These are listed in the final message for manual completion.
+
+---
+
+# `cms secrets`
+
+Ensures `SECRETS_KEY` / `AUTH_PEPPER` / `SETUP_TOKEN` exist on the **deployed** Worker. That is the whole command — it creates nothing else.
+
+```bash
+npx @sz.ws/cms secrets            # generate whatever is missing
+npx @sz.ws/cms secrets --dry-run  # report only
+```
+
+The repo wires it to `postdeploy`, so `pnpm run deploy` finishes the job by itself. It exists as a separate command because `wrangler secret put` needs a Worker that already exists: during the first `cms setup` there is nothing to attach a secret to, and the old advice ("deploy, then run setup again") made people repeat every other setup step for nothing.
+
+- Existing keys are **never overwritten**. Rotating `SECRETS_KEY` turns every stored encrypted setting into gibberish; rotating `AUTH_PEPPER` makes every existing password uncomputable; rotating `SETUP_TOKEN` can lock out a site that has no admin yet.
+- Only a **newly created** `SETUP_TOKEN` has its value printed — you need it to create the first admin, and `wrangler` cannot read a secret back. `SECRETS_KEY` and `AUTH_PEPPER` values are never shown, anywhere.
+- If the secret list cannot be read (Worker not deployed, not logged in, network down), it exits non-zero **without writing anything** — "cannot see" is not "not set". The `postdeploy` wrapper turns that into a loud warning plus manual commands and still exits 0, because the deploy itself already succeeded.
 
 ---
 

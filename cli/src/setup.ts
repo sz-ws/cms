@@ -10,14 +10,17 @@
 //   - wrangler.jsonc 的值已經對了就完全不產生編輯。
 //   - migrations 本來就有 applied 紀錄表,重跑是 no-op。
 //   - 三把 worker secret 已存在就跳過(**絕不覆寫** —— 換掉任一把都是不可逆的災難,
-//     見 MANAGED_SECRETS 的說明)。
+//     見 secrets.ts 的 MANAGED_SECRETS 說明)。
 // 所以跑到一半斷掉的人,直接再跑一次就好。
+//
+// 第一次跑的時候 Worker 還不存在,三把金鑰**掛不上去**。那不再是這支指令的問題:
+// `pnpm run deploy` 的 postdeploy hook 會跑 `sz-ws-cms secrets` 把缺的補齊。
+// 這裡只負責在 Worker 已經存在時順手補上,並把「為什麼不能輪換」講清楚。
 
-import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "./exit.js";
-import type { Prompter, Reporter } from "./ui.js";
+import { displayWidth, padVisual, type Prompter, type Reporter } from "./ui.js";
 import { WranglerClient } from "./wrangler.js";
 import {
   ConfigShapeError,
@@ -29,46 +32,28 @@ import {
   type WranglerConfig,
 } from "./wrangler-config.js";
 import { JsoncParseError } from "./jsonc.js";
+import {
+  AUTH_PEPPER,
+  FIRST_ADMIN_TITLE,
+  FIRST_ADMIN_WARNINGS,
+  MANAGED_SECRETS,
+  NO_ROTATION_TITLE,
+  NO_ROTATION_WARNINGS,
+  SECRETS_KEY,
+  SETUP_TOKEN,
+  defaultSecretGenerator,
+  manualSecretCommands,
+  type ManagedSecret,
+} from "./secrets.js";
 
-export const SECRETS_KEY = "SECRETS_KEY";
-export const AUTH_PEPPER = "AUTH_PEPPER";
-export const SETUP_TOKEN = "SETUP_TOKEN";
-
-/**
- * setup 會產生的 worker secret。兩把都是**產生後就不能換**的:
- *
- *   SECRETS_KEY  換掉 → 所有已加密的設定同時變亂碼(信封沒有 key id)。
- *   AUTH_PEPPER  它會被 HMAC 進每一次密碼雜湊,而雜湊字串裡記著「當初有沒有
- *                pepper」。設了之後再拔掉,所有既存密碼都算不出來 = 全站鎖死。
- *
- * AUTH_PEPPER 一定要在**建立第一個管理員之前**就存在,否則第一批密碼會以
- * 無 pepper 的形式落地。核心對這種情況是容忍的(照雜湊裡的旗標驗證,不會鎖死),
- * 但那些密碼在重設之前一直享受不到 pepper 的保護 —— 而 pepper 正是 Workers
- * 只能跑 100k iteration 這件事最需要的補償。
- */
-const MANAGED_SECRETS = [
-  {
-    name: SECRETS_KEY,
-    why: "encrypts every `secret: true` setting (registry tokens, Resend key, OIDC secret, payment keys)",
-    neverRotate:
-      "Not overwriting — rotating the key invalidates every stored encrypted setting, with no gradual migration path.",
-  },
-  {
-    name: AUTH_PEPPER,
-    why: "HMACs the password before hashing; without it an offline attack on a leaked database cannot even start",
-    neverRotate:
-      "Not overwriting — rotating it makes every existing password uncomputable, locking everyone out.",
-  },
-  {
-    name: SETUP_TOKEN,
-    why: "bootstrap credential for /setup; stops whoever finds the URL first from claiming the admin account",
-    neverRotate: "Not overwriting — the site may have no admin yet; rotating it locks you out too.",
-    // 唯一會被印出來的一把:它的用途就是給人貼進 /setup 的表單,而且建完
-    // 第一個管理員之後就完全失效(那個端點從此一律回 403)。另外兩把印出來
-    // 只有壞處 —— 它們的值永遠不需要被人眼看到。
-    reveal: true,
-  },
-] as const;
+// 三把金鑰的定義只有一份,住在 secrets.ts(`sz-ws-cms secrets` 也要用同一份)。
+// 這裡 re-export,`import { SECRETS_KEY } from "./setup.js"` 的既有契約不變。
+export {
+  SECRETS_KEY,
+  AUTH_PEPPER,
+  SETUP_TOKEN,
+  defaultSecretGenerator,
+} from "./secrets.js";
 
 /** R2 最長名稱是 63;最長衍生值 cms-<slug>-next-cache 需要保留 15 字元。 */
 export const SITE_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/;
@@ -105,11 +90,6 @@ export interface SetupOptions {
   allowSharedDefaultNames?: boolean;
   /** 可注入,測試才能斷言「送進 secret put 的就是這個值」。 */
   generateSecret?: () => string;
-}
-
-/** 32 byte base64 —— 與 DEPLOY.md 的 `openssl rand -base64 32` 等價。 */
-export function defaultSecretGenerator(): string {
-  return randomBytes(32).toString("base64");
 }
 
 interface D1Plan {
@@ -249,23 +229,72 @@ async function prepareSiteConfig(
   }
 }
 
-/** 給每個步驟收尾用:一定要講「現在該做什麼」,不能只說失敗。 */
+/** 收尾的一個區塊 —— reporter.note(title, lines) 會印粗體標題 + 縮排內容。 */
+interface NoteBlock {
+  title: string;
+  lines: string[];
+}
+
+interface NextStep {
+  /** 要下的指令 / 要按的東西。這一欄會被對齊。 */
+  action: string;
+  /** 對齊後接在 `#` 後面的短說明。 */
+  comment?: string;
+  /** 補充行,縮在 action 底下。 */
+  more?: readonly string[];
+}
+
+/**
+ * 「接下來做什麼」。
+ *
+ * 刻意**沒有**「回頭再跑一次 setup 補金鑰」那一步了:三把金鑰現在由
+ * `pnpm run deploy` 的 postdeploy hook(→ `sz-ws-cms secrets`)自動補上。
+ * 那個往返是舊流程唯一存在的理由,拿掉之後這份清單才是真的線性的。
+ */
 function deployNextSteps(): string[] {
+  const steps: readonly NextStep[] = [
+    {
+      // 一定要是 `pnpm run deploy`:`deploy` 是 pnpm 的內建指令,`pnpm deploy`
+      // 會被它接走而不是跑 package.json 的 script(ERR_PNPM_CANNOT_DEPLOY)。
+      action: "pnpm run deploy",
+      comment: "build + deploy; postdeploy tops up any missing key",
+    },
+    {
+      action: "open /setup on the live site",
+      comment: `create the first admin, paste ${SETUP_TOKEN}`,
+      more: ["(live D1 is empty, separate from local)"],
+    },
+    {
+      action: "Settings → core.siteUrl",
+      comment: "set it to your public URL",
+      more: [
+        "(OIDC redirect_uri, SEO canonical/sitemap/feed, payment return URLs all need absolute URLs)",
+      ],
+    },
+    {
+      action: "/admin/extensions",
+      comment: "enable one extension, create content, check the public route",
+    },
+  ];
+
+  // 對齊用 displayWidth/padVisual 而不是 .length:說明文字未來若含 CJK,
+  // .length 會少算近一半欄數,整排就歪掉(見 ui.ts 的說明)。
+  const width = Math.max(0, ...steps.map((s) => displayWidth(s.action)));
+  const out: string[] = [];
+  steps.forEach((step, i) => {
+    const head = `${i + 1}. ${padVisual(step.action, width)}`;
+    out.push(step.comment ? `${head}  # ${step.comment}` : head.trimEnd());
+    // 補充行縮在 action 之下(`1. ` 是三欄),不跟著跑到註解欄。
+    for (const line of step.more ?? []) out.push(`   ${line}`);
+  });
+  return out;
+}
+
+/** setup 成功時一定要印的兩段危險警告。內容住在 secrets.ts,兩支指令共用同一份。 */
+function dangerBlocks(): NoteBlock[] {
   return [
-    "next steps:",
-    // 一定要是 `pnpm run deploy`:`deploy` 是 pnpm 的內建指令,`pnpm deploy`
-    // 會被它接走而不是跑 package.json 的 script(ERR_PNPM_CANNOT_DEPLOY)。
-    "  1. pnpm run deploy                 # opennextjs-cloudflare build + deploy",
-    // pepper 一定要卡在建第一個管理員之前。晚一步設,那批密碼就永遠是無 pepper 的
-    // 形式(還是登得進去,core 照雜湊裡的旗標驗證),但要拿回保護只能逐一重設密碼。
-    `  2. verify ${SECRETS_KEY} / ${AUTH_PEPPER} / ${SETUP_TOKEN} are all set (first setup run:`,
-    "     worker doesn't exist yet so this step gets deferred; rerun setup now to complete,",
-    `     and it will print the ${SETUP_TOKEN} value)`,
-    `  3. open /setup on the live site to create first admin account, enter ${SETUP_TOKEN} in form`,
-    "     (live D1 is empty, separate from local)",
-    "  4. Settings → core.siteUrl set to your public URL",
-    "     (OIDC redirect_uri, SEO canonical/sitemap/feed, payment return URLs all need absolute URLs)",
-    "  5. /admin/extensions enable one extension, create a piece of content, verify public route renders",
+    { title: FIRST_ADMIN_TITLE, lines: [...FIRST_ADMIN_WARNINGS] },
+    { title: NO_ROTATION_TITLE, lines: [...NO_ROTATION_WARNINGS] },
   ];
 }
 
@@ -559,21 +588,32 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   }
 
   // ---- 8. worker secrets ----
-  let secretNote: string[];
+  let secretBlocks: NoteBlock[];
   if (o.skipSecrets) {
     r.step("skip", `skipped ${SECRETS_KEY} / ${AUTH_PEPPER} (--skip-secrets)`);
-    secretNote = [
-      "remember to set these after deploying (both cannot be rotated once set):",
-      ...MANAGED_SECRETS.map(
-        (s) => `  openssl rand -base64 32 | pnpm exec wrangler secret put ${s.name}`,
-      ),
-      `  ${AUTH_PEPPER} must be set before opening /setup to create the first admin.`,
+    secretBlocks = [
+      {
+        title: "you asked to skip the managed secrets — set them yourself",
+        lines: [
+          "`pnpm run deploy` normally does this for you (postdeploy → `sz-ws-cms secrets`).",
+          "if you keep skipping, generate them once and never rotate them:",
+          "",
+          ...manualSecretCommands(),
+          "",
+          `${AUTH_PEPPER} must be set before opening /setup to create the first admin.`,
+        ],
+      },
     ];
   } else {
-    secretNote = await ensureSecretsKey(o, generateSecret);
+    secretBlocks = await ensureSecretsKey(o, generateSecret);
   }
 
-  r.outro([...deployNextSteps(), ...(secretNote.length ? ["", ...secretNote] : [])]);
+  // 輸出分成有標題的區塊,而不是一大坨扁平的行:「接下來做什麼」跟「做錯會鎖死
+  // 整站的警告」是兩種完全不同的東西,擠在同一段裡沒有人掃得到後者。
+  r.note("next steps", deployNextSteps());
+  for (const block of secretBlocks) r.note(block.title, block.lines);
+  for (const block of dangerBlocks()) r.note(block.title, block.lines);
+  r.outro(["✓ setup complete — run `pnpm run deploy` next."]);
   return EXIT.OK;
 }
 
@@ -634,55 +674,65 @@ async function persistIds(
   }
 }
 
-/** 確保 SECRETS_KEY 存在。回傳要附在收尾訊息裡的補充說明。 */
+/** 確保三把金鑰存在。回傳要附在收尾訊息裡的有標題區塊。 */
 async function ensureSecretsKey(
   o: SetupOptions,
   generateSecret: () => string,
-): Promise<string[]> {
+): Promise<NoteBlock[]> {
   const { reporter: r } = o;
   const names = MANAGED_SECRETS.map((s) => s.name).join(" / ");
-  // 一次列舉,兩把都用同一份清單判斷 —— 不必為了第二把再打一次 wrangler。
+  // 一次列舉,三把都用同一份清單判斷 —— 不必為了第二把再打一次 wrangler。
   const secrets = await r.task(`checking ${names}`, () => o.client.listSecrets());
 
   if (secrets === null) {
     // 最常見的原因是 Worker 還沒 deploy 過,帳號上根本沒有這個 Worker 可以掛 secret。
     // 這時候不能猜「沒設定」就硬寫,也不能說「已設定好」—— 誠實講清楚順序。
-    r.step("warn", "could not retrieve secret list", "worker may not be deployed yet.");
+    //
+    // 這**不再**是要使用者回頭重跑 setup 的理由:`pnpm run deploy` 的 postdeploy
+    // hook 會在部署完成後自己跑 `sz-ws-cms secrets` 把缺的補上。openssl 那幾行
+    // 降級成「萬一自動那步也失敗」時的備援,不是主要路徑。
+    r.step(
+      "warn",
+      "could not retrieve secret list",
+      "worker may not be deployed yet — normal on a first setup, and nothing to fix here.",
+    );
     return [
-      `${names} step deferred to after deploy (no worker exists yet to attach secrets):`,
-      "  pnpm run deploy",
-      ...MANAGED_SECRETS.map(
-        (s) => `  openssl rand -base64 32 | pnpm exec wrangler secret put ${s.name}`,
-      ),
-      "",
-      `⚠ ${AUTH_PEPPER} must be set **before** opening /setup to create first admin,`,
-      "  otherwise first batch of passwords will lack pepper protection (can still login, but less secure).",
-      `⚠ if ${SETUP_TOKEN} is not set, /setup always returns 503 — this is intentional:`,
-      "  without it, first person to find the URL becomes admin.",
-      "",
-      "⚠ don't reuse dev keys from .dev.vars. both cannot be rotated once set:",
-      `  rotate ${SECRETS_KEY} → all encrypted settings become gibberish (envelope has no key id).`,
-      `  rotate ${AUTH_PEPPER} → all existing passwords become uncomputable, site completely locked.`,
+      {
+        title: `${names} will be set right after the first deploy`,
+        lines: [
+          "no worker exists yet, so there is nothing to attach secrets to. `pnpm run deploy`",
+          "runs the postdeploy hook (`sz-ws-cms secrets`), which generates the missing ones",
+          `and prints the ${SETUP_TOKEN} value once.`,
+        ],
+      },
+      {
+        title: "fallback — only if that automatic step fails",
+        lines: [
+          ...manualSecretCommands(),
+          "",
+          `you would then have to remember the ${SETUP_TOKEN} value yourself: wrangler cannot`,
+          "read a secret back after it is set.",
+        ],
+      },
     ];
   }
 
-  const notes: string[] = [];
+  const blocks: NoteBlock[] = [];
   for (const spec of MANAGED_SECRETS) {
-    notes.push(...(await ensureOneSecret(o, spec, secrets, generateSecret)));
+    blocks.push(...(await ensureOneSecret(o, spec, secrets, generateSecret)));
   }
-  return notes;
+  return blocks;
 }
 
 /** 單一把 secret 的「有就跳過、沒有就產生」。絕不覆寫。 */
 async function ensureOneSecret(
   o: SetupOptions,
-  spec: (typeof MANAGED_SECRETS)[number],
+  spec: ManagedSecret,
   existing: readonly string[],
   generateSecret: () => string,
-): Promise<string[]> {
+): Promise<NoteBlock[]> {
   const { reporter: r } = o;
   const { name } = spec;
-  const manual = `  openssl rand -base64 32 | pnpm exec wrangler secret put ${name}`;
 
   if (existing.includes(name)) {
     r.step("ok", `${name} already set`, spec.neverRotate);
@@ -696,7 +746,12 @@ async function ensureOneSecret(
     );
     if (!go) {
       r.step("skip", `skipped ${name}`);
-      return [`remember to set ${name} — ${spec.why}:`, manual];
+      return [
+        {
+          title: `${name} is still unset`,
+          lines: [spec.why, "", ...manualSecretCommands([name])],
+        },
+      ];
     }
   }
 
@@ -705,10 +760,19 @@ async function ensureOneSecret(
   const outcome = await r.task(`setting ${name}`, () => o.client.putSecret(name, value));
   if (outcome.status === "failed") {
     r.step("fail", `failed to set ${name}`, outcome.detail);
-    return [`${name} not yet configured. manually set after deploy:`, manual];
+    return [
+      {
+        title: `${name} could not be set`,
+        lines: [
+          "`pnpm run deploy` will try again via the postdeploy hook. to do it by hand:",
+          "",
+          ...manualSecretCommands([name]),
+        ],
+      },
+    ];
   }
 
-  const reveal = "reveal" in spec && spec.reveal === true;
+  const reveal = spec.reveal === true;
   r.step(
     "ok",
     `${name} generated and set`,
@@ -719,7 +783,13 @@ async function ensureOneSecret(
   // 這一把非印不可:CLI 不會替使用者開瀏覽器填表,而 wrangler 事後也讀不回
   // secret 的值。不印 = 使用者永遠建不出第一個管理員,只能自己覆寫一把。
   return [
-    `${name} (paste in /setup form when creating first admin; auto-expires after):`,
-    `  ${value}`,
+    {
+      title: `${name} — copy it now, it cannot be shown again`,
+      lines: [
+        value,
+        "",
+        "paste it into the /setup form when creating the first admin; it stops working after that.",
+      ],
+    },
   ];
 }

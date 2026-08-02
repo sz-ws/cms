@@ -5,7 +5,9 @@ NewebPay MPG 2.0 收款。提供 `payment` capability(`createCheckout`)、付款
 
 ## 啟用
 
-1. `extensions/registry.ts` 已掛載(import + 陣列一行)。
+1. 掛進 `extensions/registry.ts`(import + 陣列一行)。**預設 bundle 不含這個
+   extension** —— 它是台灣特定的金流閘道,不是所有站台都用得到,所以不預裝。
+   要裝的話跑 `npx @sz.ws/cms add newebpay`,或自己補那兩行。
 2. Admin → Extensions → 藍新金流 → 啟用(`kind:"code"`;enable 時自動跑 migration
    建 `ext_newebpay_orders` 表)。
 3. 設定頁 Extensions 區填:

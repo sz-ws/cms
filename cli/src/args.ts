@@ -4,6 +4,7 @@
 //                 [--non-interactive] [--skip-core-check]
 //   sz-ws-cms setup [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
 //                [--skip-migrations] [--skip-secrets]
+//   sz-ws-cms secrets [--config <path>] [--dry-run] [--json]
 //   sz-ws-cms create <dir> [--template <url>] [--ref <branch|tag>]
 //                          [--dry-run] [--skip-git-init]
 //   sz-ws-cms preflight [--config <path>] [--gate]
@@ -138,6 +139,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
 
   out.command = positionals[0];
+  // `cms help` / `cms version` 是 help 文字自己宣告的用法,但先前只認 --help / --version
+  // 兩個旗標,子指令形式會掉進「unknown command」。文件說有的東西就該能跑。
+  if (out.command === "help") out.help = true;
+  if (out.command === "version") out.version = true;
   out.id = positionals[1];
   return out;
 }

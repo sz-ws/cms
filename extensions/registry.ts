@@ -7,7 +7,6 @@
 //(cli/src/patch.ts 用 regex 錨定它)。不要換行、不要重排,否則 `sz-ws-cms add` 會裝不進去。
 import type { Extension } from "@/ext/types";
 import { cron } from "./cron";
-import { newebpay } from "./newebpay";
 import { sentry } from "./sentry";
 
 // core-v2 §3.6 DEMO ONLY:progressive「程式碼強化層」的 side-effect import。
@@ -30,7 +29,15 @@ import "./blog/layout";
 // ai-smoke-test 刻意**不**在預設陣列裡:它是 ai:generate capability 的內部驗證用
 // extension,不是產品功能。要試 AI capability 的人自己加一行 import 與陣列項。
 //
-// sentry 在預設陣列裡,理由和其他兩個不同:它裝著也完全不做事(DSN 空 = 零網路流量、
+// newebpay 用的是**同一個標準**,所以也不在裡面了(extensions/newebpay/ 仍在版控中,
+// 只是不預裝):
+//   - 它是**台灣特定**的金流閘道。全世界 clone 這個模板的人都會拿到一個他們永遠
+//     不會用的支付供應商躺在 bundle 裡。
+//   - 底下 sentry 的「免費保險」論證套不到金流上:sentry 沒設定時是零成本的待命,
+//     而**沒有人使用的金流閘道不會替你擋下任何事**,它只是體積。
+//   - 要裝的人一行就有:`npx @sz.ws/cms add newebpay`(它本來就在遠端 registry 裡)。
+//
+// sentry 在預設陣列裡,理由和上面兩個不同:它裝著也完全不做事(DSN 空 = 零網路流量、
 // 零成本),但**不**預先裝好的話,需要它的那一天通常就是出事的那一天 —— 而那時候
 // 最不想做的事是「先 rebuild 一次再 deploy 才能開始看錯誤」。
-export const registry: Extension[] = [cron, newebpay, sentry];
+export const registry: Extension[] = [cron, sentry];
