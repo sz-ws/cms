@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  writeAccountId,
   ConfigShapeError,
   placeholderD1,
   readVars,
@@ -308,5 +309,43 @@ describe("真實的 wrangler.jsonc 的 vars", () => {
     expect(text).toContain("// main 指向 custom-worker.ts");
     expect(text).toContain("// database_id 為佔位值");
     expect(readVars(text).get("EXT_PROBE_ONLY")).toBe("x");
+  });
+});
+
+describe("writeAccountId", () => {
+  // 多帳號時每個 wrangler 指令都會停下來問,寫進設定檔才是根治。
+  const SAMPLE = `{
+  // 檔案層級的說明。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // main 指向 custom-worker.ts。
+  "main": "custom-worker.ts"
+}
+`;
+
+  it("插在 $schema 之後,不把下一個欄位的註解孤立掉", () => {
+    const { text, changed } = writeAccountId(SAMPLE, "abc123");
+    expect(changed).toEqual(["account_id"]);
+    // 註解必須仍然緊貼著它描述的欄位。
+    expect(text).toContain('// main 指向 custom-worker.ts。\n  "main"');
+    expect(text).toContain('"account_id": "abc123"');
+    expect(text).toContain("// 檔案層級的說明。");
+    expect(JSON.parse(text.replace(/\/\/.*/g, ""))).toMatchObject({
+      account_id: "abc123",
+      main: "custom-worker.ts",
+    });
+  });
+
+  it("已存在就換值,不重複插入", () => {
+    const once = writeAccountId(SAMPLE, "abc123").text;
+    const twice = writeAccountId(once, "def456");
+    expect(twice.text.match(/"account_id"/g)).toHaveLength(1);
+    expect(twice.text).toContain('"account_id": "def456"');
+  });
+
+  it("值相同就完全不動,不製造無意義 diff", () => {
+    const once = writeAccountId(SAMPLE, "abc123").text;
+    const again = writeAccountId(once, "abc123");
+    expect(again.changed).toEqual([]);
+    expect(again.text).toBe(once);
   });
 });

@@ -26,6 +26,7 @@ import {
   ConfigShapeError,
   readWranglerConfig,
   writeSiteResources,
+  writeAccountId,
   writeD1Ids,
   type D1Entry,
   type SiteResources,
@@ -442,6 +443,25 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       );
       process.env.CLOUDFLARE_ACCOUNT_ID = picked;
       r.step("ok", "account selected", picked);
+
+      // 寫進設定檔,否則之後**每一個** wrangler 指令都會再問一次 ——
+      // deploy、populate-cache、secret put 全部各停一次。process.env 只活在
+      // 這一次執行裡,對「下一次 pnpm run deploy」毫無幫助。
+      try {
+        const before = await readFile(o.configPath, "utf8");
+        const written = writeAccountId(before, picked);
+        if (written.changed.length > 0) {
+          await writeFile(o.configPath, written.text, "utf8");
+          r.step("ok", `account_id written to ${relConfig}`, "wrangler will stop asking");
+        }
+      } catch (e) {
+        // 寫不進去不是致命的 —— 這次執行照樣走得完,只是下次還會被問。
+        r.step(
+          "warn",
+          `could not write account_id to ${relConfig}`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
       d1List = await r.task("checking account D1 databases", () =>
         client.listD1(),
       );

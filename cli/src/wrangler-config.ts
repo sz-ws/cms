@@ -362,3 +362,51 @@ export function writeVars(
 
   return { text: applyEdits(text, edits), changed };
 }
+
+/**
+ * 把 `account_id` 寫進 wrangler.jsonc 的根物件。
+ *
+ * 為什麼需要:登入多個 Cloudflare 帳號時,**每一個** wrangler 指令都會停下來問要用
+ * 哪個(deploy、populate-cache、secret put…)。setup 只把選擇放進 process.env,
+ * 那只活在那一次執行裡。寫進設定檔才是 wrangler 自己在錯誤訊息裡建議的解法。
+ *
+ * 插入位置刻意選在 `$schema` 之後:jsonc 裡的註解一律壓在它所描述的欄位**上方**,
+ * 所以任何「欄位與其上方註解之間」的插入都會把說明孤立掉。`$schema` 與下一個欄位
+ * 的註解之間是唯一保證安全的縫。沒有 `$schema` 就退回根 `{` 之後(那之後只會是
+ * 檔案層級的說明,不屬於任何單一欄位)。
+ */
+export function writeAccountId(text: string, accountId: string): ConfigWriteResult {
+  const root = parseJsonc(text);
+  if (root.kind !== "object") return { text, changed: [] };
+
+  const existing = getMember(root, "account_id");
+  if (existing) {
+    // 已經是同一個值就不動,避免製造無意義的 diff。
+    if (existing.value.kind === "string" && existing.value.value === accountId) {
+      return { text, changed: [] };
+    }
+    return {
+      changed: ["account_id"],
+      text:
+        text.slice(0, existing.value.span.start) +
+        JSON.stringify(accountId) +
+        text.slice(existing.value.span.end),
+    };
+  }
+
+  const anchor = getMember(root, "$schema");
+  const at = anchor
+    ? skipInsertPoint(text, anchor.value.span.end)
+    : root.span.start + 1;
+  return {
+    changed: ["account_id"],
+    text: `${text.slice(0, at)}\n  "account_id": ${JSON.stringify(accountId)},${text.slice(at)}`,
+  };
+}
+
+/** 越過值後面緊接的逗號,讓插入落在「逗號之後、下一個註解之前」。 */
+function skipInsertPoint(text: string, from: number): number {
+  let i = from;
+  while (i < text.length && (text[i] === " " || text[i] === "\t")) i++;
+  return text[i] === "," ? i + 1 : from;
+}
