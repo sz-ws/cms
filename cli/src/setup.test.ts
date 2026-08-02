@@ -107,6 +107,10 @@ function scriptedPrompter(answers: boolean[], textAnswers: string[] = []): Promp
     async select(_q, options) {
       return options[0].value;
     },
+    // setup 自己不問 secret(它的三把金鑰是自動產生的),但介面要求要有這個方法。
+    async secret() {
+      throw new Error("setup should never prompt for a secret value");
+    },
   };
 }
 

@@ -88,6 +88,18 @@ describe("parseArgs", () => {
     expect(a.skipSecrets).toBe(false);
   });
 
+  it("parses `preflight` 與 --gate", () => {
+    const a = parseArgs(["preflight", "--gate", "--config", "w.jsonc"]);
+    expect(a.command).toBe("preflight");
+    expect(a.gate).toBe(true);
+    expect(a.config).toBe("w.jsonc");
+  });
+
+  it("--gate 預設關閉(不給就是唯讀列出,不擋 deploy)", () => {
+    expect(parseArgs(["preflight"]).gate).toBe(false);
+    expect(parseArgs(["add", "blog"]).gate).toBe(false);
+  });
+
   it("-y 是 --yes 的簡寫", () => {
     expect(parseArgs(["setup", "-y"]).yes).toBe(true);
   });

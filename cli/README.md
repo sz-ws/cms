@@ -1,11 +1,12 @@
 # @sz.ws/cms — `cms` / `sz-ws-cms`
 
-CLI for the sz.ws CMS. Two commands:
+CLI for the sz.ws CMS. Three commands:
 
 | Command | Purpose |
 |---|---|
 | `cms setup` | Connect repo to your Cloudflare account: create D1 / R2, fill ids back into `wrangler.jsonc`, apply migrations, set three secrets (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`) |
-| `cms add <id>` | Install code extension: fetch files from registry → write to `extensions/<id>/` → patch `extensions/registry.ts` |
+| `cms add <id>` | Install code extension: fetch files from registry → write to `extensions/<id>/` → patch `extensions/registry.ts`, then ask for the extension's declared settings |
+| `cms preflight` | Read-only: list extension settings that are still unset. `--gate` exits non-zero on missing required ones (used by the repo's `predeploy`) |
 
 Both support fully non-interactive execution (`--yes` / `--non-interactive`) and `--dry-run`.
 
@@ -127,6 +128,66 @@ Without blocking, an incompatible extension installs → rebuilds → deploys su
 
 When registry index entry has `files: string[]`, that list is authoritative and CLI fetches all listed files (supports subdirectories). Without it, CLI falls back to **heuristic**: probes a fixed set of flat filenames. This pattern has known gaps — it **does not traverse subdirectories** (example: `cron`'s `worker/` three files are missed), so CLI explicitly warns the list is guessed and may be incomplete. Heuristic probes treat only 404 as "file does not exist"; timeouts / 401 / size cap errors abort (exit 2), no silent incomplete fetches. Long-term fix is for every code entry in registry to declare `files[]`.
 
+## Settings interview (after install)
+
+If the installed extension ships a `manifest.json` with `settings[]`, `add` asks
+for each one and splits the answers by a **hard rule**:
+
+| Setting | Lands in |
+|---|---|
+| `secret: false` | the `vars` block of `wrangler.jsonc` (committed) |
+| `secret: true` | `.dev.vars` (local, gitignored) + a printed `wrangler secret put <KEY>` line |
+
+`secret: true` values are **never** written to `wrangler.jsonc` — this repo is
+public, so that would publish them. Secret input is not echoed to the terminal
+and never appears in the transcript or in `--json` output.
+
+The CLI does **not** run `wrangler secret put` for you: at install time you may
+not be logged in to Cloudflare, and the Worker may not exist yet. It prints the
+commands and you run them after deploying.
+
+Keys are namespaced as `EXT_<EXTENSION>_<SETTING>` (for example
+`newebpay` + `hashKey` → `EXT_NEWEBPAY_HASH_KEY`). `vars` and Worker secrets are
+one flat namespace per Worker, so an unprefixed `apiKey` from two extensions
+would silently overwrite each other.
+
+Non-interactive runs (`--yes` / `--non-interactive` / no TTY) skip the interview
+and only print what still needs setting — writing defaults would create fields
+that look configured but are not.
+
+---
+
+# `cms preflight`
+
+```bash
+sz-ws-cms preflight          # list everything that is unset, read-only
+sz-ws-cms preflight --gate   # exit non-zero if a required setting is missing
+```
+
+Scans `extensions/*/manifest.json`, and for every declared setting checks the
+`vars` block (non-secret) or `wrangler secret list` (secret). Output is split
+into three sections on purpose (exit codes: `0` clean, `10` gate blocked):
+
+| Section | Meaning |
+|---|---|
+| `verified` | confirmed to have a value |
+| `missing — required` | required, and confirmed absent — `--gate` stops the deploy (exit 10) |
+| `cannot be verified before deploy` | not confirmed either way |
+
+The third section is the point of the command. Extension settings ultimately
+live in the D1 `settings` table, which the CLI cannot reach before a deploy —
+without that section an entirely unconfigured site would print all green.
+
+**Not being logged in to Cloudflare does not fail the command.** If
+`wrangler secret list` cannot be read, secret checks degrade to "cannot verify"
+and the run continues. `--gate` does not block on those either: on a first
+deploy the Worker does not exist yet, so that query always fails — blocking
+would make the first deploy impossible. Those cases get a loud warning that says
+explicitly that the value was *not checked*, rather than *not set*.
+
+`--gate` is wired into the repo's `predeploy` via `scripts/preflight.mjs`, and
+deliberately not into `prebuild` / `predev` / `prepreview` / `pretest`.
+
 ## Output
 
 Human-facing output — progress, steps, prompts, warnings, errors — goes to
@@ -141,6 +202,9 @@ cms add blog --json | jq .ok    # stdout is a single JSON object
 |---|---|
 | `--version`, `--help` — the answer *is* the result | stderr |
 | `--json` — one object: `{ ok, exitCode, command, id?, events?, messages[] }` | stderr |
+
+Secret values entered during the `add` settings interview never appear in either
+stream, nor in the `--json` transcript.
 
 `--json` still writes the human transcript to stderr, so you lose nothing by
 turning it on. `events` is present for `setup` (structured step records);

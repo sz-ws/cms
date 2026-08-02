@@ -4,8 +4,10 @@ import path from "node:path";
 import {
   ConfigShapeError,
   placeholderD1,
+  readVars,
   readWranglerConfig,
   writeD1Ids,
+  writeVars,
 } from "./wrangler-config.js";
 import { PLACEHOLDER_ID } from "./wrangler.js";
 
@@ -165,5 +167,146 @@ describe("真實的 wrangler.jsonc", () => {
     expect(c.d1.filter((d) => d.hasMigrationsDir).map((d) => d.databaseName)).toEqual([
       "cms-db",
     ]);
+  });
+});
+
+// ---- vars ---------------------------------------------------------------
+// extension 的**非 secret** 設定落點。這個檔會進版控(cms 是公開 repo),所以
+// 下面每個寫入測試都同時斷言「註解還在」——那些中文註解就是這份設定檔的文件本體。
+
+const VARS_FIXTURE = `{
+  // main 指向 custom-worker.ts,絕對不能被動到。
+  "main": "custom-worker.ts",
+  // setup 用此值確認命名已由 slug 衍生;空字串代表尚未設定的新 scaffold。
+  "vars": { "CMS_SITE_SLUG": "acme" },
+  "d1_databases": [],
+  "r2_buckets": []
+}
+`;
+
+describe("readVars", () => {
+  it("讀出 vars 的純量成員", () => {
+    const vars = readVars(VARS_FIXTURE);
+    expect(vars.get("CMS_SITE_SLUG")).toBe("acme");
+    expect(vars.size).toBe(1);
+  });
+
+  it("沒有 vars 區塊 → 空 Map,不 throw", () => {
+    expect(readVars(`{ "name": "cms" }`).size).toBe(0);
+  });
+
+  it("number / boolean / null 都認得出來", () => {
+    const vars = readVars(`{ "vars": { "N": 1, "B": false, "X": null } }`);
+    expect(vars.get("N")).toBe(1);
+    expect(vars.get("B")).toBe(false);
+    expect(vars.get("X")).toBeNull();
+  });
+});
+
+describe("writeVars", () => {
+  it("新鍵插進 vars,既有成員與所有註解原樣保留", () => {
+    const { text, changed } = writeVars(
+      VARS_FIXTURE,
+      new Map<string, string | number | boolean>([["EXT_DEMO_TOKEN", "abc"]]),
+    );
+    expect(changed).toEqual(["EXT_DEMO_TOKEN"]);
+    expect(text).toContain('"EXT_DEMO_TOKEN": "abc"');
+    expect(text).toContain('"CMS_SITE_SLUG": "acme"');
+    expect(text).toContain("// main 指向 custom-worker.ts,絕對不能被動到。");
+    expect(text).toContain("// setup 用此值確認命名已由 slug 衍生");
+    expect(text).toContain('"main": "custom-worker.ts"');
+  });
+
+  it("寫出來的仍是合法 JSONC(再解析一次拿得回同樣的值)", () => {
+    const { text } = writeVars(
+      VARS_FIXTURE,
+      new Map<string, string | number | boolean>([
+        ["A", "x"],
+        ["B", 2],
+        ["C", true],
+      ]),
+    );
+    const round = readVars(text);
+    expect(round.get("A")).toBe("x");
+    expect(round.get("B")).toBe(2);
+    expect(round.get("C")).toBe(true);
+    expect(round.get("CMS_SITE_SLUG")).toBe("acme");
+  });
+
+  it("既有鍵就地換值,不會產生第二份", () => {
+    const { text, changed } = writeVars(
+      VARS_FIXTURE,
+      new Map<string, string | number | boolean>([["CMS_SITE_SLUG", "other"]]),
+    );
+    expect(changed).toEqual(["CMS_SITE_SLUG"]);
+    expect(text.match(/CMS_SITE_SLUG/g)).toHaveLength(1);
+    expect(readVars(text).get("CMS_SITE_SLUG")).toBe("other");
+  });
+
+  it("值已經一樣 → 零編輯,連內容都完全不動(冪等)", () => {
+    const { text, changed } = writeVars(
+      VARS_FIXTURE,
+      new Map<string, string | number | boolean>([["CMS_SITE_SLUG", "acme"]]),
+    );
+    expect(changed).toEqual([]);
+    expect(text).toBe(VARS_FIXTURE);
+  });
+
+  it("空的 entries 直接原樣回傳", () => {
+    expect(writeVars(VARS_FIXTURE, new Map()).text).toBe(VARS_FIXTURE);
+  });
+
+  it("vars 是空物件時不會產出 `{, ...}` 這種壞 JSONC", () => {
+    const { text } = writeVars(
+      `{ "vars": {} }`,
+      new Map<string, string | number | boolean>([["A", "x"]]),
+    );
+    expect(text).not.toMatch(/\{\s*,/);
+    expect(readVars(text).get("A")).toBe("x");
+  });
+
+  it("vars 已有尾逗號時仍然產出合法 JSONC", () => {
+    const { text } = writeVars(
+      `{ "vars": { "A": "1", } }`,
+      new Map<string, string | number | boolean>([["B", "2"]]),
+    );
+    expect(text).not.toMatch(/,\s*,/);
+    const round = readVars(text);
+    expect(round.get("A")).toBe("1");
+    expect(round.get("B")).toBe("2");
+  });
+
+  it("多筆一起寫,順序穩定且只產生一次插入", () => {
+    const { text, changed } = writeVars(
+      VARS_FIXTURE,
+      new Map<string, string | number | boolean>([
+        ["Z", "1"],
+        ["Y", "2"],
+      ]),
+    );
+    expect(changed).toEqual(["Z", "Y"]);
+    expect(text.indexOf('"Z"')).toBeLessThan(text.indexOf('"Y"'));
+  });
+
+  it("沒有 vars 區塊時拒絕動手,並講清楚怎麼修", () => {
+    expect(() =>
+      writeVars(`{ "name": "cms" }`, new Map<string, string | number | boolean>([["A", "x"]])),
+    ).toThrow(ConfigShapeError);
+  });
+});
+
+describe("真實的 wrangler.jsonc 的 vars", () => {
+  it("有 vars 區塊,所以 add 的設定寫得進去", async () => {
+    const real = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
+    const vars = readVars(real);
+    expect(vars.has("CMS_SITE_SLUG")).toBe(true);
+    // 真的寫一次(只在記憶體裡),確認註解不會被吃掉。
+    const { text } = writeVars(
+      real,
+      new Map<string, string | number | boolean>([["EXT_PROBE_ONLY", "x"]]),
+    );
+    expect(text).toContain("// main 指向 custom-worker.ts");
+    expect(text).toContain("// database_id 為佔位值");
+    expect(readVars(text).get("EXT_PROBE_ONLY")).toBe("x");
   });
 });

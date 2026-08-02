@@ -5,6 +5,8 @@
 //              → 寫本機 extensions/<id>/ → patch extensions/registry.ts。
 //   setup      把 repo 接上自己的 Cloudflare 帳號:建 D1 / R2、回填 wrangler.jsonc、
 //              套 migrations、設 SECRETS_KEY(見 setup.ts)。
+//   preflight  deploy 前的唯讀盤點:extension 宣告了哪些 settings、哪些還沒填
+//              (見 preflight.ts)。`--gate` 給 predeploy 用。
 
 import { readFile, writeFile, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -35,9 +37,11 @@ import { EXIT } from "./exit.js";
 import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
 import { WranglerClient } from "./wrangler.js";
 import { runSetup } from "./setup.js";
+import { runPreflight } from "./preflight.js";
+import { configureExtension } from "./configure.js";
 import { createUi, type UiEvent } from "./ui.js";
 
-export const VERSION = "0.2.1";
+export const VERSION = "0.3.0";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
@@ -50,6 +54,7 @@ const USAGE = `@sz.ws/cms v${VERSION} — sz.ws CMS command-line tool
 Usage:
   cms setup [options]           connect this repo to your Cloudflare account
   cms add <id> [options]        install a code extension
+  cms preflight [options]       list extension settings that are still unset
   cms help                      show this help
   cms version                   show version
 
@@ -70,6 +75,11 @@ add options:
   --force                       overwrite existing extensions/<id>/
   --skip-core-check             skip coreApi compatibility check (use with caution)
 
+preflight options:
+  --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
+  --gate                        exit non-zero when a required setting is missing
+                                (used by the repo's predeploy hook)
+
 shared options:
   --dry-run                     list what would be done; create nothing, write nothing
   --yes, -y                     skip all confirmations (CI use)
@@ -82,6 +92,8 @@ examples:
   npx @sz.ws/cms setup --dry-run
   npx @sz.ws/cms add blog
   npx @sz.ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
+  npx @sz.ws/cms preflight
+  npx @sz.ws/cms preflight --gate
 
 environment variables:
   SZWS_REGISTRY_TOKEN           registry access token (same as --token)
@@ -208,7 +220,10 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   return code;
 }
 
-/** setup 走 Reporter,事件比純文字精確,--json 時優先用它。 */
+/**
+ * 走 Reporter 的流程(setup / preflight / add 的設定問答)收集到的事件。
+ * 事件比純文字精確,--json 時一併吐出去。
+ */
 let setupEvents: UiEvent[] | null = null;
 
 async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
@@ -218,6 +233,7 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
     return EXIT.NOT_FOUND;
   }
   if (args.command === "setup") return runSetupCommand(args, cwd);
+  if (args.command === "preflight") return runPreflightCommand(args, cwd);
   if (args.command !== "add") {
     err(`✗ unknown command: ${args.command ?? "(none)"}`);
     err(USAGE);
@@ -262,6 +278,37 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
     skipSecrets: args.skipSecrets,
     siteSlug: args.siteSlug,
     allowSharedDefaultNames: args.allowSharedDefaultNames,
+  });
+}
+
+/**
+ * `preflight` 的接線。跟 setup 同一套:真的 spawn 包成 WranglerClient,流程本身
+ * (preflight.ts)只看得到介面,所以測試注入假的就跑得完,不會碰到真帳號。
+ *
+ * dryRun 固定 false —— preflight 只有唯讀操作,而唯讀在 dry-run 下本來就照跑
+ * (見 wrangler.ts 檔頭)。傳 true 只會讓語意變模糊。
+ */
+async function runPreflightCommand(args: ParsedArgs, cwd: string): Promise<number> {
+  const { cmd, prefix } = resolveWranglerCommand(cwd);
+  const ui = createUi({ interactive: false, json: args.json });
+  setupEvents = ui.events;
+  const configPath = args.config
+    ? path.resolve(cwd, args.config)
+    : path.join(cwd, DEFAULT_CONFIG_FILE);
+
+  return runPreflight({
+    extensionsDir: path.join(cwd, "extensions"),
+    configPath,
+    client: new WranglerClient({
+      exec: spawnExecutor,
+      cwd,
+      cmd,
+      prefix,
+      dryRun: false,
+      configPath: args.config ? configPath : undefined,
+    }),
+    reporter: ui.reporter,
+    gate: args.gate,
   });
 }
 
@@ -555,8 +602,45 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     patchNote = `patched extensions/registry.ts (${parts.join(" + ")})`;
   }
 
+  // ---- 設定問答 ----
+  // 在 nextSteps 之前:那段的最後一句是「去 admin 按 Enable」,問答排在它後面
+  // 會讀起來像是 deploy 之後才要做的事,而 vars 必須在 deploy **之前**就寫好。
+  await runConfigure(args, cwd, id);
+
   nextSteps(id, written.length, patchNote, resolved.heuristic, isEnhancement);
   return EXIT.OK;
+}
+
+/**
+ * 裝完之後問一輪 manifest 的 settings[]。
+ *
+ * 失敗一律不影響 `add` 的結果:檔案已經落地、registry.ts 已經接好,那才是這個
+ * 指令的契約。設定沒填完的話 `sz-ws-cms preflight` 會再擋一次,不需要在這裡把
+ * 一次成功的安裝翻成失敗。
+ */
+async function runConfigure(args: ParsedArgs, cwd: string, id: string): Promise<void> {
+  const assumeYes = args.yes || args.nonInteractive;
+  const interactive = !assumeYes && process.stdin.isTTY === true;
+  const ui = createUi({ interactive, json: args.json });
+  // add 的 transcript 只收 log()/warn() 那幾行,設定問答走的是 Reporter ——
+  // 不接上來的話 `add --json` 會看不到剛剛問了什麼、寫了哪些 key。
+  if (ui.events) setupEvents = ui.events;
+  try {
+    await configureExtension({
+      extensionsDir: path.join(cwd, "extensions"),
+      configPath: args.config
+        ? path.resolve(cwd, args.config)
+        : path.join(cwd, DEFAULT_CONFIG_FILE),
+      devVarsPath: path.join(cwd, ".dev.vars"),
+      extId: id,
+      reporter: ui.reporter,
+      prompter: ui.prompter,
+      interactive,
+    });
+  } catch (e) {
+    warn(`⚠ settings step failed: ${e instanceof Error ? e.message : String(e)}`);
+    warn("  the extension itself is installed; run `sz-ws-cms preflight` to see what is still unset.");
+  }
 }
 
 /**

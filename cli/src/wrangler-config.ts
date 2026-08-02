@@ -12,6 +12,7 @@ import {
   getStringMember,
   parseJsonc,
   quoteJsonString,
+  skipTrivia,
   type JsoncEdit,
   type JsoncNode,
   type Span,
@@ -268,4 +269,96 @@ export function writeD1Ids(
 /** 設定檔裡還是佔位值(或空)的 D1 項目 —— 部署前一定要換掉的那些。 */
 export function placeholderD1(config: WranglerConfig): D1Entry[] {
   return config.d1.filter((e) => isPlaceholderId(e.currentId));
+}
+
+// ---- vars ---------------------------------------------------------------
+// extension 的**非 secret** 設定落在這裡。
+//
+// 🔴 wrangler.jsonc 會進版控(cms 是公開 repo)。這個模組**只**被非 secret 的路徑
+// 呼叫;secret 的值走 .dev.vars + `wrangler secret put`,永遠不經過這裡。
+// 分界本身寫在 settings.ts:storageFor()。
+
+/** 目前 vars 區塊裡有哪些鍵(值原樣帶回,供 preflight 判斷是否為空)。 */
+export function readVars(text: string): Map<string, unknown> {
+  const root = parseJsonc(text);
+  const out = new Map<string, unknown>();
+  const vars = getMember(root, "vars");
+  if (!vars || vars.value.kind !== "object") return out;
+  for (const member of vars.value.members) {
+    const node = member.value;
+    if (node.kind === "string" || node.kind === "number" || node.kind === "boolean") {
+      out.set(member.key, node.value);
+    } else if (node.kind === "null") {
+      out.set(member.key, null);
+    } else {
+      // 物件 / 陣列值:記成「存在但我們不解讀」。preflight 只需要知道有沒有。
+      out.set(member.key, undefined);
+    }
+  }
+  return out;
+}
+
+export type VarValue = string | number | boolean;
+
+/**
+ * 把一組 key/value 寫進 vars 區塊。
+ *
+ * 冪等:值已經一樣的完全不產生編輯(`changed` 也不列),所以重跑不動 mtime。
+ * 新鍵插在**最後一個成員的值之後**,而不是收尾 `}` 之前 —— 後者遇到既有的尾逗號
+ * 會產出 `{ "a": 1, , "b": 2 }` 這種壞掉的 JSONC,而且錯誤要等到 deploy 才炸。
+ * 從頭序列化整個物件當然更簡單,但那會吃掉檔案裡的中文註解(見本檔與 jsonc.ts 檔頭)。
+ */
+export function writeVars(
+  text: string,
+  entries: ReadonlyMap<string, VarValue>,
+): ConfigWriteResult {
+  if (entries.size === 0) return { text, changed: [] };
+  const root = parseJsonc(text);
+  const varsMember = getMember(root, "vars");
+  if (!varsMember || varsMember.value.kind !== "object") {
+    throw new ConfigShapeError(
+      "wrangler.jsonc has no `vars` object; add `\"vars\": {}` and rerun (refusing to synthesize it," +
+        " because inserting a new top-level member is the one edit that could land between a comment and the field it documents)",
+    );
+  }
+  const vars = varsMember.value;
+  const existing = new Map(vars.members.map((m) => [m.key, m]));
+
+  const edits: JsoncEdit[] = [];
+  const changed: string[] = [];
+  const additions: string[] = [];
+
+  for (const [key, value] of entries) {
+    const literal = JSON.stringify(value);
+    const member = existing.get(key);
+    if (member) {
+      const current = text.slice(member.value.span.start, member.value.span.end);
+      if (current === literal) continue; // 已經一樣 → 不動
+      edits.push({ span: member.value.span, replacement: literal });
+      changed.push(key);
+      continue;
+    }
+    additions.push(`${quoteJsonString(key)}: ${literal}`);
+    changed.push(key);
+  }
+
+  if (additions.length > 0) {
+    const last = vars.members[vars.members.length - 1];
+    if (last) {
+      const insertAt = last.value.span.end;
+      edits.push({
+        span: { start: insertAt, end: insertAt },
+        replacement: `, ${additions.join(", ")}`,
+      });
+    } else {
+      // 空的 `{}`:插在左大括號之後,而且不能帶前導逗號。
+      const insertAt = skipTrivia(text, vars.span.start + 1);
+      edits.push({
+        span: { start: insertAt, end: insertAt },
+        replacement: additions.join(", "),
+      });
+    }
+  }
+
+  return { text: applyEdits(text, edits), changed };
 }

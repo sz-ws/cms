@@ -18,6 +18,11 @@ export const EXIT = {
   SETUP_PREREQ: 7, // 前置條件不足:未登入 wrangler / 讀不到 wrangler.jsonc
   SETUP_FAILED: 8, // 某個 wrangler 操作失敗
   SETUP_ABORTED: 9, // 使用者在確認關卡選擇中止
+
+  // ---- preflight ----
+  // 獨立一碼:predeploy 掛的是這支,而「必填設定沒填」跟「wrangler 掛了」在 CI 裡
+  // 要分得開 —— 前者是使用者要去填東西,後者是環境問題。
+  PREFLIGHT_BLOCKED: 10, // --gate 下有必填設定確認為空
 } as const;
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];

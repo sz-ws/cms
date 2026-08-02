@@ -42,7 +42,7 @@ export class JsoncParseError extends Error {
 }
 
 /** 跳過空白與註解(`//` 行註解、`/* *\/` 區塊註解)。 */
-function skipTrivia(text: string, i: number): number {
+export function skipTrivia(text: string, i: number): number {
   for (;;) {
     while (i < text.length && /\s/.test(text[i])) i++;
     if (text[i] === "/" && text[i + 1] === "/") {

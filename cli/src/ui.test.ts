@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   createAutoPrompter,
   createReporter,
+  displayWidth,
   makeStyles,
+  padVisual,
   type Reporter,
 } from "./ui.js";
 
@@ -105,5 +107,51 @@ describe("createAutoPrompter", () => {
 
   it("select 沒有選項是程式錯誤,不是靜默回 undefined", async () => {
     await expect(createAutoPrompter().select("空", [])).rejects.toThrow(/at least one option/);
+  });
+
+  it("secret 在非互動下回空字串,且不進 onAnswer(值一個字都不進記錄)", async () => {
+    const seen: [string, string][] = [];
+    const p = createAutoPrompter((q, a) => seen.push([q, a]));
+    await expect(p.secret("金鑰?")).resolves.toBe("");
+    expect(seen).toEqual([]);
+  });
+});
+
+describe("displayWidth / padVisual", () => {
+  it("CJK 每字兩欄,ASCII 一欄", () => {
+    expect(displayWidth("abc")).toBe(3);
+    expect(displayWidth("商店代號")).toBe(8);
+    // .length 只有 4 —— 拿它對齊就會少算一半。
+    expect("商店代號".length).toBe(4);
+    expect(displayWidth("商店 ID")).toBe(7);
+  });
+
+  it("全形標點與假名也算兩欄", () => {
+    // 用跳脫序列寫全形括號,免得被編輯器 / 工具鏈悄悄換成半形而測試失去意義。
+    expect(displayWidth("\uFF08\uFF09")).toBe(4);
+    expect(displayWidth("かな")).toBe(4);
+    // 對照組:半形括號各佔一欄。
+    expect(displayWidth("(MS 開頭)")).toBe(9);
+  });
+
+  it("ANSI 色碼不佔欄位", () => {
+    expect(displayWidth(makeStyles(true).green("ok"))).toBe(2);
+  });
+
+  it("組合附加符號疊在前一字上,不另外佔欄", () => {
+    expect(displayWidth("é")).toBe(1);
+  });
+
+  it("padVisual 補到指定欄寬,已經夠寬就不動", () => {
+    expect(padVisual("商店", 8)).toBe("商店    ");
+    expect(padVisual("abcd", 8)).toBe("abcd    ");
+    expect(padVisual("abcdefghij", 4)).toBe("abcdefghij");
+  });
+
+  it("兩個欄寬相同但長度不同的字串,補完之後總欄寬一致", () => {
+    const a = padVisual("商店代號", 10);
+    const b = padVisual("Merchant", 10);
+    expect(displayWidth(a)).toBe(displayWidth(b));
+    expect(a.length).not.toBe(b.length);
   });
 });

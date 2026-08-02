@@ -4,6 +4,7 @@
 //                 [--non-interactive] [--skip-core-check]
 //   sz-ws-cms setup [--config <path>] [--site-slug <slug>] [--dry-run] [--yes]
 //                [--skip-migrations] [--skip-secrets]
+//   sz-ws-cms preflight [--config <path>] [--gate]
 //   sz-ws-cms --help | --version
 
 export const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
@@ -31,6 +32,8 @@ export interface ParsedArgs {
   skipSecrets: boolean;
   /** 機器可讀輸出:人看的東西照樣走 stderr,stdout 只放一份 JSON。 */
   json: boolean;
+  /** preflight:缺必填就非零退出(predeploy 用);不給則純列出。 */
+  gate: boolean;
   help: boolean;
   version: boolean;
   /** 解析層錯誤(未知旗標 / 缺旗標值);由呼叫端決定 exit code。 */
@@ -50,6 +53,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     skipMigrations: false,
     skipSecrets: false,
     json: false,
+    gate: false,
     help: false,
     version: false,
   };
@@ -75,6 +79,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.skipMigrations = true;
     } else if (arg === "--json") {
       out.json = true;
+    } else if (arg === "--gate") {
+      out.gate = true;
     } else if (arg === "--skip-secrets") {
       out.skipSecrets = true;
     } else if (arg === "--allow-shared-default-names") {

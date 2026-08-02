@@ -25,6 +25,23 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
     path.join(futureDir, "index.ts"),
     `export const futureext = defineExtension({ id: "futureext" });\n`,
   );
+  // 帶 manifest.json(有 settings[])的 code extension —— 用來驗裝完之後的設定問答。
+  const cfgDir = path.join(dir, "extensions", "cfgext", "files");
+  await mkdir(cfgDir, { recursive: true });
+  await writeFile(
+    path.join(cfgDir, "index.ts"),
+    `export const cfgext = defineExtension({ id: "cfgext" });\n`,
+  );
+  await writeFile(
+    path.join(cfgDir, "manifest.json"),
+    JSON.stringify({
+      id: "cfgext",
+      settings: [
+        { key: "merchantId", label: "Merchant ID", type: "text", default: "", required: true },
+        { key: "hashKey", label: "Hash Key", type: "text", default: "", secret: true, required: true },
+      ],
+    }),
+  );
   // 1.25.0 強化層:只有 side effect,沒有 export。
   const progDir = path.join(dir, "extensions", "progext", "files");
   await mkdir(progDir, { recursive: true });
@@ -59,6 +76,14 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
         version: "1.0.0",
         coreApi: ">1.0.0",
         files: ["index.ts"],
+      },
+      {
+        id: "cfgext",
+        kind: "code",
+        name: "Configurable",
+        version: "1.0.0",
+        coreApi: "^1.0.0",
+        files: ["index.ts", "manifest.json"],
       },
       {
         id: "declme",
@@ -527,5 +552,104 @@ describe("isDirectRun", () => {
   it("argv[1] 不存在 / 指到不存在的檔 → false,而不是拋錯", () => {
     expect(isDirectRun(undefined, "file:///nope.js")).toBe(false);
     expect(isDirectRun("/definitely/not/here", "file:///nope.js")).toBe(false);
+  });
+});
+
+// ---- add 之後的設定問答 --------------------------------------------------
+// 測試環境不是 TTY,所以走的是非互動分支:只列清單,一個字都不寫。
+// 互動分支的完整行為在 configure.test.ts。
+
+const WRANGLER_FIXTURE = `{
+  // main 指向 custom-worker.ts,絕對不能被動到。
+  "main": "custom-worker.ts",
+  "name": "cms",
+  "vars": { "CMS_SITE_SLUG": "acme" },
+  "d1_databases": [],
+  "r2_buckets": []
+}
+`;
+
+describe("run add — manifest settings", () => {
+  it("裝完之後列出這個 extension 要設什麼,並標出各自的落點", async () => {
+    await writeFile(path.join(repoDir, "wrangler.jsonc"), WRANGLER_FIXTURE, "utf8");
+    const code = await run(["add", "cfgext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.OK);
+    expect(out()).toContain("EXT_CFGEXT_MERCHANT_ID");
+    expect(out()).toContain("wrangler.jsonc vars");
+    expect(out()).toContain("EXT_CFGEXT_HASH_KEY");
+    expect(out()).toContain(".dev.vars + wrangler secret put");
+  });
+
+  // 🔴 非互動下沒有人可以回答,所以一個值都不該被寫進會進版控的設定檔。
+  it("非互動時不動 wrangler.jsonc,也不建 .dev.vars", async () => {
+    await writeFile(path.join(repoDir, "wrangler.jsonc"), WRANGLER_FIXTURE, "utf8");
+    await run(["add", "cfgext", "--source", regUrl], repoDir);
+    expect(await readFile(path.join(repoDir, "wrangler.jsonc"), "utf8")).toBe(
+      WRANGLER_FIXTURE,
+    );
+    await expect(readFile(path.join(repoDir, ".dev.vars"))).rejects.toThrow();
+  });
+
+  it("沒有 manifest.json 的 extension 完全不觸發這一步", async () => {
+    await writeFile(path.join(repoDir, "wrangler.jsonc"), WRANGLER_FIXTURE, "utf8");
+    const code = await run(["add", "demoext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.OK);
+    expect(out()).not.toContain("EXT_DEMOEXT");
+  });
+});
+
+// ---- preflight 指令 ------------------------------------------------------
+// 這裡只跑「沒有 secret 型設定」的情境 —— 那條路徑保證不會 spawn 任何 wrangler,
+// 所以測試絕對碰不到真的 Cloudflare 帳號。有 secret 的情境走注入的 Executor,
+// 全部在 preflight.test.ts。
+
+describe("run preflight", () => {
+  async function seedManifest(settings: unknown[]): Promise<void> {
+    await writeFile(path.join(repoDir, "wrangler.jsonc"), WRANGLER_FIXTURE, "utf8");
+    await mkdir(path.join(repoDir, "extensions", "thing"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "extensions", "thing", "manifest.json"),
+      JSON.stringify({ id: "thing", settings }),
+      "utf8",
+    );
+  }
+
+  it("--gate 缺必填 → 非零退出", async () => {
+    await seedManifest([
+      { key: "needed", label: "Needed", type: "text", default: "", required: true },
+    ]);
+    const code = await run(["preflight", "--gate"], repoDir);
+    expect(code).toBe(EXIT.PREFLIGHT_BLOCKED);
+    expect(out()).toContain("EXT_THING_NEEDED");
+  });
+
+  it("不給 --gate 時純列出,一律零退出", async () => {
+    await seedManifest([
+      { key: "needed", label: "Needed", type: "text", default: "", required: true },
+    ]);
+    expect(await run(["preflight"], repoDir)).toBe(EXIT.OK);
+  });
+
+  it("填好了 → --gate 零退出", async () => {
+    await seedManifest([
+      { key: "needed", label: "Needed", type: "text", default: "", required: true },
+    ]);
+    await writeFile(
+      path.join(repoDir, "wrangler.jsonc"),
+      WRANGLER_FIXTURE.replace('"vars": {', '"vars": { "EXT_THING_NEEDED": "ok",'),
+      "utf8",
+    );
+    expect(await run(["preflight", "--gate"], repoDir)).toBe(EXIT.OK);
+  });
+
+  it("--json 時 stdout 只有一份機器可讀的 JSON", async () => {
+    await seedManifest([
+      { key: "needed", label: "Needed", type: "text", default: "", required: true },
+    ]);
+    const code = await run(["preflight", "--gate", "--json"], repoDir);
+    const parsed = JSON.parse(stdoutOut()) as { ok: boolean; exitCode: number; command: string };
+    expect(parsed.command).toBe("preflight");
+    expect(parsed.exitCode).toBe(code);
+    expect(parsed.ok).toBe(false);
   });
 });

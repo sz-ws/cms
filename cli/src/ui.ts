@@ -64,6 +64,66 @@ export interface Prompter {
   confirm(question: string, defaultValue: boolean): Promise<boolean>;
   text(question: string, defaultValue?: string): Promise<string>;
   select<T>(question: string, options: readonly SelectOption<T>[]): Promise<T>;
+  /**
+   * 不回顯的輸入。給 `secret: true` 的 extension setting 用 —— 那些值會被貼進
+   * 終端,回顯等於留在 scrollback、也可能被錄影 / 螢幕分享看到。
+   * 回傳值**絕不可以**進 transcript / UiEvent / reporter 的任何一行。
+   */
+  secret(question: string): Promise<string>;
+}
+
+// ---- 終端欄寬 -----------------------------------------------------------
+// `String.length` 是 UTF-16 code unit 數,不是終端欄數:CJK 每字佔 **兩欄**,
+// emoji 也是,組合附加符號佔 0 欄。拿 .length 去 padEnd 對齊,中文一多就整排歪掉。
+// 這裡實作 East Asian Width 的近似版(涵蓋 CJK / 假名 / 諺文 / 全形 / 常用 emoji 區段)
+// —— 完整的 EAW 表要幾百個區間,對 CLI 的對齊需求是過度工程;有漏的區段最壞只是
+// 少算兩欄,不會壞掉。
+const WIDE_RANGES: readonly (readonly [number, number])[] = [
+  [0x1100, 0x115f], // 諺文字母
+  [0x2e80, 0x303e], // CJK 部首、注音、日文標點
+  [0x3041, 0x33ff], // 假名、諺文相容、CJK 相容
+  [0x3400, 0x4dbf], // CJK 擴充 A
+  [0x4e00, 0x9fff], // CJK 統一表意
+  [0xa000, 0xa4cf], // 彝文
+  [0xac00, 0xd7a3], // 諺文音節
+  [0xf900, 0xfaff], // CJK 相容表意
+  [0xfe10, 0xfe19],
+  [0xfe30, 0xfe6f], // CJK 相容形式
+  [0xff00, 0xff60], // 全形 ASCII
+  [0xffe0, 0xffe6], // 全形符號
+  [0x1f300, 0x1f64f], // 雜項符號與繪文字
+  [0x1f900, 0x1f9ff], // 補充符號與繪文字
+  [0x20000, 0x2fffd], // CJK 擴充 B+
+  [0x30000, 0x3fffd],
+];
+
+// ANSI 用 new RegExp + 跳脫字串組出來,而不是正規表示式字面量 —— 字面量裡的 ESC
+// 是**字面控制字元**,會讓 git / grep / 編輯器把整個檔案當成 binary。
+const ANSI_RE = new RegExp("\\u001B\\[[0-9;]*m", "g");
+
+function charWidth(cp: number): number {
+  // 組合附加符號疊在前一個字上,不佔欄位。
+  if (cp >= 0x0300 && cp <= 0x036f) return 0;
+  if (cp === 0x200d || cp === 0xfe0f || cp === 0xfe0e) return 0; // ZWJ / 變異選擇子
+  for (const [lo, hi] of WIDE_RANGES) {
+    if (cp >= lo && cp <= hi) return 2;
+  }
+  return 1;
+}
+
+/** 一段文字在終端佔幾欄。先剝掉 ANSI 色碼(它們不佔欄位)。 */
+export function displayWidth(s: string): number {
+  let total = 0;
+  for (const ch of s.replace(ANSI_RE, "")) {
+    total += charWidth(ch.codePointAt(0) ?? 0);
+  }
+  return total;
+}
+
+/** 以**欄寬**(非 .length)補右側空白到指定寬度;已經夠寬就原樣回傳。 */
+export function padVisual(s: string, width: number): string {
+  const gap = width - displayWidth(s);
+  return gap > 0 ? s + " ".repeat(gap) : s;
 }
 
 const SYMBOL: Record<StepStatus, string> = {
@@ -157,6 +217,12 @@ export function createAutoPrompter(
       onAnswer?.(question, options[0].label);
       return options[0].value;
     },
+    async secret(question) {
+      // 非互動下沒有人可以貼值進來。回空字串 = 「這一項沒填」,由呼叫端決定怎麼辦;
+      // 這裡刻意**不呼叫 onAnswer**,secret 的問答一個字都不進記錄。
+      void question;
+      return "";
+    },
   };
 }
 
@@ -208,6 +274,31 @@ export function createTtyPrompter(): Prompter {
           return options[n - 1].value;
         }
         process.stderr.write(s.yellow(`  enter a number between 1 and ${options.length}.\n`));
+      }
+    },
+    async secret(question) {
+      // readline 沒有官方的「不回顯」開關。做法是接管它的輸出:提示字串放行一次,
+      // 之後每一次 keystroke 觸發的重繪一律吞掉 —— 於是游標不動、打的字不出現。
+      // (不用 raw mode 自己讀 byte:那條路要自己處理 backspace / Ctrl-C / 貼上,
+      //  而且在管線與非 TTY 下行為分歧,壞法很難 debug。)
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stderr,
+        terminal: true,
+      });
+      const internal = rl as unknown as { _writeToOutput?: (chunk: string) => void };
+      let promptShown = false;
+      internal._writeToOutput = (chunk: string) => {
+        if (promptShown) return;
+        promptShown = true;
+        process.stderr.write(chunk);
+      };
+      try {
+        const answer = await rl.question(`${question} ${s.dim("(hidden)")} `);
+        process.stderr.write("\n");
+        return answer.trim();
+      } finally {
+        rl.close();
       }
     },
   };
