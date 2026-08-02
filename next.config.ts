@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -93,7 +94,39 @@ const nextConfig: NextConfig = {
     ? { distDir: process.env.CMS_DEV_DISTDIR }
     : {}),
 };
-export default nextConfig;
+// ── 錯誤回報(GlitchTip / Sentry 協定)─────────────────────────────────────
+// withSentryConfig 在這裡只做兩件事:把 instrumentation-client.ts 排進前端 bundle,
+// 以及在建置期把 SDK 的一些 no-op 分支剪掉。它**不需要**任何 DSN 或帳號 —— 站台
+// 沒設 DSN 時整套就是安靜關閉(見 src/lib/observe/sentry-options.ts)。
+//
+// 兩個明確關掉的東西:
+//
+//   telemetry —— 建置時回報用量給 Sentry 公司。這個 repo 是給人 fork 的公開範本,
+//     替每一個下游站台決定「要不要把建置資訊送給第三方」不是我們的權利。而且終點
+//     本來就是自架的 GlitchTip,送過去也沒有對象。
+//
+//   sourcemaps —— 上傳 source map 需要 auth token 與 org/project,而 GlitchTip 對
+//     source map 的處理和 Sentry SaaS 不一樣。更重要的是:上傳等於把整個後台的原始碼
+//     交給收集端。堆疊裡看得到檔名與行號已經夠查問題了。
+//
+// ⚠️ 刻意**不加** `disableLogger` —— 它在 Turbopack 下不支援,加了只會在每次
+// `next build` 噴一行 deprecation 警告,而那行警告會被當成「有東西壞了」。
+export default withSentryConfig(nextConfig, {
+  telemetry: false,
+  sourcemaps: { disable: true },
+  // 建置後不去 Sentry 的 API 建 release。我們沒有 auth token,也沒有要跟任何 SaaS
+  // API 說話。
+  //
+  // ⚠️ 每次 `next build` 仍會印一行 `No auth token provided. Will not create
+  // release.` —— 那是**預期的**,不是設定漏了。plugin 的檢查順序是先看有沒有偵測到
+  // release 名稱、再看有沒有 token,`create: false` 排在那之後才被讀到。
+  //
+  // 那個「偵測到的 release 名稱」值得留著:plugin 會把它編進 bundle,於是前端事件
+  // 自動帶上這次部署的 git sha —— 而「這個錯誤是哪一版弄出來的」是查錯時最先想知道
+  // 的事。要讓警告消失只能連那個名稱一起關掉(或整包 silent),兩個都比一行警告貴。
+  // runtime 端若另外設了 CMS_ERROR_RELEASE 會覆蓋它(見 sentry-options.ts)。
+  release: { create: false },
+});
 
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 initOpenNextCloudflareForDev();

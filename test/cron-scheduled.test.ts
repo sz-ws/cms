@@ -298,3 +298,110 @@ describe("runCronTick — 安靜 no-op 的情形", () => {
     await expect(runCronTick(throwing)).resolves.toBeUndefined();
   });
 });
+
+// 「不 throw」原本也等於「沒有人知道」—— cron 從上週就沒跳過,而站台只是看起來
+// 排程發佈有點慢。onError 是那個缺口的旁路出口:合約(絕不 throw)完全沒變,只是
+// 失敗多了一個看得到的地方。這裡測的就是「該回報時回報、不該回報時安靜」。
+describe("runCronTick — 失敗回報(onError sink)", () => {
+  it("正常送出 → 一次都不回報", async () => {
+    const captured: CapturedRequest[] = [];
+    const reported: string[] = [];
+    await runCronTick(
+      await envWith(
+        { secret: await storedSecret(SECRET), site_url: null, enabled: 1 },
+        captured,
+      ),
+      (_e, stage) => reported.push(stage),
+    );
+    expect(captured).toHaveLength(1);
+    expect(reported).toEqual([]);
+  });
+
+  it("未安裝 / 未啟用 / 未設密鑰 → 不回報(這些是正常狀態,不是故障)", async () => {
+    const reported: string[] = [];
+    const sink = (_e: unknown, stage: string) => reported.push(stage);
+    await runCronTick(await envWith(null, []), sink);
+    await runCronTick(
+      await envWith(
+        { secret: await storedSecret(SECRET), site_url: null, enabled: 0 },
+        [],
+      ),
+      sink,
+    );
+    await runCronTick(
+      await envWith({ secret: null, site_url: null, enabled: 1 }, []),
+      sink,
+    );
+    expect(reported).toEqual([]);
+  });
+
+  it("D1 查詢失敗 → 回報 query,且照樣不 throw", async () => {
+    const reported: string[] = [];
+    const env: CronScheduledEnv = {
+      DB: {
+        prepare: () => ({
+          bind: () => ({
+            first: async () => {
+              throw new Error("d1 down");
+            },
+          }),
+        }),
+      } as unknown as D1Database,
+      SECRETS_KEY,
+      WORKER_SELF_REFERENCE: fakeFetcher([]),
+    };
+    await expect(
+      runCronTick(env, (_e, stage) => reported.push(stage)),
+    ).resolves.toBeUndefined();
+    expect(reported).toEqual(["query"]);
+  });
+
+  it("SECRETS_KEY 對不上 → 回報 decrypt", async () => {
+    const reported: string[] = [];
+    const env = await envWith(
+      { secret: await storedSecret(SECRET), site_url: null, enabled: 1 },
+      [],
+    );
+    const wrongKey = btoa(
+      String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))),
+    );
+    await runCronTick({ ...env, SECRETS_KEY: wrongKey }, (_e, stage) =>
+      reported.push(stage),
+    );
+    expect(reported).toEqual(["decrypt"]);
+  });
+
+  it("入口回非 2xx → 回報 dispatch(沒有例外可轉發,所以自己組一個)", async () => {
+    const reported: unknown[] = [];
+    await runCronTick(
+      await envWith(
+        { secret: await storedSecret(SECRET), site_url: null, enabled: 1 },
+        [],
+        403,
+      ),
+      (e, stage) => reported.push([stage, (e as Error).message]),
+    );
+    expect(reported).toEqual([["dispatch", "cron tick rejected with HTTP 403"]]);
+  });
+
+  it("fetch 自己 throw → 回報 dispatch", async () => {
+    const reported: string[] = [];
+    const throwing: CronScheduledEnv = {
+      DB: fakeDB({
+        secret: await storedSecret(SECRET),
+        site_url: null,
+        enabled: 1,
+      }),
+      SECRETS_KEY,
+      WORKER_SELF_REFERENCE: {
+        fetch: async () => {
+          throw new Error("network");
+        },
+      } as unknown as Fetcher,
+    };
+    await expect(
+      runCronTick(throwing, (_e, stage) => reported.push(stage)),
+    ).resolves.toBeUndefined();
+    expect(reported).toEqual(["dispatch"]);
+  });
+});

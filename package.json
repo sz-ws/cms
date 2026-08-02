@@ -40,6 +40,7 @@
     "@codemirror/view": "^6.43.6",
     "@heroicons/react": "^2.2.0",
     "@number-flow/react": "^0.6.1",
+    "@sentry/nextjs": "^10.69.0",
     "@shadcn/react": "^0.2.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",

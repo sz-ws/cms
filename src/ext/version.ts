@@ -336,4 +336,22 @@
 //     這兩端會被不同的攻擊面觸及(hot-install 走 core,檔案落地走 CLI)。
 //   manifestSchema 是 .strict() —— 宣告 files 的 manifest 在 <1.25.0 的 core 會整包
 //   驗證失敗,故使用該欄位的 manifest 其 coreApi 必須宣告 "^1.25.0"。
-export const CORE_API_VERSION = "1.25.0";
+// 1.26.0(錯誤回報層):
+//   - 新 core 模組 `src/lib/observe/`(sentry-options + report)。對外只有兩件事:
+//     `reportError(error, tags)`(送出去,絕不 throw、刻意不重複 console.error)與
+//     `ensureReporting()`(在這個 isolate 綁好 client 並回報現況)。Extension 介面
+//     一個欄位都沒動,所以這是「新 capability → minor」那一類,不是破壞性變更。
+//   - 為什麼是 core 而不是純 extension:要涵蓋的錯誤發生在 core 裡 —— src/ext/hooks.ts
+//     的 doAction/applyFilters(每個 extension 的 hook 失敗原本都只 console.error,
+//     HTTP 照樣回 200)與 Next 的 onRequestError。core 不可能等某個 extension 的
+//     程式碼先跑過一次才開始有能力記錄錯誤。
+//   - DSN 有兩個來源,設定優先於環境變數:`ext.sentry.dsn`(sentry extension,
+//     secret:true,填完存檔即生效)與 `CMS_ERROR_DSN`(wrangler var,module load
+//     就綁得起來,所以連「還沒進到我們任何一行程式碼」的請求都收得到)。取捨寫在
+//     src/lib/observe/report.ts 的檔頭。
+//   - ⚠️ 環境變數**絕不能**叫 SENTRY_DSN:SDK 內部是 `dsn: options.dsn ?? process
+//     .env.SENTRY_DSN`,傳 undefined 想關掉它時它會自己回頭去環境變數撿,把整段
+//     本機靜音判斷繞過去。理由完整寫在 src/lib/observe/sentry-options.ts。
+//   consume `@/lib/observe` 的 code extension 應宣告 coreApi "^1.26.0";更舊的 core
+//   上那個模組不存在,是建置期失敗而不是 runtime 降級。
+export const CORE_API_VERSION = "1.26.0";

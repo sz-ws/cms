@@ -8,6 +8,7 @@
 import type { Extension } from "@/ext/types";
 import { cron } from "./cron";
 import { newebpay } from "./newebpay";
+import { sentry } from "./sentry";
 
 // core-v2 §3.6 DEMO ONLY:progressive「程式碼強化層」的 side-effect import。
 // 這行不加任何 Extension —— 它只在 bundle 載入時執行 gallery-enhance/index.ts,
@@ -28,4 +29,8 @@ import "./blog/layout";
 /** 所有已「安裝」(編譯進 bundle)的 extensions */
 // ai-smoke-test 刻意**不**在預設陣列裡:它是 ai:generate capability 的內部驗證用
 // extension,不是產品功能。要試 AI capability 的人自己加一行 import 與陣列項。
-export const registry: Extension[] = [cron, newebpay];
+//
+// sentry 在預設陣列裡,理由和其他兩個不同:它裝著也完全不做事(DSN 空 = 零網路流量、
+// 零成本),但**不**預先裝好的話,需要它的那一天通常就是出事的那一天 —— 而那時候
+// 最不想做的事是「先 rebuild 一次再 deploy 才能開始看錯誤」。
+export const registry: Extension[] = [cron, newebpay, sentry];

@@ -89,11 +89,28 @@ function originOf(siteUrl: string | null): string {
 }
 
 /**
+ * 失敗的旁路出口。
+ *
+ * 為什麼要多這個參數,而不是直接讓 runCronTick 把錯誤丟出去:下面那條「絕不 throw」
+ * 的合約是刻意的,`scheduled` 沒有人接得住例外,丟出去只會變成 Cloudflare 儀表板上
+ * 一個沒有上下文的 exception 計數。但「不 throw」到目前為止也等於「沒有人知道」——
+ * cron 從上週就沒跳過,而站台看起來只是排程發佈有點慢。
+ *
+ * 所以合約不動,只在旁邊開一個出口:呼叫端要不要把它接到錯誤收集端是呼叫端的事,
+ * 這個模組照樣不知道 Sentry 的存在(它也不能知道 —— 見檔頭的 import 硬規則)。
+ * sink 自己絕不 throw 是呼叫端的責任。
+ */
+export type CronTickErrorSink = (error: unknown, stage: string) => void;
+
+/**
  * 送出一次 cron tick。整支函式**絕不 throw**:cron 沒裝、沒啟用、沒設密鑰、
  * binding 缺失 —— 全部安靜 no-op(這些都是完全正常的狀態,core 的 lazy sweep 仍是保底)。
- * 只有「該送卻送失敗」才 console.error。
+ * 只有「該送卻送失敗」才 console.error(並經 onError 回報一次)。
  */
-export async function runCronTick(env: CronScheduledEnv): Promise<void> {
+export async function runCronTick(
+  env: CronScheduledEnv,
+  onError?: CronTickErrorSink,
+): Promise<void> {
   const { DB, SECRETS_KEY, WORKER_SELF_REFERENCE } = env;
   // 少任何一個 binding 都不是這裡該修的問題,安靜跳過(fetch handler 自會抱怨)。
   if (!DB || !SECRETS_KEY || !WORKER_SELF_REFERENCE) return;
@@ -105,6 +122,7 @@ export async function runCronTick(env: CronScheduledEnv): Promise<void> {
       .first<TickRow>();
   } catch (e) {
     console.error("[cron] tick query failed", e);
+    onError?.(e, "query");
     return;
   }
   // extension 未安裝(row.enabled === null)或已停用 → 安靜跳過。
@@ -119,6 +137,7 @@ export async function runCronTick(env: CronScheduledEnv): Promise<void> {
   } catch (e) {
     // 解不開通常代表 SECRETS_KEY 被換過(信封沒有 key id,無漸進遷移路徑)。
     console.error("[cron] failed to decrypt ext.cron.secret", e);
+    onError?.(e, "decrypt");
     return;
   }
   if (!secret) return;
@@ -135,8 +154,14 @@ export async function runCronTick(env: CronScheduledEnv): Promise<void> {
       },
       body,
     });
-    if (!res.ok) console.error("[cron] tick rejected", res.status);
+    if (!res.ok) {
+      console.error("[cron] tick rejected", res.status);
+      // 這裡沒有例外可以轉發(回應是 4xx/5xx,不是 throw),但「入口把我們擋下來」
+      // 和「請求送不出去」一樣是需要有人知道的事,所以自己組一個。
+      onError?.(new Error(`cron tick rejected with HTTP ${res.status}`), "dispatch");
+    }
   } catch (e) {
     console.error("[cron] tick request failed", e);
+    onError?.(e, "dispatch");
   }
 }

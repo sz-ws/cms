@@ -14,3 +14,20 @@ NEXTJS_ENV=development
 #    加密信封裡沒有 key id,換金鑰 = 所有既存的加密設定同時變成亂碼,而且沒有
 #    漸進遷移路徑(getSetting 是 throw 不是降級)。
 SECRETS_KEY=<執行 openssl rand -base64 32 貼上結果>
+
+# ---- 錯誤追蹤(選用;完整說明見 extensions/sentry/README.md)----
+#
+# 預設本機**不送**任何錯誤 —— 本機的例外會和正式站的混進同一組 issue,而堆疊裡
+# 有這台機器的絕對路徑。要在本機實測整條線才打開下面兩行。
+#
+# ⚠️ 變數名刻意避開 `SENTRY_DSN`:SDK 內部是 `dsn: options.dsn ?? process.env
+#    .SENTRY_DSN`,用那個名字會讓「不給 DSN 以關閉回報」的判斷整個被繞過去。
+#
+# CMS_ERROR_ALLOW_LOCAL=1
+# CMS_ERROR_DSN=https://<key>@<你的 glitchtip>/<project>
+#
+# 前端那顆是**建置期**決定的(瀏覽器讀不到 D1,後台設定對它無效),改了要重新 build:
+# NEXT_PUBLIC_CMS_ERROR_DSN=https://<key>@<你的 glitchtip>/<project>
+#
+# 事件送不出去 vs 送出去被對面丟掉,在這一端看起來一樣。打開這個就分得出來:
+# CMS_ERROR_DEBUG=1
