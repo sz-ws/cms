@@ -16,7 +16,25 @@
   // 或未設 signing secret 時,handler 安靜 no-op(core 的 lazy sweep 仍是保底)。
   // 要更省可調成 "*/5 * * * *";publish-due 的 WHERE 子句冪等,與 lazy sweep 併發無害。
   "triggers": { "crons": ["* * * * *"] },
-  "compatibility_date": "2024-12-30",
+  // ⚠️ 這個日期不可以往回調。2025-08-15 是 workerd 原生 node:http / node:https
+  // **client** 成為預設的那一天(enable_nodejs_http_modules)。比它舊的話,
+  // OpenNext 在**建置時**就會把 node:https 別名到 unenv 的空殼,任何走
+  // https.request 的相依程式庫都會在執行期拿到:
+  //
+  //   Error: [unenv] https.request is not implemented yet!
+  //
+  // 實際踩到的是 @sentry/nextjs —— 它在 server 側載入 Node SDK,傳輸層走
+  // https.request。症狀極難查:captureException 成功、SDK 說 initialized、
+  // 後台狀態頁說「送出中」,但收集端一筆都收不到。只有 CMS_ERROR_DEBUG=1 +
+  // `wrangler tail` 才看得到真正的錯誤。
+  //
+  // ⚠️ 加 "enable_nodejs_http_modules" 到 compatibility_flags **沒有用**(實測過)。
+  // 別名是建置期綁定的,執行期的 flag 改不動已經打包好的 import 解析。
+  // 唯一有效的是這個日期本身。
+  //
+  // 調整這個日期會一次打開該期間**所有**的行為變更,不只是 http ——
+  // 動它之後要重跑完整測試,並確認 vitest.config.ts 的 compatibilityDate 同步。
+  "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   // service 必須與 name 同步,否則 cron 的簽名 self-call 會打到別的 Worker。

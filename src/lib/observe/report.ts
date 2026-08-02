@@ -246,7 +246,18 @@ export async function reportAndFlush(
   if (!status.sending) return null;
   const Sentry = await loadSdk();
   const eventId = Sentry.captureException(error, { tags });
-  await Sentry.flush(timeoutMs);
+  // ⚠️ flush() 回傳 boolean:true = 佇列清空(事件真的離開了),false = 逾時。
+  // 先前這裡只 await 不看結果,於是逾時失敗時照樣回傳 event id、UI 照樣說「送出了」,
+  // 而使用者拿著那個 id 在 GlitchTip 上永遠找不到 —— 正是本檔檔頭警告過的
+  // 「後台說在送、實際上沒送」。診斷用的路徑必須誠實,寧可吵也不要騙。
+  const flushed = await Sentry.flush(timeoutMs);
+  if (!flushed) {
+    throw new Error(
+      `Sentry.flush timed out after ${timeoutMs}ms — the event was queued but did not leave this Worker. ` +
+        `event_id=${eventId} (it will not appear in your collector). ` +
+        `Check outbound connectivity to the DSN host, or set CMS_ERROR_DEBUG=1 and read \`wrangler tail\`.`,
+    );
+  }
   return eventId;
 }
 

@@ -14,7 +14,10 @@ export default defineConfig(async () => {
           // 必須固定(對齊 wrangler.jsonc):不設的話 pool 預設用「今天」,
           // 一旦超過安裝的 workerd binary 支援上限,整個 suite 會在某天
           // 無人改動的情況下自動起不來(ERR_RUNTIME_FAILURE)。
-          compatibilityDate: "2024-12-30",
+          // 必須與 wrangler.jsonc 一致,見該檔對這個日期的說明。
+          compatibilityDate: "2026-07-01",
+          // 必須與 wrangler.jsonc 的 compatibility_flags 一致 —— 不一致的話測試
+          // 跑在一個「和正式站不同的 runtime」上。
           compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
           bindings: {
             // 與 .dev.vars 同值(32-byte base64);供 AES-GCM secret 加密測試用。
