@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { getSetting, setSettings } from "@/lib/settings";
+import { makeScopedSettings } from "./settings-env";
+export { envKeyForSettingKey, makeScopedSettings } from "./settings-env";
 import { putFile, deleteFile, listFiles } from "@/lib/storage";
 import type { StoredFile } from "@/lib/storage";
 import { extJobs } from "@/lib/schema";
@@ -53,16 +54,6 @@ export interface CoreServices {
   jobs: ScopedJobs;
 }
 
-/** key 必須是 `ext.<extId>.<name>` 形狀且 name 非空;否則 throw。 */
-function assertScopedKey(extId: string, key: string): void {
-  const prefix = `ext.${extId}.`;
-  if (!key.startsWith(prefix) || key.length <= prefix.length) {
-    throw new Error(
-      `[services] settings key "${key}" outside scope "${prefix}*"`,
-    );
-  }
-}
-
 function makeScopedStorage(extId: string): ScopedStorage {
   return {
     put: (filename, body, contentType) =>
@@ -78,19 +69,6 @@ function makeScopedStorage(extId: string): ScopedStorage {
     },
     // list 限定於本 ext 的 prefix(`<extId>/`)。
     list: (cursor) => listFiles(`${extId}/`, cursor),
-  };
-}
-
-function makeScopedSettings(extId: string): ScopedSettings {
-  return {
-    get: (key, fallback) => {
-      assertScopedKey(extId, key);
-      return getSetting(key, fallback);
-    },
-    set: (entries) => {
-      for (const key of Object.keys(entries)) assertScopedKey(extId, key);
-      return setSettings(entries);
-    },
   };
 }
 

@@ -354,4 +354,21 @@
 //     本機靜音判斷繞過去。理由完整寫在 src/lib/observe/sentry-options.ts。
 //   consume `@/lib/observe` 的 code extension 應宣告 coreApi "^1.26.0";更舊的 core
 //   上那個模組不存在,是建置期失敗而不是 runtime 降級。
-export const CORE_API_VERSION = "1.26.0";
+// 1.27.0(extension 設定的 env 覆寫):
+//   - `ScopedSettings.get` 現在先查環境變數,查無或空字串才回頭讀 D1 的 settings 表。
+//     名稱由 `envKeyForSettingKey()` 推導:`ext.newebpay.hashKey` → `EXT_NEWEBPAY_HASH_KEY`。
+//   - 為什麼順序是 env 優先:(a) 12-factor 的慣例就是環境覆寫設定檔;(b) 這是**唯一**
+//     能在首次 boot 前配置好的途徑 —— settings 表要 deploy 完才存在,而 `sz-ws-cms add`
+//     跑在 deploy 之前,碰不到那個 D1。沒有這一層,CLI 問完設定就無處可寫。
+//   - ⚠️ 名稱推導必須與 `cli/src/settings.ts` 的 `envKeyFor()` 逐字元一致。兩邊算出
+//     不同的名字 = 寫入時叫 A、讀取時找 B,使用者會看到「設了卻沒生效」且無從查起。
+//     test/ext-settings-env.test.ts 用同一組例子把兩邊釘在一起,分家就會紅。
+//   - 加 extension 前綴的理由:manifest 的 key 是 extension 內的區域名稱(`apiKey`),
+//     而 env 是整個 Worker 的**平坦命名空間**,直取 key 會讓後裝的靜默覆蓋先裝的。
+//   - 空字串視為未設而非「設成空」,與 CLI 刻意不把 default 寫進 vars 的決定對齊
+//     (否則會產生「看起來設過、其實是佔位值」的欄位,而 preflight 反而放行)。
+//   - 型別轉換依 `get(key, fallback)` 的 fallback 型別(boolean/number),轉不動就
+//     當作沒設 —— 一個轉壞的值比沒有值更難查。
+//   依賴此行為的 extension 應宣告 coreApi "^1.27.0";更舊的 core 上環境變數會被
+//   完全忽略、靜默退回 D1,是**沒有錯誤訊息的 runtime 降級**,所以務必宣告。
+export const CORE_API_VERSION = "1.27.0";
