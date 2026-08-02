@@ -149,6 +149,24 @@ function planD1(config: WranglerConfig, accountDbs: { name: string; uuid: string
 }
 
 /** 所有名稱都以同一個 site slug 衍生,避免一份 clone 落到別站的預設資源。 */
+/** 依 database_name 分組:合併模式下兩個 binding 會落在同一組。保留原順序。 */
+function groupPlansByDatabase<T extends { entry: { databaseName: string } }>(
+  plans: readonly T[],
+): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const p of plans) {
+    const list = out.get(p.entry.databaseName);
+    if (list) list.push(p);
+    else out.set(p.entry.databaseName, [p]);
+  }
+  return out;
+}
+
+/** "1 D1 database" / "2 D1 databases" —— 數字對了字尾也要對,不然看起來像沒改乾淨。 */
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 export function siteResourcesForSlug(
   siteSlug: string,
   separateTagCache = false,
@@ -458,17 +476,23 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       return EXIT.SETUP_PREREQ;
     }
   }
-  for (const p of d1Plans) {
-    if (p.existingUuid) {
+  // 合併模式下 DB 與 NEXT_TAG_CACHE_D1 指向同一個資料庫,逐個 plan 印會變成
+  // 「同一個名字出現兩次、各自說 needs to be created」—— 看起來像要建兩個。
+  // 依 database_name 併成一行,binding 併列。
+  for (const [name, group] of groupPlansByDatabase(d1Plans)) {
+    const bindings = group.map((p) => p.entry.binding).join(", ");
+    const head = group[0];
+    if (head.existingUuid) {
+      const needsWrite = group.some((p) => p.needsConfigWrite);
       r.step(
-        p.needsConfigWrite ? "todo" : "ok",
-        `D1 ${p.entry.databaseName} (${p.entry.binding}) exists`,
-        p.needsConfigWrite
-          ? `config needs update to ${p.existingUuid}`
+        needsWrite ? "todo" : "ok",
+        `D1 ${name} (${bindings}) exists`,
+        needsWrite
+          ? `config needs update to ${head.existingUuid}`
           : `config database_id is correct`,
       );
     } else {
-      r.step("todo", `D1 ${p.entry.databaseName} (${p.entry.binding}) needs to be created`);
+      r.step("todo", `D1 ${name} (${bindings}) needs to be created`);
     }
   }
 
@@ -507,7 +531,11 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     }
   }
 
-  const willCreateD1 = d1Plans.filter((p) => !p.existingUuid).length;
+  // 建立的是「資料庫」不是「binding」—— 合併模式下兩個 binding 共用一個名字,
+  // 用 plan 數去算會對使用者說「要建 2 個」然後只建 1 個。
+  const willCreateD1 = new Set(
+    d1Plans.filter((p) => !p.existingUuid).map((p) => p.entry.databaseName),
+  ).size;
   const willWriteConfig = d1Plans.filter((p) => p.needsConfigWrite).length;
   const willCreateR2 = [...r2States.values()].filter((v) => v !== true).length;
   const migrationTargets = config.d1.filter((e) => e.hasMigrationsDir);
@@ -536,7 +564,8 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     r.step("ok", "resources and config are ready, nothing to create.");
   } else if (!o.assumeYes) {
     const go = await prompter.confirm(
-      `create ${willCreateD1} D1 databases, ${willCreateR2} R2 buckets, and update ${relConfig}?`,
+      `create ${plural(willCreateD1, "D1 database")}, ` +
+        `${plural(willCreateR2, "R2 bucket")}, and update ${relConfig}?`,
       true,
     );
     if (!go) {

@@ -4,8 +4,17 @@ import { getExtRuntime } from "@/ext/loader";
 import { getContentProvider, toTypeDef } from "@/ext/dx/runtime";
 import type { DeclarativeContentType } from "@/ext/dx/manifest";
 import { getOgTemplate } from "@/components/og/templates";
-// Note: this route is intentionally edge-runtime so the OG template lookup
-// doesn't pull the full Node-side Drizzle/loader paths.
+// ⚠️ 不要加回 `export const runtime = "edge"`。
+//
+// 它原本寫著「刻意用 edge runtime,避免 OG template 查找拉進 Node 側的
+// Drizzle/loader」—— 但這個部署目標是 Cloudflare Workers + OpenNext,**整個 app
+// 本來就跑在 workerd**,沒有「Node 側」可以避開,所以那個好處不存在。
+//
+// 代價卻是真的:@opennextjs/aws 的 copyTracedFiles 要求 edge runtime 的函式必須
+// 被拆成獨立 bundle,遇到宣告 edge 的 app router route 會直接讓整個 build 失敗:
+//
+//   Error: app/api/og/[extId]/[type]/[slug]/route cannot use the edge runtime.
+//          OpenNext requires edge runtime function to be defined in a separate function.
 
 // Generic OG image endpoint driven by declarative extensions.
 //
@@ -19,7 +28,6 @@ import { getOgTemplate } from "@/components/og/templates";
 // so extensions stay decoupled — they only need to know the slug, not the
 // build path of the component.
 
-export const runtime = "edge";
 interface RouteParams {
   params: Promise<{ extId: string; type: string; slug: string }>;
 }

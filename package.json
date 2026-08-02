@@ -11,7 +11,7 @@
     "predev": "node scripts/ensure-licensing-stub.mjs && node scripts/ensure-dev-env.mjs",
     "dev": "next dev",
     "prebuild": "node scripts/ensure-licensing-stub.mjs && node scripts/ensure-dev-env.mjs",
-    "build": "next build",
+    "build": "next build --webpack",
     "prepreview": "node scripts/ensure-licensing-stub.mjs && node scripts/ensure-dev-env.mjs",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "predeploy": "node scripts/ensure-licensing-stub.mjs && node scripts/ensure-dev-env.mjs && node scripts/preflight.mjs",

@@ -730,3 +730,46 @@ describe("runSetup — tag cache 的 D1 共用 / 獨立", () => {
     ]);
   });
 });
+
+describe("runSetup — 合併模式的計畫顯示", () => {
+  // 回歸測試:合併之後 DB 與 NEXT_TAG_CACHE_D1 指向同一個資料庫,先前逐個 plan 印
+  // 會變成「同一個名字出現兩次、各自說 needs to be created」,而確認句還說
+  // 「create 2 D1 databases」—— 然後只建一個。數字與行數都要說實話。
+  it("同一個資料庫只列一行,binding 併列,且說 1 個不是 2 個", async () => {
+    const { code, out, prompter } = await setup({
+      // 確認句是丟給 prompter 的,assumeYes 會整個跳過它 —— 要驗那句話就得真的問。
+      assumeYes: false,
+      answers: [true],
+      allowSharedDefaultNames: false,
+      siteSlug: "banana",
+      skipMigrations: true,
+      skipSecrets: true,
+      account: { createdD1Uuid: DB_UUID },
+    });
+    expect(code).toBe(EXIT.OK);
+
+    expect(out).toContain("D1 cms-banana-db (DB, NEXT_TAG_CACHE_D1) needs to be created");
+    // 舊的逐行輸出不該再出現。
+    expect(out).not.toContain("D1 cms-banana-db (DB) needs to be created");
+    const confirm = prompter.asked.join("\n");
+    expect(confirm).toContain("create 1 D1 database, 2 R2 buckets");
+    expect(confirm).not.toContain("create 2 D1 databases");
+  });
+
+  it("--separate-tag-cache 照實說 2 個", async () => {
+    const { code, out, prompter } = await setup({
+      assumeYes: false,
+      answers: [true],
+      allowSharedDefaultNames: false,
+      separateTagCache: true,
+      siteSlug: "banana",
+      skipMigrations: true,
+      skipSecrets: true,
+      account: { createdD1Uuid: DB_UUID },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(prompter.asked.join("\n")).toContain("create 2 D1 databases");
+    expect(out).toContain("D1 cms-banana-db (DB) needs to be created");
+    expect(out).toContain("D1 cms-banana-tag-cache (NEXT_TAG_CACHE_D1) needs to be created");
+  });
+});

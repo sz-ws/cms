@@ -49,7 +49,7 @@ import {
 import { configureExtension } from "./configure.js";
 import { createUi, type UiEvent } from "./ui.js";
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.5.1";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
