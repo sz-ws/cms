@@ -223,3 +223,43 @@ describe("WranglerClient — 寫入操作", () => {
     ]);
   });
 });
+
+// 這段錯誤訊息是逐字從實際輸出貼回來的(2026-08-03,四個帳號)。
+// 名稱會出現空白、`@`、單引號與中文 —— 用字元集去框名稱一定會漏。
+const REAL_AMBIGUITY_STDERR = `✘ [ERROR] More than one account available but unable to select one in non-interactive mode.
+
+  Please set the appropriate \`account_id\` in your Wrangler configuration file or assign it to the \`CLOUDFLARE_ACCOUNT_ID\` environment variable.
+  Available accounts are (\`<name>\`: \`<account_id>\`):
+    \`alex@example.com's Account\`: \`a1b2c3d4e5f60718293a4b5c6d7e8f90\`
+    \`Personal\`: \`0f1e2d3c4b5a69788796a5b4c3d2e1f0\`
+    \`billing@example.org's Account\`: \`11223344556677889900aabbccddeeff\`
+    \`專案\`: \`fedcba9876543210fedcba9876543210\`
+`;
+
+describe("WranglerClient.parseAvailableAccounts", () => {
+  it("從真實的多帳號錯誤裡解析出全部四個帳號", () => {
+    expect(WranglerClient.parseAvailableAccounts(REAL_AMBIGUITY_STDERR)).toEqual([
+      { name: "alex@example.com's Account", id: "a1b2c3d4e5f60718293a4b5c6d7e8f90" },
+      { name: "Personal", id: "0f1e2d3c4b5a69788796a5b4c3d2e1f0" },
+      { name: "billing@example.org's Account", id: "11223344556677889900aabbccddeeff" },
+      { name: "專案", id: "fedcba9876543210fedcba9876543210" },
+    ]);
+  });
+
+  it("訊息裡的 `<name>`: `<account_id>` 說明行不會被誤收", () => {
+    // 那行的第二段是字面 "<account_id>",不是 32 位 hex,所以 regex 自然排除。
+    const ids = WranglerClient.parseAvailableAccounts(REAL_AMBIGUITY_STDERR).map((a) => a.id);
+    expect(ids.every((id) => /^[0-9a-f]{32}$/.test(id))).toBe(true);
+  });
+
+  it("格式變了就回空陣列,不 throw —— 退回「請他自己設」而不是整個崩掉", () => {
+    expect(WranglerClient.parseAvailableAccounts("something else entirely")).toEqual([]);
+    expect(WranglerClient.parseAvailableAccounts(null)).toEqual([]);
+  });
+
+  it("isAccountAmbiguity 只認多帳號那一種失敗", () => {
+    expect(WranglerClient.isAccountAmbiguity(REAL_AMBIGUITY_STDERR)).toBe(true);
+    expect(WranglerClient.isAccountAmbiguity("network unreachable")).toBe(false);
+    expect(WranglerClient.isAccountAmbiguity(null)).toBe(false);
+  });
+});

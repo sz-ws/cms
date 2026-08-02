@@ -90,6 +90,13 @@ export interface SetupOptions {
   dryRun: boolean;
   /** 略過所有確認關卡(`--yes` / `--non-interactive`)。 */
   assumeYes: boolean;
+  /**
+   * 真的有人在鍵盤前面(TTY 且未 --yes / --non-interactive)。
+   * **不可以用 assumeYes 反推** —— stdin 被導向時 assumeYes 仍是 false,
+   * 但那時的 prompter 是 auto 版,`select` 會直接回第一個選項。
+   * 拿它去挑 Cloudflare 帳號就是靜默挑錯帳號、在別人的帳號上建資源。
+   */
+  interactive: boolean;
   skipMigrations: boolean;
   skipSecrets: boolean;
   /** 新 clone 的站點識別;非互動(CI)時必填。 */
@@ -326,7 +333,30 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   r.step("ok", `wrangler logged in${who.detail ? ` (${who.detail})` : ""}`);
 
   // ---- 3. 偵測現況 ----
-  const d1List = await r.task("checking account D1 databases", () => client.listD1());
+  let d1List = await r.task("checking account D1 databases", () => client.listD1());
+
+  // 多帳號是接案者/工作室的常態,而 wrangler 只在非互動模式報這個錯 —— 也就是
+  // CI 與本 CLI。之前只印一段「請自己設 CLOUDFLARE_ACCOUNT_ID 再跑一次」,
+  // 但清單就在錯誤訊息裡,叫使用者去複製貼上一個 32 位 hex 沒有道理。
+  // 互動情境直接問他要哪一個,設進 process.env(子程序繼承)再重試一次。
+  if (
+    d1List?.dbs === null &&
+    WranglerClient.isAccountAmbiguity(d1List?.detail ?? null)
+  ) {
+    const accounts = WranglerClient.parseAvailableAccounts(d1List.detail);
+    if (accounts.length > 0 && o.interactive) {
+      const picked = await prompter.select(
+        "which Cloudflare account should this site live in?",
+        accounts.map((a) => ({ label: a.name, value: a.id, hint: a.id })),
+      );
+      process.env.CLOUDFLARE_ACCOUNT_ID = picked;
+      r.step("ok", "account selected", picked);
+      d1List = await r.task("checking account D1 databases", () =>
+        client.listD1(),
+      );
+    }
+  }
+
   const accountDbs = d1List?.dbs ?? null;
   if (accountDbs === null) {
     const detail = d1List?.detail ?? null;

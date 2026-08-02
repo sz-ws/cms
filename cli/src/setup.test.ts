@@ -90,10 +90,15 @@ function fakeWrangler(account: FakeAccount = {}) {
 }
 
 /** 腳本化的 Prompter:依序回答,答完之後一律用預設值。 */
-function scriptedPrompter(answers: boolean[], textAnswers: string[] = []): Prompter & { asked: string[] } {
+function scriptedPrompter(
+  answers: boolean[],
+  textAnswers: string[] = [],
+  selectAnswers: number[] = [],
+): Prompter & { asked: string[] } {
   const asked: string[] = [];
   let i = 0;
   let textIndex = 0;
+  let selectIndex = 0;
   return {
     asked,
     async confirm(question, defaultValue) {
@@ -104,8 +109,12 @@ function scriptedPrompter(answers: boolean[], textAnswers: string[] = []): Promp
       asked.push(question);
       return textIndex < textAnswers.length ? textAnswers[textIndex++] : (d ?? "");
     },
-    async select(_q, options) {
-      return options[0].value;
+    async select(question, options) {
+      // 問題也要記進 asked —— 「有沒有真的問過使用者」是可被斷言的行為,
+      // 不記的話「代選」與「問過才選」在測試裡長得一模一樣。
+      asked.push(question);
+      const pick = selectIndex < selectAnswers.length ? selectAnswers[selectIndex++] : 0;
+      return options[pick].value;
     },
     // setup 自己不問 secret(它的三把金鑰是自動產生的),但介面要求要有這個方法。
     async secret() {
@@ -142,7 +151,11 @@ async function setup(overrides: HarnessOverrides = {}): Promise<{
   prompter: ReturnType<typeof scriptedPrompter>;
 }> {
   const { executor, calls } = fakeWrangler(overrides.account);
-  const prompter = scriptedPrompter(overrides.answers ?? [], overrides.textAnswers);
+  const prompter = scriptedPrompter(
+    overrides.answers ?? [],
+    overrides.textAnswers,
+    overrides.selectAnswers,
+  );
   const code = await runSetup({
     cwd: repo,
     configPath,
@@ -545,5 +558,73 @@ describe("runSetup — 略過旗標", () => {
     const { calls, out } = await setup({ skipSecrets: true });
     expect(argsOf(calls).some((s) => s.startsWith("secret"))).toBe(false);
     expect(out).toContain(`wrangler secret put ${SECRETS_KEY}`);
+  });
+});
+
+// ---- 多帳號:互動時代選,非互動時絕不代選 ------------------------------------
+const AMBIGUITY = `✘ [ERROR] More than one account available but unable to select one in non-interactive mode.
+  Available accounts are (\`<name>\`: \`<account_id>\`):
+    \`Personal\`: \`0f1e2d3c4b5a69788796a5b4c3d2e1f0\`
+    \`專案\`: \`fedcba9876543210fedcba9876543210\`
+`;
+
+describe("runSetup — 登入多個 Cloudflare 帳號", () => {
+  const savedEnv = process.env.CLOUDFLARE_ACCOUNT_ID;
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env.CLOUDFLARE_ACCOUNT_ID;
+    else process.env.CLOUDFLARE_ACCOUNT_ID = savedEnv;
+  });
+
+  it("非互動時絕不代選 —— 停下來並給指引", async () => {
+    delete process.env.CLOUDFLARE_ACCOUNT_ID;
+    let listCalls = 0;
+
+    const { code, out } = await setup({
+      interactive: false,
+      account: {
+        failOn: (args) => {
+          if (args.join(" ").startsWith("d1 list")) {
+            listCalls++;
+            return { code: 1, stdout: "", stderr: AMBIGUITY };
+          }
+          return null;
+        },
+      },
+    });
+
+    // 這是本測試存在的理由:非互動的 prompter.select 會回「第一個選項」,
+    // 拿它去挑 Cloudflare 帳號就是在別人的帳號上建資源。寧可停下來。
+    expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBeUndefined();
+    expect(listCalls).toBe(1); // 沒有重試
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(out).toContain("CLOUDFLARE_ACCOUNT_ID");
+  });
+
+  it("互動時問使用者、設進環境變數,然後重試一次", async () => {
+    delete process.env.CLOUDFLARE_ACCOUNT_ID;
+    let listCalls = 0;
+
+    const { code, prompter } = await setup({
+      interactive: true,
+      // 選單一律挑第二個(專案),確認我們用的是使用者的選擇而不是第一筆。
+      selectAnswers: [1],
+      account: {
+        createdD1Uuid: DB_UUID,
+        secrets: [],
+        failOn: (args) => {
+          if (args.join(" ").startsWith("d1 list")) {
+            listCalls++;
+            // 第一次撞多帳號,設好之後第二次成功。
+            if (listCalls === 1) return { code: 1, stdout: "", stderr: AMBIGUITY };
+          }
+          return null;
+        },
+      },
+    });
+
+    expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBe("fedcba9876543210fedcba9876543210");
+    expect(listCalls).toBe(2); // 重試過
+    expect(code).toBe(EXIT.OK);
+    expect(prompter.asked.some((q) => /which Cloudflare account/i.test(q))).toBe(true);
   });
 });

@@ -332,6 +332,7 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
 
   return runSetup({
     cwd,
+    interactive: !assumeYes && process.stdin.isTTY === true,
     configPath,
     client: new WranglerClient({
       exec: spawnExecutor,

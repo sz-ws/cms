@@ -117,8 +117,36 @@ export class WranglerClient {
    * 多帳號是接案者/工作室的常態,而 wrangler 只在非互動模式才報這個錯 ——
    * 也就是 CI 與本 CLI。單獨挑出來給明確指引,不要只丟原始訊息。
    */
+
+  /**
+   * 從 wrangler 的多帳號錯誤裡把帳號清單解析出來。它的格式是每行
+   *   `<name>`: `<account_id>`
+   * 而 account_id 恆為 32 位小寫 hex。名稱可能含空白、`@`、中文(實測有
+   * 「專案」「billing@example.org's Account」),所以名稱那段一律非貪婪抓到
+   * 反引號為止,不要試圖用字元集去框。
+   *
+   * 解析失敗回空陣列而不是 throw —— 拿不到清單只是退回「印訊息請他自己設」,
+   * 不該讓整個 setup 因為訊息格式變了而崩掉。
+   */
+  static parseAvailableAccounts(
+    detail: string | null,
+  ): { name: string; id: string }[] {
+    if (!detail) return [];
+    const out: { name: string; id: string }[] = [];
+    const re = /`([^`]+)`\s*:\s*`([0-9a-f]{32})`/g;
+    for (const m of detail.matchAll(re)) {
+      out.push({ name: m[1], id: m[2] });
+    }
+    return out;
+  }
+
+  /** 這次失敗是不是「登入了多個帳號」。 */
+  static isAccountAmbiguity(detail: string | null): boolean {
+    return !!detail && /More than one account/i.test(detail);
+  }
+
   static accountAmbiguityHint(detail: string | null): string[] | null {
-    if (!detail || !/More than one account/i.test(detail)) return null;
+    if (!WranglerClient.isAccountAmbiguity(detail)) return null;
     return [
       "your wrangler is logged in to multiple Cloudflare accounts, non-interactive mode cannot auto-select.",
       "specify one and rerun:",
