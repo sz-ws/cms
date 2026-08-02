@@ -10,4 +10,6 @@
 
 - Each file is a single React export (default-named after the OGImageCN slug) consuming `version / date / title / items / brand / logo` style props.
 - Inline `style={{ ... }}` is intentional — Satori reads inline styles only.
-- Components are inert without a rendering pipeline; integrate with `next/og` `ImageResponse()` when wiring real OG endpoints.
+- Components are inert without a rendering pipeline; they are rendered by `workers-og`'s `ImageResponse()` in `src/app/api/og/[extId]/[type]/[slug]/route.tsx`.
+- **Not `next/og`** — it compiles wasm at runtime, which Cloudflare Workers forbids (`Wasm code generation disallowed by embedder`). Reasons and the three build-time gotchas are documented in that route's header.
+- Templates must supply a font for CJK. Without one satori renders tofu boxes **and reports no error**.

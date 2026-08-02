@@ -79,6 +79,19 @@ const CSP_REPORT_ONLY = {
 };
 
 const nextConfig: NextConfig = {
+  // workers-og 以 `import x from "./x.wasm"` 靜態載入 yoga / resvg。那是
+  // **Cloudflare 的慣例** —— 該 import 會拿到一個 WebAssembly.Module。
+  //
+  // webpack 產不出那個形狀:開了 asyncWebAssembly 之後它會把 .wasm 當成一個
+  // 有「具名 exports」的模組,於是報 "does not contain a default export"。
+  // 所以正解不是叫 webpack 去處理它,而是**叫 webpack 別碰** —— 把整個套件
+  // 標成 server external,讓那個 import 原封不動留到 Worker 打包階段
+  // (@opennextjs/cloudflare → wrangler),那一層原生支援 wasm 模組 import。
+  //
+  // 為什麼不能改用 Turbopack 繞過:Turbopack 的產出沒有
+  // .next/server/instrumentation.js,而 @opennextjs/aws 的 copyTracedFiles 一定
+  // 會去找它 —— 見 package.json 的 `build` script 釘死 --webpack 的理由。
+  serverExternalPackages: ["workers-og"],
   turbopack: {
     root: projectRoot,
   },
