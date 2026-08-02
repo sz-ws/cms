@@ -83,6 +83,9 @@ setup options:
   --allow-shared-default-names  allow the shipped shared names (cms, cms-db, …);
                                 single-site or dev accounts only — on a
                                 multi-tenant account this causes cross-site access
+  --separate-tag-cache          give the OpenNext tag cache its own D1 instead of
+                                sharing the main one (uses 2 D1 slots per site;
+                                Free plan allows 10 per account)
   --skip-migrations             skip applying migrations/
   --skip-secrets                skip setting SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN
                                 (pnpm run deploy fills them in afterwards anyway)
@@ -345,6 +348,7 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
 
   return runSetup({
     cwd,
+    separateTagCache: args.separateTagCache,
     interactive: !assumeYes && process.stdin.isTTY === true,
     configPath,
     client: new WranglerClient({

@@ -29,6 +29,8 @@ export interface ParsedArgs {
   siteSlug?: string;
   /** 僅限明確單站/開發帳號使用 shipped 的共用資源名稱。 */
   allowSharedDefaultNames: boolean;
+  /** tag cache 用獨立的 D1(舊行為);預設兩個 binding 共用一個資料庫。 */
+  separateTagCache: boolean;
   /** 略過所有確認關卡。CI 用;與 --non-interactive 同義。 */
   yes: boolean;
   skipMigrations: boolean;
@@ -66,6 +68,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     nonInteractive: false,
     skipCoreCheck: false,
     skipGitInit: false,
+    separateTagCache: false,
     allowSharedDefaultNames: false,
     yes: false,
     skipMigrations: false,
@@ -105,6 +108,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.allowSharedDefaultNames = true;
     } else if (arg === "--skip-git-init") {
       out.skipGitInit = true;
+    } else if (arg === "--separate-tag-cache") {
+      out.separateTagCache = true;
     } else if (FLAGS_WITH_VALUE.has(arg)) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("-")) {

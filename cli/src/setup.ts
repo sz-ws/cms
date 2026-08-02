@@ -57,13 +57,40 @@ export {
 
 /** R2 最長名稱是 63;最長衍生值 cms-<slug>-next-cache 需要保留 15 字元。 */
 export const SITE_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/;
-const STOCK_SITE: SiteResources = {
-  siteSlug: "",
-  workerName: "cms",
-  selfReferenceService: "cms",
-  d1Names: ["cms-db", "cms-tag-cache"],
-  r2Names: ["cms-storage", "cms-next-cache"],
-};
+/**
+ * tag cache 要不要用獨立的 D1。
+ *
+ * 預設**共用一個** —— `DB` 與 `NEXT_TAG_CACHE_D1` 只是兩個 binding 名稱,
+ * 沒有任何東西規定它們得指向不同的 database_id。OpenNext 的 `revalidations` 表
+ * 由它自己 CREATE TABLE IF NOT EXISTS 建立,表名與 src/lib/schema.ts 的任何一張
+ * 都不衝突,d1_migrations 也是各記各的。
+ *
+ * 為什麼預設合併:**Free plan 每個帳號只有 10 個 D1**。一個站吃 2 個的話,
+ * 一個免費帳號只放得下 5 個站;合併之後是 10 個。而 `revalidations` 只存
+ * tag→revalidatedAt,體積可忽略,對 500MB 的額度沒有實質影響。
+ *
+ * 什麼時候該分開(`--separate-tag-cache`):多租戶帳號、或希望 OpenNext 擁有的
+ * schema 與自己的資料有硬邊界時。R2 不提供這個選項 —— R2 沒有數量上限,
+ * 而且 archive 的 shard 與 ISR 快取混在同一個 bucket 會讓「清快取」變危險。
+ */
+function d1NamesFor(
+  base: string,
+  separateTagCache: boolean,
+): readonly [string, string] {
+  return separateTagCache
+    ? [`${base}-db`, `${base}-tag-cache`]
+    : [`${base}-db`, `${base}-db`];
+}
+
+function stockSite(separateTagCache: boolean): SiteResources {
+  return {
+    siteSlug: "",
+    workerName: "cms",
+    selfReferenceService: "cms",
+    d1Names: d1NamesFor("cms", separateTagCache),
+    r2Names: ["cms-storage", "cms-next-cache"],
+  };
+}
 
 export interface SetupOptions {
   cwd: string;
@@ -88,6 +115,11 @@ export interface SetupOptions {
   siteSlug?: string;
   /** 明知只部署一個站點的開發帳號才准用預設共用名稱。 */
   allowSharedDefaultNames?: boolean;
+  /**
+   * tag cache 用獨立的 D1(舊行為,一個站吃兩個 D1 slot)。
+   * 預設 false = 兩個 binding 指向同一個資料庫,理由見 d1NamesFor 的檔頭。
+   */
+  separateTagCache?: boolean;
   /** 可注入,測試才能斷言「送進 secret put 的就是這個值」。 */
   generateSecret?: () => string;
 }
@@ -117,13 +149,16 @@ function planD1(config: WranglerConfig, accountDbs: { name: string; uuid: string
 }
 
 /** 所有名稱都以同一個 site slug 衍生,避免一份 clone 落到別站的預設資源。 */
-export function siteResourcesForSlug(siteSlug: string): SiteResources {
+export function siteResourcesForSlug(
+  siteSlug: string,
+  separateTagCache = false,
+): SiteResources {
   const base = `cms-${siteSlug}`;
   return {
     siteSlug,
     workerName: base,
     selfReferenceService: base,
-    d1Names: [`${base}-db`, `${base}-tag-cache`],
+    d1Names: d1NamesFor(base, separateTagCache),
     r2Names: [`${base}-storage`, `${base}-next-cache`],
   };
 }
@@ -150,8 +185,17 @@ function sameSite(config: WranglerConfig, expected: SiteResources): boolean {
 type SiteConfigState = "fresh" | "configured" | "unsafe";
 
 function siteConfigState(config: WranglerConfig): SiteConfigState {
-  if (sameSite(config, STOCK_SITE)) return "fresh";
-  if (config.siteSlug && !validateSiteSlug(config.siteSlug) && sameSite(config, siteResourcesForSlug(config.siteSlug))) {
+  // 兩種形態都要認得:合併(預設)與獨立 tag cache(--separate-tag-cache)。
+  // 只認一種的話,用另一種設定過的 repo 會被判成 "unsafe" 而拒絕重跑。
+  if (sameSite(config, stockSite(false)) || sameSite(config, stockSite(true))) {
+    return "fresh";
+  }
+  if (
+    config.siteSlug &&
+    !validateSiteSlug(config.siteSlug) &&
+    (sameSite(config, siteResourcesForSlug(config.siteSlug, false)) ||
+      sameSite(config, siteResourcesForSlug(config.siteSlug, true)))
+  ) {
     return "configured";
   }
   return "unsafe";
@@ -218,7 +262,7 @@ async function prepareSiteConfig(
     return EXIT.SETUP_PREREQ;
   }
 
-  const target = siteResourcesForSlug(slug);
+  const target = siteResourcesForSlug(slug, o.separateTagCache ?? false);
   try {
     const preview = writeSiteResources(configText, target);
     r.step("todo", `site slug "${slug}" will be written to ${relConfig}`, "worker, self-reference, D1 pair, R2 pair all become site-specific names.");
@@ -514,6 +558,9 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       assignments.set(p.entry.databaseName, p.existingUuid);
       continue;
     }
+    // 合併模式下兩個 binding 同名 —— 只建一次,第二個沿用同一個 id。
+    // (帳號清單是建立前抓的,所以第二筆的 existingUuid 仍是 null,不能靠它擋。)
+    if (assignments.has(p.entry.databaseName)) continue;
     const created = await r.task(`creating D1 ${p.entry.databaseName}`, () =>
       client.createD1(p.entry.databaseName),
     );

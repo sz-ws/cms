@@ -372,8 +372,9 @@ describe("runSetup — site slug 租戶邊界", () => {
     const written = await readFile(configPath, "utf8");
     expect(written).toContain('"name": "cms-acme-taipei"');
     expect(written).toContain('"service": "cms-acme-taipei"');
+    // 預設合併:兩個 d1 binding 都指向 <base>-db,所以 tag-cache 這個名字不該出現。
     expect(written).toContain('"database_name": "cms-acme-taipei-db"');
-    expect(written).toContain('"database_name": "cms-acme-taipei-tag-cache"');
+    expect(written).not.toContain("cms-acme-taipei-tag-cache");
     expect(written).toContain('"bucket_name": "cms-acme-taipei-storage"');
     expect(written).toContain('"bucket_name": "cms-acme-taipei-next-cache"');
     expect(written).toContain('"CMS_SITE_SLUG": "acme-taipei"');
@@ -685,5 +686,47 @@ describe("runSetup — 登入多個 Cloudflare 帳號", () => {
     expect(listCalls).toBe(2); // 重試過
     expect(code).toBe(EXIT.OK);
     expect(prompter.asked.some((q) => /which Cloudflare account/i.test(q))).toBe(true);
+  });
+});
+
+describe("runSetup — tag cache 的 D1 共用 / 獨立", () => {
+  // Free plan 每帳號只有 10 個 D1。一個站吃 2 個的話只放得下 5 個站,
+  // 合併之後是 10 個。這兩條把兩種模式都釘住。
+  it("預設共用一個 D1 —— 只建一次,兩個 binding 拿到同一個 id", async () => {
+    const { code, calls } = await setup({
+      allowSharedDefaultNames: false,
+      siteSlug: "acme",
+      skipMigrations: true,
+      skipSecrets: true,
+      account: { createdD1Uuid: DB_UUID },
+    });
+    expect(code).toBe(EXIT.OK);
+
+    const creates = argsOf(calls).filter((a) => a.startsWith("d1 create"));
+    expect(creates).toEqual(["d1 create cms-acme-db"]); // 只有一次
+
+    const written = await readFile(configPath, "utf8");
+    // 兩個 d1_databases 項的 database_id 必須是同一個。
+    const ids = [...written.matchAll(/"database_id":\s*"([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).toBe(DB_UUID);
+  });
+
+  it("--separate-tag-cache 回到兩個 D1", async () => {
+    const { code, calls } = await setup({
+      allowSharedDefaultNames: false,
+      separateTagCache: true,
+      siteSlug: "acme",
+      skipMigrations: true,
+      skipSecrets: true,
+      account: { createdD1Uuid: DB_UUID },
+    });
+    expect(code).toBe(EXIT.OK);
+
+    expect(argsOf(calls).filter((a) => a.startsWith("d1 create"))).toEqual([
+      "d1 create cms-acme-db",
+      "d1 create cms-acme-tag-cache",
+    ]);
   });
 });
