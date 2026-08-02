@@ -109,6 +109,20 @@ const LICENSE_CHECKIN_NOOP = expect.objectContaining({
   ok: true,
 });
 
+// storage-probe(migrations/0015_storage_history.sql):寫一列 size_after 快照。
+// 表不存在會 throw → ok:false,汙染下面每個 reports 的精確比對(理由同
+// EXT_JOBS_DDL),所以這裡建表。detail 帶的是真實資料庫大小,**會隨這個檔案
+// 每次 insert/delete 而漂移**,所以只能模糊比對(同 LICENSE_CHECKIN_NOOP)。
+// 行為面的正面斷言住在 test/storage-probe.test.ts。
+const STORAGE_HISTORY_DDL =
+  "CREATE TABLE IF NOT EXISTS storage_history (at INTEGER PRIMARY KEY, size_after INTEGER NOT NULL, rows_read INTEGER, note TEXT);";
+
+/** storage-probe 的報告:只保證 id 與 ok,大小數字不可預測。 */
+const STORAGE_PROBE_EMPTY = expect.objectContaining({
+  id: "storage-probe",
+  ok: true,
+});
+
 beforeAll(async () => {
   await d1().exec(CONTENTS_DDL);
   await d1().exec(
@@ -119,6 +133,7 @@ beforeAll(async () => {
   );
   await d1().exec(EXT_JOBS_DDL);
   await d1().exec(CONTENT_SUBMISSIONS_DDL);
+  await d1().exec(STORAGE_HISTORY_DDL);
 });
 
 beforeEach(async () => {
@@ -127,6 +142,7 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM settings;");
   invalidateSettingsCache(); // 直接清表繞開寫入路徑,一併清 isolate settings 快取。
   await d1().exec("DELETE FROM ext_jobs;");
+  await d1().exec("DELETE FROM storage_history;");
   hookState.calls = [];
   authState.user = ADMIN;
 });
@@ -196,6 +212,7 @@ describe("runDueJobs — publish-due", () => {
       { id: "publish-due", ok: true, processed: 1 },
       EXT_JOBS_NOOP,
       LICENSE_CHECKIN_NOOP,
+      STORAGE_PROBE_EMPTY,
     ]);
 
     const row = await readRow("due1");
@@ -255,6 +272,7 @@ describe("runDueJobs — publish-due", () => {
       { id: "publish-due", ok: true, processed: 0 },
       EXT_JOBS_NOOP,
       LICENSE_CHECKIN_NOOP,
+      STORAGE_PROBE_EMPTY,
     ]);
     expect(hookState.calls).toHaveLength(0);
 
@@ -297,14 +315,18 @@ describe("runDueJobs — publish-due", () => {
     const now = 8_888_000;
 
     const reports = await runDueJobs(now);
-    expect(reports).toHaveLength(3);
+    expect(reports).toHaveLength(4);
     const publishDue = reports.find((r) => r.id === "publish-due")!;
     expect(publishDue.ok).toBe(false);
     expect(typeof publishDue.detail).toBe("string");
-    // ext-jobs / license-checkin 不依賴 contents 表,失敗隔離下照常 no-op 成功。
+    // ext-jobs / license-checkin / storage-probe 不依賴 contents 表,失敗隔離下
+    // 照常 no-op 成功。
     expect(reports.find((r) => r.id === "ext-jobs")).toEqual(EXT_JOBS_NOOP);
     expect(reports.find((r) => r.id === "license-checkin")).toEqual(
       LICENSE_CHECKIN_NOOP,
+    );
+    expect(reports.find((r) => r.id === "storage-probe")).toEqual(
+      STORAGE_PROBE_EMPTY,
     );
     // 失敗仍寫 lastRun(記帳與任務結果解耦)。
     expect(await getSetting<number>("core.jobs.lastRun.publish-due", 0)).toBe(
@@ -465,6 +487,7 @@ describe("POST /api/jobs/run", () => {
       { id: "publish-due", ok: true, processed: 1 },
       EXT_JOBS_NOOP,
       LICENSE_CHECKIN_NOOP,
+      STORAGE_PROBE_EMPTY,
     ]);
     expect((await readRow("apidue"))?.status).toBe("published");
   });

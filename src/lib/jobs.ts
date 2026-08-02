@@ -1,6 +1,7 @@
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
 import { db } from "./db";
-import { contents, extJobs } from "./schema";
+import { getDB } from "./cf";
+import { contents, extJobs, storageHistory } from "./schema";
 import { getSetting, setSettings } from "./settings";
 import { indexContentEntry } from "./search";
 import { revalidateContent } from "@/ext/dx/cache-invalidate";
@@ -40,6 +41,10 @@ import { revalidateContent } from "@/ext/dx/cache-invalidate";
 // ── Extension 貢獻的 job(docs/spec-extension-jobs.md,CORE_API 1.10.0)───────
 // 見下方 `ext-jobs` core job:併入本模組既有的 CORE_JOBS 陣列 / runDueJobs 迭代,
 // 沿用同一組觸發路徑(lazy sweep / manual / cron:tick),不新增任何觸發機制。
+//
+// ── D1 用量預警(migrations/0015_storage_history.sql)───────────────────────
+// 見下方 `storage-probe` core job:同樣併入 CORE_JOBS,只讀 D1 回的 `size_after`
+// 由 SQLite trigger 維護的小表,不做任何全表統計(理由見該處註解)。
 
 /** 單支任務執行結果。processed = 本次實際處理的列數(如 publish-due 轉發的筆數)。 */
 export interface JobRunResult {
@@ -243,7 +248,7 @@ const extJobsJob: CoreJob = {
       }
     }
     const key = (extId: string, jobId: string): string =>
-      `${extId} ${jobId}`;
+      `${extId}\u0000${jobId}`;
     const declaredMap = new Map(
       declared.map((d) => [key(d.extId, d.jobId), d]),
     );
@@ -431,8 +436,88 @@ const licenseCheckinJob: CoreJob = {
   },
 };
 
-// ---- core-jobs registry(publish-due + ext-jobs + license-checkin)─────────
-const CORE_JOBS: readonly CoreJob[] = [publishDueJob, extJobsJob, licenseCheckinJob];
+// ---- storage-probe:D1 用量預警(migrations/0015_storage_history.sql)─────────
+//
+// D1 每個 database 有**硬上限**(Free 500 MB / Workers Paid 10 GB,官方明訂不可
+// 調升),而且**沒有 VACUUM** —— 刪除不會把空間還回來(auto_vacuum=0,且所有
+// PRAGMA 被 D1 的 authorizer 擋掉),撞牆後只能 export → 建新 DB → import →
+// 換 database_id 重部署,有停機。所以預警的價值全部在「早」。
+//
+// 數字來源是 **D1 每次查詢 meta 都會回的 `size_after`**(官方定義:the size of
+// the database after the query is successfully applied)。它是真實的資料庫大小,
+// 權威、免費、零設定 —— 不需要 CF API token,也不需要任何統計查詢。
+//
+// 因此這支 job 的成本是「一句 SELECT 1」。**不要**在這裡加 count(*) /
+// sum(length(...)):D1 按 rows read 計費(Free 每天 500 萬列),而一支被 lazy
+// sweep 每分鐘觸發的 job 去掃 contents,就是拿計費額度換一個 size_after 已經
+// 免費給你的數字。逐表歸因真的需要時臨時查一次即可,不值得常駐。
+//
+// 走 `getDB()` 拿原生 D1 而不是 drizzle:meta 只在 D1 的回傳物件上,
+// drizzle 的 query builder 不轉發它。
+
+/** 兩次探測之間的最小間隔。runDueJobs 每分鐘會被觸發,不節流會塞爆歷史表。 */
+/** 位元組的人類可讀化。1024 進位,KB 以上取一位小數。這裡的數字是 D1 回報的
+ *  **真實**資料庫大小,不是估算,所以不加 `~` 前綴。 */
+function formatBytes(n: number): string {
+  const abs = Math.abs(n);
+  if (abs < 1024) return `${Math.trunc(n)}B`;
+  if (abs < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  if (abs < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)}GB`;
+}
+
+const STORAGE_PROBE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 小時
+
+const storageProbeJob: CoreJob = {
+  id: "storage-probe",
+  async run(now: number): Promise<JobRunResult> {
+    // 一句最便宜的查詢,目的不是結果而是它 meta 上的 size_after。
+    const probe = await getDB().prepare("SELECT 1").all();
+    const sizeAfter = probe.meta?.size_after;
+    if (typeof sizeAfter !== "number") {
+      // 舊版 workerd / 未來欄位改名都可能走到這。降級成明確的觀測訊息,
+      // 不 throw —— 拿不到大小不代表其他 job 該連帶失敗。
+      return { ok: true, processed: 0, detail: "size_after 不可用" };
+    }
+
+    const [latest] = await db()
+      .select({ at: storageHistory.at, sizeAfter: storageHistory.sizeAfter })
+      .from(storageHistory)
+      .orderBy(desc(storageHistory.at))
+      .limit(1);
+
+    if (latest && now - latest.at < STORAGE_PROBE_INTERVAL_MS) {
+      return { ok: true, processed: 0, detail: "not_due" };
+    }
+
+    await db()
+      .insert(storageHistory)
+      .values({
+        at: now,
+        sizeAfter,
+        rowsRead: typeof probe.meta?.rows_read === "number" ? probe.meta.rows_read : null,
+        note: null,
+      })
+      .onConflictDoNothing();
+
+    // 成長速率:跟上一筆比。第一次探測沒有基準,只報當下大小。
+    const delta = latest ? sizeAfter - latest.sizeAfter : null;
+    const trend =
+      delta === null
+        ? ""
+        : ` (${delta >= 0 ? "+" : "-"}${formatBytes(Math.abs(delta))} 自上次)`;
+
+    return { ok: true, processed: 1, detail: `${formatBytes(sizeAfter)}${trend}` };
+  },
+};
+
+// ---- core-jobs registry(publish-due + ext-jobs + license-checkin + storage-probe)──
+const CORE_JOBS: readonly CoreJob[] = [
+  publishDueJob,
+  extJobsJob,
+  licenseCheckinJob,
+  storageProbeJob,
+];
 
 /**
  * 依序執行所有 core job。**逐任務失敗隔離**:任一任務 throw 不影響其他任務。每支任務

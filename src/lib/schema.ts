@@ -275,3 +275,30 @@ export const contentSubmissions = sqliteTable(
   (t) => [index("content_submissions_type_state").on(t.type, t.state)],
 );
 
+// D1 用量歷史(migrations/0015_storage_history.sql,手寫,照 0006–0014 precedent)。
+// 每張被追蹤的表一列(name = SQLite 表名),由該 migration 建立的 12 個 AFTER
+// INSERT / DELETE / UPDATE trigger 即時維護 —— 本表**只被讀**,除了那些 trigger
+// 與 migration 的一次性回填之外沒有任何應用層寫入路徑。
+//
+// 為什麼需要:D1 每個 database 有硬上限(Free 500 MB / Paid 10 GB,不可調升),
+// 且沒有 VACUUM —— 刪除不會把空間還回來,撞牆後只能 export → 重建 → import。
+// 為什麼是 trigger 而不是定期全表掃:D1 按 rows read 計費,`SELECT count(*)` /
+// `sum(length(...))` 掃整個 contents 是拿計費額度換一個數字。完整取捨(含 bytes
+// 的定義與三個已知落差)寫在 migration 檔頭;讀取端是 src/lib/jobs.ts 的
+// `storage-probe` core job,它只讀這張永遠 4 列的小表。
+//
+// trigger 是 raw-SQL-only 構造(drizzle 無法建模,同 content_fts 的處境),故
+// **改動本表欄位時必須同步改那 12 個 trigger**,否則計數器會安靜地漂移。
+// 本表沒有索引(單一 PK)。
+export const storageHistory = sqliteTable("storage_history", {
+  // 探測時間 epoch ms,同時是主鍵(一毫秒一列足矣)。
+  at: integer("at").primaryKey(),
+  // D1 每次查詢 meta 都回的 `size_after` —— **真實**資料庫大小(byte)。
+  // 不是估算:這是 Cloudflare 自己用的數字,免費、零設定。
+  sizeAfter: integer("size_after").notNull(),
+  // 探測查詢自身的 rows_read(觀測用,證明這支 job 幾乎不花錢)。
+  rowsRead: integer("rows_read"),
+  // 保留欄:未來標記「歸檔後」「清理後」等事件,讓歷史看得出因果。
+  note: text("note"),
+});
+
