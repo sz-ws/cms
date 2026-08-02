@@ -38,6 +38,11 @@ import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
 import { WranglerClient } from "./wrangler.js";
 import { runSetup } from "./setup.js";
 import { runPreflight } from "./preflight.js";
+import {
+  runCreate,
+  nextSteps as createNextSteps,
+  DEFAULT_TEMPLATE,
+} from "./create.js";
 import { configureExtension } from "./configure.js";
 import { createUi, type UiEvent } from "./ui.js";
 
@@ -52,11 +57,19 @@ export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
 const USAGE = `@sz.ws/cms v${VERSION} — sz.ws CMS command-line tool
 
 Usage:
+  cms create <dir> [options]    scaffold a new CMS project (clones the template)
   cms setup [options]           connect this repo to your Cloudflare account
   cms add <id> [options]        install a code extension
   cms preflight [options]       list extension settings that are still unset
   cms help                      show this help
   cms version                   show version
+
+create options:
+  --template <url>              template git URL
+                                (default ${DEFAULT_TEMPLATE};
+                                 or set SZWS_CMS_TEMPLATE)
+  --ref <branch|tag>            clone a specific branch or tag
+  --skip-git-init               keep the template .git instead of resetting it
 
 setup options:
   --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
@@ -88,6 +101,8 @@ shared options:
                                 human output goes to stderr as normal
 
 examples:
+  npx @sz.ws/cms create acme-taipei
+  npx @sz.ws/cms create acme-taipei --template https://github.com/me/my-fork.git
   npx @sz.ws/cms setup --site-slug acme-taipei
   npx @sz.ws/cms setup --dry-run
   npx @sz.ws/cms add blog
@@ -97,6 +112,7 @@ examples:
 
 environment variables:
   SZWS_REGISTRY_TOKEN           registry access token (same as --token)
+  SZWS_CMS_TEMPLATE             default template URL for the create command
   CLOUDFLARE_ACCOUNT_ID         specify which account to use when logged in to multiple
 
 docs: https://sz.ws`;
@@ -232,6 +248,7 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
     err(USAGE);
     return EXIT.NOT_FOUND;
   }
+  if (args.command === "create") return runCreateCommand(args, cwd);
   if (args.command === "setup") return runSetupCommand(args, cwd);
   if (args.command === "preflight") return runPreflightCommand(args, cwd);
   if (args.command !== "add") {
@@ -240,6 +257,61 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
     return EXIT.NOT_FOUND;
   }
   return runAdd(args, cwd);
+}
+
+
+/**
+ * `create` 的接線。這是使用者碰到的第一個指令,所以錯誤訊息要能自己走完 ——
+ * 目錄已存在就告訴他換一個名字,git 不在就講清楚是 git 不是網路。
+ */
+async function runCreateCommand(args: ParsedArgs, cwd: string): Promise<number> {
+  const dir = args.id; // positional:cms create <dir>
+  if (!dir) {
+    err("✗ missing directory name");
+    err("  usage: cms create <dir> [--template <url>] [--ref <branch|tag>]");
+    return EXIT.NOT_FOUND;
+  }
+
+  const ui = createUi({
+    interactive: process.stdin.isTTY === true && !args.nonInteractive,
+    json: args.json,
+  });
+  ui.reporter.intro("cms create", dir);
+
+  const result = await runCreate({
+    dir,
+    cwd,
+    exec: spawnExecutor,
+    reporter: ui.reporter,
+    // 優先序:旗標 > 環境變數 > 內建預設。搬家時不必等發版。
+    template: args.template ?? process.env.SZWS_CMS_TEMPLATE,
+    ref: args.ref,
+    dryRun: args.dryRun,
+    skipGitInit: args.skipGitInit,
+  });
+
+  if (!result.ok) {
+    ui.reporter.step("fail", result.message ?? "create failed");
+    switch (result.reason) {
+      case "dest_exists":
+        return EXIT.DEST_EXISTS;
+      case "invalid_dir":
+        return EXIT.NOT_FOUND;
+      case "git_missing":
+        return EXIT.SETUP_PREREQ;
+      default:
+        return EXIT.FETCH_FAILED;
+    }
+  }
+
+  if (args.dryRun) {
+    ui.reporter.outro(["dry run — nothing was created"]);
+    return EXIT.OK;
+  }
+
+  ui.reporter.step("ok", `created ${dir}/`);
+  ui.reporter.outro(createNextSteps(dir));
+  return EXIT.OK;
 }
 
 /**
