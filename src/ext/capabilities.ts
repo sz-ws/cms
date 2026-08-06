@@ -50,10 +50,14 @@ export function isCallbackReceiver(impl: unknown): impl is CallbackReceiver {
 // extensions/newebpay),core 不內建任何 payment provider —— registry 查無 provider
 // 時呼叫端自行處理(payment 是「裝了才有」的能力,與 ai:generate 恆註冊不同)。
 //
-// createCheckout 回傳 CheckoutSession union,對應兩種 gateway 交互模式:
+// createCheckout 回傳 CheckoutSession union,對應三種付款交互模式:
 //   - "form-post":gateway 要求瀏覽器對其 URL form-POST 一組欄位(藍新 MPG、綠界)。
 //     呼叫端(admin UI / 前台)以 fields 建立 <form> auto-submit。
 //   - "redirect":gateway 給一個 URL,瀏覽器直接導過去(Stripe Checkout 型)。
+//   - "manual"(1.28.0):沒有 gateway 的人工收款(銀行轉帳/ATM)。回一組展示給
+//     付款人的指示(收款帳號、金額、訂單編號…),付款結果由 admin 人工核帳後結算
+//     —— 走與 gateway 回呼**同一段**冪等結算 + payment:succeeded hook(見
+//     payment-kit/manual.ts),所以消費端(commerce)不需要分辨付款方式。
 // 失敗一律 { ok:false, error } —— 與 AiGenerateResult 同精神,設定缺失回
 // "not_configured",不 throw。
 //
@@ -72,6 +76,12 @@ export interface CheckoutRequest {
   email?: string;
 }
 
+/** manual session 的單行付款指示(label → value,原樣展示給付款人)。 */
+export interface ManualInstructionLine {
+  label: string;
+  value: string;
+}
+
 export type CheckoutSession =
   | {
       ok: true;
@@ -82,6 +92,16 @@ export type CheckoutSession =
       fields: Record<string, string>;
     }
   | { ok: true; kind: "redirect"; url: string }
+  | {
+      ok: true;
+      /** 1.28.0:人工收款(無 gateway)。付款人照 instructions 匯款,admin 核帳結算。 */
+      kind: "manual";
+      providerId: string;
+      /** 付款指示(收款銀行/帳號/金額/訂單編號…),呼叫端逐行展示。 */
+      instructions: ManualInstructionLine[];
+      /** 附註(如「請於備註填寫訂單編號」)。 */
+      note?: string;
+    }
   | { ok: false; error: string };
 
 export interface PaymentProvider {

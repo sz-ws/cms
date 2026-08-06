@@ -79,6 +79,9 @@ const CSP_REPORT_ONLY = {
 };
 
 const nextConfig: NextConfig = {
+  // Local tunnel used to reach this dev server from another device/browser.
+  // Keep this exact rather than allowing every *.okuso.uk subdomain.
+  allowedDevOrigins: ["3001.okuso.uk"],
   // workers-og 以 `import x from "./x.wasm"` 靜態載入 yoga / resvg。那是
   // **Cloudflare 的慣例** —— 該 import 會拿到一個 WebAssembly.Module。
   //

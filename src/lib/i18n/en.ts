@@ -82,6 +82,8 @@ export const en = {
   "dashboard.widgets.activityCaption": "vs prior 14d",
   "dashboard.widgets.storage": "Storage",
   "dashboard.widgets.storageMore": "files",
+  "dashboard.widgets.database": "Database",
+  "dashboard.widgets.databaseQuota": "quota",
   "dashboard.widgets.edit": "Edit",
   "dashboard.widgets.done": "Done",
   "dashboard.widgets.show": "Shown",

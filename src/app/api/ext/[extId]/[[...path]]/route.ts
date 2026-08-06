@@ -71,7 +71,12 @@ async function dispatch(
       (c) => c.name === routePathFirst && c.public === true,
     ) === true;
 
-  if (!isPublicPost) {
+  // 1.28.0:code extension 可對單一 route 宣告 public:true(匿名端點,如商店結帳)。
+  // mutation 的 same-origin 檢查在上方已擋過(宣告 public 不豁免);rate limiting
+  // 由 handler 自理(ApiRoute.public 的 doc comment 明定)。
+  const isPublicRoute = matched.route.public === true;
+
+  if (!isPublicPost && !isPublicRoute) {
     // 預設路徑:requireAuth(編輯者及以上)。
     try {
       user = await requireAuth();

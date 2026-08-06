@@ -14,4 +14,15 @@ export type {
 export { createPaymentProvider } from "./provider";
 export type { PaymentProviderOptions } from "./provider";
 export { createCheckoutHandler } from "./checkout-route";
+export { settlePayment } from "./settle";
+export type { SettleInput, SettleOutcome } from "./settle";
+export {
+  createManualPaymentProvider,
+  isManualPaymentProvider,
+} from "./manual";
+export type {
+  ManualPaymentProvider,
+  ManualPaymentProviderOptions,
+  ManualInstructionsResult,
+} from "./manual";
 export { utf8, hexToBytes, bytesToHex, timingSafeEqual } from "./util";

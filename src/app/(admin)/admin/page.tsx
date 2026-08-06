@@ -9,7 +9,10 @@ import { ExtRecentCard } from "@/components/admin/dashboard/ExtRecentCard";
 import {
   getWeeklyActivity,
   getStorageStats,
+  getDatabaseStats,
   formatBytes,
+  D1_QUOTA_BYTES,
+  type D1Plan,
 } from "@/components/admin/dashboard/widget-data";
 import type { ProportionWidgetData } from "@/components/admin/dashboard/widgets";
 import { DashboardInsights } from "@/components/admin/dashboard/DashboardInsights";
@@ -90,6 +93,8 @@ export default async function DashboardPage() {
       activityCaption: m["dashboard.widgets.activityCaption"],
       storage: m["dashboard.widgets.storage"],
       storageMore: m["dashboard.widgets.storageMore"],
+      database: m["dashboard.widgets.database"],
+      databaseQuota: m["dashboard.widgets.databaseQuota"],
     },
   };
 
@@ -110,6 +115,7 @@ export default async function DashboardPage() {
       activity: m["dashboard.widgets.activity"],
       distribution: m["dashboard.widgets.distribution"],
       storage: m["dashboard.widgets.storage"],
+      database: m["dashboard.widgets.database"],
     },
     preset: {
       donut: m["dashboard.widgets.preset.donut"],
@@ -142,9 +148,19 @@ export default async function DashboardPage() {
   //   · 兩週活躍度:trend-bars,真實每日建立筆數。
   //   · 儲存空間:stat-simple(R2 無固定配額,progress-ring/segments 需要一個
   //     total 才有意義,虛構一個上限對使用者是誤導,故意不用)。
-  const [weeklyActivity, storageStats] = data.hasTypes
-    ? await Promise.all([getWeeklyActivity(data.now), getStorageStats()])
-    : [null, null];
+  //   · 資料庫用量:D1 有真實 hard limit(free 500MB / paid 10GB,超過寫不進去),
+  //     所以與 storage(R2 無配額)相反,progress-ring 是正確的預設 —— 平常安靜,
+  //     接近上限時一眼看得出來。方案由 core.d1.plan 設定(free|paid,預設 free)。
+  const [weeklyActivity, storageStats, dbStats, d1PlanRaw] = data.hasTypes
+    ? await Promise.all([
+        getWeeklyActivity(data.now),
+        getStorageStats(),
+        getDatabaseStats(),
+        getSetting<string>("core.d1.plan", "free"),
+      ])
+    : [null, null, null, "free"];
+  const d1Plan: D1Plan = d1PlanRaw === "paid" ? "paid" : "free";
+  const d1Quota = D1_QUOTA_BYTES[d1Plan];
 
   const distributionData: ProportionWidgetData | null = data.hasTypes
     ? {
@@ -321,11 +337,26 @@ export default async function DashboardPage() {
               label: `${labels.widgets.storage} · ${storageStats.fileCount}${storageStats.truncated ? "+" : ""} ${labels.widgets.storageMore}`,
               value: formatBytes(storageStats.totalBytes),
             },
+            database: dbStats
+              ? {
+                  label: `${labels.widgets.database} · ${labels.widgets.databaseQuota} ${formatBytes(d1Quota)}`,
+                  segments: [
+                    {
+                      id: "used",
+                      label: labels.widgets.database,
+                      value: dbStats.bytes,
+                    },
+                  ],
+                  total: d1Quota,
+                  valueLabel: `${formatBytes(dbStats.bytes)} · ${Math.round((dbStats.bytes / d1Quota) * 100)}%`,
+                }
+              : null,
           }}
           defaultPresets={{
             activity: "trend-bars",
             distribution: distributionPreset,
             storage: "stat-simple",
+            database: "progress-ring",
           }}
           labels={insightsLabels}
         />

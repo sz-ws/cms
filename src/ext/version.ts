@@ -371,4 +371,32 @@
 //     當作沒設 —— 一個轉壞的值比沒有值更難查。
 //   依賴此行為的 extension 應宣告 coreApi "^1.27.0";更舊的 core 上環境變數會被
 //   完全忽略、靜默退回 D1,是**沒有錯誤訊息的 runtime 降級**,所以務必宣告。
-export const CORE_API_VERSION = "1.27.0";
+// 1.28.0(commerce 基座:manual 付款 + 匿名 API 端點,兩個表面同批共用 bump,
+//   因為同一個消費者 —— 商店結帳 —— 同時需要兩者):
+//   - CheckoutSession 新增第三種 kind "manual"(capabilities.ts):沒有 gateway 的
+//     人工收款(銀行轉帳/ATM)。回一組付款指示(ManualInstructionLine[]),結算
+//     入口是 admin 人工核帳而非回呼 —— payment-kit 新增 manual.ts
+//     (createManualPaymentProvider / settleManual),與 gateway 回呼共用同一段
+//     結算(settle.ts 抽出自 provider.ts:冪等條件式 UPDATE + payment:succeeded)。
+//     消費端因此不需分辨付款方式。union 加分支對既有消費者是 additive(switch 不
+//     處理 "manual" 的舊碼行為不變)→ minor bump(§1)。
+//     判斷紀錄:匯款曾考慮放 commerce 側,否決 —— 結帳路口必須統一(commerce 只
+//     說「去收錢」),否則每加一種人工收款方式 commerce 都要多學一種;而 kit 的
+//     結算/hook 本來就與「錢怎麼進來」無關。加密簽章不是 payment-kit 的準入條件,
+//     「擁有付款結果的真相」才是。
+//   - ApiRoute 新增可選 `public`(types.ts):code extension 可宣告單一 API route
+//     免登入。在此之前 code extension 的 API 一律 requireAuth(editor+),匿名寫入
+//     只有 declarative public content type 的 POST 一條路 —— 商店結帳(訪客就是
+//     呼叫者)做不出來。dispatcher 對 public route 跳過 requireAuth,但 mutation
+//     的 same-origin 檢查**照舊**;rate limiting 由 handler 自理(hitRateLimit)。
+//     ctx.user 為 anonymous placeholder(同 declarative public POST 前例)。
+//   - payment:succeeded 的 payload 增帶 `orderNo`(settle.ts 統一填入)—— 消費端
+//     靠它對回自己的訂單,不必解讀各 gateway 形狀不一的 event。可選欄位,第三方
+//     provider 不填仍合法 → additive。
+//   - 同批(非 CORE_API 表面):新 src/ext/commerce-kit/(商店引擎:訂單狀態機
+//     pending_payment→awaiting_verify→paid→shipped→completed(+cancelled/refunded)、
+//     結帳協調、匯款回報/核帳、admin 積木),消費者為 extensions/shop(薄接線)+
+//     extensions/banktransfer(第一個 manual provider)。皆不預裝(newebpay 前例)。
+//   使用 kind:"manual"、ApiRoute.public 或 hook orderNo 的 extension 應宣告
+//   coreApi "^1.28.0";舊 extension 不受影響(union 舊分支、route 預設仍要登入)。
+export const CORE_API_VERSION = "1.28.0";

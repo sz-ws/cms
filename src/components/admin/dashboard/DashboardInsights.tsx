@@ -38,6 +38,8 @@ interface WidgetDataMap {
   activity: TrendWidgetData;
   distribution: ProportionWidgetData;
   storage: TrendWidgetData;
+  /** null = 拿不到 DB 大小(如 build 期)—— 該卡片直接不渲染。 */
+  database: ProportionWidgetData | null;
 }
 
 interface DashboardInsightsProps {
@@ -73,11 +75,13 @@ function renderWidget(
   defaultPresets: Record<InsightWidgetId, WidgetPresetId>,
 ) {
   const preset = resolvedPreset(entry, defaultPresets);
-  if (entry.id === "distribution") {
+  if (entry.id === "distribution" || entry.id === "database") {
+    const data = widgetData[entry.id];
+    if (!data) return null;
     return (
       <DashboardWidget
         preset={preset as (typeof PROPORTION_PRESETS)[number]}
-        data={widgetData.distribution}
+        data={data}
       />
     );
   }
@@ -177,7 +181,11 @@ export function DashboardInsights({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const enabled = localConfig.filter((e) => e.enabled);
+  // database 可能沒有資料(build 期拿不到 D1 meta)—— 沒資料的 widget 不佔
+  // 版面(否則 grid 會留一個空格),但編輯模式仍列出(開關設定照存)。
+  const enabled = localConfig.filter(
+    (e) => e.enabled && !(e.id === "database" && !widgetData.database),
+  );
   const [lead, ...rest] = enabled;
 
   function toggle(id: InsightWidgetId) {

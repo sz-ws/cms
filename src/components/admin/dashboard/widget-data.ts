@@ -1,5 +1,6 @@
 import { gte } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { getDB } from "@/lib/cf";
 import { contents } from "@/lib/schema";
 import { listFiles } from "@/lib/storage";
 import type { TrendWidgetData } from "./widgets";
@@ -98,3 +99,27 @@ export async function getStorageStats(): Promise<{
 }
 
 export { formatBytes };
+
+/** D1 方案配額(bytes)。超過就寫不進去 —— 這個數字是 hard limit,不是參考值。 */
+export const D1_QUOTA_BYTES = {
+  free: 500 * 1024 * 1024, // 500 MB
+  paid: 10 * 1024 * 1024 * 1024, // 10 GB
+} as const;
+
+export type D1Plan = keyof typeof D1_QUOTA_BYTES;
+
+/**
+ * D1 資料庫目前大小。來源:任何 D1 查詢的 `meta.size_after`(Cloudflare 回報的
+ * DB 實際大小,本機 miniflare 也支援)—— 這裡用一條零成本的 SELECT 1 換 meta。
+ * 走 raw binding 而非 drizzle:drizzle 的回傳型別不透出 D1 meta。
+ * 拿不到(binding 缺席、build 期)→ null,caller 藏卡片,不炸 dashboard。
+ */
+export async function getDatabaseStats(): Promise<{ bytes: number } | null> {
+  try {
+    const res = await getDB().prepare("SELECT 1").run();
+    const bytes = res.meta.size_after;
+    return typeof bytes === "number" && bytes > 0 ? { bytes } : null;
+  } catch {
+    return null;
+  }
+}

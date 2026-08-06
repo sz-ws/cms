@@ -6,7 +6,7 @@ import type { WidgetPresetId } from "@/components/admin/dashboard/widgets/types"
 // dashboardCards 不在這裡管——那兩者分別綁著真實內容資料與已安裝的 extension,
 // 「移除」的正確動作是改內容/停用 extension,不是儀表板編輯模式的責任範圍。
 
-export type InsightWidgetId = "activity" | "distribution" | "storage";
+export type InsightWidgetId = "activity" | "distribution" | "storage" | "database";
 
 export interface InsightConfigEntry {
   id: InsightWidgetId;
@@ -19,21 +19,26 @@ export const INSIGHT_WIDGET_IDS: InsightWidgetId[] = [
   "activity",
   "distribution",
   "storage",
+  "database",
 ];
 
 /** 每個 widget 允許換哪些 preset——同一資料契約家族內才能互換(見 widgets/types.ts)。
  *  storage 只給 stat-simple:R2 無固定配額,progress-* 需要一個 total 才有意義,
- *  虛構上限對使用者是誤導(沿用 admin/page.tsx 原本的理由)。 */
+ *  虛構上限對使用者是誤導(沿用 admin/page.tsx 原本的理由)。
+ *  database 相反:D1 配額是真實 hard limit(free 500MB / paid 10GB,超過寫不進去),
+ *  progress-* 語意完全成立,預設就給 progress-ring(見 admin/page.tsx)。 */
 export const INSIGHT_ALLOWED_PRESETS: Record<InsightWidgetId, WidgetPresetId[]> = {
   activity: ["trend-bars", "trend-sparkline"],
   distribution: ["donut", "bar-list", "progress-ring", "progress-segments", "proportion-bar"],
   storage: ["stat-simple"],
+  database: ["progress-ring", "progress-segments", "proportion-bar"],
 };
 
 export const DEFAULT_INSIGHT_CONFIG: InsightConfigEntry[] = [
   { id: "activity", enabled: true },
   { id: "distribution", enabled: true },
   { id: "storage", enabled: true },
+  { id: "database", enabled: true },
 ];
 
 /**

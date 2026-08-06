@@ -82,6 +82,8 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "dashboard.widgets.activityCaption": "較前 14 天",
   "dashboard.widgets.storage": "儲存空間",
   "dashboard.widgets.storageMore": "個檔案",
+  "dashboard.widgets.database": "資料庫",
+  "dashboard.widgets.databaseQuota": "額度",
   "dashboard.widgets.edit": "編輯",
   "dashboard.widgets.done": "完成",
   "dashboard.widgets.show": "顯示中",

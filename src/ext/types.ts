@@ -62,6 +62,15 @@ export interface ApiCtx {
 export interface ApiRoute {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string; // 如 "posts" 或 "posts/:id";URL: /api/ext/<extId>/<path>
+  /**
+   * 1.28.0:true = 免登入(匿名可呼叫)。在此之前 code extension 的 API 一律
+   * requireAuth(editor+),匿名寫入只有 declarative public content type 的 POST
+   * 一條路 —— 商店結帳這類「訪客就是呼叫者」的端點做不出來。
+   * 安全語意:mutation 的 same-origin 檢查**照舊**(dispatcher 在 auth 之前擋);
+   * rate limiting 是 handler 自己的責任(lib/rate-limit.ts 的 hitRateLimit)。
+   * handler 收到的 ctx.user 是 anonymous placeholder(同 declarative public POST)。
+   */
+  public?: boolean;
   handler: (
     req: Request,
     params: Record<string, string>,
@@ -150,6 +159,7 @@ const apiRouteSchema = z.object({
     .string()
     .min(1)
     .regex(/^[a-z0-9:/-]+$/i, "invalid route path"),
+  public: z.boolean().optional(), // 1.28.0:免登入端點(見 ApiRoute.public)
   handler: fn,
 });
 
@@ -373,7 +383,10 @@ export type HookName =
   | "content:deleted"
   // core-v2 §2.5:unified callback ingress 觸發的示例 hooks。provider 的 handleCallback
   // 可觸發任何 hook;此處註冊至少這兩個讓 payment / extraction 回呼流程可運作。
-  | "payment:succeeded" // (payload: { providerId; event: unknown })
+  // 1.28.0 起 payload 增帶 orderNo(payment-kit 的結算路徑統一填入;第三方
+  // provider 不填仍合法)—— 消費端(commerce)靠它把付款對回自己的訂單,
+  // 不必解讀各 gateway 形狀不一的 event。
+  | "payment:succeeded" // (payload: { providerId; orderNo?; event: unknown })
   | "extraction:completed" // (payload: { providerId; event: unknown })
   // filters(第一個參數是值,回傳修改後的值)
   | "filter:adminMenu" // (items: AdminMenuItem[]) => AdminMenuItem[]

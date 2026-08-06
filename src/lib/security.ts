@@ -10,13 +10,38 @@ export class OriginError extends Error {
 
 /**
  * Origin header 與 request URL 的 scheme+host+port 精確字串比對。
+ * 本機經可信 reverse proxy / tunnel 開發時，Next 收到的 req.url 可能仍是
+ * http://localhost，但瀏覽器看到的是 https 公開網址；此時以標準 forwarded
+ * headers 重建外部 origin。瀏覽器不能自行設定這些 headers，且 Host/Origin
+ * 仍須完全一致，因此不會把任意跨站 origin 放進來。
  * Origin 缺失或為 "null" → 一律 throw OriginError(v1 單網域,無跨源需求)。
  */
 export function assertSameOrigin(req: Request): void {
   const origin = req.headers.get("origin");
   if (!origin || origin === "null") throw new OriginError();
   const target = new URL(req.url).origin; // scheme+host+port
-  if (origin !== target) throw new OriginError();
+  if (origin === target) return;
+
+  const firstHeaderValue = (value: string | null): string | null => {
+    const first = value?.split(",", 1)[0]?.trim();
+    return first || null;
+  };
+  const host =
+    firstHeaderValue(req.headers.get("x-forwarded-host")) ??
+    firstHeaderValue(req.headers.get("host"));
+  const proto = firstHeaderValue(req.headers.get("x-forwarded-proto"));
+
+  if (!host || (proto !== "http" && proto !== "https")) {
+    throw new OriginError();
+  }
+
+  let forwardedOrigin: string;
+  try {
+    forwardedOrigin = new URL(`${proto}://${host}`).origin;
+  } catch {
+    throw new OriginError();
+  }
+  if (origin !== forwardedOrigin) throw new OriginError();
 }
 
 /** route handler 共用:OriginError → 403 JSON;否則 null(交給後續處理) */

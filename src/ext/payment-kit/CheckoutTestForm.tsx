@@ -70,8 +70,13 @@ export function CheckoutTestForm({
         submitToGateway(session.gatewayUrl, session.fields);
         return; // 頁面即將離開,busy 維持到跳轉。
       }
-      if (session.ok) {
+      if (session.ok && session.kind === "redirect") {
         window.location.href = session.url;
+        return;
+      }
+      if (session.ok) {
+        // kind:"manual"(1.28.0)不該出現在 gateway 測試表單;守住 union 完整性。
+        setError("此 provider 為人工收款,無測試付款流程。");
         return;
       }
       setError(ERROR_HINT[session.error] ?? `建立失敗:${session.error}`);
