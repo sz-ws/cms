@@ -651,10 +651,12 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
 
   // 後台 AI 助理面板(src/components/admin/agent/*,docs/spec-admin-agent.md §5)
   "agent.title": "助理",
-  "agent.subtitle": "問這個站的事,或請它動手。任何會改動資料的動作都會先停下來等你確認。",
+  // 「會先停下來等你確認」這句話是**開場承諾**,不是頁面常設說明:它住在空狀態
+  // 裡,第一則訊息送出去就跟著空狀態一起消失。已經在對話中的人不需要每一輪都被
+  // 重講一次規則 —— 那條規則此時已經由確認卡自己在現場示範。
   "agent.emptyTitle": "想看什麼?",
   "agent.emptyBody":
-    "它讀得到你的內容、設定與已安裝的擴充。輸入 / 可以直接點名一個工具。",
+    "它讀得到你的內容、設定與已安裝的擴充;任何會改動資料的動作都會先停下來等你確認。輸入 / 可以直接點名一個工具。",
   "agent.placeholder": "問點什麼,或輸入 / 選工具…",
   "agent.send": "送出",
   "agent.stopHint": "處理中…",

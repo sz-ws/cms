@@ -664,11 +664,13 @@ export const en = {
 
   // admin agent panel (src/components/admin/agent/*, docs/spec-admin-agent.md §5)
   "agent.title": "Assistant",
-  "agent.subtitle":
-    "Ask about this site, or ask for a change. Anything that writes stops for your confirmation first.",
+  // The "stops for your confirmation" promise is an **opening** promise, not
+  // standing page chrome: it lives in the empty state and leaves with it on the
+  // first message. Once you are in the conversation the confirmation card
+  // demonstrates the rule in person; repeating it every turn is noise.
   "agent.emptyTitle": "What would you like to look at?",
   "agent.emptyBody":
-    "It can search and read your content, settings and installed extensions. Type / to point at a tool by name.",
+    "It can search and read your content, settings and installed extensions; anything that writes stops for your confirmation first. Type / to point at a tool by name.",
   "agent.placeholder": "Ask something, or type / for a tool…",
   "agent.send": "Send",
   "agent.stopHint": "Working…",

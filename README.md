@@ -112,6 +112,17 @@ manifest can use uploads, email or AI without knowing what's behind them.
 See [DEPLOY.md](./DEPLOY.md). It's about ten steps against your own Cloudflare
 account — two D1 databases, two R2 buckets, one secret.
 
+**Workers Paid ($5/mo) is recommended, not required.** Size is not the problem —
+the server bundle is around 2.3 MiB gzipped against a 3 MiB free-plan ceiling, so
+it fits. What runs short first is CPU: server-rendering Next.js regularly wants
+more than the free plan's 10 ms per request. Headroom is the other reason — a few
+code extensions with real dependencies will use up what's left of the bundle
+ceiling. Measure your own build before deciding:
+
+```bash
+npx wrangler deploy --dry-run
+```
+
 ## Installing extensions
 
 Declarative extensions install from the admin UI: **Extensions → Browse →

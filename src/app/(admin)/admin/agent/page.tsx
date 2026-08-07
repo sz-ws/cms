@@ -34,7 +34,6 @@ export default async function AgentPage() {
         <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
           {m["agent.title"]}
         </h1>
-        <p className="text-[12px] text-black/35">{m["agent.subtitle"]}</p>
       </div>
 
       <AgentPanelLoader tools={tools} />

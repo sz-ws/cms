@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, RotateCcw } from "lucide-react";
+import { ThinkingOrb } from "thinking-orbs";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
 import { RingDot } from "@/components/admin/dashboard/RingDot";
 import type { AgentChatOutcome, AgentLoopEvent } from "@/ext/agent-loop";
 import { AskCard } from "./AskCard";
@@ -380,9 +382,18 @@ async function readChatResponse(
 }
 
 /**
- * 串流中的狀態行。**靜態文字**,沒有任何會動的東西 —— pulsing / 呼吸 /
- * 打字游標閃爍是 docs/admin-design-language.md 的紅線。等待的語彙沿用面板既有的
- * RingDot + 一句話。
+ * 串流中的狀態行。
+ *
+ * 動效紅線(docs/admin-design-language.md)禁的是**閒置時還在動的裝飾** ——
+ * pulsing 狀態點、呼吸光暈、閃爍游標。這顆 orb 不是那個:它只在模型真的在跑的
+ * 那幾秒存在,`streaming.status` 一變回 null 就整行消失,而且它動的內容有意義
+ * (`working` 在想、`searching` 在用工具)。所以規則是三條,不是「可以動」:
+ *   · 只在 status 非 null 時掛載 —— 它不是常駐的裝飾;
+ *   · 永遠不用 `breathing` 那個 state,那正是紅線本人;
+ *   · prefers-reduced-motion 時 `paused` —— 定格成一顆靜態點陣球,與 RingDot 同義。
+ *
+ * theme 釘死 light:後台是白紙黑字,auto 會去讀 ancestor 的 dark class 而這一頁
+ * 沒有,多一條會在別人加深色模式時默默改變的路徑。
  */
 function StreamStatus({
   status,
@@ -392,6 +403,7 @@ function StreamStatus({
   step: number;
 }) {
   const t = useT();
+  const reducedMotion = usePrefersReducedMotion();
   const label =
     status.kind === "tool"
       ? t("agent.stream.usingTool", { name: status.name })
@@ -400,7 +412,14 @@ function StreamStatus({
         : t("agent.stream.thinking");
   return (
     <p className="flex items-center gap-2 text-[12.5px] text-black/40">
-      <RingDot />
+      <ThinkingOrb
+        aria-hidden
+        size={20}
+        state={status.kind === "tool" ? "searching" : "working"}
+        theme="light"
+        paused={reducedMotion}
+        className="shrink-0"
+      />
       <span className="truncate">{label}</span>
     </p>
   );
