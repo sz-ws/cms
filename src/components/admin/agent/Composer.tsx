@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useImeGuard } from "@/lib/ime";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { DotmSquare5 } from "@/components/ui/dotm-square-5";
 import { SlashCommandDropdown } from "./SlashCommandDropdown";
@@ -45,6 +46,7 @@ export function Composer({
   onSend,
 }: ComposerProps) {
   const t = useT();
+  const ime = useImeGuard();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -94,6 +96,9 @@ export function Composer({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // **第一行,先於所有其他判斷。** 打注音的人按 Enter 是在確定候選字,不是要送出;
+    // 而選字時的 ↑↓ 是在翻候選清單,不是在翻 slash 選單。組字期間整個元件讓開。
+    if (ime.isComposingKey(e)) return;
     if (slash) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -156,6 +161,8 @@ export function Composer({
           onKeyUp={(e) => syncCaret(e.currentTarget)}
           onClick={(e) => syncCaret(e.currentTarget)}
           onKeyDown={onKeyDown}
+          onCompositionStart={ime.onCompositionStart}
+          onCompositionEnd={ime.onCompositionEnd}
           className="min-h-9 flex-1 resize-none self-center bg-transparent py-2 text-[14px] leading-relaxed text-black/85 outline-none placeholder:text-black/25"
         />
 

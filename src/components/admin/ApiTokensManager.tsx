@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useImeGuard } from "@/lib/ime";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +60,7 @@ function formatDate(ms: number | null, locale: "en" | "zh-Hant"): string {
 
 export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
   const t = useT();
+  const ime = useImeGuard();
   const locale = useLocale();
   const router = useRouter();
   const [tokens, setTokens] = useState<ApiToken[]>(initialTokens);
@@ -249,7 +251,11 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder={t("apiTokens.tokenNamePlaceholder")}
                     autoFocus
+                    onCompositionStart={ime.onCompositionStart}
+                    onCompositionEnd={ime.onCompositionEnd}
                     onKeyDown={(e) => {
+                      // 組字中的 Enter 是在確定候選字(見 @/lib/ime)。
+                      if (ime.isComposingKey(e)) return;
                       if (e.key === "Enter") handleCreate();
                     }}
                   />

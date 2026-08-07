@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckIcon, PencilIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useImeGuard } from "@/lib/ime";
 
 // Alt text row for a media card. Sits UNDER the card's selection button (never
 // inside it — nested interactive elements inside a <button> are invalid HTML and
@@ -25,6 +26,7 @@ interface MediaAltFieldProps {
 }
 
 export function MediaAltField({ alt, onSave }: MediaAltFieldProps) {
+  const ime = useImeGuard();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(alt ?? "");
   const [saving, setSaving] = useState(false);
@@ -70,7 +72,11 @@ export function MediaAltField({ alt, onSave }: MediaAltFieldProps) {
             aria-label="Alt text"
             placeholder="Describe this image"
             onChange={(e) => setDraft(e.target.value)}
+            onCompositionStart={ime.onCompositionStart}
+            onCompositionEnd={ime.onCompositionEnd}
             onKeyDown={(e) => {
+              // 組字中的 Enter 是在確定候選字,Esc 是在取消候選(見 @/lib/ime)。
+              if (ime.isComposingKey(e)) return;
               if (e.key === "Enter") {
                 e.preventDefault();
                 void save();

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Clock, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useImeGuard } from "@/lib/ime";
 import { DotmSquare5 } from "@/components/ui/dotm-square-5";
 import { StatusDot } from "@/components/admin/dashboard/StatusDot";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -52,6 +53,7 @@ function pushRecent(q: string): string[] {
 
 export function SearchPalette() {
   const t = useT();
+  const ime = useImeGuard();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -133,6 +135,9 @@ export function SearchPalette() {
   const rows = showingRecent ? recent : hits;
 
   function onInputKey(e: React.KeyboardEvent) {
+    // **第一行。** 打注音時按 Enter 是在確定候選字,↑↓ 是在翻候選清單 —— 這一頁的
+    // Enter 會直接換頁,搶走它等於把使用者打到一半的字丟掉(見 @/lib/ime)。
+    if (ime.isComposingKey(e)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       close();
@@ -204,6 +209,8 @@ export function SearchPalette() {
                     setSearching(next.trim().length >= 2);
                   }}
                   onKeyDown={onInputKey}
+                  onCompositionStart={ime.onCompositionStart}
+                  onCompositionEnd={ime.onCompositionEnd}
                   placeholder={t("search.placeholder")}
                   className="h-full flex-1 bg-transparent text-[14px] text-black/85 outline-none placeholder:text-black/30"
                 />

@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useImeGuard } from "@/lib/ime";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { RingDot } from "@/components/admin/dashboard/RingDot";
 import type { AgentAsk, AgentAskField } from "@/ext/agent-loop";
@@ -137,6 +138,7 @@ export function AskCard({
   onDismiss,
 }: AskCardProps) {
   const t = useT();
+  const ime = useImeGuard();
   const reduced = useReducedMotion();
   const fieldIdPrefix = useId();
   const [freeText, setFreeText] = useState("");
@@ -229,7 +231,11 @@ export function AskCard({
                 placeholder={t("agent.ask.otherPlaceholder")}
                 aria-label={t("agent.ask.otherPlaceholder")}
                 onChange={(e) => setFreeText(e.target.value)}
+                onCompositionStart={ime.onCompositionStart}
+                onCompositionEnd={ime.onCompositionEnd}
                 onKeyDown={(e) => {
+                  // 組字中的 Enter 是在確定候選字(見 @/lib/ime)。
+                  if (ime.isComposingKey(e)) return;
                   if (e.key === "Enter" && freeTextReady && !busy) {
                     e.preventDefault();
                     onAnswer({ freeText: freeText.trim() });
