@@ -489,6 +489,77 @@ describe("harness 紀律(spec §4.5)", () => {
     expect(fakes.readRun).toHaveBeenCalledTimes(AGENT_MAX_STEPS);
   });
 
+  // 步數提醒。釘的是**暫態**這件事:它只能出現在送出去的請求裡,不能進 transcript
+  // —— 進去了就會永遠留著,而下一次 /chat 是從第 1 步重跑的,那句「剩一步」到那時
+  // 候就是一句謊話,還會在面板上顯示成一則 admin 沒說過的訊息。
+  describe("剩最後一步的提醒", () => {
+    /** 該次請求最後一則訊息裡的 text block(提醒就長在那裡)。 */
+    const notesOf = (opts: AiChatOptions): string[] => {
+      const last = opts.messages[opts.messages.length - 1]!;
+      return last.content
+        .filter((b) => b.type === "text")
+        .map((b) => (b as { text: string }).text)
+        .filter((t) => t.startsWith("[system]"));
+    };
+
+    it("前段的每一步都沒有提醒,倒數兩步才有", async () => {
+      const fakes = makeFakes();
+      const script = scriptedChat([toolUseResult("test.thing.list", {})]);
+
+      await runAgentChat({
+        messages: [{ role: "user", content: [{ type: "text", text: "查" }] }],
+        system: "sys",
+        registry: fakes.registry,
+        ctx: CTX,
+        chat: script.chat,
+      });
+
+      expect(script.calls).toHaveLength(AGENT_MAX_STEPS);
+      for (let i = 0; i < AGENT_MAX_STEPS - 2; i++) {
+        expect(notesOf(script.calls[i]!)).toEqual([]);
+      }
+      // 倒數第二步:還剩一次工具呼叫 —— 叫它收口。
+      expect(notesOf(script.calls[AGENT_MAX_STEPS - 2]!)[0]).toContain(
+        "one tool-calling step left",
+      );
+      // 最後一步:已經沒有下一次了。
+      expect(notesOf(script.calls[AGENT_MAX_STEPS - 1]!)[0]).toContain("final step");
+    });
+
+    it("提醒不進 transcript —— appended 裡一個字都沒有", async () => {
+      const fakes = makeFakes();
+      const script = scriptedChat([toolUseResult("test.thing.list", {})]);
+
+      const outcome = await runAgentChat({
+        messages: [{ role: "user", content: [{ type: "text", text: "查" }] }],
+        system: "sys",
+        registry: fakes.registry,
+        ctx: CTX,
+        chat: script.chat,
+      });
+
+      expect(JSON.stringify(outcome.appended)).not.toContain("[system]");
+    });
+
+    it("提醒排在 tool_result 之後(Anthropic 要求 tool_result 在最前面)", async () => {
+      const fakes = makeFakes();
+      const script = scriptedChat([toolUseResult("test.thing.list", {})]);
+
+      await runAgentChat({
+        messages: [{ role: "user", content: [{ type: "text", text: "查" }] }],
+        system: "sys",
+        registry: fakes.registry,
+        ctx: CTX,
+        chat: script.chat,
+      });
+
+      const last = script.calls[AGENT_MAX_STEPS - 1]!;
+      const blocks = last.messages[last.messages.length - 1]!.content;
+      expect(blocks[0]!.type).toBe("tool_result");
+      expect(blocks[blocks.length - 1]!.type).toBe("text");
+    });
+  });
+
   it("單筆 tool_result 超過上限 → 截斷並標注", async () => {
     const huge = "x".repeat(TOOL_RESULT_MAX_CHARS * 2);
     const fakes = makeFakes(huge);

@@ -646,6 +646,52 @@ async function runStreamStep(
 }
 
 /**
+ * 剩最後一步時給模型的提醒 —— **只進這一次送出去的請求,不進 transcript**。
+ *
+ * 沒有它,模型是在毫無預警的情況下被斷頭:第 8 步它可能剛叫完一個工具,而那個
+ * 結果永遠不會被用到,admin 看到的最後一則訊息是半句話。
+ *
+ * 三個約束決定了這段程式碼長這樣:
+ *
+ * **① 必須是暫態。** transcript 由前端持有、每輪原樣送回(spec §4),所以任何寫進
+ * `appended` 的東西會**永遠留著** —— 而下一次 /chat 是從第 1 步重新開始的,那句
+ * 「剩一步」到那時候就是一句謊話,而且會在面板上顯示成一則 admin 沒說過的訊息。
+ * 因此這裡回傳的是一份改過的**副本**,`transcript` 本身一個位元都沒動。
+ *
+ * **② 位置不能亂插。** user 訊息夾在 assistant 的 tool_use 與它的 tool_result 之間,
+ * 上游直接拒收;而 tool_result 依 Anthropic 的規則必須排在該則 user 訊息的**最前面**。
+ * 所以提醒是接在最後一則 user 訊息的 content **尾端**的一個 text block —— 不新增訊息、
+ * 沒有排序風險,而模型讀到它的時機正好是「剛拿到資料、要決定下一步」的那一刻。
+ *
+ * **③ 不能讓模型自己加步數。** 這段話只說「收口」,不提供任何「請求更多」的協定 ——
+ * 開口就有的話上限就不是上限了。它不需要協定:server 是 stateless、transcript 在前端,
+ * 所以 admin 只要再說一句「繼續」,loop 就帶著完整脈絡從第 1 步重跑。**繼續本來就是
+ * 免費的,缺的只是模型不知道**,所以提醒詞的重點是「講清楚你會怎麼接下去」。
+ */
+function withStepBudgetNote(
+  messages: readonly AiChatMessage[],
+  step: number,
+): AiChatMessage[] {
+  const left = AGENT_MAX_STEPS - step;
+  if (left > 1) return [...messages];
+
+  const last = messages[messages.length - 1];
+  // 第 1 步不可能走到這裡(left > 1),所以最後一則正常是帶 tool_result 的 user
+  // 訊息。不是的話就安靜跳過:寧可少一句提醒,不要賭一個沒見過的形狀。
+  if (!last || last.role !== "user") return [...messages];
+
+  const note =
+    left <= 0
+      ? "[system] This is your final step in this turn — no further tool calls will run. Answer now with what you already have."
+      : "[system] You have one tool-calling step left in this turn. Prefer to stop calling tools and answer now: summarise what you found and say plainly what you would do next. Running out is not a failure and not the end — the administrator can continue this exact conversation in one message, and you will start again with everything above still in context. Do not ask for a larger budget; there is no way to grant one.";
+
+  return [
+    ...messages.slice(0, -1),
+    { ...last, content: [...last.content, { type: "text", text: note }] },
+  ];
+}
+
+/**
  * 跑一輪對話(spec §4)。
  *
  *   ai.chat(messages, tools)
@@ -705,7 +751,7 @@ export async function runAgentChat(
     emit({ type: "step", step });
 
     const opts: AiChatOptions = {
-      messages: transcript,
+      messages: withStepBudgetNote(transcript, step),
       tools,
       system: params.system,
       maxTokens: AGENT_MAX_TOKENS,
