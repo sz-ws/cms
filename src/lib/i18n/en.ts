@@ -6,6 +6,7 @@ export const en = {
   "nav.account": "Account",
   "nav.settings": "Settings",
   "nav.users": "Users",
+  "nav.agent": "Assistant",
 
   // nav.group - sidebar group labels (AdminShell.tsx)
   "nav.group.workspace": "Workspace",
@@ -660,4 +661,58 @@ export const en = {
   "export.download": "Download",
   "export.formatNote":
     "One line of JSON per record (.ndjson) — readable by spreadsheet tools, scripts and other platforms. The last line says \"end\"; if it is missing, the download was cut short. Very large sites arrive in parts and the file tells you how to fetch the rest.",
+
+  // admin agent panel (src/components/admin/agent/*, docs/spec-admin-agent.md §5)
+  "agent.title": "Assistant",
+  "agent.subtitle":
+    "Ask about this site, or ask for a change. Anything that writes stops for your confirmation first.",
+  "agent.emptyTitle": "What would you like to look at?",
+  "agent.emptyBody":
+    "It can search and read your content, settings and installed extensions. Type / to point at a tool by name.",
+  "agent.placeholder": "Ask something, or type / for a tool…",
+  "agent.send": "Send",
+  "agent.stopHint": "Working…",
+  "agent.newChat": "New conversation",
+  "agent.you": "You",
+  "agent.assistant": "Assistant",
+  "agent.toolCount": "Used {count} tools",
+  "agent.toolCountOne": "Used 1 tool",
+  "agent.toolFailed": "failed",
+  "agent.toolTruncated": "result truncated",
+  "agent.toolsAvailable": "{count} tools available",
+  "agent.lockedByProposal": "Answer the confirmation above to carry on.",
+
+  // confirmation card — the core surface of the whole panel (spec §5)
+  "agent.proposal.heading": "Waiting for your confirmation",
+  "agent.proposal.note":
+    "This would change data on your site. Nothing happens until you confirm.",
+  "agent.proposal.tool": "Tool",
+  "agent.proposal.args": "Parameters",
+  "agent.proposal.noArgs": "No parameters.",
+  "agent.proposal.confirm": "Confirm and run",
+  "agent.proposal.cancel": "Cancel",
+  "agent.proposal.running": "Running…",
+  "agent.proposal.done": "Done",
+  "agent.proposal.failed": "Failed",
+  "agent.proposal.cancelled": "Cancelled — nothing was run",
+  "agent.proposal.resultLabel": "Result",
+
+  // notices
+  "agent.maxSteps": "Step limit reached. Here is where it got to.",
+  "agent.error.toolUseNotSupported":
+    "The AI mode or model you have configured does not support tool calls. Pick a model that does.",
+  "agent.error.notConfigured": "AI is not set up yet on this site.",
+  "agent.error.notConfiguredCta": "Open AI settings",
+  "agent.error.rateLimited": "Too many requests. Give it a moment.",
+  "agent.error.timeout": "The model did not answer in time. Try again.",
+  "agent.error.generic": "Something went wrong: {detail}",
+  "agent.error.network": "Could not reach the server. Check your connection and try again.",
+  "agent.error.executeFailed": "Could not run that action: {detail}",
+
+  // slash command dropdown
+  "agent.slash.title": "Tools",
+  "agent.slash.empty": "No tool matches that.",
+  "agent.slash.needsConfirm": "needs confirmation",
+  "agent.slash.readOnly": "read only",
+  "agent.slash.hint": "↑↓ to choose · ↵ to insert · esc to close",
 } as const;

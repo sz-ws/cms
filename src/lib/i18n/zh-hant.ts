@@ -8,6 +8,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "nav.account": "帳戶",
   "nav.settings": "設定",
   "nav.users": "成員",
+  "nav.agent": "助理",
 
   // nav.group
   "nav.group.workspace": "工作區",
@@ -647,4 +648,55 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "export.download": "下載",
   "export.formatNote":
     "每行一筆 JSON(.ndjson)—— 試算表工具、程式與其他平台都讀得懂。最後一行是 \"end\",沒有它就代表下載中斷了。內容很多的網站會分次下載,檔案裡會告訴你怎麼接續。",
+
+  // 後台 AI 助理面板(src/components/admin/agent/*,docs/spec-admin-agent.md §5)
+  "agent.title": "助理",
+  "agent.subtitle": "問這個站的事,或請它動手。任何會改動資料的動作都會先停下來等你確認。",
+  "agent.emptyTitle": "想看什麼?",
+  "agent.emptyBody":
+    "它讀得到你的內容、設定與已安裝的擴充。輸入 / 可以直接點名一個工具。",
+  "agent.placeholder": "問點什麼,或輸入 / 選工具…",
+  "agent.send": "送出",
+  "agent.stopHint": "處理中…",
+  "agent.newChat": "開新對話",
+  "agent.you": "你",
+  "agent.assistant": "助理",
+  "agent.toolCount": "用了 {count} 個工具",
+  "agent.toolCountOne": "用了 1 個工具",
+  "agent.toolFailed": "失敗",
+  "agent.toolTruncated": "結果已截斷",
+  "agent.toolsAvailable": "可用工具 {count} 個",
+  "agent.lockedByProposal": "先處理上面的確認,才能繼續對話。",
+
+  // 確認卡 —— 整個面板的核心 surface(spec §5)
+  "agent.proposal.heading": "等你確認",
+  "agent.proposal.note": "這個動作會改動站上的資料。你按下確認之前,什麼都不會發生。",
+  "agent.proposal.tool": "工具",
+  "agent.proposal.args": "參數",
+  "agent.proposal.noArgs": "沒有參數。",
+  "agent.proposal.confirm": "確認執行",
+  "agent.proposal.cancel": "取消",
+  "agent.proposal.running": "執行中…",
+  "agent.proposal.done": "已執行",
+  "agent.proposal.failed": "執行失敗",
+  "agent.proposal.cancelled": "已取消 —— 沒有執行任何東西",
+  "agent.proposal.resultLabel": "結果",
+
+  // 提示
+  "agent.maxSteps": "已達步數上限,以下是目前的進度。",
+  "agent.error.toolUseNotSupported": "目前設定的 AI mode/model 不支援工具呼叫。請換一個支援的模型。",
+  "agent.error.notConfigured": "這個站還沒把 AI 設定好。",
+  "agent.error.notConfiguredCta": "前往 AI 設定",
+  "agent.error.rateLimited": "請求太頻繁,等一下再試。",
+  "agent.error.timeout": "模型沒有在時間內回應,再試一次。",
+  "agent.error.generic": "出了點狀況:{detail}",
+  "agent.error.network": "連不上伺服器。檢查一下網路再試。",
+  "agent.error.executeFailed": "這個動作執行不了:{detail}",
+
+  // 斜線工具選單
+  "agent.slash.title": "工具",
+  "agent.slash.empty": "沒有符合的工具。",
+  "agent.slash.needsConfirm": "需確認",
+  "agent.slash.readOnly": "唯讀",
+  "agent.slash.hint": "↑↓ 選擇 · ↵ 插入 · esc 關閉",
 };

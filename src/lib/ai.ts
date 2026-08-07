@@ -1,6 +1,8 @@
 import { getExtRuntime } from "@/ext/loader";
 import { buildProviderRegistry } from "@/ext/services";
 import type {
+  AiChatOptions,
+  AiChatResult,
   AiGenerateOptions,
   AiGenerateResult,
   AiProvider,
@@ -42,4 +44,18 @@ export async function* generateAiTextStream(
     return;
   }
   yield* provider.generateStream(opts);
+}
+
+// v1.2 tool calling(見 docs/spec-admin-agent.md §3)。同樣走 activeAiProvider()
+// 解析路徑;provider 沒實作 chat(第三方 provider 也合法未實作)就退
+// tool_use_not_supported —— 與「未設定 → not_configured」「未實作 streaming →
+// streaming_not_supported」同一個哲學:永不 throw,呼叫端一律看到 result。
+export async function chatAiWithTools(
+  opts: AiChatOptions,
+): Promise<AiChatResult> {
+  const provider = await activeAiProvider();
+  if (!provider.chat) {
+    return { ok: false, error: "tool_use_not_supported" };
+  }
+  return provider.chat(opts);
 }

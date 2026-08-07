@@ -56,6 +56,11 @@ export default async function AdminLayout({
 
   let menu: AdminMenuItem[] = [
     { href: "/admin", title: messages["nav.dashboard"] },
+    // AI 助理(docs/spec-admin-agent.md §1.1):admin-only,不可協商 —— editor/guest
+    // 連入口都不渲染。頁面本身另有 requireAuth("admin"),API 端點各自再一道。
+    ...(user.role === "admin"
+      ? [{ href: "/admin/agent", title: messages["nav.agent"] }]
+      : []),
     { href: "/admin/media", title: messages["nav.media"] },
     ...extItems,
     { href: "/admin/extensions", title: messages["nav.extensions"] },

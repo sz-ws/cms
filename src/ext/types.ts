@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { SessionUser } from "@/lib/auth";
 import type { CoreServices } from "./services";
 import type { Capability } from "./capabilities";
+import { AGENT_TOOL_NAME_RE } from "./agent-tools";
+import type { AgentTool } from "./agent-tools";
 import type {
   DeclarativeContentType,
   DeclarativeDashboardCard,
@@ -135,7 +137,68 @@ export interface Extension {
   hooks?: Partial<Record<HookName, HookHandler>>;
   provides?: ProviderRegistration[]; // core-v2 §2.2:選填
   jobs?: ExtJobRegistration[]; // spec-extension-jobs.md:週期性 / 一次性任務宣告
+  /**
+   * 1.30.0(docs/spec-admin-agent.md §2 表格第二列):這個 extension 讓 admin agent
+   * 能操作自己的動作。宣告了就自動進 agent 的 tool registry —— 裝一個 extension =
+   * AI 自動會操作它,不必再改 core 一行。
+   *
+   * 命名空間是硬規則(defineExtension 驗、buildAgentToolRegistry 再驗一次):每個
+   * name 必須以 `<extId>.` 開頭,同 settings 的 `ext.<extId>.` scoping 精神 ——
+   * tool name 是 LLM 唯一的定址方式,沒有前綴就等於允許一個 extension 宣告
+   * `shop.orders.verify` 去冒名另一個 extension 的動作。
+   *
+   * `kind:"write"` 是確認制的載體(spec §1.2),不是分類標籤:任何會寫入的動作都
+   * 必須標 write,否則它會在 agent loop 內被直接執行而不經人工確認。
+   */
+  agentTools?: AgentTool[];
   uninstall?: ExtMigration[]; // 解除安裝時執行(如 DROP TABLE)
+}
+
+/**
+ * 驗一個 extension 宣告的 agentTools —— 回傳人話問題清單(空 = 合格),不 throw。
+ *
+ * 為什麼回清單而不是直接 throw:兩個呼叫端要的回報方式不同 —— defineExtension 要把
+ * 問題併進 zod 的 issue 列表(一次看到 manifest 的所有毛病),buildAgentToolRegistry
+ * 要當場 throw。但**規則只有這一份**,兩邊不可能分叉。
+ *
+ * 參數型別刻意放寬成 unknown 欄位:registry 雖由 TypeScript 約束為 Extension[],
+ * 仍要防禦手寫 JS / any 繞過 defineExtension 的情況(同 loader 對 coreApi 的態度)。
+ */
+export function agentToolIssues(
+  extId: string,
+  tools: readonly { name?: unknown; description?: unknown; kind?: unknown }[],
+): string[] {
+  const issues: string[] = [];
+  const seen = new Set<string>();
+  const prefix = `${extId}.`;
+  tools.forEach((tool, idx) => {
+    const at = `agentTools[${idx}]`;
+    const name = typeof tool.name === "string" ? tool.name : "";
+    if (name.length === 0) {
+      issues.push(`${at}: tool name is required`);
+      return;
+    }
+    // 形狀(至少兩段點分小寫)與 agent-tools.ts 的 registry 用同一條 regex。
+    if (!AGENT_TOOL_NAME_RE.test(name)) {
+      issues.push(
+        `${at}: invalid tool name "${name}" (expect lowercase dot-separated segments, e.g. "${prefix}orders.list")`,
+      );
+    } else if (!name.startsWith(prefix)) {
+      issues.push(`${at}: tool name "${name}" must start with "${prefix}"`);
+    }
+    if (tool.kind !== "read" && tool.kind !== "write") {
+      issues.push(`${at}: kind must be "read" or "write"`);
+    }
+    if (
+      typeof tool.description !== "string" ||
+      tool.description.trim().length === 0
+    ) {
+      issues.push(`${at}: description must be a non-empty sentence`);
+    }
+    if (seen.has(name)) issues.push(`${at}: duplicate tool name "${name}"`);
+    seen.add(name);
+  });
+  return issues;
 }
 
 // ---- zod 驗證(core-v2 §3.1:load 時驗 manifest,不再信任)----
@@ -278,6 +341,26 @@ const jobsSchema = z
   })
   .optional();
 
+// 1.30.0:agentTools 的**結構**驗證(欄位型別 / execute 是 function / schema 是 zod)。
+// 命名空間與重複名走 agentToolIssues(見上),因為那條規則 buildAgentToolRegistry 也要用。
+// schema 只確認「有 safeParse」,同 fn 只確認「是 function」的精神 —— 深驗一個 zod
+// 物件既做不到也沒必要,args 的真正把關在 invokeAgentTool。
+const zodSchemaLike = z.custom<z.ZodType>(
+  (v) =>
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { safeParse?: unknown }).safeParse === "function",
+  { message: "expected a zod schema" },
+);
+
+const agentToolSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  kind: z.enum(["read", "write"]),
+  schema: zodSchemaLike,
+  execute: fn,
+});
+
 const manifestSchema = z
   .object({
     id: z.string().regex(ID_RE, "invalid extension id"),
@@ -306,6 +389,7 @@ const manifestSchema = z
       )
       .optional(),
     jobs: jobsSchema,
+    agentTools: z.array(agentToolSchema).optional(),
   })
   // 其餘欄位(migrations/settings/adminPages/publicRoutes/hooks/uninstall)含 React
   // 型別與 function,不在 zod 深驗範圍,passthrough 保留。
@@ -350,6 +434,24 @@ const manifestSchema = z
       ctx.addIssue({
         code: "custom",
         message: 'settings[].required requires coreApi "^1.18.0" or newer',
+        path: ["coreApi"],
+      });
+    }
+    // 1.30.0:agentTools 的命名空間 / 重複名(規則見 agentToolIssues)。
+    for (const message of agentToolIssues(ext.id, ext.agentTools ?? [])) {
+      ctx.addIssue({ code: "custom", message, path: ["agentTools"] });
+    }
+    // manifestSchema 對 code extension 是 .passthrough() —— 舊 core 不會拒收帶
+    // agentTools 的 manifest,只會**安靜地**把它當成不存在的欄位忽略(agent 面板
+    // 少了幾個 tool,沒有任何錯誤訊息)。所以這裡把「宣告了就必須標版號」變成硬
+    // 規則,同 settings[].required 對 1.18.0 的前例。
+    if (
+      (ext.agentTools ?? []).length > 0 &&
+      !rangeStartsAtOrAfter(ext.coreApi, "1.30.0")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: 'agentTools requires coreApi "^1.30.0" or newer',
         path: ["coreApi"],
       });
     }

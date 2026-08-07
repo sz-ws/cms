@@ -11,6 +11,7 @@ import {
   Puzzle,
   Settings2,
   SlidersHorizontal,
+  Sparkles,
   Store,
   Users,
   type LucideIcon,
@@ -76,6 +77,9 @@ export function adminIconManifestHelpText(): string {
 // Core admin routes are a fixed, known set → exact href match.
 const CORE_ICONS: Record<string, LucideIcon> = {
   "/admin": LayoutDashboard,
+  // AI 助理(docs/spec-admin-agent.md §5)。走 CORE_ICONS 而不是 manifest token:
+  // 它是 core 的固定路由,不需要讓 extension 有辦法宣告成這個圖示。
+  "/admin/agent": Sparkles,
   "/admin/media": ImageIcon,
   "/admin/settings": SlidersHorizontal,
   "/admin/users": Users,

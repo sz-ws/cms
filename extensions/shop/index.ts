@@ -2,6 +2,7 @@ import { defineExtension } from "@/ext/types";
 import type { ApiCtx } from "@/ext/types";
 import { db } from "@/lib/db";
 import {
+  createCommerceAgentTools,
   createCommerceCheckoutHandler,
   createOrderStatusHandler,
   createPromoDeleteHandler,
@@ -39,13 +40,17 @@ import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 const ORDERS_TABLE = "ext_shop_orders";
 const PROMOS_TABLE = "ext_shop_promos";
 const SHIPPING_KEY = "ext.shop.shippingConfig";
+// ScopedSettings 收**完整** key(ext.<extId>.<key>)—— 只給區域名會 throw。
+const CARD_PROVIDER_KEY = "ext.shop.cardProvider";
+// 兩個消費者:核帳 route(經 ctx.services.settings)與 agent 的核可 tool(kit 自建
+// scoped settings)。同一個常數 = 不可能分家。
+const TRANSFER_PROVIDER_KEY = "ext.shop.transferProvider";
 
 async function resolveProvider(
   ctx: ApiCtx,
   method: "card" | "transfer",
 ): Promise<string> {
-  // ScopedSettings 收**完整** key(ext.<extId>.<key>)—— 只給區域名會 throw。
-  const key = method === "card" ? "ext.shop.cardProvider" : "ext.shop.transferProvider";
+  const key = method === "card" ? CARD_PROVIDER_KEY : TRANSFER_PROVIDER_KEY;
   return (await ctx.services.settings.get<string>(key, "")).trim();
 }
 
@@ -53,7 +58,9 @@ export const shop = defineExtension({
   id: "shop",
   name: "商店",
   version: "0.1.0",
-  coreApi: "^1.28.0",
+  // ^1.30.0:宣告了 agentTools(1.30.0 的新表面)。舊 core 會安靜地忽略那個欄位,
+  // 所以 defineExtension 把「宣告了就必須標版號」列為硬規則。
+  coreApi: "^1.30.0",
   description:
     "購物車、結帳與訂單管理:讀取 catalog 商品、透過 payment capability 收款(刷卡/匯款)、匯款人工對帳。",
   icon: "shopping-cart",
@@ -216,6 +223,15 @@ export const shop = defineExtension({
       component: ShopCheckoutPage,
     },
   ],
+  // docs/spec-admin-agent.md §2:admin agent 的訂單動作。引擎在 kit(名字、schema、
+  // 描述、核可路徑全在 commerce-kit/agent-tools.ts),這裡照舊只給表名與 settings key。
+  // 裝了這個 extension,後台的 AI 面板就會多出 shop.orders.* 四個 tool —— core 一行
+  // 都不必改,兩個 write 一律走確認卡(kind:"write",spec §1.2)。
+  agentTools: createCommerceAgentTools({
+    extId: "shop",
+    table: ORDERS_TABLE,
+    transferProviderKey: TRANSFER_PROVIDER_KEY,
+  }),
   hooks: {
     // 唯一把訂單翻成 paid 的地方 —— 刷卡回呼與匯款核帳都經 payment-kit 的統一
     // 結算觸發這個 hook(payload 自 1.28.0 起帶 orderNo)。查無此單(如 admin

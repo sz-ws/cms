@@ -302,3 +302,35 @@ export const storageHistory = sqliteTable("storage_history", {
   note: text("note"),
 });
 
+// Admin AI agent 稽核軌跡(migrations/0016_agent_audit.sql,手寫,照 0006–0015
+// precedent)。docs/spec-admin-agent.md §1.3:每一次 agent tool 執行(read 與 write
+// 都記)一列。**append-only** —— 應用層只有 INSERT,沒有 UPDATE/DELETE 路徑
+// (執行期契約見 src/ext/agent-audit.ts)。
+//
+// user_id 刻意無 FK:刪一個管理員不該連帶抹掉他做過什麼;user_email 反正規化存下
+// 來,是為了讓那一列在使用者不存在之後仍讀得懂。完整取捨寫在 migration 檔頭。
+export const agentAudit = sqliteTable(
+  "agent_audit",
+  {
+    id: text("id").primaryKey(),
+    at: integer("at").notNull(),
+    // 無 .references():見上。
+    userId: text("user_id").notNull(),
+    userEmail: text("user_email").notNull(),
+    tool: text("tool").notNull(),
+    kind: text("kind", { enum: ["read", "write"] }).notNull(),
+    // "chat" = loop 內自動執行的 read;"execute" = admin 按下確認卡後執行。
+    // 確認制的可查證形式:不該存在 kind='write' AND source='chat' 的列。
+    source: text("source", { enum: ["chat", "execute"] }).notNull(),
+    args: text("args").notNull(),
+    // 0/1(SQLite 無 boolean)。失敗含「args 未過 schema」。
+    ok: integer("ok").notNull(),
+    result: text("result"),
+    error: text("error"),
+  },
+  // 唯一的掃描路徑是「最近 N 列」。migration 的 SQL 建的是 `(at DESC)`;drizzle 的
+  // index builder 型別在本版不接受欄位的排序方向,故此處只宣告欄位 —— 名稱與欄位
+  // 一致即足夠(db:generate 已停用,schema.ts 是描述不是產生器的輸入)。
+  (t) => [index("agent_audit_at_desc").on(t.at)],
+);
+

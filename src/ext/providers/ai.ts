@@ -1,5 +1,18 @@
 import { getSetting } from "@/lib/settings";
 import { getAI } from "@/lib/cf";
+import {
+  ANTHROPIC_DEFAULT_BASE_URL,
+  ANTHROPIC_VERSION,
+  GENERATE_TIMEOUT_MS,
+  OPENAI_DEFAULT_BASE_URL,
+  resolveMaxTokens,
+  safeJsonParse,
+  truncate,
+  withDeadline,
+  withTimeout,
+  type AiMode,
+} from "./ai-shared";
+import { chatAnthropic, chatOpenAi, chatWorkersAi } from "./ai-chat";
 
 // core ai:generate capability(docs/spec-ai-capability.md)。
 //
@@ -10,8 +23,12 @@ import { getAI } from "@/lib/cf";
 // SEO 建議、alt 文字、摘要等未來功能都吃這一個口。
 //
 // v1 明確排除(見 spec「不做」段;streaming 已於 v1.1 追加——見
-// docs/spec-ai-capability.md streaming 附錄 + 本檔 generateStream()):tool use、
+// docs/spec-ai-capability.md streaming 附錄 + 本檔 generateStream();tool use 已於
+// v1.2 追加——見 docs/spec-admin-agent.md §3 + 本檔 chat() 與 ./ai-chat.ts):
 // 圖像/多模態、embeddings、多組設定檔 / per-extension key。
+//
+// 共用內部件(逾時預算/錯誤摘要/maxTokens clamp/預設 baseUrl)住 ./ai-shared.ts,
+// generate 與 chat 兩條路徑共享同一份規則。
 
 export interface AiMessage {
   role: "system" | "user" | "assistant";
@@ -43,65 +60,31 @@ export type AiStreamEvent =
   | { type: "done"; model?: string }
   | { type: "error"; error: string };
 
+// v1.2 tool-calling 的型別(docs/spec-admin-agent.md §3)住 ./ai-chat.ts、由此
+// re-export —— 對外的 import 路徑仍是 "@/ext/providers/ai"(AiProvider 介面宣告處),
+// 拆檔純粹是為了守住檔案大小上限。
+export type {
+  AiChatContentBlock,
+  AiChatMessage,
+  AiChatOptions,
+  AiChatResult,
+  AiChatStopReason,
+  AiChatToolUse,
+  AiToolDef,
+} from "./ai-chat";
+export { toAssistantMessage } from "./ai-chat";
+
+import type { AiChatOptions, AiChatResult } from "./ai-chat";
+
 export interface AiProvider {
   generate(opts: AiGenerateOptions): Promise<AiGenerateResult>;
   /** 選填:v1.1 streaming(見 docs/spec-ai-capability.md streaming 附錄)。未實作的
    *  provider 由呼叫端(src/lib/ai.ts)退回單一 error 事件,永不 throw。 */
   generateStream?(opts: AiGenerateOptions): AsyncGenerator<AiStreamEvent>;
-}
-
-type AiMode = "off" | "openai" | "anthropic" | "workers-ai";
-
-const GENERATE_TIMEOUT_MS = 60_000;
-const DEFAULT_MAX_TOKENS = 1024;
-const MAX_TOKENS_CAP = 8192;
-const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com";
-const ANTHROPIC_VERSION = "2023-06-01";
-const ERROR_DETAIL_MAX = 200; // 上游錯誤摘要截斷長度。
-
-function resolveMaxTokens(input: number | undefined): number {
-  return Math.min(input ?? DEFAULT_MAX_TOKENS, MAX_TOKENS_CAP);
-}
-
-/** 截斷至 200 字(spec:上游訊息摘要),絕不含呼叫端傳入的 apiKey(呼叫處保證不拼入)。 */
-function truncate(s: string): string {
-  return s.length > ERROR_DETAIL_MAX ? `${s.slice(0, ERROR_DETAIL_MAX)}…` : s;
-}
-
-/** env.AI.run() 無法傳 AbortSignal(binding 型別由呼叫端自訂,見 cf.ts),用通用
- * race 做逾時,語意與 fetch 版 AbortController 一致:逾時 reject Error("timeout")。 */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("timeout")), ms);
-    promise.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e: unknown) => {
-        clearTimeout(timer);
-        reject(e instanceof Error ? e : new Error(String(e)));
-      },
-    );
-  });
-}
-
-/** withTimeout 的「絕對時間點」版本 —— workers-ai streaming 用(ai.run() 不是
- * fetch,沒有 AbortSignal 可傳,逐 chunk 讀取要對同一個 deadline 累計扣時,而非
- * 每次都重新給滿額 60s)。逾時語意與 withTimeout 一致:reject Error("timeout")。 */
-function withDeadline<T>(promise: Promise<T>, deadlineAt: number): Promise<T> {
-  const remaining = deadlineAt - Date.now();
-  if (remaining <= 0) return Promise.reject(new Error("timeout"));
-  return withTimeout(promise, remaining);
-}
-
-function safeJsonParse<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+  /** 選填:v1.2 tool calling(見 docs/spec-admin-agent.md §3)。非 streaming。
+   *  未實作的 provider 由呼叫端(src/lib/ai.ts)退回
+   *  `{ok:false, error:"tool_use_not_supported"}`,永不 throw。 */
+  chat?(opts: AiChatOptions): Promise<AiChatResult>;
 }
 
 interface SseFrame {
@@ -216,6 +199,24 @@ export class CoreAiProvider implements AiProvider {
       return;
     }
     yield { type: "error", error: "not_configured" };
+  }
+
+  /** v1.2 tool calling(見 docs/spec-admin-agent.md §3)。前置檢查與 generate()
+   * 完全一致(mode off / 缺 model / 未知 mode → not_configured);三種 mode 的
+   * wire format 各自住 ./ai-chat.ts。非 streaming —— spec §3 明定:確認制的 write
+   * 提案本來就要停下來等人,串流沒有 UX 收益。 */
+  async chat(opts: AiChatOptions): Promise<AiChatResult> {
+    const mode = await getSetting<AiMode>("core.ai.mode", "off");
+    const model = await getSetting<string>("core.ai.model", "");
+    if (mode === "off" || !model) {
+      return { ok: false, error: "not_configured" };
+    }
+    const maxTokens = resolveMaxTokens(opts.maxTokens);
+
+    if (mode === "openai") return chatOpenAi(opts, model, maxTokens);
+    if (mode === "anthropic") return chatAnthropic(opts, model, maxTokens);
+    if (mode === "workers-ai") return chatWorkersAi(opts, model, maxTokens);
+    return { ok: false, error: "not_configured" };
   }
 
   private async generateOpenAi(

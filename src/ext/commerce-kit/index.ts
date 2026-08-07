@@ -36,6 +36,11 @@ export {
   createTransferVerifyHandler,
   createOrderStatusHandler,
 } from "./transfer";
+export { createCommerceAgentTools } from "./agent-tools";
+export type {
+  CommerceAgentToolsOptions,
+  CommerceOrderSummary,
+} from "./agent-tools";
 export {
   shippingConfigSchema,
   parseShippingConfig,

@@ -399,4 +399,62 @@
 //     extensions/banktransfer(第一個 manual provider)。皆不預裝(newebpay 前例)。
 //   使用 kind:"manual"、ApiRoute.public 或 hook orderNo 的 extension 應宣告
 //   coreApi "^1.28.0";舊 extension 不受影響(union 舊分支、route 預設仍要登入)。
-export const CORE_API_VERSION = "1.28.0";
+// 1.29.0(docs/spec-admin-agent.md §3:ai:generate v1.2 tool calling):
+//   - AiProvider 新增選填方法 `chat?(opts: AiChatOptions): Promise<AiChatResult>`
+//     (新型別 AiToolDef / AiChatMessage / AiChatContentBlock(text|tool_use|
+//     tool_result)/ AiChatToolUse / AiChatStopReason / AiChatResult,宣告於
+//     src/ext/providers/ai-chat.ts 並由 src/ext/providers/ai.ts re-export,對外
+//     import 路徑不變)。純新增、選填 → minor bump,比照 1.13.0 的 generateStream
+//     前例(§1:新 hooks/capabilities/field types → minor;provider 介面新增選填
+//     方法屬同一精神)。
+//   - 未實作 chat 的既有/第三方 provider 完全不受影響:src/lib/ai.ts 的
+//     chatAiWithTools() 對缺方法的 provider 退回
+//     `{ok:false, error:"tool_use_not_supported"}`,永不 throw —— 與
+//     「未設定 → not_configured」「未實作 streaming → streaming_not_supported」
+//     同一個哲學。
+//   - CoreAiProvider 三模式的支援不一致,這是刻意的:openai(function calling:
+//     tools→functions、tool_use→tool_calls、tool_result→role:"tool" 訊息)與
+//     anthropic(原生 tool use,content blocks 一對一)完整支援;workers-ai 僅部分
+//     模型支援,不維護模型白名單(Cloudflare 的模型目錄變動比本 repo 快,白名單
+//     只會變成過期的謊言),試打失敗即回 `tool_use_not_supported`。逾時仍回
+//     "timeout" 不併入該錯誤 —— 「網路慢」與「模型不支援」是兩件事。
+//   - v1 非 streaming(spec §3 明定):tool-use streaming 要拼裝增量 JSON,而 admin
+//     agent 是確認制 —— write 提案本來就得停下來等人核可,串流沒有 UX 收益。
+//   - 共同慣例全沿用 generate():60s 逾時、上游錯誤摘要截 200 字、錯誤字串絕不含
+//     apiKey、設定不全 → not_configured。共用內部件抽至
+//     src/ext/providers/ai-shared.ts(純搬移,generate/generateStream 行為零變更)。
+//   - manifestSchema 未動(此次不涉及 declarative manifest 欄位),故本次 bump 不
+//     影響既有 manifest 的相容性;既有 /api/ai/generate、generateAiText()、
+//     generate()/generateStream() 一個字都沒改。
+//   consume `chat`(或 src/lib/ai.ts 的 chatAiWithTools)的 code extension 應宣告
+//   coreApi "^1.29.0";更舊的 core 上該方法不存在,呼叫端會拿到
+//   tool_use_not_supported 而非例外,是**沒有錯誤訊息的 runtime 降級**,所以務必宣告。
+// 1.30.0(docs/spec-admin-agent.md §2 表格第二列:code extension 的 agentTools):
+//   - Extension 介面新增可選欄位 `agentTools?: AgentTool[]`(types.ts)。宣告了就自動
+//     進 agent 的 tool registry(agent-tools-runtime.ts 的第三個註冊來源:enabled
+//     code extensions)—— 「裝一個 extension = AI 自動會操作它」對 code extension
+//     這一半的實作。純新增、可選欄位 → minor bump(§1)。
+//   - **不宣告 agentTools 的既有 extension 零影響**:欄位缺省 = 沒有 tool,registry
+//     的另外兩個來源(core 內建、declarative contentTypes 自動生成)行為一字未改。
+//   - 命名空間是硬規則,而且驗兩次(defineExtension 於載入期、buildAgentToolRegistry
+//     於每次組 registry 時,共用同一個 agentToolIssues):每個 tool name 必須以
+//     `<extId>.` 開頭、至少兩段點分小寫、同一個 extension 內不得重複、kind 必須是
+//     "read" 或 "write"。前綴的理由與 settings 的 `ext.<extId>.` scoping 相同 ——
+//     tool name 是 LLM 唯一的定址方式,沒有前綴就等於允許一個 extension 宣告
+//     `shop.orders.verify` 冒名另一個 extension 的動作。違規 = defineExtension throw
+//     (1.18.0 的 fail-loud 前例)。
+//   - manifestSchema 對 code extension 是 .passthrough(),舊 core 不會拒收帶
+//     agentTools 的 manifest,只會**安靜地**忽略它(面板少了幾個 tool、沒有任何錯誤
+//     訊息)。所以 defineExtension 另立一條硬規則:宣告 agentTools 就必須宣告
+//     coreApi "^1.30.0" 或更新,同 settings[].required 對 1.18.0 的前例。
+//   - declarative manifest 這一側**未動**:JSON 裝不下 function,宣告式 extension 的
+//     tools 一律走「從 contentTypes 自動生成」那條路(dx/agent-tools.ts),不需要也
+//     不會有 agentTools 欄位。故本次 bump 不影響任何既有 declarative manifest。
+//   - 同批(非 CORE_API 表面):新 src/ext/commerce-kit/agent-tools.ts —— 第一個消費
+//     者。createCommerceAgentTools() 產出訂單的 list/get(read)與 verify/transition
+//     (write),由 extensions/shop 接線。write 兩個都**呼叫 kit 既有的 handler**
+//     (createTransferVerifyHandler / createOrderStatusHandler),不另開直改 status 的
+//     路 —— 「訂單翻 paid 的路徑只有 settleManual → payment:succeeded → hook 這一條」
+//     這條 1.28.0 立下的紀律,對 agent 一樣成立。
+//   宣告 agentTools 的 code extension 必須宣告 coreApi "^1.30.0"(defineExtension 強制)。
+export const CORE_API_VERSION = "1.30.0";
