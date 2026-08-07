@@ -334,3 +334,40 @@ export const agentAudit = sqliteTable(
   (t) => [index("agent_audit_at_desc").on(t.at)],
 );
 
+// AI token 用量(migrations/0017_ai_usage.sql,手寫,照 0006–0016 precedent)。
+// **一列 = 一次上游 LLM 呼叫**(不是一則訊息 —— agent loop 一則訊息最多打 8 次,
+// 那 8 次的成本是分開發生的)。**append-only**:應用層只有 INSERT,沒有
+// UPDATE/DELETE 路徑(執行期契約見 src/ext/ai-usage.ts)。
+//
+// 兩條刻意的形狀,完整理由寫在 migration 檔頭:
+//   * token 兩欄 nullable —— NULL = 上游沒回報,0 = 上游說是零,兩者不可混為一談;
+//   * user_id 無 FK + user_email 反正規化 —— 照 agent_audit 的先例,刪一個管理員
+//     不該抹掉他的用量紀錄。
+// 本表**永遠不存 prompt 或回覆內容**,只存數字。
+export const aiUsage = sqliteTable(
+  "ai_usage",
+  {
+    id: text("id").primaryKey(),
+    at: integer("at").notNull(),
+    // 呼叫來源。目前唯一的寫入者是 agent loop("agent.chat");刻意不做成 enum ——
+    // 之後每多一個呼叫 AI 的地方就多一個值,那是資料不是 schema 變更。
+    feature: text("feature").notNull(),
+    // core.ai.mode 的值(見 src/ext/providers/ai-shared.ts 的 AiMode)。讀不到設定
+    // 時為 NULL,故不宣告 enum —— 型別上的 enum 擋不住已經在表裡的舊值。
+    mode: text("mode"),
+    model: text("model"),
+    // NULL = 上游沒回報(**不是 0**)。
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    // 無 .references():見上。
+    userId: text("user_id").notNull(),
+    userEmail: text("user_email").notNull(),
+    // 0/1(SQLite 無 boolean)。失敗的呼叫一樣記 —— 它一樣花了錢。
+    ok: integer("ok").notNull(),
+    error: text("error"),
+  },
+  // 唯一被設計出來要便宜的查詢是「某使用者某期間的總和」:等值欄(user_id)在前、
+  // 範圍欄(at)在後,SQLite 才吃得到整個索引。順序的完整理由見 migration 檔頭。
+  (t) => [index("ai_usage_user_at").on(t.userId, t.at)],
+);
+

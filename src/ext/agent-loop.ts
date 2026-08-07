@@ -14,6 +14,7 @@ import type {
   AgentToolRegistry,
 } from "./agent-tools";
 import { recordAgentToolRun } from "./agent-audit";
+import { AI_USAGE_FEATURE_AGENT_CHAT, recordAiUsage } from "./ai-usage";
 import type { Locale } from "@/lib/i18n/index";
 import { toAssistantMessage } from "./providers/ai";
 import type {
@@ -24,6 +25,7 @@ import type {
   AiChatStopReason,
   AiChatStreamEvent,
   AiChatToolUse,
+  AiChatUsage,
   AiToolDef,
 } from "./providers/ai";
 
@@ -70,6 +72,14 @@ import type {
 //   · 失敗或被截斷的結果不附卡片(見 runReadRound 內的說明);
 //   · **write 提案永遠沒有卡片** —— 不是靠哪裡多寫一個 if,而是因為 write 在 loop
 //     內根本不執行,沒有結果可以拿來畫(§1.2)。
+//
+// ── 1.34.0:token 用量(ai_usage)────────────────────────────────────────────
+// **每一次上游呼叫之後記一列**(./ai-usage.ts),成功與失敗都記 —— 失敗的請求一樣
+// 花錢。一則訊息最多 8 次,那 8 次各記各的:合併記等於丟掉「為什麼這一則特別貴」
+// 的解析度,而那是事後唯一會問的問題。上游沒回報 usage 時仍然記一列(token 欄位
+// 為 NULL)—— 「打了一次但不知道多少」與「沒打」必須分得出來。
+// outcome 另帶一個**這一則訊息的總和**(AgentOutcomeBase.usage,見 sumUsage),
+// 那是給之後的面板用的;這一批不渲染它。
 
 /** 步數上限(spec §4)。到頂回明確狀態,不是靜默停止。 */
 export const AGENT_MAX_STEPS = 8;
@@ -214,6 +224,15 @@ interface AgentOutcomeBase {
   steps: number;
   toolCalls: AgentToolCallLog[];
   model?: string;
+  /**
+   * 這一則訊息的 token 總和(1.34.0):本輪所有上游呼叫(≤ 8 次)的加總。
+   *
+   * 落庫是**逐次**的(ai_usage 一列一次呼叫,見檔頭);這一欄純粹是給呼叫端的
+   * 便利值,免得面板要顯示「這則訊息花了多少」時得回頭查表。**沒有任何一步報得
+   * 出數字時這個鍵不存在** —— 與 AiChatUsage 同一條規則:0 是「真的零」,缺席是
+   * 「不知道」。這一批不渲染它。
+   */
+  usage?: AiChatUsage;
 }
 
 export type AgentChatOutcome =
@@ -558,6 +577,37 @@ function haltingAssistantMessage(
 // loop
 // ---------------------------------------------------------------------------
 
+/**
+ * 跨呼叫的 token 加總(1.34.0)。
+ *
+ * 與 ai-chat.ts 的 mergeUsage(後到覆蓋先到,用於**同一次**呼叫分散在多個串流事件
+ * 的情形)是兩種不同的運算,刻意分開兩支函式:這裡的每一項都是一次獨立的上游
+ * 呼叫,語意就是相加。
+ *
+ * 缺席的處理與 AiChatUsage 一致:某一欄從頭到尾沒有任何一步報得出數字 → 那一欄
+ * 不存在;有任何一步報得出來 → 只加得到的那些(把沒回報的當 0 加進去,會讓總和
+ * 看起來像一個完整的帳)。兩欄互相獨立,因為上游確實可能只回其中一個。
+ */
+function sumUsage(
+  base: AiChatUsage | undefined,
+  next: AiChatUsage | undefined,
+): AiChatUsage | undefined {
+  if (!next) return base;
+  if (!base) return next;
+  const inputTokens =
+    base.inputTokens === undefined && next.inputTokens === undefined
+      ? undefined
+      : (base.inputTokens ?? 0) + (next.inputTokens ?? 0);
+  const outputTokens =
+    base.outputTokens === undefined && next.outputTokens === undefined
+      ? undefined
+      : (base.outputTokens ?? 0) + (next.outputTokens ?? 0);
+  return {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+  };
+}
+
 async function defaultChat(opts: AiChatOptions): Promise<AiChatResult> {
   // dynamic import:@/lib/ai 靜態相依 loader → interpret → next/navigation,
   // 靜態拉進來會讓本檔(與它的測試)在 workers pool 載不起來。
@@ -636,16 +686,20 @@ export async function runAgentChat(
   let transcript: AiChatMessage[] = [...params.messages];
   let remaining = TOOL_RESULT_ROUND_MAX_CHARS;
   let lastText = "";
+  // 本輪所有上游呼叫的總和(1.34.0)。逐次落庫是另一回事,見下面的 recordAiUsage。
+  let usage: AiChatUsage | undefined;
 
   for (let step = 1; step <= AGENT_MAX_STEPS; step++) {
     if (params.signal?.aborted) {
       // client 走了。回一個誠實的 outcome(沒有人會讀到它)而不是繼續燒上游額度。
+      // 已經跑掉的那幾步的用量照樣帶著 —— 花掉了就是花掉了。
       return {
         status: "error",
         error: "aborted",
         appended,
         steps: step - 1,
         toolCalls,
+        ...(usage ? { usage } : {}),
       };
     }
     emit({ type: "step", step });
@@ -660,6 +714,20 @@ export async function runAgentChat(
       ? await runStreamStep(streaming, opts, emit)
       : await chat(opts);
 
+    // 一次上游呼叫 = 一列(1.34.0)。放在 ok 判斷**之前**是刻意的:失敗的請求
+    // 一樣花錢,而拿不到 usage(res.usage 為 undefined)時這一列的兩個 token 欄位
+    // 是 NULL —— 「打了一次但不知道多少」與「沒打」因此分得出來。
+    // recordAiUsage 自己 fail-open,不會讓對話因為記不成用量而失敗。
+    await recordAiUsage({
+      actor: params.ctx.user,
+      feature: AI_USAGE_FEATURE_AGENT_CHAT,
+      model: res.model,
+      usage: res.usage,
+      ok: res.ok,
+      error: res.error,
+    });
+    usage = sumUsage(usage, res.usage);
+
     if (!res.ok) {
       return {
         status: "error",
@@ -667,6 +735,7 @@ export async function runAgentChat(
         appended,
         steps: step,
         toolCalls,
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -682,6 +751,7 @@ export async function runAgentChat(
         steps: step,
         toolCalls,
         model: res.model,
+        ...(usage ? { usage } : {}),
         ...(res.stopReason ? { stopReason: res.stopReason } : {}),
       };
     }
@@ -715,6 +785,7 @@ export async function runAgentChat(
           steps: step,
           toolCalls,
           model: res.model,
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -776,6 +847,7 @@ export async function runAgentChat(
         steps: step,
         toolCalls,
         model: res.model,
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -794,5 +866,6 @@ export async function runAgentChat(
     appended,
     steps: AGENT_MAX_STEPS,
     toolCalls,
+    ...(usage ? { usage } : {}),
   };
 }

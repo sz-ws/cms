@@ -75,6 +75,8 @@ export type {
   AiChatStopReason,
   AiChatStreamEvent,
   AiChatToolUse,
+  // 1.34.0:AiChatResult.usage 的形狀(見 ai-chat.ts —— 缺席與 0 是兩件事)。
+  AiChatUsage,
   AiToolDef,
 } from "./ai-chat";
 export { toAssistantMessage, toWireToolName } from "./ai-chat";

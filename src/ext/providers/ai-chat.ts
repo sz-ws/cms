@@ -26,6 +26,10 @@ import {
 //
 // 共同慣例全沿用 generate():永不 throw(錯誤走 {ok:false, error})、60s 逾時、
 // 上游錯誤摘要截 200 字、錯誤字串絕不含 apiKey、設定不全 → not_configured。
+//
+// v1.2.2(CORE_API 1.34.0):AiChatResult 多一個選填的 usage(token 數)。三家的
+// 讀取器(openAiUsage / anthropicUsage / toUsage / mergeUsage)與上述那些轉換函式
+// 一樣**由本檔 export、串流那邊 import** —— 同一條紀律,同一個理由。
 
 /** 餵給 LLM 的 tool 宣告(spec §3)。inputSchema 是一個 JSON Schema object ——
  *  行動層(Phase A)由 tool 的 zod schema 轉出,這裡當作不透明物件原樣透傳,
@@ -90,6 +94,17 @@ export interface AiChatToolUse {
 /** 正規化後的收尾原因。三家各自的字串收斂成這四個值,呼叫端不必認識上游詞彙。 */
 export type AiChatStopReason = "end_turn" | "tool_use" | "max_tokens" | "other";
 
+/** 上游回報的這一次呼叫的 token 用量(1.34.0)。
+ *
+ *  **兩個欄位都是選填,而且缺席與 0 是兩件不同的事**:0 是「上游說這次用了零個」,
+ *  缺席是「上游沒說」。用 0 當缺席會讓事後的加總安靜地把「不知道」算成「沒花錢」
+ *  —— 而點數制正是建立在那個總和上。所以三家 provider 一律「讀得到才填」,
+ *  沒有任何一條路徑會補預設值。 */
+export interface AiChatUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 export interface AiChatResult {
   ok: boolean;
   /** ok=true 時必有(沒有文字時為空字串)。 */
@@ -103,6 +118,9 @@ export interface AiChatResult {
   error?: string;
   /** 實際使用的 model(觀測用)。 */
   model?: string;
+  /** 上游回報的 token 用量(1.34.0)。**上游沒回報時這個鍵不存在** —— 見
+   *  AiChatUsage 的說明。ok=false 時通常也沒有(請求根本沒被受理)。 */
+  usage?: AiChatUsage;
 }
 
 /** tool-calling streaming 的事件(1.32.0)。刻意只有兩種:
@@ -177,6 +195,87 @@ export function normalizeStopReason(
   if (raw && maxTokensValues.includes(raw)) return "max_tokens";
   if (raw && endTurnValues.includes(raw)) return "end_turn";
   return "other";
+}
+
+// ---------------------------------------------------------------------------
+// usage(1.34.0)
+// ---------------------------------------------------------------------------
+
+// 本段的四支函式**同時服務非串流(本檔)與串流(./ai-chat-stream.ts)**,理由與
+// normalizeStopReason / parseToolArguments 完全相同:spec 要求兩條路對同一個上游
+// 回應算出一致的 AiChatResult,usage 也在那個「同一個」裡面。各抄一份的結局是
+// 某一天串流少讀了一個欄位,而少讀的那條路正好是實際在跑的那條。
+
+/**
+ * 上游的 token 數字 → 可信的計數,否則 undefined(= 沒回報)。
+ *
+ * 只認「有限的非負 number」:字串型數字、null、NaN、負數一律當作沒回報而不是
+ * 硬轉成 0 —— 收下一個看起來合法的假數字,比留白危險得多(留白事後看得出來是
+ * 空的,假的 0 看起來像事實)。小數截整:token 本來就是整數,收到小數代表上游
+ * 或代理算了別的東西。
+ */
+function tokenCount(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+    return undefined;
+  }
+  return Math.trunc(raw);
+}
+
+/** 兩個原始值 → AiChatUsage。**兩邊都讀不到就回 undefined**,不回一個空物件:
+ *  `{}` 與「沒有 usage」在語意上同義,但會讓每個下游多一層「有物件但兩欄都空」
+ *  的判斷。 */
+export function toUsage(
+  input: unknown,
+  output: unknown,
+): AiChatUsage | undefined {
+  const inputTokens = tokenCount(input);
+  const outputTokens = tokenCount(output);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  return {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+  };
+}
+
+/** OpenAI 家的 usage 形狀:`{ prompt_tokens, completion_tokens }`。非串流在 body
+ *  頂層;串流在**最後一個 chunk**(需 `stream_options.include_usage`,見
+ *  ai-chat-stream.ts)。workers-ai 也照這組名字回(見 chatWorkersAi)。 */
+export function openAiUsage(raw: unknown): AiChatUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const u = raw as { prompt_tokens?: unknown; completion_tokens?: unknown };
+  return toUsage(u.prompt_tokens, u.completion_tokens);
+}
+
+/** Anthropic 的 usage 形狀:`{ input_tokens, output_tokens }`。非串流在 body 頂層;
+ *  串流分兩處到達(message_start 的 input、message_delta 的累積 output),由
+ *  mergeUsage 合併。 */
+export function anthropicUsage(raw: unknown): AiChatUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const u = raw as { input_tokens?: unknown; output_tokens?: unknown };
+  return toUsage(u.input_tokens, u.output_tokens);
+}
+
+/**
+ * 兩份 usage 合併,**後到的覆蓋先到的**(不是相加)。
+ *
+ * 這是為 anthropic 串流而存在的:同一次呼叫的 usage 分散在兩個事件裡,而
+ * message_delta 的 output_tokens 是**累積值**(不是增量),所以最後一個才算數。
+ * 相加會把中途的每一個中間值都算進去,一次 100 token 的回應會被記成好幾倍。
+ *
+ * 跨呼叫的「加總」是另一件事(語意是相加),住 agent-loop.ts 的 sumUsage。
+ */
+export function mergeUsage(
+  base: AiChatUsage | undefined,
+  next: AiChatUsage | undefined,
+): AiChatUsage | undefined {
+  if (!next) return base;
+  if (!base) return next;
+  const inputTokens = next.inputTokens ?? base.inputTokens;
+  const outputTokens = next.outputTokens ?? base.outputTokens;
+  return {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +459,7 @@ export async function chatOpenAi(
         message?: { content?: string | null; tool_calls?: OpenAiToolCall[] };
         finish_reason?: string;
       }[];
+      usage?: unknown;
     } | null;
     const choice = body?.choices?.[0];
     if (!choice?.message) {
@@ -376,6 +476,9 @@ export async function chatOpenAi(
         name: wire.fromWire(c.function.name),
         input: parseToolArguments(c.function.arguments),
       }));
+    // 非串流的 usage 在 body 頂層、不必額外要求(串流則要 stream_options,見
+    // ai-chat-stream.ts)。上游沒給就沒有這個鍵。
+    const usage = openAiUsage(body?.usage);
     return {
       ok: true,
       text: typeof choice.message.content === "string" ? choice.message.content : "",
@@ -387,6 +490,7 @@ export async function chatOpenAi(
         ["stop"],
       ),
       model,
+      ...(usage ? { usage } : {}),
     };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
@@ -495,6 +599,7 @@ export async function chatAnthropic(
     const body = (await res.json().catch(() => null)) as {
       content?: AnthropicBlock[];
       stop_reason?: string;
+      usage?: unknown;
     } | null;
     if (!body || !Array.isArray(body.content)) {
       return { ok: false, error: "anthropic: unexpected response shape" };
@@ -515,6 +620,7 @@ export async function chatAnthropic(
         name: wire.fromWire(c.name as string),
         input: c.input ?? {},
       }));
+    const usage = anthropicUsage(body.usage);
     return {
       ok: true,
       text,
@@ -526,6 +632,7 @@ export async function chatAnthropic(
         ["end_turn", "stop_sequence"],
       ),
       model,
+      ...(usage ? { usage } : {}),
     };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
@@ -636,6 +743,7 @@ export async function chatWorkersAi(
     const body = result as {
       response?: unknown;
       tool_calls?: WorkersAiToolCall[];
+      usage?: unknown;
     } | null;
     const rawCalls = Array.isArray(body?.tool_calls) ? body.tool_calls : [];
     const toolUses: AiChatToolUse[] = rawCalls
@@ -650,12 +758,18 @@ export async function chatWorkersAi(
     if (toolUses.length === 0 && typeof body?.response !== "string") {
       return { ok: false, error: "tool_use_not_supported" };
     }
+    // 盡力而為(1.34.0):Workers AI 的回應形狀不保證有 usage —— 模型目錄與回應
+    // 慣例都由 Cloudflare 決定,而這個 mode 的整條路本來就是「試打看看」(見上)。
+    // 目前文件上的形狀與 OpenAI 同名(prompt_tokens / completion_tokens),故直接
+    // 沿用同一支讀取器;**讀不到就留白,不換算、不從別的欄位推**。
+    const usage = openAiUsage(body?.usage);
     return {
       ok: true,
       text,
       toolUses,
       stopReason: toolUses.length > 0 ? "tool_use" : "end_turn",
       model,
+      ...(usage ? { usage } : {}),
     };
   } catch (e) {
     if (e instanceof Error && e.message === "timeout") {

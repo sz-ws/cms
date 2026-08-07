@@ -548,4 +548,44 @@
 //   consume `display` 的 code extension 應宣告 coreApi "^1.33.0":更舊的 core 上
 //   agentToolSchema 沒有這個欄位、agent-loop 也不會呼叫它 —— 結果是卡片安靜地不
 //   出現,沒有任何錯誤訊息。
-export const CORE_API_VERSION = "1.33.0";
+// 1.34.0(docs/spec-admin-agent.md §3.2:上游 token 用量的接收與落庫):
+//   - `AiChatResult` 新增選填欄位 `usage?: AiChatUsage`,以及新型別
+//     `AiChatUsage { inputTokens?: number; outputTokens?: number }`
+//     (src/ext/providers/ai-chat.ts,由 src/ext/providers/ai.ts 原樣 re-export)。
+//     純新增、選填 → minor bump,比照 1.29.0 / 1.32.0 / 1.33.0 的前例:**既有介面
+//     一個字都不動**,generate / generateStream / chat / chatStream 的既有行為與
+//     既有欄位零變更,不讀 usage 的呼叫端一個位元都不受影響。
+//   - **兩個 token 欄位都是選填,而且缺席 ≠ 0**。0 是「上游說這次用了零個」,
+//     缺席是「上游沒說」。三家 provider 一律「讀得到才填」,沒有任何一條路徑會補
+//     預設值 —— 用 0 當缺席會讓事後的加總把「不知道」算成「沒花錢」,而點數制
+//     正是建立在那個總和上。同一條規則貫穿到 DB(ai_usage 的 token 欄位 nullable)
+//     與 loop 的聚合(sumUsage)。
+//   - 三種 mode 的取法(解析器由 ai-chat.ts export、串流那邊 import,**非串流與
+//     串流共用同一份**,同 normalizeStopReason / parseToolArguments 的既有紀律):
+//       · openai —— 非串流讀 body 的 `usage.prompt_tokens / completion_tokens`;
+//         **串流要主動要**(request 多帶 `stream_options:{include_usage:true}`),
+//         usage 在最後一個 chunk(`[DONE]` 之前),而那個 chunk 的 `choices` 是空
+//         陣列 —— 解析迴圈因此改成「先讀 usage,再走既有的 choice 檢查」。
+//       · anthropic —— 非串流讀 `usage.input_tokens / output_tokens`;串流分兩處,
+//         `message_start` 帶 input、`message_delta` 帶**累積的** output,後到的
+//         覆蓋先到的(mergeUsage,不是相加)。
+//       · workers-ai —— 盡力而為。回應形狀不保證有 usage;有就讀(目前的欄位名與
+//         openai 同組),沒有就留白,**不換算、不從別的欄位推**。
+//   - 落庫:新表 `ai_usage`(migrations/0017_ai_usage.sql + src/lib/schema.ts 的
+//     `aiUsage`),**一列 = 一次上游呼叫**(不是一則訊息 —— agent loop 一則訊息最多
+//     打 8 次,那 8 次的成本分開發生)。寫入契約 src/ext/ai-usage.ts:**append-only**
+//     (只有 INSERT)、**fail-open**(記不成只 console.error,絕不讓對話失敗)、
+//     **絕不記 prompt 或回覆的內容,只記數字**。user_id 無 FK + user_email 反正規化
+//     (照 0016 agent_audit 的先例);索引 `(user_id, at)` —— 等值欄在前、範圍欄在
+//     後,才吃得到「某使用者某期間的總和」那個查詢。
+//   - agent loop:每一次上游呼叫之後記一列,**成功與失敗都記**(失敗的請求一樣
+//     花錢),拿不到 usage 時仍然記一列、兩個 token 欄位為 NULL(「打了一次但不知道
+//     多少」與「沒打」必須分得出來)。`AgentChatOutcome` 另加選填的 `usage`
+//     —— 這一則訊息的總和,給之後的面板用;**這一批不渲染它**。
+//   - 這一批**不做**:點數扣抵、預算上限、任何 UI,以及 ai:generate 那條路
+//     (generate / generateStream)的用量 —— `AiGenerateResult` 沒有 usage 欄位,
+//     接它是另一次 minor bump。
+//   consume `usage` 的 code extension 應宣告 coreApi "^1.34.0":更舊的 core 上這個
+//   欄位不存在,讀到的永遠是 undefined —— 而 undefined 在這個型別裡的意思是「上游
+//   沒回報」,於是降級會偽裝成一份「上游都不給用量」的假資料,沒有任何錯誤訊息。
+export const CORE_API_VERSION = "1.34.0";

@@ -173,6 +173,12 @@ beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS agent_audit (id TEXT PRIMARY KEY, at INTEGER NOT NULL, user_id TEXT NOT NULL, user_email TEXT NOT NULL, tool TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, args TEXT NOT NULL, ok INTEGER NOT NULL, result TEXT, error TEXT);",
   );
+  // 1.34.0:agent loop 每一次上游呼叫都會寫一列用量(src/ext/ai-usage.ts)。
+  // 它 fail-open,少了這張表不會讓測試失敗 —— 但會在每一輪對話留下一則
+  // console.error,而那正好會蓋掉真正該被看見的錯誤。
+  await d1().exec(
+    "CREATE TABLE IF NOT EXISTS ai_usage (id TEXT PRIMARY KEY, at INTEGER NOT NULL, feature TEXT NOT NULL, mode TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, user_id TEXT NOT NULL, user_email TEXT NOT NULL, ok INTEGER NOT NULL, error TEXT);",
+  );
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
   );
@@ -190,6 +196,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await d1().exec("DELETE FROM login_attempts;");
   await d1().exec("DELETE FROM agent_audit;");
+  await d1().exec("DELETE FROM ai_usage;");
   await d1().exec("DELETE FROM settings;");
   await d1().exec("DELETE FROM declarative_extensions;");
   await d1().exec(`DELETE FROM ${ORDERS_TABLE};`);

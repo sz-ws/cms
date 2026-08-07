@@ -9,7 +9,10 @@ import {
   truncate,
 } from "./ai-shared";
 import {
+  anthropicUsage,
+  mergeUsage,
   normalizeStopReason,
+  openAiUsage,
   parseToolArguments,
   toAnthropicBlock,
   toOpenAiMessages,
@@ -19,6 +22,7 @@ import type {
   AiChatOptions,
   AiChatStreamEvent,
   AiChatToolUse,
+  AiChatUsage,
 } from "./ai-chat";
 
 // ai:generate v1.2.1 —— tool-calling streaming(CORE_API 1.32.0,
@@ -44,6 +48,15 @@ import type {
 // ── workers-ai 不在這裡 ─────────────────────────────────────────────────────
 // 見 ai.ts 的 CoreAiProvider.chatStream:它退回呼叫一次非串流 chatWorkersAi 並包成
 // 單一 result 事件。
+//
+// ── usage(1.34.0)───────────────────────────────────────────────────────────
+// 串流的 token 數不會自己來,兩家各有各的取法,而且都在「內容」以外的地方:
+//   · openai —— 必須在 request 主動要(`stream_options.include_usage`),它才會在
+//     **最後一個 chunk**(`[DONE]` 之前)送一個 `choices: []` 但帶 usage 的 frame;
+//   · anthropic —— 預設就送,但分成兩半:`message_start` 帶 input、`message_delta`
+//     帶**累積的** output。兩個都要收,而且後到的 output 覆蓋先到的(mergeUsage)。
+// 解析器一律用 ai-chat.ts 那份(openAiUsage / anthropicUsage),不在本檔另寫。
+// 收不到就不填 —— 沒有任何一條路徑會補 0(見 AiChatUsage 的說明)。
 
 /** 上游還沒送出任何 result 就結束(既沒有 [DONE]/message_stop、也沒有錯誤)。
  *  防禦性:呼叫端的契約是「最後一個事件恆為 result」,少一個就會卡住。 */
@@ -91,32 +104,47 @@ export async function* chatOpenAiStream(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: toOpenAiMessages(opts),
-        max_tokens: maxTokens,
-        stream: true,
-        ...(opts.tools.length > 0
-          ? {
-              tools: opts.tools.map((t) => ({
-                type: "function",
-                function: {
-                  name: t.name,
-                  description: t.description,
-                  parameters: t.inputSchema,
-                },
-              })),
-            }
-          : {}),
-      }),
-      signal: controller.signal,
-    });
+    // 1.34.0:串流預設**不回** usage,要主動要(`stream_options.include_usage`)。
+    // 它是 OpenAI 官方 API 的一部分,但這個站接的是**任意 OpenAI-compatible 端點**
+    // ——而那些代理對不認得的頂層鍵的反應是「整份 400」,不是忽略。2026-08-07 的點
+    // 分 tool name 事故就是同一類:上游規則只有打到真的上游才知道。
+    //
+    // 所以這裡的取捨寫死:**用量是加分,對話是本分**。第一次帶著要,被 400/422 擋
+    // 下來就原封不動重送一次不帶的 —— 退化的後果從「整個對話壞掉」變成「這一輪沒
+    // 有用量數字」。只認這兩個碼:401/403/429 與欄位無關,重送只是多花一次錢。
+    const send = (includeUsage: boolean): Promise<Response> =>
+      fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: toOpenAiMessages(opts),
+          max_tokens: maxTokens,
+          stream: true,
+          ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
+          ...(opts.tools.length > 0
+            ? {
+                tools: opts.tools.map((t) => ({
+                  type: "function",
+                  function: {
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.inputSchema,
+                  },
+                })),
+              }
+            : {}),
+        }),
+        signal: controller.signal,
+      });
+
+    let res = await send(true);
+    if (!res.ok && (res.status === 400 || res.status === 422)) {
+      res = await send(false);
+    }
 
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as {
@@ -144,6 +172,7 @@ export async function* chatOpenAiStream(
     let text = "";
     let finishReason: string | undefined;
     let sawAnything = false;
+    let usage: AiChatUsage | undefined;
     // Map 而不是陣列:index 不保證從 0 連續(代理會跳號),也不保證按序抵達。
     const calls = new Map<number, OpenAiToolCallAcc>();
 
@@ -154,8 +183,15 @@ export async function* chatOpenAiStream(
       }
       const parsed = safeJsonParse<{
         choices?: { delta?: OpenAiStreamDelta; finish_reason?: string | null }[];
+        usage?: unknown;
       }>(frame.data);
+      // usage 要在 choice 檢查**之前**讀:帶 usage 的那個 chunk 的 `choices` 是
+      // 空陣列,下面那行 `if (!choice) continue` 會把它整個跳過。
+      usage = mergeUsage(usage, openAiUsage(parsed?.usage));
       const choice = parsed?.choices?.[0];
+      // 只有 usage、沒有 choice 的那個 chunk 刻意**不算** sawAnything:一次連
+      // 一個字都沒吐、只回了「你用了 N 個 token」的串流仍然是一次失敗的回合,
+      // 不該因為多了這個欄位而變成一個空的 ok:true。
       if (!choice) continue;
       sawAnything = true;
       if (typeof choice.finish_reason === "string") {
@@ -220,6 +256,7 @@ export async function* chatOpenAiStream(
           ["stop"],
         ),
         model,
+        ...(usage ? { usage } : {}),
       },
     };
   } catch (e) {
@@ -262,6 +299,10 @@ interface AnthropicStreamData {
     partial_json?: string;
     stop_reason?: string;
   };
+  /** message_start 的 payload。usage 在**這裡面**(不是頂層),帶 input_tokens。 */
+  message?: { usage?: unknown };
+  /** message_delta 的 usage 在頂層,帶累積的 output_tokens。 */
+  usage?: unknown;
   error?: { message?: string };
 }
 
@@ -340,6 +381,7 @@ export async function* chatAnthropicStream(
     let stopReason: string | undefined;
     let upstreamError: string | null = null;
     let stopped = false;
+    let usage: AiChatUsage | undefined;
 
     for await (const frame of parseSseStream(res.body)) {
       const data = safeJsonParse<AnthropicStreamData>(frame.data);
@@ -358,10 +400,19 @@ export async function* chatAnthropicStream(
         );
         break;
       }
+      if (kind === "message_start") {
+        // input_tokens 只在這裡出現一次(1.34.0)。這個事件在 1.33.0 之前是被
+        // 略過的 —— 現在它有內容要收,見檔頭的 usage 段。
+        usage = mergeUsage(usage, anthropicUsage(data?.message?.usage));
+        continue;
+      }
       if (kind === "message_delta") {
         if (typeof data?.delta?.stop_reason === "string") {
           stopReason = data.delta.stop_reason;
         }
+        // output_tokens 是**累積值**,所以覆蓋而非相加(mergeUsage);這個事件在
+        // 一次回應裡可能出現多次,只有最後一個算數。
+        usage = mergeUsage(usage, anthropicUsage(data?.usage));
         continue;
       }
       if (typeof data?.index !== "number") continue;
@@ -411,8 +462,9 @@ export async function* chatAnthropicStream(
         }
         continue;
       }
-      // content_block_stop / ping / message_start 與結果無關:tool_use 的 JSON
-      // 一律等整段收完再 parse(見下),不必在 stop 事件上提早做一次。
+      // content_block_stop / ping 與結果無關:tool_use 的 JSON 一律等整段收完再
+      // parse(見下),不必在 stop 事件上提早做一次。(message_start 自 1.34.0
+      // 起有事要做 —— 它帶 input_tokens,已在上面攔下。)
     }
 
     if (upstreamError) {
@@ -461,6 +513,7 @@ export async function* chatAnthropicStream(
           ["end_turn", "stop_sequence"],
         ),
         model,
+        ...(usage ? { usage } : {}),
       },
     };
   } catch (e) {
