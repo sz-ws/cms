@@ -3,6 +3,7 @@ import { buildProviderRegistry } from "@/ext/services";
 import type {
   AiChatOptions,
   AiChatResult,
+  AiChatStreamEvent,
   AiGenerateOptions,
   AiGenerateResult,
   AiProvider,
@@ -58,4 +59,32 @@ export async function chatAiWithTools(
     return { ok: false, error: "tool_use_not_supported" };
   }
   return provider.chat(opts);
+}
+
+// v1.2.1 tool-calling streaming(1.32.0,見 docs/spec-admin-agent.md §3)。
+//
+// 與 generateAiTextStream 的差別在**退回方式**:那邊未實作就回一個
+// streaming_not_supported 錯誤(呼叫端本來就是為串流而來的端點);這邊未實作則
+// 退回呼叫一次非串流 chat(),把結果包成「只有一個 result 事件的 generator」——
+// 因為串流在這裡是**顯示層的加值**,不是功能本身。呼叫端(agent loop)拿到的
+// 一樣是一個 AiChatResult,少的只是逐字長出來的過程,不該因此看到錯誤。
+//
+// 兩層都不支援(連 chat 都沒有)才回 tool_use_not_supported —— 與 chatAiWithTools
+// 同一個錯誤碼,面板的專屬提示因此在串流路徑上照樣成立。
+export async function* chatAiStreamWithTools(
+  opts: AiChatOptions,
+): AsyncGenerator<AiChatStreamEvent> {
+  const provider = await activeAiProvider();
+  if (provider.chatStream) {
+    yield* provider.chatStream(opts);
+    return;
+  }
+  if (!provider.chat) {
+    yield {
+      type: "result",
+      result: { ok: false, error: "tool_use_not_supported" },
+    };
+    return;
+  }
+  yield { type: "result", result: await provider.chat(opts) };
 }

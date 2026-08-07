@@ -6,7 +6,7 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { RingDot } from "@/components/admin/dashboard/RingDot";
-import type { AgentChatOutcome } from "@/ext/agent-loop";
+import type { AgentChatOutcome, AgentLoopEvent } from "@/ext/agent-loop";
 import { Composer } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
 import { ProposalCard } from "./ProposalCard";
@@ -20,6 +20,8 @@ import {
   emptyTranscript,
 } from "./transcript";
 import type { ProposalDecision, TranscriptState } from "./transcript";
+import { applyLoopEvent, emptyStreaming, splitSseFrames } from "./stream";
+import type { StreamingState } from "./stream";
 
 // docs/spec-admin-agent.md §5:/admin/agent 對話面板的本體。
 //
@@ -33,6 +35,15 @@ import type { ProposalDecision, TranscriptState } from "./transcript";
 //
 // 提案處置之後會**自動再打一次 /chat**:tool_result 接回去了,模型還沒看過它。
 // 少了這一步,admin 按下確認之後會看到一個結果卡然後沒有下文。
+//
+// ── 1.32.0:串流 ────────────────────────────────────────────────────────────
+// 送出改帶 `Accept: text/event-stream`,回應逐事件到達(SSE 的切割與顯示狀態都是
+// ./stream.ts 的純函式)。**但 transcript 的來源沒有變**:串流出來的字只進
+// `streaming` 這個暫態 state,transcript 一律等最後那個 outcome 事件、走
+// applyChatOutcome 組裝 —— 收到 outcome 的當下就把暫態整段丟掉換成正式條目。
+//
+// 降級是自然的:回應的 content-type 不是 event-stream(舊 core、中間有代理把它
+// 緩衝掉)就退回讀一次 JSON,兩條路最後都是同一個 AgentChatOutcome。
 
 /** AI 設定所在的 admin 設定頁錨點(SettingsWorkspace 的 sectionAnchorId 慣例)。 */
 const AI_SETTINGS_HREF = "/admin/settings#section-core-ai";
@@ -51,23 +62,43 @@ export function AgentPanel({ tools }: AgentPanelProps) {
   const [busy, setBusy] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [transport, setTransport] = useState<TransportError | null>(null);
+  const [streaming, setStreaming] = useState<StreamingState | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** 進行中的那一次 /chat。開新對話、重新送出、unmount 都要中止它 —— 不中止的話
+   *  一個離開了的畫面仍在 server 上跑 8 步的 loop。 */
+  const abortRef = useRef<AbortController | null>(null);
 
-  // 新內容進來就捲到底。條目數當相依 —— 內容本身是不可變的,新增才需要捲動。
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  // 新內容進來就捲到底。串流中把 behavior 換成 auto:smooth 的動畫時間長於兩個
+  // token 的間隔,連續呼叫會互相打斷,結果是捲不到底。
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [state.entries.length, busy]);
+    bottomRef.current?.scrollIntoView({
+      block: "end",
+      behavior: streaming ? "auto" : "smooth",
+    });
+  }, [state.entries.length, busy, streaming]);
 
   /** 送出目前的 transcript,把回應接上去。永不 throw。 */
   async function runChat(next: TranscriptState): Promise<void> {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setState(next);
     setBusy(true);
     setTransport(null);
+    setStreaming(emptyStreaming());
     try {
       const res = await fetch("/api/admin/agent/chat", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          // 這一個 header 就是「請串流」。server 沒帶它時的行為與 1.31.0 相同。
+          accept: "text/event-stream",
+        },
         body: JSON.stringify({ messages: next.messages }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         setTransport(
@@ -79,12 +110,29 @@ export function AgentPanel({ tools }: AgentPanelProps) {
         );
         return;
       }
-      const outcome = (await res.json()) as AgentChatOutcome;
+      const outcome = await readChatResponse(res, (event) =>
+        setStreaming((prev) => (prev ? applyLoopEvent(prev, event) : prev)),
+      );
+      if (!outcome) {
+        // 串流結束卻沒有 outcome —— 對 transcript 而言什麼都沒發生(server 那邊
+        // 可能已經做了事,但我們接不回來)。當傳輸層失敗處理,不亂接一段內容。
+        setTransport("unknown");
+        return;
+      }
       setState((prev) => applyChatOutcome(prev, outcome));
-    } catch {
-      setTransport("network");
+    } catch (e) {
+      // 自己按下的中止不是錯誤(開新對話 / 離開頁面)。
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        setTransport("network");
+      }
     } finally {
-      setBusy(false);
+      // 只有「還是當前這一次」才收尾。被後來的一次取代時,busy/streaming 屬於
+      // 那一次,清掉會讓新的請求看起來已經結束。
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setStreaming(null);
+        setBusy(false);
+      }
     }
   }
 
@@ -134,8 +182,11 @@ export function AgentPanel({ tools }: AgentPanelProps) {
 
   function onNewChat(): void {
     if (busy || executing) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
     setState(emptyTranscript());
     setTransport(null);
+    setStreaming(null);
   }
 
   const locked = state.pending !== null;
@@ -192,6 +243,15 @@ export function AgentPanel({ tools }: AgentPanelProps) {
             }
           })}
 
+          {/* 進行中的一輪。**暫態** —— outcome 一到就整段換成上面的正式條目
+              (見檔頭與 stream.ts)。 */}
+          {streaming && streaming.text.trim().length > 0 && (
+            <MessageBubble variant="assistant" label={t("agent.assistant")} streaming>
+              {streaming.text}
+            </MessageBubble>
+          )}
+          {streaming?.status && <StreamStatus status={streaming.status} step={streaming.step} />}
+
           {transport && <TransportNotice code={transport} />}
           <div ref={bottomRef} />
         </div>
@@ -218,6 +278,91 @@ export function AgentPanel({ tools }: AgentPanelProps) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 讀一次 /chat 的回應,回傳 outcome(讀不到 outcome 時回 null)。
+ *
+ * 兩種形狀:
+ *   · `text/event-stream` → 逐 frame 讀,過程事件交給 onEvent,`event: outcome`
+ *     是最後一個。frame 邊界不保證對齊 chunk,所以 buffer 由 splitSseFrames 切
+ *     (那支函式有測試釘住切點)。
+ *   · 其他 → 讀一次 JSON。舊版 server、或中間有代理把串流整包緩衝掉時的自然降級。
+ *
+ * 刻意不用 EventSource:它只會 GET,而這個端點是帶 body 的 POST。
+ */
+async function readChatResponse(
+  res: Response,
+  onEvent: (event: AgentLoopEvent) => void,
+): Promise<AgentChatOutcome | null> {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream") || !res.body) {
+    return (await res.json()) as AgentChatOutcome;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let outcome: AgentChatOutcome | null = null;
+
+  const take = (chunk: string): void => {
+    buffer += chunk;
+    const { frames, rest } = splitSseFrames(buffer);
+    buffer = rest;
+    for (const frame of frames) {
+      // 壞掉的一個 frame 不該中斷整條串流:跳過它,後面的照收。
+      let data: unknown;
+      try {
+        data = JSON.parse(frame.data);
+      } catch {
+        continue;
+      }
+      if (frame.event === "outcome") {
+        outcome = data as AgentChatOutcome;
+        continue;
+      }
+      onEvent(data as AgentLoopEvent);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      take(decoder.decode(value, { stream: true }));
+    }
+    take(decoder.decode());
+  } finally {
+    reader.releaseLock();
+  }
+  return outcome;
+}
+
+/**
+ * 串流中的狀態行。**靜態文字**,沒有任何會動的東西 —— pulsing / 呼吸 /
+ * 打字游標閃爍是 docs/admin-design-language.md 的紅線。等待的語彙沿用面板既有的
+ * RingDot + 一句話。
+ */
+function StreamStatus({
+  status,
+  step,
+}: {
+  status: NonNullable<StreamingState["status"]>;
+  step: number;
+}) {
+  const t = useT();
+  const label =
+    status.kind === "tool"
+      ? t("agent.stream.usingTool", { name: status.name })
+      : step > 1
+        ? t("agent.stream.thinkingStep", { step })
+        : t("agent.stream.thinking");
+  return (
+    <p className="flex items-center gap-2 text-[12.5px] text-black/40">
+      <RingDot />
+      <span className="truncate">{label}</span>
+    </p>
   );
 }
 

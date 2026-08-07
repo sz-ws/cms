@@ -5,6 +5,7 @@ import {
   ANTHROPIC_VERSION,
   GENERATE_TIMEOUT_MS,
   OPENAI_DEFAULT_BASE_URL,
+  parseSseStream,
   resolveMaxTokens,
   safeJsonParse,
   truncate,
@@ -13,6 +14,7 @@ import {
   type AiMode,
 } from "./ai-shared";
 import { chatAnthropic, chatOpenAi, chatWorkersAi } from "./ai-chat";
+import { chatAnthropicStream, chatOpenAiStream } from "./ai-chat-stream";
 
 // core ai:generate capability(docs/spec-ai-capability.md)。
 //
@@ -24,11 +26,13 @@ import { chatAnthropic, chatOpenAi, chatWorkersAi } from "./ai-chat";
 //
 // v1 明確排除(見 spec「不做」段;streaming 已於 v1.1 追加——見
 // docs/spec-ai-capability.md streaming 附錄 + 本檔 generateStream();tool use 已於
-// v1.2 追加——見 docs/spec-admin-agent.md §3 + 本檔 chat() 與 ./ai-chat.ts):
+// v1.2 追加——見 docs/spec-admin-agent.md §3 + 本檔 chat() 與 ./ai-chat.ts;
+// tool-calling streaming 已於 v1.2.1 追加——見 docs/spec-admin-agent.md §3.1 +
+// 本檔 chatStream() 與 ./ai-chat-stream.ts):
 // 圖像/多模態、embeddings、多組設定檔 / per-extension key。
 //
-// 共用內部件(逾時預算/錯誤摘要/maxTokens clamp/預設 baseUrl)住 ./ai-shared.ts,
-// generate 與 chat 兩條路徑共享同一份規則。
+// 共用內部件(逾時預算/錯誤摘要/maxTokens clamp/預設 baseUrl/SSE 框解析)住
+// ./ai-shared.ts,generate 與 chat 兩條路徑共享同一份規則。
 
 export interface AiMessage {
   role: "system" | "user" | "assistant";
@@ -69,12 +73,17 @@ export type {
   AiChatOptions,
   AiChatResult,
   AiChatStopReason,
+  AiChatStreamEvent,
   AiChatToolUse,
   AiToolDef,
 } from "./ai-chat";
 export { toAssistantMessage, toWireToolName } from "./ai-chat";
 
-import type { AiChatOptions, AiChatResult } from "./ai-chat";
+import type {
+  AiChatOptions,
+  AiChatResult,
+  AiChatStreamEvent,
+} from "./ai-chat";
 
 export interface AiProvider {
   generate(opts: AiGenerateOptions): Promise<AiGenerateResult>;
@@ -85,71 +94,12 @@ export interface AiProvider {
    *  未實作的 provider 由呼叫端(src/lib/ai.ts)退回
    *  `{ok:false, error:"tool_use_not_supported"}`,永不 throw。 */
   chat?(opts: AiChatOptions): Promise<AiChatResult>;
-}
-
-interface SseFrame {
-  /** anthropic 用具名事件(`event: content_block_delta` 等);openai/workers-ai
-   * 的 frame 只有 data 行,event 為 undefined。 */
-  event?: string;
-  data: string;
-}
-
-/** 把單一 SSE frame(`\n\n` 分隔的一段)解析成 { event?, data }。多個 data 行
- * 依 SSE 規範以 "\n" 接回;無 data 行(純 comment/其他欄位)回 null。 */
-function parseSseFrame(raw: string): SseFrame | null {
-  let event: string | undefined;
-  const dataLines: string[] = [];
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("event:")) {
-      event = line.slice(6).trim();
-    } else if (line.startsWith("data:")) {
-      dataLines.push(line.slice(5).trim());
-    }
-    // 其餘欄位(id: / retry: / 純 comment ":")與本檔三種 provider 皆無關,略過。
-  }
-  if (dataLines.length === 0) return null;
-  return { event, data: dataLines.join("\n") };
-}
-
-/** 共用 SSE 串流解析器:openai / anthropic / workers-ai 三種 provider 的 SSE
- * 回應皆由此驅動(見各自 generateXxxStream)。frame 之間可能跨多次 TextDecoder
- * read 才湊齊,因此用 buffer 累積、以 "\n\n" 切 frame,絕不假設一次 read 剛好對齊
- * frame 邊界。
- *
- * deadlineAt 提供時(只有 workers-ai 傳):每次 reader.read() 都對同一個絕對時間點
- * 扣時,逾時 reject Error("timeout")。openai/anthropic 不傳 —— 這兩者的逾時已由
- * fetch 的 AbortController 覆蓋(abort 會讓進行中的 reader.read() reject
- * AbortError),無需在此重複計時。 */
-async function* parseSseStream(
-  body: ReadableStream<Uint8Array>,
-  deadlineAt?: number,
-): AsyncGenerator<SseFrame> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    for (;;) {
-      const { done, value } = deadlineAt
-        ? await withDeadline(reader.read(), deadlineAt)
-        : await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-      let idx: number;
-      while ((idx = buffer.indexOf("\n\n")) !== -1) {
-        const rawFrame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const frame = parseSseFrame(rawFrame);
-        if (frame) yield frame;
-      }
-    }
-    buffer += decoder.decode().replace(/\r\n/g, "\n");
-    if (buffer.trim().length > 0) {
-      const frame = parseSseFrame(buffer);
-      if (frame) yield frame;
-    }
-  } finally {
-    reader.releaseLock();
-  }
+  /** 選填:v1.2.1 tool-calling streaming(1.32.0,見 docs/spec-admin-agent.md §3)。
+   *  完全鏡射 generateStream 的慣例 —— 加選用方法、不動既有介面。最後一個事件
+   *  **恆為** `{type:"result"}`,其 AiChatResult 與 chat() 對同一回應算出的完全
+   *  一致;未實作的 provider 由呼叫端(src/lib/ai.ts 的 chatAiStreamWithTools)
+   *  以 chat() 包成單一 result 事件,呼叫端無感。 */
+  chatStream?(opts: AiChatOptions): AsyncGenerator<AiChatStreamEvent>;
 }
 
 export class CoreAiProvider implements AiProvider {
@@ -217,6 +167,40 @@ export class CoreAiProvider implements AiProvider {
     if (mode === "anthropic") return chatAnthropic(opts, model, maxTokens);
     if (mode === "workers-ai") return chatWorkersAi(opts, model, maxTokens);
     return { ok: false, error: "not_configured" };
+  }
+
+  /** v1.2.1 tool-calling streaming(1.32.0)。前置檢查與 chat() 一字不差,差別只在
+   * 「未設定」時 yield 單一 result 事件而非 return —— 同樣永不 throw,而且**最後
+   * 一個事件恆為 result**,呼叫端只要讀到 result 就一定拿得到與 chat() 同形狀的
+   * AiChatResult。
+   *
+   * workers-ai 刻意不實作串流:它的 tool-calling 本來就是「試打失敗就退
+   * tool_use_not_supported」的盡力而為(見 ai-chat.ts chatWorkersAi),`ai.run()`
+   * 的串流回應也不帶 tool_calls 增量。這裡退回呼叫一次非串流 chat() 並包成單一
+   * result 事件 —— 使用者看到的是「沒有逐字長出來,但答案照樣出現」,而不是一句
+   * 「不支援串流」的錯誤。介面上仍是同一個 generator,呼叫端不必分支。 */
+  async *chatStream(opts: AiChatOptions): AsyncGenerator<AiChatStreamEvent> {
+    const mode = await getSetting<AiMode>("core.ai.mode", "off");
+    const model = await getSetting<string>("core.ai.model", "");
+    if (mode === "off" || !model) {
+      yield { type: "result", result: { ok: false, error: "not_configured" } };
+      return;
+    }
+    const maxTokens = resolveMaxTokens(opts.maxTokens);
+
+    if (mode === "openai") {
+      yield* chatOpenAiStream(opts, model, maxTokens);
+      return;
+    }
+    if (mode === "anthropic") {
+      yield* chatAnthropicStream(opts, model, maxTokens);
+      return;
+    }
+    if (mode === "workers-ai") {
+      yield { type: "result", result: await chatWorkersAi(opts, model, maxTokens) };
+      return;
+    }
+    yield { type: "result", result: { ok: false, error: "not_configured" } };
   }
 
   private async generateOpenAi(

@@ -7,11 +7,19 @@ import type {
   AiChatContentBlock,
   AiChatMessage,
 } from "@/ext/providers/ai";
+import type { AgentChatOutcome, AgentLoopEvent } from "@/ext/agent-loop";
 
 // docs/spec-admin-agent.md §4:agent loop 的入口。
 //
 //   POST /api/admin/agent/chat   admin session + same-origin
 //   body: { messages }           ← transcript 由前端持有,server stateless
+//
+// 兩種回應形狀,由請求端的 Accept 決定(1.32.0):
+//   · 預設 → 單一 JSON body,就是 AgentChatOutcome。
+//   · `Accept: text/event-stream` → SSE。過程事件逐一送出,**最後一個事件是
+//     `event: outcome`,payload 與 JSON 模式的 body 是同一個物件**。
+// 兩條路共用同一段 guard 與同一次 runAgentChat 呼叫;差別只在「怎麼把結果交出去」。
+// 沒帶那個 Accept 的呼叫端行為與 1.31.0 一字不差。
 //
 // guard 順序照既有 admin mutation 慣例(/api/ai/generate、tokens、media-upload):
 // same-origin → requireAuth("admin") → rate limit → body 上限 → zod。
@@ -184,14 +192,91 @@ export async function POST(req: Request): Promise<Response> {
     loadAgentSystemPrompt(locale),
   ]);
 
-  const outcome = await runAgentChat({
+  const params = {
     messages,
     system,
     registry,
     ctx: { user, services },
     locale,
-  });
+  };
+
+  if (wantsEventStream(req)) {
+    return sseResponse((onEvent) =>
+      // signal:client 關掉分頁/按下開新對話時,loop 在下一步就停,不再打上游。
+      runAgentChat({ ...params, onEvent, signal: req.signal }),
+    );
+  }
+
+  const outcome = await runAgentChat(params);
   // 上游/工具層的失敗一律以 200 + status:"error" 透傳(同 /api/ai/generate 的
   // 「provider 結果被動透傳」哲學):HTTP 層只表達「這個請求本身有沒有被接受」。
   return Response.json(outcome);
+}
+
+/** 只認明確的 `text/event-stream` 子字串。不接受萬用的 accept-all 值 —— 拿它當判準
+ *  會讓每一個既有呼叫端在毫無改動的情況下換到另一種回應形狀。 */
+function wantsEventStream(req: Request): boolean {
+  return (req.headers.get("accept") ?? "").includes("text/event-stream");
+}
+
+/**
+ * 把一次 runAgentChat 包成 SSE。
+ *
+ * 契約(前端的 SSE parser 依此而寫):
+ *   · 每個過程事件 → `event: <AgentLoopEvent.type>` + `data: <該事件的 JSON>`
+ *   · **最後一個** → `event: outcome` + `data: <AgentChatOutcome 的 JSON>`,然後關流
+ *
+ * outcome 送的是 runAgentChat 原樣回傳的物件 —— 與 JSON 模式**同一個值**,不是
+ * 「為串流另外整理過的版本」。前端的 transcript 因此只認 outcome 一個來源
+ * (components/admin/agent/transcript.ts 的鐵律),delta 純屬暫態顯示。
+ *
+ * client 斷線:`req.signal` 傳進 loop(步間檢查,不再打下一次上游),同時 enqueue
+ * 本身會 throw(controller 已關),故一律吞掉 —— 對著一條沒人聽的流報錯沒有意義。
+ */
+function sseResponse(
+  run: (onEvent: (event: AgentLoopEvent) => void) => Promise<AgentChatOutcome>,
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, data: unknown): void => {
+        try {
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+          );
+        } catch {
+          // client 已斷線。loop 會在下一步的 signal 檢查停下來。
+        }
+      };
+      try {
+        const outcome = await run((event) => send(event.type, event));
+        send("outcome", outcome);
+      } catch (e) {
+        // runAgentChat 永不 throw(該函式的註解),這是保底:少了它,一個意外的
+        // 例外會變成「串流開著、永遠不送 outcome」,前端就一直轉。
+        send("outcome", {
+          status: "error",
+          error: e instanceof Error ? e.message : "stream_error",
+          appended: [],
+          steps: 0,
+          toolCalls: [],
+        } satisfies AgentChatOutcome);
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          // 已因斷線關閉。
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      // 反向代理(nginx 等)預設會緩衝 upstream 回應,逐字送出就全白費。
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

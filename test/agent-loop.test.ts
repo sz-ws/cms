@@ -47,6 +47,7 @@ import {
   runAgentChat,
   toAiToolDefs,
 } from "../src/ext/agent-loop";
+import type { AgentLoopEvent } from "../src/ext/agent-loop";
 import {
   AgentToolRegistryImpl,
   defineAgentTool,
@@ -60,6 +61,7 @@ import type { AgentPromptContentType } from "../src/ext/agent-prompt";
 import type {
   AiChatOptions,
   AiChatResult,
+  AiChatStreamEvent,
 } from "../src/ext/providers/ai";
 import { invalidateSettingsCache } from "../src/lib/settings";
 import { z } from "zod";
@@ -845,5 +847,288 @@ describe("proposal.summary:AgentTool.summarize(1.31.0)", () => {
     const summary = await summaryOf(registryWith(() => "字".repeat(600)), "zh-Hant");
     expect(summary.endsWith("…")).toBe(true);
     expect(summary.length).toBeLessThan(400);
+  });
+});
+
+// =========================================================== 過程事件(1.32.0)
+
+// docs/spec-admin-agent.md §3.1:onEvent 是**唯一**的新行為開關。這一組測試的
+// 重點有兩個:(a) 事件的順序與內容真的反映 loop 在做什麼;(b) **不給 onEvent 時
+// 一切照舊** —— 那是這個 minor bump 對既有呼叫端的承諾。
+
+/** 依序回傳事件序列的假 chatStream。calls 記錄每次收到的 opts。 */
+function scriptedChatStream(scripts: AiChatStreamEvent[][]): {
+  chatStream: (opts: AiChatOptions) => AsyncGenerator<AiChatStreamEvent>;
+  calls: AiChatOptions[];
+} {
+  const calls: AiChatOptions[] = [];
+  return {
+    calls,
+    chatStream: async function* (opts) {
+      calls.push(opts);
+      const script = scripts[calls.length - 1] ?? scripts[scripts.length - 1]!;
+      for (const event of script) yield event;
+    },
+  };
+}
+
+const USER_ASK = [
+  { role: "user" as const, content: [{ type: "text" as const, text: "查一下" }] },
+];
+
+describe("loop 過程事件(AgentChatParams.onEvent,1.32.0)", () => {
+  it("事件順序:step → delta → tool → tool_done → step → delta", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChatStream([
+      [
+        { type: "text_delta", text: "我先" },
+        { type: "text_delta", text: "查一下" },
+        {
+          type: "result",
+          result: toolUseResult("test.thing.list", {}, "我先查一下"),
+        },
+      ],
+      [
+        { type: "text_delta", text: "查到了" },
+        { type: "result", result: FINAL },
+      ],
+    ]);
+    const events: AgentLoopEvent[] = [];
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(outcome.status).toBe("text");
+    expect(events).toEqual([
+      { type: "step", step: 1 },
+      { type: "text_delta", text: "我先" },
+      { type: "text_delta", text: "查一下" },
+      { type: "tool", name: "test.thing.list" },
+      { type: "tool_done", name: "test.thing.list", ok: true },
+      { type: "step", step: 2 },
+      { type: "text_delta", text: "查到了" },
+    ]);
+    // 串流路徑跑的是同一個 loop:tool 真的執行了,audit 照記。
+    expect(fakes.readRun).toHaveBeenCalledTimes(1);
+    expect(await auditRows()).toHaveLength(1);
+  });
+
+  it("write 提案:仍然是提案,而且不會發出 tool/tool_done(什麼都沒跑)", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChatStream([
+      [
+        { type: "text_delta", text: "我來建一筆。" },
+        {
+          type: "result",
+          result: toolUseResult("test.thing.create", { id: "x1" }, "我來建一筆。"),
+        },
+      ],
+    ]);
+    const events: AgentLoopEvent[] = [];
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(outcome.status).toBe("proposal");
+    expect(events.map((e) => e.type)).toEqual(["step", "text_delta"]);
+    expect(fakes.writeRun).not.toHaveBeenCalled();
+    expect(await writeRowCount()).toBe(0);
+  });
+
+  it("tool 失敗 → tool_done 帶 ok:false;幻覺 tool 名也照發", async () => {
+    const fakes = makeFakes();
+    fakes.readRun.mockRejectedValueOnce(new Error("boom"));
+    const script = scriptedChatStream([
+      [{ type: "result", result: toolUseResult("test.thing.list", {}) }],
+      [{ type: "result", result: toolUseResult("test.nope.list", {}) }],
+      [{ type: "result", result: FINAL }],
+    ]);
+    const events: AgentLoopEvent[] = [];
+
+    await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(events.filter((e) => e.type === "tool_done")).toEqual([
+      { type: "tool_done", name: "test.thing.list", ok: false },
+      { type: "tool_done", name: "test.nope.list", ok: false },
+    ]);
+  });
+
+  it("provider 沒有 chatStream(只注入 chat)→ 只發 step/tool 事件,沒有 delta", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([
+      toolUseResult("test.thing.list", {}),
+      FINAL,
+    ]);
+    const events: AgentLoopEvent[] = [];
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(outcome.status).toBe("text");
+    expect(events).toEqual([
+      { type: "step", step: 1 },
+      { type: "tool", name: "test.thing.list" },
+      { type: "tool_done", name: "test.thing.list", ok: true },
+      { type: "step", step: 2 },
+    ]);
+    // 這已經是 UX 的主要收益:多步 loop 不再是整段黑箱。
+    expect(events.some((e) => e.type === "text_delta")).toBe(false);
+  });
+
+  it("chatStream 結束卻沒有 result → status:'error',不是拿 undefined 往下算", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChatStream([[{ type: "text_delta", text: "半句" }]]);
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: () => {},
+    });
+
+    expect(outcome).toMatchObject({
+      status: "error",
+      error: "stream_ended_without_result",
+    });
+  });
+
+  it("onEvent throw 被吞掉 —— 顯示層壞掉不准連累一輪已經在跑的對話", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChatStream([
+      [
+        { type: "text_delta", text: "查" },
+        { type: "result", result: toolUseResult("test.thing.list", {}) },
+      ],
+      [{ type: "result", result: FINAL }],
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: () => {
+        throw new Error("render blew up");
+      },
+    });
+
+    expect(outcome.status).toBe("text");
+    if (outcome.status !== "text") throw new Error("unreachable");
+    expect(outcome.text).toBe("done");
+    expect(fakes.readRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("signal 已 abort → 一次上游都不打", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChatStream([[{ type: "result", result: FINAL }]]);
+    const controller = new AbortController();
+    controller.abort();
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: () => {},
+      signal: controller.signal,
+    });
+
+    expect(outcome).toMatchObject({ status: "error", error: "aborted", steps: 0 });
+    expect(script.calls).toHaveLength(0);
+  });
+
+  it("跑到一半 abort → 下一步不再打上游", async () => {
+    const fakes = makeFakes();
+    const controller = new AbortController();
+    const script = scriptedChatStream([
+      [{ type: "result", result: toolUseResult("test.thing.list", {}) }],
+      [{ type: "result", result: FINAL }],
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      // 第一步的工具跑完就當作 client 斷線。
+      onEvent: (e) => {
+        if (e.type === "tool_done") controller.abort();
+      },
+      signal: controller.signal,
+    });
+
+    expect(outcome).toMatchObject({ status: "error", error: "aborted" });
+    expect(script.calls).toHaveLength(1);
+  });
+
+  it("**沒給 onEvent** → 走非串流 chat(),chatStream 一次都不碰,outcome 一字未改", async () => {
+    const fakes = makeFakes();
+    const chatScript = scriptedChat([
+      toolUseResult("test.thing.list", {}),
+      FINAL,
+    ]);
+    const streamScript = scriptedChatStream([
+      [{ type: "result", result: FINAL }],
+    ]);
+
+    const withoutEvents = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: chatScript.chat,
+      chatStream: streamScript.chatStream,
+    });
+
+    // chatStream 被傳進來了,但沒有 onEvent 就不會被用到。
+    expect(streamScript.calls).toHaveLength(0);
+    expect(chatScript.calls).toHaveLength(2);
+
+    // 同一份腳本走串流路徑,outcome 必須完全相同(事件不改變結果)。
+    const fakes2 = makeFakes();
+    const streamScript2 = scriptedChatStream([
+      [{ type: "result", result: toolUseResult("test.thing.list", {}) }],
+      [{ type: "result", result: FINAL }],
+    ]);
+    const withEvents = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes2.registry,
+      ctx: CTX,
+      chatStream: streamScript2.chatStream,
+      onEvent: () => {},
+    });
+
+    expect(withEvents).toEqual(withoutEvents);
   });
 });

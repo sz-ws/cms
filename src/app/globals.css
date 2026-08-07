@@ -5,6 +5,11 @@
 @import "tailwindcss" source(none);
 @source "../";
 @source "../../extensions";
+/* streamdown(admin AI 面板的 markdown 渲染,src/components/admin/agent/
+   MessageBubble.tsx)把 utility class 烤進自己的 dist,不掃它就等於沒有樣式。
+   路徑刻意指到單一套件的 dist 而不是放寬上面的 source(none) —— 那條規則存在
+   的理由(見檔頭)一個字都沒有改變。 */
+@source "../../node_modules/streamdown/dist/*.js";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
@@ -207,4 +212,72 @@
   &::-webkit-scrollbar {
     display: none;
   }
+}
+/* --- admin AI 面板的 markdown(streamdown)---------------------------------
+   streamdown 的預設樣式是給「文件檢視器」尺度的:h1 是 text-3xl、每個區塊
+   my-4、清單 list-inside。放進一個 14px、行高 1.7 的對話裡會整個跳出去。
+
+   顏色不必碰 —— 它用的是 shadcn token(border-border / bg-muted / text-primary
+   …),那些 token 在本檔上方已經 remap 成 Paper & Ink。這裡只收「尺度」:
+   標題降到與內文同一個級距(對話裡的標題是分段,不是章名)、垂直節奏收半、
+   清單改 outside 讓第二行對齊首字。
+
+   選擇器走 streamdown 自己標的 data-streamdown,而不是 .agent-markdown h1 ——
+   那些屬性是它公開的 hook,元素標籤則會隨版本改。 */
+.agent-markdown > :first-child {
+  margin-top: 0;
+}
+
+.agent-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-markdown [data-streamdown^="heading-"] {
+  margin-top: 1.25em;
+  margin-bottom: 0.35em;
+  font-size: 1em;
+  line-height: 1.5;
+}
+
+.agent-markdown [data-streamdown="heading-1"],
+.agent-markdown [data-streamdown="heading-2"] {
+  font-size: 1.08em;
+}
+
+.agent-markdown p,
+.agent-markdown [data-streamdown="unordered-list"],
+.agent-markdown [data-streamdown="ordered-list"],
+.agent-markdown [data-streamdown="blockquote"],
+.agent-markdown [data-streamdown="table-wrapper"],
+.agent-markdown [data-streamdown="code-block"] {
+  margin-top: 0.6em;
+  margin-bottom: 0.6em;
+}
+
+/* list-inside 會讓換行的第二行縮回符號底下;outside + padding 才對得齊。
+   streamdown 另外掛了 [li_&]:pl-6 處理巢狀,故只調外層。 */
+.agent-markdown [data-streamdown="unordered-list"],
+.agent-markdown [data-streamdown="ordered-list"] {
+  list-style-position: outside;
+  padding-left: 1.35em;
+}
+
+.agent-markdown [data-streamdown="list-item"] {
+  margin-top: 0.15em;
+  margin-bottom: 0.15em;
+}
+
+.agent-markdown [data-streamdown="inline-code"],
+.agent-markdown [data-streamdown="code-block"] {
+  font-size: 0.9em;
+}
+
+.agent-markdown [data-streamdown="table-header-cell"],
+.agent-markdown [data-streamdown="table-cell"] {
+  padding: 0.35em 0.6em;
+  font-size: 0.92em;
+}
+
+.agent-markdown [data-streamdown="link"] {
+  text-underline-offset: 2px;
 }

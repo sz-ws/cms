@@ -481,4 +481,36 @@
 //   consume `summarize` 的 code extension 應宣告 coreApi "^1.31.0":更舊的 core 上
 //   defineExtension 的 agentToolSchema 沒有這個欄位,而 agent-loop 也不會呼叫它 ——
 //   結果是摘要安靜地退回英文推導版,沒有任何錯誤訊息。
-export const CORE_API_VERSION = "1.31.0";
+// 1.32.0(docs/spec-admin-agent.md §3:tool-calling streaming;§5:面板串流):
+//   - AiProvider 新增選用方法 `chatStream?(opts: AiChatOptions):
+//     AsyncGenerator<AiChatStreamEvent>`(src/ext/providers/ai.ts)。純新增、選用 →
+//     minor bump,完全比照 1.28.0 的 generateStream 與 1.29.0 的 chat:**既有介面
+//     一個字都不動**,generate / generateStream / chat 的行為零變更。
+//   - 事件只有兩種(ai-chat.ts 的 AiChatStreamEvent):`text_delta` 與 `result`,
+//     而 `result` **恆為最後一個事件、且恆會出現**。上游 4xx、逾時、斷流全部收斂成
+//     `{ok:false, error}` 的 result —— generator 永不 throw,錯誤紀律與 chat() 一字
+//     不差(60s 整體預算、摘要截 200 字、絕不含 apiKey)。
+//   - 硬性保證:**chatStream 的 result 與 chat() 對同一個上游回應算出的
+//     AiChatResult 完全一致**(有測試對同一份假回應同時跑兩條路比對)。實作因此
+//     共用 ai-chat.ts 的 toWireChat / toOpenAiMessages / toAnthropicBlock /
+//     normalizeStopReason / parseToolArguments —— 尤其 **wire tool 名的換名規則兩條
+//     路一模一樣**,否則 transcript 重送時前後兩次請求的 tool 名會對不上。
+//     串流實作住新檔 src/ext/providers/ai-chat-stream.ts(ai-chat.ts 已近 650 行);
+//     SSE 的「框」解析從 ai.ts 搬到 ai-shared.ts 共用(純搬移,generate 側零變更)。
+//   - **只有 openai 與 anthropic 實作串流**。workers-ai 的 chatStream 退回呼叫一次
+//     非串流 chatWorkersAi 並包成單一 result 事件:它的 tool calling 本來就是盡力
+//     而為,而使用者該看到的是「沒有逐字長出來,但答案照樣出現」,不是一句
+//     「不支援串流」。第三方 provider 完全不實作 chatStream 也合法 —— 呼叫端
+//     (src/lib/ai.ts 的 chatAiStreamWithTools)以 chat() 包成單一 result 事件,
+//     兩層都沒有才回 tool_use_not_supported。
+//   - agent-loop 的 AgentChatParams 新增三個選填欄位:`onEvent`(過程事件:
+//     step / text_delta / tool / tool_done)、`chatStream`(串流注入點)、`signal`
+//     (client 斷線時步間停止)。**onEvent 省略時 loop 的行為與 1.31.0 逐位元相同**
+//     —— 走非串流 chat()、不發事件、outcome 形狀一字未改。onEvent 自己 throw 會被
+//     吞掉:顯示層壞掉不准連累一輪已經在跑的對話。
+//   - /api/admin/agent/chat 依 `Accept: text/event-stream` 改回 SSE(過程事件 +
+//     最後一個 `event: outcome`,payload **就是** JSON 模式的同一個物件)。沒帶那個
+//     Accept 的呼叫端行為完全不變,auth / same-origin / rate limit 一律未動。
+//   consume `chatStream` 的 code extension 應宣告 coreApi "^1.32.0";更舊的 core 上
+//   該方法不存在,呼叫端會安靜地退回非串流路徑(沒有錯誤訊息的降級),所以務必宣告。
+export const CORE_API_VERSION = "1.32.0";

@@ -697,6 +697,11 @@ export const en = {
   "agent.proposal.cancelled": "Cancelled — nothing was run",
   "agent.proposal.resultLabel": "Result",
 
+  // in-flight status line (static text; design red line: no pulsing indicators)
+  "agent.stream.thinking": "Thinking…",
+  "agent.stream.thinkingStep": "Thinking… (step {step})",
+  "agent.stream.usingTool": "Using {name}…",
+
   // notices
   "agent.maxSteps": "Step limit reached. Here is where it got to.",
   "agent.error.toolUseNotSupported":

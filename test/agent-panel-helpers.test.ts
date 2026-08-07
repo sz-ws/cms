@@ -215,3 +215,138 @@ describe("確認卡的參數表", () => {
     expect(flattenArgs(undefined)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 串流層(stream.ts,1.32.0)
+// ---------------------------------------------------------------------------
+
+// docs/spec-admin-agent.md §3.1。這一組的錯誤模式比上面兩組更隱蔽:SSE 的 frame
+// 邊界不保證對齊網路 chunk,而「大部分時候剛好對齊」讓漏字只在正式環境的長回覆裡
+// 偶爾出現。眼睛驗不出來,只能用測試釘。
+
+import { applyLoopEvent, emptyStreaming, splitSseFrames } from "../src/components/admin/agent/stream";
+import type { AgentLoopEvent } from "../src/ext/agent-loop";
+
+describe("SSE frame 切割", () => {
+  it("完整的 frame 全部切出來,沒有殘段", () => {
+    const { frames, rest } = splitSseFrames(
+      'event: step\ndata: {"type":"step","step":1}\n\nevent: outcome\ndata: {"status":"text"}\n\n',
+    );
+    expect(frames).toEqual([
+      { event: "step", data: '{"type":"step","step":1}' },
+      { event: "outcome", data: '{"status":"text"}' },
+    ]);
+    expect(rest).toBe("");
+  });
+
+  it("沒收尾的那一段留在 rest,不被當成完整 frame", () => {
+    const { frames, rest } = splitSseFrames(
+      'event: step\ndata: {"type":"step","step":1}\n\nevent: text_delta\ndata: {"ty',
+    );
+    expect(frames).toHaveLength(1);
+    expect(rest).toBe('event: text_delta\ndata: {"ty');
+  });
+
+  it("一個 frame 被切成兩次抵達 —— 接上 rest 再切就完整(這是本模組存在的理由)", () => {
+    const whole = 'event: text_delta\ndata: {"type":"text_delta","text":"你好"}\n\n';
+    for (let cut = 1; cut < whole.length; cut++) {
+      const first = splitSseFrames(whole.slice(0, cut));
+      const second = splitSseFrames(first.rest + whole.slice(cut));
+      const frames = [...first.frames, ...second.frames];
+      expect(frames).toEqual([
+        { event: "text_delta", data: '{"type":"text_delta","text":"你好"}' },
+      ]);
+      expect(second.rest).toBe("");
+    }
+  });
+
+  it("CRLF 也切得開(某些代理會改寫換行)", () => {
+    const { frames } = splitSseFrames('event: step\r\ndata: {"a":1}\r\n\r\n');
+    expect(frames).toEqual([{ event: "step", data: '{"a":1}' }]);
+  });
+
+  it("沒有 data 行的 frame(comment / 心跳)略過,不當成事件", () => {
+    const { frames } = splitSseFrames(': keep-alive\n\nevent: step\ndata: {"a":1}\n\n');
+    expect(frames).toEqual([{ event: "step", data: '{"a":1}' }]);
+  });
+
+  it("多個 data 行依規範以 \\n 接回", () => {
+    const { frames } = splitSseFrames("event: x\ndata: {\ndata: }\n\n");
+    expect(frames[0].data).toBe("{\n}");
+  });
+
+  it("沒有 event 行 → 預設 \"message\"(不吞掉非預期的 frame)", () => {
+    const { frames } = splitSseFrames('data: {"a":1}\n\n');
+    expect(frames).toEqual([{ event: "message", data: '{"a":1}' }]);
+  });
+
+  it("空 buffer → 什麼都沒有", () => {
+    expect(splitSseFrames("")).toEqual({ frames: [], rest: "" });
+  });
+});
+
+describe("串流顯示狀態", () => {
+  const fold = (events: AgentLoopEvent[]) =>
+    events.reduce(applyLoopEvent, emptyStreaming());
+
+  it("delta 累積成文字,狀態行讓位給文字本身", () => {
+    const state = fold([
+      { type: "step", step: 1 },
+      { type: "text_delta", text: "你" },
+      { type: "text_delta", text: "好" },
+    ]);
+    expect(state).toEqual({ text: "你好", step: 1, status: null });
+  });
+
+  it("工具開始/結束切換狀態行,不動已經長出來的文字", () => {
+    const running = fold([
+      { type: "step", step: 1 },
+      { type: "text_delta", text: "先查一下" },
+      { type: "tool", name: "shop.orders.list" },
+    ]);
+    expect(running).toEqual({
+      text: "先查一下",
+      step: 1,
+      status: { kind: "tool", name: "shop.orders.list" },
+    });
+
+    const done = applyLoopEvent(running, {
+      type: "tool_done",
+      name: "shop.orders.list",
+      ok: true,
+    });
+    expect(done.text).toBe("先查一下");
+    expect(done.status).toEqual({ kind: "thinking" });
+  });
+
+  it("新的一步:已說過的話留著,補一個空行分段(不清空)", () => {
+    const state = fold([
+      { type: "step", step: 1 },
+      { type: "text_delta", text: "先查一下" },
+      { type: "tool", name: "shop.orders.list" },
+      { type: "tool_done", name: "shop.orders.list", ok: true },
+      { type: "step", step: 2 },
+      { type: "text_delta", text: "查到三筆。" },
+    ]);
+    expect(state.text).toBe("先查一下\n\n查到三筆。");
+    expect(state.step).toBe(2);
+  });
+
+  it("第一步沒說話就跑工具 → 不會生出一個開頭的空行", () => {
+    const state = fold([
+      { type: "step", step: 1 },
+      { type: "tool", name: "shop.orders.list" },
+      { type: "tool_done", name: "shop.orders.list", ok: true },
+      { type: "step", step: 2 },
+      { type: "text_delta", text: "查到三筆。" },
+    ]);
+    expect(state.text).toBe("查到三筆。");
+  });
+
+  it("是純函式:輸入的 state 不被改動", () => {
+    const before = emptyStreaming();
+    const snapshot = { ...before };
+    applyLoopEvent(before, { type: "text_delta", text: "x" });
+    expect(before).toEqual(snapshot);
+  });
+});

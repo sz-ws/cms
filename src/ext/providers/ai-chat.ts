@@ -17,8 +17,12 @@ import {
 // 的 import 路徑仍是 "@/ext/providers/ai"(介面宣告處);實作放這裡純粹是因為
 // ai.ts 已近 700 行,三種 mode 的 wire format 再塞進去會破 800 行上限。
 //
-// v1 非 streaming(spec §3 明定):tool-use streaming 要拼裝增量 JSON,而 admin
-// agent 是確認制 —— write 提案本來就要停下來等人,串流沒有 UX 收益。
+// v1 非 streaming(spec §3 當時明定);v1.1(CORE_API 1.32.0)補上 —— 收益不在
+// write 提案(那本來就要停下來等人),在**多步 read loop**:8 步的整段黑箱等待
+// 換成邊查邊講。串流的實作住 ./ai-chat-stream.ts,本檔負責的是**兩條路共用的規則**
+// (wire 名換名、messages 轉換、stopReason 正規化、tool arguments 解析),故那些
+// 內部件由此 export —— 複製一份到串流那邊就是留一條「串流與非串流的結果會分岔」
+// 的縫,而 spec 要求兩者對同一回應算出的 AiChatResult 完全一致。
 //
 // 共同慣例全沿用 generate():永不 throw(錯誤走 {ok:false, error})、60s 逾時、
 // 上游錯誤摘要截 200 字、錯誤字串絕不含 apiKey、設定不全 → not_configured。
@@ -101,6 +105,20 @@ export interface AiChatResult {
   model?: string;
 }
 
+/** tool-calling streaming 的事件(1.32.0)。刻意只有兩種:
+ *
+ *  - `text_delta`:助理正在說的字,逐塊。**只給顯示用** —— transcript 的組裝一律
+ *    走 result,把 delta 拼起來當真相會多出一份會與 result 分岔的內容。
+ *  - `result`:**恆為最後一個事件**,且恆會出現(上游錯誤/逾時/斷流都收斂成
+ *    `{ok:false, error}`)。呼叫端只要讀到它就結束,不必另外判斷 generator 有沒有
+ *    正常收尾。
+ *
+ *  沒有 tool_use 的增量事件:tool 名與參數要等 arguments 串完才算數,半份 JSON
+ *  對呼叫端沒有任何可用的意義,只會誘導出「先渲染再更正」的 UI。 */
+export type AiChatStreamEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "result"; result: AiChatResult };
+
 /** 把一次 chat 結果還原成 assistant 訊息,供 loop 接回 transcript 續問
  *  (spec §4:tool_result 接回 messages 再跑下一步)。
  *
@@ -149,7 +167,7 @@ function toolNamesById(messages: AiChatMessage[]): Map<string, string> {
 /** 有 tool_use 就一律以 "tool_use" 收尾 —— 不完全信任上游的 finish/stop reason
  *  字串(OpenAI-compatible 代理常在帶 tool_calls 時仍回 "stop")。有實際的工具
  *  呼叫是比一個字串更硬的事實。 */
-function normalizeStopReason(
+export function normalizeStopReason(
   raw: string | undefined,
   hasToolUse: boolean,
   maxTokensValues: readonly string[],
@@ -191,7 +209,7 @@ export function toWireToolName(name: string): string {
   return `${dashed.slice(0, WIRE_TOOL_NAME_MAX - suffix.length - 1)}-${suffix}`;
 }
 
-interface WireChat {
+export interface WireChat {
   /** tools 與 messages 裡的 tool_use 名都已換成 wire 名的 opts。 */
   opts: AiChatOptions;
   /** 上游回的 wire 名 → 正名。查不到(模型自創的名字)原樣保留,讓呼叫端走
@@ -199,7 +217,7 @@ interface WireChat {
   fromWire(name: string): string;
 }
 
-function toWireChat(source: AiChatOptions): WireChat {
+export function toWireChat(source: AiChatOptions): WireChat {
   const byWire = new Map<string, string>();
   for (const tool of source.tools) {
     byWire.set(toWireToolName(tool.name), tool.name);
@@ -223,13 +241,13 @@ function toWireChat(source: AiChatOptions): WireChat {
 // openai mode —— function calling wire format
 // ---------------------------------------------------------------------------
 
-interface OpenAiToolCall {
+export interface OpenAiToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
 }
 
-type OpenAiMessage =
+export type OpenAiMessage =
   | { role: "system" | "user"; content: string }
   | { role: "assistant"; content: string | null; tool_calls?: OpenAiToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
@@ -238,13 +256,13 @@ type OpenAiMessage =
  *  解析失敗時原樣保留字串而不是吞成 {}:下游用 tool 的 zod schema 驗參數,收到
  *  字串會報「expected object」,LLM 看得見自己送壞了、有機會改正;吞成 {} 反而
  *  變成看似「少帶必填欄位」的假訊息,查起來更遠。 */
-function parseToolArguments(raw: string | undefined): unknown {
+export function parseToolArguments(raw: string | undefined): unknown {
   if (typeof raw !== "string" || raw.trim() === "") return {};
   const parsed = safeJsonParse<unknown>(raw);
   return parsed === null ? raw : parsed;
 }
 
-function toOpenAiMessages(opts: AiChatOptions): OpenAiMessage[] {
+export function toOpenAiMessages(opts: AiChatOptions): OpenAiMessage[] {
   const out: OpenAiMessage[] = [];
   if (opts.system) out.push({ role: "system", content: opts.system });
   for (const msg of opts.messages) {
@@ -389,7 +407,7 @@ export async function chatOpenAi(
 // anthropic mode —— 原生 tool use
 // ---------------------------------------------------------------------------
 
-interface AnthropicBlock {
+export interface AnthropicBlock {
   type: string;
   text?: string;
   id?: string;
@@ -400,7 +418,7 @@ interface AnthropicBlock {
   is_error?: boolean;
 }
 
-function toAnthropicBlock(block: AiChatContentBlock): AnthropicBlock {
+export function toAnthropicBlock(block: AiChatContentBlock): AnthropicBlock {
   if (block.type === "text") return { type: "text", text: block.text };
   if (block.type === "tool_use") {
     return {

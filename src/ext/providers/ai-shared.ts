@@ -6,8 +6,10 @@
 // 只能有一份;複製一份到 chat 那邊遲早會漂移。抽出來也讓 ai.ts 在長出第三個
 // 方法之後仍守得住檔案大小上限。純搬移,行為零變更。
 //
-// 這裡只放與 provider 無關的共用件;wire format(SSE 解析、各家 body 形狀)
-// 各自留在 ai.ts / ai-chat.ts。
+// 這裡只放與 provider 無關的共用件。**SSE 的「框」**(把位元組流切成 event/data)
+// 也算在內:它是 SSE 規範,不是任何一家的 wire format —— 1.32.0 起有四個消費者
+// (generate 的三種 mode + chat 的兩種 mode),再複製一份就是四份會漂移的 buffer
+// 邊界處理。各家 frame **裡面**的 body 形狀仍各自留在 ai.ts / ai-chat-stream.ts。
 
 /** core.ai.mode 的四個合法值;其餘值一律當作未設定(見 ai.ts 的 dispatch)。 */
 export type AiMode = "off" | "openai" | "anthropic" | "workers-ai";
@@ -61,5 +63,73 @@ export function safeJsonParse<T>(raw: string): T | null {
     return JSON.parse(raw) as T;
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SSE framing
+// ---------------------------------------------------------------------------
+
+export interface SseFrame {
+  /** anthropic 用具名事件(`event: content_block_delta` 等);openai/workers-ai
+   * 的 frame 只有 data 行,event 為 undefined。 */
+  event?: string;
+  data: string;
+}
+
+/** 把單一 SSE frame(`\n\n` 分隔的一段)解析成 { event?, data }。多個 data 行
+ * 依 SSE 規範以 "\n" 接回;無 data 行(純 comment/其他欄位)回 null。 */
+export function parseSseFrame(raw: string): SseFrame | null {
+  let event: string | undefined;
+  const dataLines: string[] = [];
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trim());
+    }
+    // 其餘欄位(id: / retry: / 純 comment ":")與本檔的 provider 皆無關,略過。
+  }
+  if (dataLines.length === 0) return null;
+  return { event, data: dataLines.join("\n") };
+}
+
+/** 共用 SSE 串流解析器:generate 的三種 mode(ai.ts)與 chat 的兩種 mode
+ * (ai-chat-stream.ts)皆由此驅動。frame 之間可能跨多次 TextDecoder read 才湊齊,
+ * 因此用 buffer 累積、以 "\n\n" 切 frame,絕不假設一次 read 剛好對齊 frame 邊界。
+ *
+ * deadlineAt 提供時(只有 workers-ai 傳):每次 reader.read() 都對同一個絕對時間點
+ * 扣時,逾時 reject Error("timeout")。openai/anthropic 不傳 —— 這兩者的逾時已由
+ * fetch 的 AbortController 覆蓋(abort 會讓進行中的 reader.read() reject
+ * AbortError),無需在此重複計時。 */
+export async function* parseSseStream(
+  body: ReadableStream<Uint8Array>,
+  deadlineAt?: number,
+): AsyncGenerator<SseFrame> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = deadlineAt
+        ? await withDeadline(reader.read(), deadlineAt)
+        : await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let idx: number;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const rawFrame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const frame = parseSseFrame(rawFrame);
+        if (frame) yield frame;
+      }
+    }
+    buffer += decoder.decode().replace(/\r\n/g, "\n");
+    if (buffer.trim().length > 0) {
+      const frame = parseSseFrame(buffer);
+      if (frame) yield frame;
+    }
+  } finally {
+    reader.releaseLock();
   }
 }

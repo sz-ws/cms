@@ -14,6 +14,7 @@ import type {
   AiChatOptions,
   AiChatResult,
   AiChatStopReason,
+  AiChatStreamEvent,
   AiChatToolUse,
   AiToolDef,
 } from "./providers/ai";
@@ -39,6 +40,12 @@ import type {
 // LLM 不可見,它就沒有辦法提案,確認制也就沒有東西可以確認 —— 整個面板會退化成
 // 一個唯讀的問答機。正確的語意是:**write 看得到、永不執行**。
 // 「永不執行」由下面 runAgentChat 的 proposal 分支保證,不由 tools 清單保證。
+//
+// ── 1.32.0:過程事件(AgentLoopEvent)────────────────────────────────────────
+// params.onEvent 是**唯一**的新行為開關。給了它就會邊跑邊回報(step / text_delta /
+// tool / tool_done),沒給就與 1.31.0 逐位元相同。刻意做成 callback 而不是把
+// runAgentChat 改成 generator:確認制的規則全寫在這一個函式的控制流裡,把它翻成
+// generator 等於為了顯示層重寫安全表面。
 
 /** 步數上限(spec §4)。到頂回明確狀態,不是靜默停止。 */
 export const AGENT_MAX_STEPS = 8;
@@ -151,6 +158,23 @@ export type AgentChatOutcome =
       error: string;
     });
 
+/**
+ * loop 進行中的過程事件(1.32.0)。**純粹是顯示層的東西** —— outcome 的形狀、
+ * transcript 的組裝、audit 都與有沒有人在聽這些事件無關。
+ *
+ * 為什麼要有 step/tool 而不只是 text_delta:多步 loop 的等待時間主要花在工具上,
+ * 而工具期間模型一個字都不會吐。少了這兩種事件,「邊查邊講」在最需要交代的那段
+ * 反而是全黑的。
+ */
+export type AgentLoopEvent =
+  /** 第 step 步開始(1-based)。 */
+  | { type: "step"; step: number }
+  /** 助理正在說的字(來自 provider 的 chatStream;沒有 chatStream 時不會出現)。 */
+  | { type: "text_delta"; text: string }
+  /** 一個 read tool 開始執行。 */
+  | { type: "tool"; name: string }
+  | { type: "tool_done"; name: string; ok: boolean };
+
 export interface AgentChatParams {
   /** 前端持有的 transcript(spec §4:server stateless)。 */
   messages: AiChatMessage[];
@@ -168,6 +192,27 @@ export interface AgentChatParams {
    * loader/services 這條鏈綁進本檔的靜態相依)。測試以假 provider 取代。
    */
   chat?: (opts: AiChatOptions) => Promise<AiChatResult>;
+  /**
+   * 串流版的注入點(1.32.0),預設 src/lib/ai.ts 的 chatAiStreamWithTools。
+   * **只有 onEvent 存在時才會被用到**;而且 `chat` 被注入、這個沒有時一律尊重
+   * 注入 —— 呼叫端給了一個假 provider,不該因為多帶了 onEvent 就偷偷改打真的
+   * @/lib/ai。
+   */
+  chatStream?: (opts: AiChatOptions) => AsyncGenerator<AiChatStreamEvent>;
+  /**
+   * 過程事件的接收者(1.32.0)。**省略時 loop 的行為與 1.31.0 完全相同**:
+   * 走非串流 chat()、不發任何事件、outcome 一字不差。
+   *
+   * 這個 callback throw 會被吞掉:顯示層壞掉不准連累一輪已經在跑的對話
+   * (跑到一半的 write 提案消失,比少幾行進度字嚴重得多)。
+   */
+  onEvent?: (event: AgentLoopEvent) => void;
+  /**
+   * client 斷線時中止(route 傳 request.signal)。每一步開始前檢查一次 ——
+   * 沒有人在聽了就不要再往上游打第 5、6、7、8 次。已經送出的那一次上游呼叫
+   * 不會被中斷(它有自己的 60s 預算),但不會再有下一次。
+   */
+  signal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,12 +278,14 @@ async function runReadRound(
   uses: readonly AiChatToolUse[],
   params: AgentChatParams,
   remaining: number,
+  emit: (event: AgentLoopEvent) => void,
 ): Promise<ReadRoundResult> {
   const blocks: AiChatContentBlock[] = [];
   const logs: AgentToolCallLog[] = [];
   let left = remaining;
 
   for (const use of uses) {
+    emit({ type: "tool", name: use.name });
     const tool = params.registry.get(use.name);
     if (!tool) {
       // 幻覺出來的 tool 名。不記 audit(什麼都沒執行),但要讓模型看見。
@@ -259,6 +306,7 @@ async function runReadRound(
         error: "unknown_tool",
         truncated: false,
       });
+      emit({ type: "tool_done", name: use.name, ok: false });
       continue;
     }
 
@@ -295,6 +343,7 @@ async function runReadRound(
       ...(outcome.ok ? {} : { error: outcome.error }),
       truncated: bounded.truncated,
     });
+    emit({ type: "tool_done", name: tool.name, ok: outcome.ok });
   }
 
   return { blocks, logs, remaining: left };
@@ -382,6 +431,36 @@ async function defaultChat(opts: AiChatOptions): Promise<AiChatResult> {
   return chatAiWithTools(opts);
 }
 
+async function* defaultChatStream(
+  opts: AiChatOptions,
+): AsyncGenerator<AiChatStreamEvent> {
+  const { chatAiStreamWithTools } = await import("@/lib/ai");
+  yield* chatAiStreamWithTools(opts);
+}
+
+/**
+ * 跑一步串流版的對話:邊轉發 text_delta,邊等最後那個 result。
+ *
+ * generator 的契約是「最後一個事件恆為 result」(ai-chat.ts),但這裡不假設對方
+ * 守約 —— 注入進來的 chatStream 可能是第三方的。沒收到 result 就合成一個錯誤,
+ * 讓 loop 走既有的 status:"error" 路徑,而不是拿一個 undefined 往下算。
+ */
+async function runStreamStep(
+  stream: (opts: AiChatOptions) => AsyncGenerator<AiChatStreamEvent>,
+  opts: AiChatOptions,
+  emit: (event: AgentLoopEvent) => void,
+): Promise<AiChatResult> {
+  let result: AiChatResult | null = null;
+  for await (const event of stream(opts)) {
+    if (event.type === "text_delta") {
+      emit({ type: "text_delta", text: event.text });
+      continue;
+    }
+    result = event.result;
+  }
+  return result ?? { ok: false, error: "stream_ended_without_result" };
+}
+
 /**
  * 跑一輪對話(spec §4)。
  *
@@ -400,6 +479,22 @@ export async function runAgentChat(
   const chat = params.chat ?? defaultChat;
   const tools = toAiToolDefs(params.registry.list());
 
+  // onEvent 缺席 → emit 是 no-op、streaming 是 null,整個函式的行為與 1.31.0
+  // 逐位元相同。onEvent 自己 throw 一律吞掉(見 AgentChatParams.onEvent)。
+  const onEvent = params.onEvent;
+  const emit = onEvent
+    ? (event: AgentLoopEvent): void => {
+        try {
+          onEvent(event);
+        } catch (e) {
+          console.error("[agent-loop] onEvent threw", e);
+        }
+      }
+    : () => {};
+  const streaming = onEvent
+    ? (params.chatStream ?? (params.chat ? null : defaultChatStream))
+    : null;
+
   const appended: AiChatMessage[] = [];
   const toolCalls: AgentToolCallLog[] = [];
   let transcript: AiChatMessage[] = [...params.messages];
@@ -407,12 +502,27 @@ export async function runAgentChat(
   let lastText = "";
 
   for (let step = 1; step <= AGENT_MAX_STEPS; step++) {
-    const res = await chat({
+    if (params.signal?.aborted) {
+      // client 走了。回一個誠實的 outcome(沒有人會讀到它)而不是繼續燒上游額度。
+      return {
+        status: "error",
+        error: "aborted",
+        appended,
+        steps: step - 1,
+        toolCalls,
+      };
+    }
+    emit({ type: "step", step });
+
+    const opts: AiChatOptions = {
       messages: transcript,
       tools,
       system: params.system,
       maxTokens: AGENT_MAX_TOKENS,
-    });
+    };
+    const res = streaming
+      ? await runStreamStep(streaming, opts, emit)
+      : await chat(opts);
 
     if (!res.ok) {
       return {
@@ -466,7 +576,7 @@ export async function runAgentChat(
       };
     }
 
-    const round = await runReadRound(uses, params, remaining);
+    const round = await runReadRound(uses, params, remaining, emit);
     remaining = round.remaining;
     toolCalls.push(...round.logs);
     const resultMessage: AiChatMessage = { role: "user", content: round.blocks };

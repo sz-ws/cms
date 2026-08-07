@@ -73,8 +73,8 @@ const aiState = vi.hoisted(() => ({
   results: [] as FakeChatResult[],
   calls: [] as unknown[],
 }));
-vi.mock("@/lib/ai", () => ({
-  chatAiWithTools: async (opts: unknown) => {
+vi.mock("@/lib/ai", () => {
+  const next = (opts: unknown): FakeChatResult => {
     aiState.calls.push(opts);
     return (
       aiState.results[aiState.calls.length - 1] ??
@@ -85,8 +85,19 @@ vi.mock("@/lib/ai", () => ({
         stopReason: "end_turn",
       }
     );
-  },
-}));
+  };
+  return {
+    chatAiWithTools: async (opts: unknown) => next(opts),
+    // 1.32.0 的串流入口(route 帶 Accept: text/event-stream 時走這條)。逐字切塊
+    // 不是這一檔的題目(那由 test/ai-chat-stream.test.ts 釘住),這裡只要「有
+    // delta、最後有 result」就足以驗 route 的 SSE framing 與 outcome 一致性。
+    chatAiStreamWithTools: async function* (opts: unknown) {
+      const result = next(opts);
+      if (result.text) yield { type: "text_delta", text: result.text };
+      yield { type: "result", result };
+    },
+  };
+});
 
 import { POST as chatPost } from "../src/app/api/admin/agent/chat/route";
 import { POST as executePost } from "../src/app/api/admin/agent/execute/route";
@@ -498,5 +509,165 @@ describe("POST /api/admin/agent/execute — 執行與稽核", () => {
     const rows = await auditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.source).toBe("execute");
+  });
+});
+
+// ==================================================== /chat SSE(1.32.0)
+
+// docs/spec-admin-agent.md §3.1:同一段 loop,兩種交出去的方式。這一組測試的核心
+// 斷言是**最後那個 outcome 事件的 payload 與 JSON 模式的 body 完全相等** ——
+// 前端的 transcript 只由 outcome 組裝(components/admin/agent/transcript.ts),
+// 兩種模式分岔的後果是「串流看到的對話」與「重新整理後的對話」不一樣。
+
+interface SseEvent {
+  event: string;
+  data: unknown;
+}
+
+/** 把整份 SSE 回應讀完並解析。刻意整包讀 —— 這裡驗的是 framing 與順序,
+ *  「跨 chunk 邊界」由前端的 splitSseFrames 測試負責。 */
+async function readSse(res: Response): Promise<SseEvent[]> {
+  const text = await res.text();
+  return text
+    .split("\n\n")
+    .filter((raw) => raw.trim().length > 0)
+    .map((raw) => {
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of raw.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      return { event, data: JSON.parse(dataLines.join("\n")) as unknown };
+    });
+}
+
+function sseChatReq(body: unknown): Request {
+  return new Request(`${ORIGIN}/api/admin/agent/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: ORIGIN,
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("POST /api/admin/agent/chat — SSE(Accept: text/event-stream)", () => {
+  const READ_THEN_ANSWER: FakeChatResult[] = [
+    {
+      ok: true,
+      text: "我先查一下。",
+      toolUses: [{ id: "tu-1", name: "content.gallery_item.list", input: {} }],
+      stopReason: "tool_use",
+    },
+    { ok: true, text: "目前沒有任何項目。", toolUses: [], stopReason: "end_turn" },
+  ];
+
+  it("回 text/event-stream,事件依序送出,最後一個是 outcome", async () => {
+    aiState.results = READ_THEN_ANSWER;
+    const res = await chatPost(sseChatReq({ messages: HELLO.messages }));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const events = await readSse(res);
+    expect(events.map((e) => e.event)).toEqual([
+      "step",
+      "text_delta",
+      "tool",
+      "tool_done",
+      "step",
+      "text_delta",
+      "outcome",
+    ]);
+    expect(events[0]!.data).toEqual({ type: "step", step: 1 });
+    expect(events[2]!.data).toEqual({
+      type: "tool",
+      name: "content.gallery_item.list",
+    });
+    expect(events[3]!.data).toEqual({
+      type: "tool_done",
+      name: "content.gallery_item.list",
+      ok: true,
+    });
+    expect(events[events.length - 1]!.data).toMatchObject({
+      status: "text",
+      text: "目前沒有任何項目。",
+    });
+  });
+
+  it("outcome 的 payload 與 JSON 模式的 body 完全相等", async () => {
+    aiState.results = READ_THEN_ANSWER;
+    const jsonBody = await (
+      await chatPost(chatReq({ messages: HELLO.messages }))
+    ).json();
+
+    aiState.calls = [];
+    aiState.results = READ_THEN_ANSWER;
+    const events = await readSse(
+      await chatPost(sseChatReq({ messages: HELLO.messages })),
+    );
+
+    const outcome = events[events.length - 1]!;
+    expect(outcome.event).toBe("outcome");
+    expect(outcome.data).toEqual(jsonBody);
+  });
+
+  it("write 提案在 SSE 模式下一樣是提案 —— 鐵律與交付形式無關", async () => {
+    aiState.results = [
+      {
+        ok: true,
+        text: "",
+        toolUses: [
+          {
+            id: "tu-1",
+            name: "content.gallery_item.create",
+            input: { data: { title: "新照片" } },
+          },
+        ],
+        stopReason: "tool_use",
+      },
+    ];
+
+    const events = await readSse(
+      await chatPost(sseChatReq({ messages: HELLO.messages })),
+    );
+    // 什麼都沒跑:沒有 tool / tool_done 事件。
+    expect(events.map((e) => e.event)).toEqual(["step", "outcome"]);
+    expect(events[1]!.data).toMatchObject({
+      status: "proposal",
+      proposal: { toolName: "content.gallery_item.create", toolUseId: "tu-1" },
+    });
+    expect(await countRows("contents")).toBe(0);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("上游錯誤 → 照樣是一個 outcome 事件(不是把串流掐掉)", async () => {
+    aiState.results = [{ ok: false, error: "tool_use_not_supported" }];
+    const events = await readSse(
+      await chatPost(sseChatReq({ messages: HELLO.messages })),
+    );
+    expect(events[events.length - 1]).toMatchObject({
+      event: "outcome",
+      data: { status: "error", error: "tool_use_not_supported" },
+    });
+  });
+
+  it("guard 一律先跑:未登入 / 跨來源 / 壞 body 仍是原來的 JSON 錯誤", async () => {
+    authState.user = null;
+    expect((await chatPost(sseChatReq(HELLO))).status).toBe(401);
+    authState.user = EDITOR;
+    expect((await chatPost(sseChatReq(HELLO))).status).toBe(403);
+    authState.user = ADMIN;
+    expect((await chatPost(sseChatReq({ messages: [] }))).status).toBe(400);
+  });
+
+  it("沒帶那個 Accept → 仍是單一 JSON body(既有呼叫端零影響)", async () => {
+    aiState.results = READ_THEN_ANSWER;
+    const res = await chatPost(chatReq({ messages: HELLO.messages }));
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(await res.json()).toMatchObject({ status: "text" });
   });
 });

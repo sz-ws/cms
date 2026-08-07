@@ -682,6 +682,11 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.proposal.cancelled": "已取消 —— 沒有執行任何東西",
   "agent.proposal.resultLabel": "結果",
 
+  // 串流中的狀態行(靜態文字,設計紅線:不准任何閃爍/呼吸/pulsing 指示)
+  "agent.stream.thinking": "思考中…",
+  "agent.stream.thinkingStep": "思考中…(第 {step} 步)",
+  "agent.stream.usingTool": "正在使用 {name}…",
+
   // 提示
   "agent.maxSteps": "已達步數上限,以下是目前的進度。",
   "agent.error.toolUseNotSupported": "目前設定的 AI mode/model 不支援工具呼叫。請換一個支援的模型。",
