@@ -72,7 +72,7 @@ export type {
   AiChatToolUse,
   AiToolDef,
 } from "./ai-chat";
-export { toAssistantMessage } from "./ai-chat";
+export { toAssistantMessage, toWireToolName } from "./ai-chat";
 
 import type { AiChatOptions, AiChatResult } from "./ai-chat";
 

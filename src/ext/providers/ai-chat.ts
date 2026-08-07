@@ -162,6 +162,64 @@ function normalizeStopReason(
 }
 
 // ---------------------------------------------------------------------------
+// wire-safe tool 名
+// ---------------------------------------------------------------------------
+
+// 三家上游對 tool/function name 的規則都是 ^[a-zA-Z0-9_-]{1,64}$ —— **不允許點**。
+// 行動層的正名是點分文法(content.gallery_item.list,agent-tools.ts 的
+// AGENT_TOOL_NAME_RE),原樣上線就是 400(2026-08-07 實機驗證,OpenAI-compatible
+// 代理直接拒收)。取捨:正名不改 —— spec、audit、面板的 namespace/leaf 拆解、
+// slash 選單全建立在點分文法上 —— 改在 wire 邊界雙向換:出去點換破折號,回來查表
+// 還原。破折號在正名文法裡不合法,所以替換可逆、不需要 per-request 暫存;查表
+// 而不是逆向字串替換,是為了超長名的雜湊尾碼(逆推不回來)與非行動層呼叫端
+// 傳進來的任意名字(可能本來就含破折號)。
+
+const WIRE_TOOL_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const WIRE_TOOL_NAME_MAX = 64;
+
+export function toWireToolName(name: string): string {
+  if (WIRE_TOOL_NAME_RE.test(name)) return name;
+  const dashed = name.replace(/[^a-zA-Z0-9_-]/g, "-");
+  if (dashed.length <= WIRE_TOOL_NAME_MAX) return dashed;
+  // 超長時穩定截斷:尾碼由全名雜湊(djb2)推導,同名跨回合永遠得到同一個 wire 名
+  // —— transcript 重送時前後兩次請求的名字才對得上。
+  let h = 5381;
+  for (let i = 0; i < dashed.length; i++) {
+    h = ((h * 33) ^ dashed.charCodeAt(i)) >>> 0;
+  }
+  const suffix = h.toString(36);
+  return `${dashed.slice(0, WIRE_TOOL_NAME_MAX - suffix.length - 1)}-${suffix}`;
+}
+
+interface WireChat {
+  /** tools 與 messages 裡的 tool_use 名都已換成 wire 名的 opts。 */
+  opts: AiChatOptions;
+  /** 上游回的 wire 名 → 正名。查不到(模型自創的名字)原樣保留,讓呼叫端走
+   *  既有的 unknown_tool 路徑 —— 這裡不猜。 */
+  fromWire(name: string): string;
+}
+
+function toWireChat(source: AiChatOptions): WireChat {
+  const byWire = new Map<string, string>();
+  for (const tool of source.tools) {
+    byWire.set(toWireToolName(tool.name), tool.name);
+  }
+  return {
+    opts: {
+      ...source,
+      tools: source.tools.map((t) => ({ ...t, name: toWireToolName(t.name) })),
+      messages: source.messages.map((m) => ({
+        ...m,
+        content: m.content.map((b) =>
+          b.type === "tool_use" ? { ...b, name: toWireToolName(b.name) } : b,
+        ),
+      })),
+    },
+    fromWire: (name) => byWire.get(name) ?? name,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // openai mode —— function calling wire format
 // ---------------------------------------------------------------------------
 
@@ -224,10 +282,12 @@ function toOpenAiMessages(opts: AiChatOptions): OpenAiMessage[] {
 }
 
 export async function chatOpenAi(
-  opts: AiChatOptions,
+  source: AiChatOptions,
   model: string,
   maxTokens: number,
 ): Promise<AiChatResult> {
+  const wire = toWireChat(source);
+  const opts = wire.opts;
   const apiKey = await getSetting<string>("core.ai.apiKey", "");
   if (!apiKey) return { ok: false, error: "not_configured" };
   const baseUrl =
@@ -295,7 +355,7 @@ export async function chatOpenAi(
       )
       .map((c) => ({
         id: c.id,
-        name: c.function.name,
+        name: wire.fromWire(c.function.name),
         input: parseToolArguments(c.function.arguments),
       }));
     return {
@@ -359,10 +419,12 @@ function toAnthropicBlock(block: AiChatContentBlock): AnthropicBlock {
 }
 
 export async function chatAnthropic(
-  opts: AiChatOptions,
+  source: AiChatOptions,
   model: string,
   maxTokens: number,
 ): Promise<AiChatResult> {
+  const wire = toWireChat(source);
+  const opts = wire.opts;
   const apiKey = await getSetting<string>("core.ai.apiKey", "");
   if (!apiKey) return { ok: false, error: "not_configured" };
   const baseUrl =
@@ -432,7 +494,7 @@ export async function chatAnthropic(
       )
       .map((c) => ({
         id: c.id as string,
-        name: c.name as string,
+        name: wire.fromWire(c.name as string),
         input: c.input ?? {},
       }));
     return {
@@ -528,10 +590,12 @@ function toWorkersAiMessages(opts: AiChatOptions): WorkersAiMessage[] {
  *  (ok:true、toolUses 空)而不是不支援 —— 具備工具能力的模型本來就可以選擇直接
  *  回答,把它判成不支援會產生假陰性。真正不認得的是「回應形狀完全對不上」。 */
 export async function chatWorkersAi(
-  opts: AiChatOptions,
+  source: AiChatOptions,
   model: string,
   maxTokens: number,
 ): Promise<AiChatResult> {
+  const wire = toWireChat(source);
+  const opts = wire.opts;
   const ai = getAI();
   if (!ai) return { ok: false, error: "not_configured" };
   try {
@@ -561,7 +625,7 @@ export async function chatWorkersAi(
       .map((c, i) => ({
         // workers-ai 不回 id,合成一個穩定的識別碼供 tool_result 接回。
         id: `wai_${i}_${c.name as string}`,
-        name: c.name as string,
+        name: wire.fromWire(c.name as string),
         input: c.arguments ?? {},
       }));
     const text = typeof body?.response === "string" ? body.response : "";

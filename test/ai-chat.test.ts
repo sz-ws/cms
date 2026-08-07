@@ -40,7 +40,11 @@ vi.mock("@/ext/services", () => ({
   }),
 }));
 
-import { CoreAiProvider, toAssistantMessage } from "../src/ext/providers/ai";
+import {
+  CoreAiProvider,
+  toAssistantMessage,
+  toWireToolName,
+} from "../src/ext/providers/ai";
 import type {
   AiChatMessage,
   AiChatOptions,
@@ -207,7 +211,9 @@ describe("CoreAiProvider.chat", () => {
         {
           type: "function",
           function: {
-            name: "core.content.list",
+            // wire 名:上游不允許點(^[a-zA-Z0-9_-]{1,64}$),點分正名在邊界換成
+            // 破折號;回程由 fromWire 查表還原(下方 toolUses 相關測試)。
+            name: "core-content-list",
             description: "List content items",
             parameters: TOOLS[0].inputSchema,
           },
@@ -246,7 +252,7 @@ describe("CoreAiProvider.chat", () => {
               id: "call_1",
               type: "function",
               function: {
-                name: "core.content.list",
+                name: "core-content-list",
                 arguments: JSON.stringify({ type: "post" }),
               },
             },
@@ -269,7 +275,9 @@ describe("CoreAiProvider.chat", () => {
                     id: "call_9",
                     type: "function",
                     function: {
-                      name: "core.content.list",
+                      // 上游回的是它在 tools 裡看到的 wire 名;斷言裡的 toolUses
+                      // 仍是點分正名 —— 證明回程有查表還原。
+                      name: "core-content-list",
                       arguments: '{"type":"post"}',
                     },
                   },
@@ -438,7 +446,8 @@ describe("CoreAiProvider.chat", () => {
       expect(body.system).toBe("you are the admin assistant");
       expect(body.tools).toEqual([
         {
-          name: "core.content.list",
+          // anthropic 的名字規則與 openai 相同(不允許點),一樣走 wire 名。
+          name: "core-content-list",
           description: "List content items",
           input_schema: TOOLS[0].inputSchema,
         },
@@ -452,7 +461,7 @@ describe("CoreAiProvider.chat", () => {
             {
               type: "tool_use",
               id: "call_1",
-              name: "core.content.list",
+              name: "core-content-list",
               input: { type: "post" },
             },
           ],
@@ -508,7 +517,7 @@ describe("CoreAiProvider.chat", () => {
             {
               type: "tool_use",
               id: "toolu_1",
-              name: "core.content.list",
+              name: "core-content-list",
               input: { type: "post" },
             },
           ],
@@ -631,22 +640,22 @@ describe("CoreAiProvider.chat", () => {
             role: "assistant",
             content: "let me check",
             tool_calls: [
-              { name: "core.content.list", arguments: { type: "post" } },
+              { name: "core-content-list", arguments: { type: "post" } },
             ],
           },
           // tool 結果訊息帶 name(workers-ai 的 tool_calls 沒有 id,只能靠名字對回),
-          // 名字由 transcript 裡的 tool_use 反查。
+          // 名字由 transcript 裡的 tool_use 反查 —— 兩處都已是 wire 名,對得上。
           {
             role: "tool",
             content: '{"items":[]}',
-            name: "core.content.list",
+            name: "core-content-list",
           },
           { role: "user", content: "anything else?" },
         ],
         max_tokens: 1024,
         tools: [
           {
-            name: "core.content.list",
+            name: "core-content-list",
             description: "List content items",
             parameters: TOOLS[0].inputSchema,
           },
@@ -659,7 +668,7 @@ describe("CoreAiProvider.chat", () => {
         run: vi.fn(async () => ({
           response: "",
           tool_calls: [
-            { name: "core.content.list", arguments: { type: "post" } },
+            { name: "core-content-list", arguments: { type: "post" } },
           ],
         })),
       };
@@ -668,7 +677,8 @@ describe("CoreAiProvider.chat", () => {
         text: "",
         toolUses: [
           {
-            id: "wai_0_core.content.list",
+            // 合成 id 沿用上游看得到的 wire 名(id 是不透明字串);name 還原成正名。
+            id: "wai_0_core-content-list",
             name: "core.content.list",
             input: { type: "post" },
           },
@@ -723,7 +733,36 @@ describe("toAssistantMessage", () => {
   });
 });
 
-// ---- 6. src/lib/ai.ts helper ----
+// ---- 6. toWireToolName:上游名字規則(^[a-zA-Z0-9_-]{1,64}$,不允許點)----
+
+describe("toWireToolName", () => {
+  it("passes wire-safe names through untouched", () => {
+    expect(toWireToolName("already_safe-name")).toBe("already_safe-name");
+  });
+
+  it("turns dots into dashes (reversibly — dashes are illegal in canonical names)", () => {
+    expect(toWireToolName("content.gallery_item.list")).toBe(
+      "content-gallery_item-list",
+    );
+  });
+
+  it("caps at 64 chars with a stable hash suffix", () => {
+    const long = `content.${"a".repeat(80)}.update`;
+    const wire = toWireToolName(long);
+    expect(wire.length).toBeLessThanOrEqual(64);
+    expect(wire).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    // 穩定性是跨回合一致的前提:transcript 重送時要得到同一個 wire 名。
+    expect(toWireToolName(long)).toBe(wire);
+  });
+
+  it("two long names differing only near the tail stay distinct", () => {
+    const a = toWireToolName(`content.${"a".repeat(80)}.update`);
+    const b = toWireToolName(`content.${"a".repeat(80)}.delete`);
+    expect(a).not.toBe(b);
+  });
+});
+
+// ---- 7. src/lib/ai.ts helper ----
 
 describe("chatAiWithTools", () => {
   it("returns tool_use_not_supported when the active provider has no chat method", async () => {
