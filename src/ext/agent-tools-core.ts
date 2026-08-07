@@ -476,9 +476,15 @@ export function coreAgentTools(): AgentTool[] {
 
     defineAgentTool({
       name: "core.stats.storage",
+      // 名字叫 storage 但只講資料庫 —— 這一句是那個落差的補救。名字本身不能改:
+      // version.ts 已經在 1.33.0 宣告過它,append-only 的規矩下改名要再 bump 一版
+      // 並留一段改名紀錄,為了一個字太貴。description 講清楚就足以擋掉真正的失敗
+      // 模式(被問「我的檔案佔多少空間」時拿資料庫大小回答)。
       description:
         "How much of the D1 database quota this site has used, in bytes and as a percentage, " +
         "plus which plan's quota applies. Use this when asked whether the site is running out of room. " +
+        "This covers the database only — it does NOT include uploaded files, images or media storage, " +
+        "and there is currently no tool that reports those. Say so rather than answering with this number. " +
         "Reports available: false when the database size cannot be read.",
       kind: "read",
       schema: z.object({}).strict(),

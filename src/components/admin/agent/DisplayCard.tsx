@@ -29,9 +29,9 @@ import type { AgentDisplay } from "@/ext/agent-display";
 
 export function DisplayCard({ display }: { display: AgentDisplay }) {
   return (
-    // max-w 對齊面板那一欄(AgentPanel 的 max-w-[46rem])但再窄一階:卡片是答案的
-    // 佐證,不該比助理說的那段話還寬。
-    <div className="w-full max-w-[36rem]">
+    // 寬度交給外面的 grid 決定(見 DisplayCards)。這裡不設上限:卡片在自己的格子
+    // 裡撐滿,是 widget 本來就被設計成的樣子(它們在 /admin 首頁也是填格子)。
+    <div className="w-full">
       {/* 兩個分支的 JSX 逐字相同,但型別不同,而且必須分開寫:DashboardWidget 的
           props 是判別式聯集(佔比 preset 只收 ProportionWidgetData、趨勢 preset 只
           收 TrendWidgetData),AgentDisplay 的 `kind` 正是那個判別式。合併成一行就
@@ -47,10 +47,19 @@ export function DisplayCard({ display }: { display: AgentDisplay }) {
 }
 
 /**
- * 這一輪所有帶 display 的工具呼叫 → 一疊卡片。
+ * 這一輪所有帶 display 的工具呼叫 → 一組卡片。
  *
  * 一輪可以跑好幾個 tool(loop 的 runReadRound),所以卡片可能不只一張;沒有任何
  * 一個帶 display 時整段不渲染(回 null),不留空容器。
+ *
+ * **橫排,不是直疊。** 這一輪的卡片是同一個問題的幾個面向(內容量 + 活躍度 +
+ * 用量),彼此是並列關係;直疊會把並列讀成先後,而且每張都只佔半個欄寬,剩下
+ * 的空白比卡片本身還顯眼。
+ *
+ * auto-fit 而不是寫死欄數:張數是模型當下決定的(一到三張都可能),寫死 2 欄會讓
+ * 單張卡卡在半邊,寫死 3 欄會讓兩張卡右邊空一格。auto-fit 讓「幾張就幾欄」自己
+ * 成立,窄螢幕自動掉回一欄。`min(14rem, 100%)` 是防溢出的那一半 —— 沒有它,容器
+ * 比 14rem 還窄時 grid 會撐破面板而不是換行。
  */
 export function DisplayCards({
   displays,
@@ -59,7 +68,7 @@ export function DisplayCards({
 }) {
   if (displays.length === 0) return null;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(14rem,100%),1fr))]">
       {displays.map((display, index) => (
         <DisplayCard key={`${display.kind}-${display.preset}-${index}`} display={display} />
       ))}
