@@ -28,6 +28,8 @@ import {
   SidebarLabel,
   SidebarSectionGroup,
 } from "@/components/ui/intent/sidebar";
+// persist-keys 而不是 persist:後者拉 zod,而這個元件每一頁 admin 都在。
+import { clearAllStoredTranscripts } from "./agent/persist-keys";
 import { AdminNavGroup } from "./AdminNavGroup";
 import { iconForNavItem } from "./adminNavIcons";
 
@@ -151,6 +153,13 @@ export function AdminSidebar({
     if (signingOut) return;
     setSigningOut(true);
     try {
+      // AI 助理的對話存在 localStorage(components/admin/agent/persist.ts)。
+      // 登出是使用者明確表示「我離開這台機器了」的那個動作,所以清掉掛在這裡 ——
+      // 而不是掛在登入頁掛載時:看到登入頁只代表 session 沒了(逾時、cookie 過期
+      // 都算),把它當成「清掉本機資料」的訊號會過度反應,而且會把整個 persist
+      // 模組(含 zod)拉進登入頁的 bundle。
+      // 換人登入撿到別人對話的那條路不靠這裡,靠 key 綁 user id。
+      clearAllStoredTranscripts();
       await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
       router.refresh();

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { ThinkingOrb } from "thinking-orbs";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -32,6 +32,11 @@ import type {
 } from "./transcript";
 import { applyLoopEvent, emptyStreaming, splitSseFrames } from "./stream";
 import type { StreamingState } from "./stream";
+import {
+  readStoredTranscript,
+  transcriptStorageKey,
+  writeStoredTranscript,
+} from "./persist";
 
 // docs/spec-admin-agent.md §5:/admin/agent 對話面板的本體。
 //
@@ -41,7 +46,13 @@ import type { StreamingState } from "./stream";
 // 自己拼一則訊息,那條規則就多了一個沒被測到的實作。
 //
 // server 是 stateless(spec §4):transcript 由本元件持有,每次 /chat 送完整份。
-// 對應地,「開新對話」就只是把 state 換成 emptyTranscript() —— 沒有要清的 session。
+//
+// **「開新對話」不在這個檔案裡**:那顆按鈕住 AgentPanelLoader,做法是換掉本元件的
+// key 讓整個 panel remount。理由是「要清哪些 state」這個問題本身就不該存在 ——
+// busy / executing / transport / streaming / abortRef 之外未來還會再長出東西,而
+// 一個忘了清的 state 在畫面上會表現成「新對話一開始就卡住」。remount 之後這些
+// state 一律回到初值,連下面那個 unmount effect 都會順手中止進行中的 /chat。
+// 本元件對外只負責**回報狀態**(onStatusChange),讓那顆按鈕知道自己該不該出現。
 //
 // 提案處置之後會**自動再打一次 /chat**:tool_result 接回去了,模型還沒看過它。
 // 少了這一步,admin 按下確認之後會看到一個結果卡然後沒有下文。反問卡(§4.6)的
@@ -61,21 +72,49 @@ import type { StreamingState } from "./stream";
 // 那張卡的每一個數字都來自 tool 自己的 run() 結果,不經過模型(見 ext/agent-display.ts)
 // —— 所以它可以被當成事實讀,而卡片上方那段助理文字不行。這件事在這個檔案裡沒有
 // 任何決策空間:display 隨 outcome 進來,這裡只負責畫。
+//
+// ── localStorage:重整不再把整段對話丟掉 ────────────────────────────────────
+// 規則全住 ./persist.ts(純函式、有測試);這裡只有兩個接點:初始 state 從那裡讀、
+// state 一變就寫回去。**讀回來的東西一定是合法的**(persist 的契約:不合法就回 null),
+// 所以這裡不必、也不該再補一層「修一修」——修出來的 transcript 沒有人驗得動。
+//
+// 還原之後帶著 pending / pendingAsk 是**正常狀態**,卡片會跟著回來、照樣可以確認或
+// 取消:/execute 只吃 toolName + args,不綁任何 session 或 hash(spec §8 已拍板),
+// 所以一張隔天才被按下的確認卡與剛長出來的那一張走的是同一條路。
 
 /** AI 設定所在的 admin 設定頁錨點(SettingsWorkspace 的 sectionAnchorId 慣例)。 */
 const AI_SETTINGS_HREF = "/admin/settings#section-core-ai";
 
+/** 面板目前的狀態摘要,回報給持有「開新對話」按鈕的那一層。 */
+export interface AgentPanelStatus {
+  /** 有東西可以清嗎(沒有內容時那顆按鈕不該出現)。 */
+  hasContent: boolean;
+  /** 正在跑 /chat 或 /execute。中途 remount 會中止進行中的請求,所以按鈕要禁用。 */
+  busy: boolean;
+}
+
 interface AgentPanelProps {
   /** server component 在 server 端從 buildAgentToolRegistry() 取出後傳下來。 */
   tools: AgentToolSummary[];
+  /** 目前登入者的 id(page.tsx 的 requireAuth 拿到後傳下來)。localStorage 的 key
+   *  綁它 —— 同一台機器換人登入不能撿到別人的對話(見 ./persist.ts)。 */
+  userId: string;
+  /** 狀態回報。**呼叫端必須給一個穩定的 callback**(見下面 effect 的說明)。 */
+  onStatusChange?: (status: AgentPanelStatus) => void;
 }
 
 /** 傳輸層(而非 loop 層)的失敗。loop 的失敗走 transcript 的 notice entry。 */
 type TransportError = "rate_limited" | "network" | "forbidden" | "unknown";
 
-export function AgentPanel({ tools }: AgentPanelProps) {
+export function AgentPanel({ tools, userId, onStatusChange }: AgentPanelProps) {
   const t = useT();
-  const [state, setState] = useState<TranscriptState>(emptyTranscript);
+  const storageKey = transcriptStorageKey(userId);
+  // 還原:initializer 只在第一次 render 跑一次,所以不會每次 render 都去解一份
+  // JSON。ssr:false 讓這個元件本來就只在瀏覽器裡跑,typeof window 的 guard 仍留在
+  // persist 那一側 —— 它是一個純模組的契約,不該依賴「誰在用它」。
+  const [state, setState] = useState<TranscriptState>(
+    () => readStoredTranscript(storageKey) ?? emptyTranscript(),
+  );
   const [busy, setBusy] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [transport, setTransport] = useState<TransportError | null>(null);
@@ -86,6 +125,30 @@ export function AgentPanel({ tools }: AgentPanelProps) {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // 落地。deps 只有 state 與 key —— 串流中變動的是 streaming 那個暫態,不是這裡,
+  // 所以逐字到達的過程不會觸發任何一次序列化(transcript 一輪只在 outcome 到達時
+  // 換一次)。
+  useEffect(() => {
+    writeStoredTranscript(storageKey, state);
+  }, [storageKey, state]);
+
+  const hasContent = state.entries.length > 0;
+  /** /chat 或 /execute 進行中。對外收成**一個**布林:上一層要的是「那顆按鈕能不能
+   *  按」,不是我們內部怎麼分工。 */
+  const working = busy || executing;
+
+  // 狀態回報。callback 先收進 ref 再呼叫,是為了讓真正的 effect deps 只有那兩個
+  // 布林 —— 把 onStatusChange 直接放進 deps 的話,呼叫端只要在 render 裡現做一個
+  // 箭頭函式(最自然的寫法),每次 render 都會重跑 effect → 上層 setState →
+  // 再 render,那就是一個 render 迴圈。ref 讓「呼叫誰」與「何時呼叫」分開。
+  const statusRef = useRef(onStatusChange);
+  useEffect(() => {
+    statusRef.current = onStatusChange;
+  });
+  useEffect(() => {
+    statusRef.current?.({ hasContent, busy: working });
+  }, [hasContent, working]);
 
   // 新內容進來就捲到底。串流中把 behavior 換成 auto:smooth 的動畫時間長於兩個
   // token 的間隔,連續呼叫會互相打斷,結果是捲不到底。
@@ -211,15 +274,6 @@ export function AgentPanel({ tools }: AgentPanelProps) {
     onAskResolve({ kind: "answered", answer });
   }
 
-  function onNewChat(): void {
-    if (busy || executing) return;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setState(emptyTranscript());
-    setTransport(null);
-    setStreaming(null);
-  }
-
   // 兩種卡都鎖住 composer(一次只處理一張)。文案分開:被鎖住的人要知道自己該
   // 做的是「按確認」還是「回答問題」。
   const lockedNote = state.pending
@@ -227,10 +281,10 @@ export function AgentPanel({ tools }: AgentPanelProps) {
     : state.pendingAsk
       ? t("agent.lockedByAsk")
       : null;
-  const hasContent = state.entries.length > 0;
 
   return (
-    <div className="flex h-[calc(100dvh-11rem)] min-h-[26rem] flex-col gap-3">
+    // 高度的推導見 AgentPanelLoader(那裡同時要給載入中的佔位用同一個數字)。
+    <div className="flex h-[calc(100dvh-9.75rem)] min-h-[26rem] flex-col gap-3">
       {/* 對話區不包卡:訊息直接坐在紙上,浮起來的是使用者的話與確認卡。
           role="log" + aria-live:新回覆對讀螢幕的人也要被念出來,而不是只有捲動。 */}
       <div
@@ -318,6 +372,8 @@ export function AgentPanel({ tools }: AgentPanelProps) {
         </div>
       </div>
 
+      {/* composer 底下沒有東西了 —— 「開新對話」搬到了頁首那一行(見檔頭)。面板
+          可視範圍本來就吃緊,一顆只有偶爾才按的按鈕不值得一整列。 */}
       <div className="mx-auto w-full max-w-[46rem]">
         <Composer
           tools={tools}
@@ -326,17 +382,6 @@ export function AgentPanel({ tools }: AgentPanelProps) {
           lockedNote={lockedNote}
           onSend={onSend}
         />
-        {hasContent && (
-          <button
-            type="button"
-            onClick={onNewChat}
-            disabled={busy || executing}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-[8px] px-1 py-1 text-[11.5px] text-black/35 transition-colors duration-150 hover:text-black/70 disabled:opacity-40"
-          >
-            <RotateCcw className="size-3" />
-            {t("agent.newChat")}
-          </button>
-        )}
       </div>
     </div>
   );
