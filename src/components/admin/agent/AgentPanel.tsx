@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { RingDot } from "@/components/admin/dashboard/RingDot";
 import type { AgentChatOutcome, AgentLoopEvent } from "@/ext/agent-loop";
+import { AskCard } from "./AskCard";
 import { Composer } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
 import { ProposalCard } from "./ProposalCard";
@@ -14,12 +15,18 @@ import { ToolCallsSection } from "./ToolCallsSection";
 import type { AgentToolSummary } from "./tools";
 import {
   appendUserMessage,
+  applyAskResolution,
   applyChatOutcome,
   applyProposalResolution,
   canSend,
   emptyTranscript,
 } from "./transcript";
-import type { ProposalDecision, TranscriptState } from "./transcript";
+import type {
+  AskAnswer,
+  AskDecision,
+  ProposalDecision,
+  TranscriptState,
+} from "./transcript";
 import { applyLoopEvent, emptyStreaming, splitSseFrames } from "./stream";
 import type { StreamingState } from "./stream";
 
@@ -34,7 +41,8 @@ import type { StreamingState } from "./stream";
 // 對應地,「開新對話」就只是把 state 換成 emptyTranscript() —— 沒有要清的 session。
 //
 // 提案處置之後會**自動再打一次 /chat**:tool_result 接回去了,模型還沒看過它。
-// 少了這一步,admin 按下確認之後會看到一個結果卡然後沒有下文。
+// 少了這一步,admin 按下確認之後會看到一個結果卡然後沒有下文。反問卡(§4.6)的
+// 回答與關閉走同一條路 —— 它只是換一種 tool_result 內容。
 //
 // ── 1.32.0:串流 ────────────────────────────────────────────────────────────
 // 送出改帶 `Accept: text/event-stream`,回應逐事件到達(SSE 的切割與顯示狀態都是
@@ -180,6 +188,20 @@ export function AgentPanel({ tools }: AgentPanelProps) {
     void runChat(applyProposalResolution(state, { kind: "cancelled" }));
   }
 
+  /**
+   * 反問卡的兩個出口(spec §4.6)。沒有 /execute 這一步 —— 答案本身就是結果 ——
+   * 所以直接補 tool_result 然後續跑 /chat:模型還沒看過這個答案,少了這一步
+   * admin 會看到自己按了一個選項然後沒有下文。**關閉走同一條路**,只是內容不同。
+   */
+  function onAskResolve(decision: AskDecision): void {
+    if (!state.pendingAsk || executing || busy) return;
+    void runChat(applyAskResolution(state, decision));
+  }
+
+  function onAskAnswer(answer: AskAnswer): void {
+    onAskResolve({ kind: "answered", answer });
+  }
+
   function onNewChat(): void {
     if (busy || executing) return;
     abortRef.current?.abort();
@@ -189,7 +211,13 @@ export function AgentPanel({ tools }: AgentPanelProps) {
     setStreaming(null);
   }
 
-  const locked = state.pending !== null;
+  // 兩種卡都鎖住 composer(一次只處理一張)。文案分開:被鎖住的人要知道自己該
+  // 做的是「按確認」還是「回答問題」。
+  const lockedNote = state.pending
+    ? t("agent.lockedByProposal")
+    : state.pendingAsk
+      ? t("agent.lockedByAsk")
+      : null;
   const hasContent = state.entries.length > 0;
 
   return (
@@ -238,6 +266,18 @@ export function AgentPanel({ tools }: AgentPanelProps) {
                     onCancel={onCancel}
                   />
                 );
+              case "ask":
+                return (
+                  <AskCard
+                    key={entry.id}
+                    ask={entry.ask}
+                    resolution={entry.resolution}
+                    answer={entry.answer}
+                    running={busy && entry.resolution === "pending"}
+                    onAnswer={onAskAnswer}
+                    onDismiss={() => onAskResolve({ kind: "dismissed" })}
+                  />
+                );
               case "notice":
                 return <Notice key={entry.id} tone={entry.tone} detail={entry.detail} />;
             }
@@ -260,9 +300,9 @@ export function AgentPanel({ tools }: AgentPanelProps) {
       <div className="mx-auto w-full max-w-[46rem]">
         <Composer
           tools={tools}
-          disabled={locked || busy || executing}
+          disabled={lockedNote !== null || busy || executing}
           busy={busy}
-          lockedNote={locked ? t("agent.lockedByProposal") : null}
+          lockedNote={lockedNote}
           onSend={onSend}
         />
         {hasContent && (

@@ -42,6 +42,7 @@ vi.mock("@/ext/loader", async () => {
 import {
   AGENT_MAX_STEPS,
   AGENT_MAX_TOKENS,
+  CORE_UI_ASK,
   TOOL_RESULT_MAX_CHARS,
   TOOL_RESULT_ROUND_MAX_CHARS,
   runAgentChat,
@@ -312,7 +313,8 @@ describe("鐵律:write tool 在 loop 內永不執行(spec §1.2)", () => {
       chat: script.chat,
     });
     const names = script.calls[0]!.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["test.thing.create", "test.thing.list"]);
+    // core.ui.ask 不來自 registry —— 它是 loop 合成附加的反問工具(§4.6)。
+    expect(names).toEqual([CORE_UI_ASK, "test.thing.create", "test.thing.list"]);
     expect(script.calls[0]!.system).toBe("sys");
     expect(script.calls[0]!.maxTokens).toBe(AGENT_MAX_TOKENS);
   });
@@ -1129,6 +1131,364 @@ describe("loop 過程事件(AgentChatParams.onEvent,1.32.0)", () => {
       onEvent: () => {},
     });
 
+    expect(withEvents).toEqual(withoutEvents);
+  });
+});
+
+// =========================================================== 反問卡(§4.6)
+
+// docs/spec-admin-agent.md §4.6:core.ui.ask 是**合成的** tool —— 它在餵給 LLM 的
+// 清單裡,但不在 registry 裡,而且永遠不執行。這一組測試釘住三件事:
+//   (a) 它真的被合成進清單,而 registry 完全不認得它(slash 選單/面板/execute
+//       因此自然列不到它 —— 那是要的效果);
+//   (b) 攔截與 write 提案共用同一條規則:依 block 順序取第一個「非 read」,其餘丟棄;
+//   (c) 參數送壞了走 harness 紀律(錯誤當 tool_result 接回續跑),不是丟給前端。
+
+const ASK_OPTIONS = {
+  question: "要改哪一篇?",
+  options: [
+    { value: "a", label: "貓の日常" },
+    { value: "b", label: "狗の日常", hint: "上週那篇" },
+  ],
+};
+
+const ASK_FIELDS = {
+  question: "新的標題與說明?",
+  fields: [
+    { key: "title", label: "標題", required: true },
+    { key: "note", label: "說明", type: "textarea" as const },
+  ],
+};
+
+function askResult(input: unknown, text = "", id = "tu-ask"): AiChatResult {
+  return {
+    ok: true,
+    text,
+    toolUses: [{ id, name: CORE_UI_ASK, input }],
+    stopReason: "tool_use",
+    model: "fake-model",
+  };
+}
+
+describe("core.ui.ask:合成、不進 registry(§4.6)", () => {
+  it("餵給 LLM 的清單多一筆 core.ui.ask,而 registry 一無所知", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([FINAL]);
+
+    await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    const defs = script.calls[0]!.tools;
+    expect(defs.map((d) => d.name)).toEqual([
+      "test.thing.create",
+      "test.thing.list",
+      CORE_UI_ASK,
+    ]);
+    const ask = defs.find((d) => d.name === CORE_UI_ASK)!;
+    // JSON Schema 真的轉得出來(superRefine 之前的物件),而不是退化成 any。
+    expect(ask.inputSchema).toMatchObject({ type: "object" });
+    const props = ask.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual([
+      "allowFreeText",
+      "fields",
+      "options",
+      "question",
+    ]);
+    expect(ask.inputSchema.required).toEqual(["question"]);
+    expect(ask.description).toContain("exactly one of the two");
+
+    // registry 不認得它 —— /execute、slash 選單、面板工具清單因此都列不到。
+    expect(fakes.registry.get(CORE_UI_ASK)).toBeNull();
+    expect(fakes.registry.names()).not.toContain(CORE_UI_ASK);
+  });
+
+  it("registry 已有同名 tool → 合成那筆讓位,並吵一聲", async () => {
+    const fakes = makeFakes();
+    fakes.registry.register(
+      defineAgentTool({
+        name: CORE_UI_ASK,
+        description: "A real registered tool that happens to collide.",
+        kind: "read",
+        schema: z.object({}).strict(),
+        run: async () => ({}),
+      }),
+    );
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const script = scriptedChat([FINAL]);
+
+    await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    const defs = script.calls[0]!.tools.filter((d) => d.name === CORE_UI_ASK);
+    expect(defs).toHaveLength(1);
+    expect(defs[0]!.description).toContain("happens to collide");
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("core.ui.ask:攔截(§4.6)", () => {
+  it("呼叫 ask → status:'ask',什麼都沒執行、audit 一列都沒有、loop 就此結束", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([askResult(ASK_OPTIONS, "我不確定是哪一篇。")]);
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    expect(outcome.status).toBe("ask");
+    if (outcome.status !== "ask") throw new Error("unreachable");
+    expect(outcome.ask).toEqual(ASK_OPTIONS);
+    expect(outcome.toolUseId).toBe("tu-ask");
+    expect(outcome.text).toBe("我不確定是哪一篇。");
+    expect(outcome.steps).toBe(1);
+    expect(outcome.toolCalls).toEqual([]);
+
+    // 不執行、不記 audit —— 它是一次對話,不是一次資料存取。
+    expect(fakes.readRun).not.toHaveBeenCalled();
+    expect(fakes.writeRun).not.toHaveBeenCalled();
+    expect(await auditRows()).toHaveLength(0);
+    expect(script.calls).toHaveLength(1);
+
+    // appended 是 delta,且 assistant 訊息只留這一個 tool_use。
+    expect(outcome.appended).toHaveLength(1);
+    const assistant = outcome.appended[0]!;
+    expect(assistant.role).toBe("assistant");
+    expect(
+      assistant.content
+        .filter((b) => b.type === "tool_use")
+        .map((b) => (b.type === "tool_use" ? b.id : "")),
+    ).toEqual(["tu-ask"]);
+  });
+
+  it("fields 模式一樣走 ask", async () => {
+    const fakes = makeFakes();
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: scriptedChat([askResult(ASK_FIELDS)]).chat,
+    });
+    if (outcome.status !== "ask") throw new Error("unreachable");
+    expect(outcome.ask).toEqual(ASK_FIELDS);
+  });
+
+  it("同回合的 read 也被丟掉(它補不了 tool_result)", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([
+      {
+        ok: true,
+        text: "",
+        toolUses: [
+          { id: "tu-read", name: "test.thing.list", input: {} },
+          { id: "tu-ask", name: CORE_UI_ASK, input: ASK_OPTIONS },
+        ],
+        stopReason: "tool_use",
+      },
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    expect(outcome.status).toBe("ask");
+    expect(fakes.readRun).not.toHaveBeenCalled();
+    const ids = outcome.appended[0]!.content
+      .filter((b) => b.type === "tool_use")
+      .map((b) => (b.type === "tool_use" ? b.id : ""));
+    expect(ids).toEqual(["tu-ask"]);
+  });
+
+  it("先後規則:ask 在 write 之前 → 走 ask", async () => {
+    const fakes = makeFakes();
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: scriptedChat([
+        {
+          ok: true,
+          text: "",
+          toolUses: [
+            { id: "tu-ask", name: CORE_UI_ASK, input: ASK_OPTIONS },
+            { id: "tu-write", name: "test.thing.create", input: { id: "x1" } },
+          ],
+          stopReason: "tool_use",
+        },
+      ]).chat,
+    });
+
+    expect(outcome.status).toBe("ask");
+    expect(fakes.writeRun).not.toHaveBeenCalled();
+    expect(await writeRowCount()).toBe(0);
+  });
+
+  it("先後規則:write 在 ask 之前 → 走提案(既有行為不變)", async () => {
+    const fakes = makeFakes();
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: scriptedChat([
+        {
+          ok: true,
+          text: "",
+          toolUses: [
+            { id: "tu-write", name: "test.thing.create", input: { id: "x1" } },
+            { id: "tu-ask", name: CORE_UI_ASK, input: ASK_OPTIONS },
+          ],
+          stopReason: "tool_use",
+        },
+      ]).chat,
+    });
+
+    expect(outcome.status).toBe("proposal");
+    if (outcome.status !== "proposal") throw new Error("unreachable");
+    expect(outcome.proposal.toolUseId).toBe("tu-write");
+    expect(fakes.writeRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("core.ui.ask:參數驗不過(§4.6 沿 §4.5 harness 紀律)", () => {
+  /** 送壞的 ask → 回一輪之後的 outcome 與那一則 tool_result。 */
+  async function runBadAsk(input: unknown) {
+    const fakes = makeFakes();
+    const script = scriptedChat([askResult(input), FINAL]);
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+    const block = outcome.appended[1]?.content[0];
+    if (!block || block.type !== "tool_result") {
+      throw new Error("expected a tool_result to be appended");
+    }
+    return { outcome, block, script, fakes };
+  }
+
+  it("options 與 fields 都給 → 錯誤當 tool_result 接回、loop 續跑(不丟給前端)", async () => {
+    const { outcome, block, script } = await runBadAsk({
+      ...ASK_OPTIONS,
+      fields: ASK_FIELDS.fields,
+    });
+
+    // 前端看到的是一輪正常的對話,不是一張畫不出來的卡。
+    expect(outcome.status).toBe("text");
+    expect(script.calls).toHaveLength(2);
+    expect(block.toolUseId).toBe("tu-ask");
+    expect(block.isError).toBe(true);
+    expect(block.content).toContain("invalid_args");
+    expect(block.content).toContain("exactly one");
+    // 第二次上游呼叫看得到那個錯誤 —— 模型才有機會改。
+    expect(script.calls[1]!.messages).toHaveLength(3);
+    // 什麼都沒執行 → audit 沒有任何一列。
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("兩個都不給 / 選項只有一個 / 缺 question,一律走同一條路", async () => {
+    for (const bad of [
+      { question: "沒有出口的卡" },
+      { question: "只有一個選項", options: [{ value: "a", label: "只有這個" }] },
+      { options: ASK_OPTIONS.options },
+    ]) {
+      const { outcome, block } = await runBadAsk(bad);
+      expect(outcome.status).toBe("text");
+      expect(block.isError).toBe(true);
+      expect(block.content).toContain("invalid_args");
+    }
+  });
+
+  it("fields 的 key 重複 → 擋下來(後面那欄會蓋掉前面那欄的答案)", async () => {
+    const { block } = await runBadAsk({
+      question: "?",
+      fields: [
+        { key: "title", label: "標題一" },
+        { key: "title", label: "標題二" },
+      ],
+    });
+    expect(block.content).toContain("duplicate field key");
+  });
+
+  it("toolCalls 記一筆:面板的條目對位靠它(這不是 audit)", async () => {
+    const { outcome } = await runBadAsk({ question: "沒有出口的卡" });
+    expect(outcome.toolCalls).toEqual([
+      { toolName: CORE_UI_ASK, ok: false, error: "invalid_args", truncated: false },
+    ]);
+    expect(await auditRows()).toHaveLength(0);
+  });
+});
+
+describe("core.ui.ask:與串流並用", () => {
+  it("ask 攔截時只發 step / text_delta —— 沒有 tool、tool_done(什麼都沒跑)", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChatStream([
+      [
+        { type: "text_delta", text: "我不確定," },
+        { type: "text_delta", text: "先問一下。" },
+        { type: "result", result: askResult(ASK_OPTIONS, "我不確定,先問一下。") },
+      ],
+    ]);
+    const events: AgentLoopEvent[] = [];
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(outcome.status).toBe("ask");
+    expect(events).toEqual([
+      { type: "step", step: 1 },
+      { type: "text_delta", text: "我不確定," },
+      { type: "text_delta", text: "先問一下。" },
+    ]);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("給不給 onEvent,outcome 一字不差", async () => {
+    const withoutEvents = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chat: scriptedChat([askResult(ASK_OPTIONS, "先問一下。")]).chat,
+    });
+    const withEvents = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chatStream: scriptedChatStream([
+        [{ type: "result", result: askResult(ASK_OPTIONS, "先問一下。") }],
+      ]).chatStream,
+      onEvent: () => {},
+    });
     expect(withEvents).toEqual(withoutEvents);
   });
 });

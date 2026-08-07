@@ -671,3 +671,70 @@ describe("POST /api/admin/agent/chat — SSE(Accept: text/event-stream)", () => 
     expect(await res.json()).toMatchObject({ status: "text" });
   });
 });
+
+// ==================================================== 反問卡(§4.6)
+
+// docs/spec-admin-agent.md §4.6:core.ui.ask 不在 registry 裡,所以這一檔(走**真的**
+// registry)是它最誠實的測法 —— 它能被攔下來,靠的不是註冊,而是 loop 認得那個名字。
+// 兩條交付路徑各驗一次:outcome 是同一個物件,SSE 只是把它包成最後一個事件。
+
+describe("POST /api/admin/agent/chat — 反問卡(core.ui.ask)", () => {
+  const ASK_INPUT = {
+    question: "要改哪一篇?",
+    options: [
+      { value: "cat", label: "貓の日常" },
+      { value: "dog", label: "狗の日常", hint: "上週那篇" },
+    ],
+  };
+  const ASKING: FakeChatResult[] = [
+    {
+      ok: true,
+      text: "我不確定是哪一篇。",
+      toolUses: [{ id: "tu-ask", name: "core.ui.ask", input: ASK_INPUT }],
+      stopReason: "tool_use",
+    },
+  ];
+
+  it("JSON 模式:status:'ask' 原樣透傳,什麼都沒執行、audit 沒有任何一列", async () => {
+    aiState.results = ASKING;
+    const res = await chatPost(chatReq({ messages: HELLO.messages }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      ask: unknown;
+      toolUseId: string;
+      text: string;
+      appended: { role: string; content: { type: string; id?: string }[] }[];
+    };
+    expect(body.status).toBe("ask");
+    expect(body.ask).toEqual(ASK_INPUT);
+    expect(body.toolUseId).toBe("tu-ask");
+    expect(body.text).toBe("我不確定是哪一篇。");
+    // appended 的 assistant 只留那一個 tool_use —— 前端據此補 tool_result。
+    expect(body.appended).toHaveLength(1);
+    expect(
+      body.appended[0]!.content.filter((b) => b.type === "tool_use"),
+    ).toHaveLength(1);
+    expect(await countRows("contents")).toBe(0);
+    expect(await auditRows()).toHaveLength(0);
+    // 一次上游呼叫就停了。
+    expect(aiState.calls).toHaveLength(1);
+  });
+
+  it("SSE 模式:沒有 tool 事件,最後一個 outcome 就是那張卡", async () => {
+    aiState.results = ASKING;
+    const events = await readSse(
+      await chatPost(sseChatReq({ messages: HELLO.messages })),
+    );
+
+    // 什麼都沒跑 → 沒有 tool / tool_done。
+    expect(events.map((e) => e.event)).toEqual(["step", "text_delta", "outcome"]);
+    expect(events[events.length - 1]!.data).toMatchObject({
+      status: "ask",
+      toolUseId: "tu-ask",
+      ask: ASK_INPUT,
+    });
+    expect(await auditRows()).toHaveLength(0);
+  });
+});

@@ -667,6 +667,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.toolTruncated": "結果已截斷",
   "agent.toolsAvailable": "可用工具 {count} 個",
   "agent.lockedByProposal": "先處理上面的確認,才能繼續對話。",
+  "agent.lockedByAsk": "先回答上面的問題,才能繼續對話。",
 
   // 確認卡 —— 整個面板的核心 surface(spec §5)
   "agent.proposal.heading": "等你確認",
@@ -681,6 +682,18 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.proposal.failed": "執行失敗",
   "agent.proposal.cancelled": "已取消 —— 沒有執行任何東西",
   "agent.proposal.resultLabel": "結果",
+
+  // 反問卡 —— 助理不用猜的,直接問(spec §4.6)
+  "agent.ask.heading": "有個問題想先確認",
+  "agent.ask.note": "你的回答會直接回到對話裡。",
+  "agent.ask.dismiss": "跳過",
+  "agent.ask.submit": "送出",
+  "agent.ask.sending": "送出中…",
+  "agent.ask.answered": "已回答",
+  "agent.ask.dismissed": "已跳過 —— 沒有回答",
+  "agent.ask.otherPlaceholder": "都不是,我自己寫…",
+  "agent.ask.required": "必填",
+  "agent.ask.missingRequired": "還有必填的欄位沒填。",
 
   // 串流中的狀態行(靜態文字,設計紅線:不准任何閃爍/呼吸/pulsing 指示)
   "agent.stream.thinking": "思考中…",

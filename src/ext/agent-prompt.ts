@@ -186,6 +186,14 @@ export function buildAgentSystemPrompt(input: AgentPromptInput): string {
     "- Any other tool call you make in the same turn as a write is discarded. Do your reading first, propose second.",
     "- After proposing, stop and wait. Do not assume the administrator approved, and do not describe the change as done.",
     "",
+    // ── 反問卡(spec §4.6)。放在確認制這一段,因為它解的是同一個問題的另一半:
+    // 「不確定就不要動手」對一個只會生成文字的模型而言,實務上等於「用猜的」或
+    // 「寫一長段問句然後等人打字」。core.ui.ask 是第三條路。
+    "When something you need is missing, ask — with a card, not a paragraph:",
+    "- If a detail you cannot look up is missing (which entry they mean, what the new title should be, which status to use), call core.ui.ask with a small set of concrete options, or a minimal form. Do not guess, and do not write a long list of questions as prose.",
+    "- One card per turn. Ask, wait for the answer, and only then propose the write. A question and a write in the same turn cannot both stand — only the first one survives.",
+    "- Never ask for something a read tool can tell you. Look it up first; ask only about intent.",
+    "",
     // ── 3. 站台脈絡(動態、限額)──────────────────────────────────────────
     siteContextSection(input),
     "",

@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   CLIENT_TOOL_RESULT_MAX_CHARS,
   appendUserMessage,
+  applyAskResolution,
   applyChatOutcome,
   applyProposalResolution,
   canSend,
@@ -21,7 +22,11 @@ import {
   findDanglingToolUseIds,
 } from "../src/components/admin/agent/transcript";
 import type { TranscriptState } from "../src/components/admin/agent/transcript";
-import type { AgentChatOutcome, AgentProposal } from "../src/ext/agent-loop";
+import type {
+  AgentAsk,
+  AgentChatOutcome,
+  AgentProposal,
+} from "../src/ext/agent-loop";
 import type { AiChatMessage } from "../src/ext/providers/ai";
 
 const PROPOSAL: AgentProposal = {
@@ -359,6 +364,209 @@ describe("純度", () => {
     const before = withPendingProposal();
     const snapshot = structuredClone(before);
     applyProposalResolution(before, { kind: "cancelled" });
+    expect(before).toEqual(snapshot);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 反問卡(spec §4.6)
+// ---------------------------------------------------------------------------
+
+// 同一條鐵律,另一張卡:**回答與關閉兩條路都補 tool_result**。差別只在內容 ——
+// 拒答是合法資料(admin 就是不想回答),不是錯誤,所以那一則不帶 isError。
+
+const ASK: AgentAsk = {
+  question: "要改哪一篇?",
+  options: [
+    { value: "cat", label: "貓の日常" },
+    { value: "dog", label: "狗の日常", hint: "上週那篇" },
+  ],
+};
+
+const ASK_FORM: AgentAsk = {
+  question: "新的標題與說明?",
+  fields: [
+    { key: "title", label: "標題", required: true },
+    { key: "note", label: "說明", type: "textarea" },
+  ],
+};
+
+function askOutcome(ask: AgentAsk = ASK, toolUseId = "toolu_ask_1"): AgentChatOutcome {
+  return {
+    status: "ask",
+    text: "我不確定是哪一篇。",
+    ask,
+    toolUseId,
+    appended: [
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "我不確定是哪一篇。" },
+          { type: "tool_use", id: toolUseId, name: "core.ui.ask", input: ask },
+        ],
+      },
+    ],
+    steps: 1,
+    toolCalls: [],
+    model: "test-model",
+  };
+}
+
+function withPendingAsk(ask: AgentAsk = ASK): TranscriptState {
+  return applyChatOutcome(
+    appendUserMessage(emptyTranscript(), "幫我改一下標題"),
+    askOutcome(ask),
+  );
+}
+
+/** 最後一則訊息的第一個 block,已確認是 tool_result。 */
+function lastResult(state: TranscriptState) {
+  const block = state.messages[state.messages.length - 1].content[0];
+  if (block.type !== "tool_result") throw new Error("unreachable");
+  return block;
+}
+
+describe("反問卡:兩條路都不留懸空 tool_use", () => {
+  it("卡片送達之後 transcript 是懸空的,composer 鎖住", () => {
+    const state = withPendingAsk();
+    expect(findDanglingToolUseIds(state.messages)).toEqual(["toolu_ask_1"]);
+    expect(canSend(state)).toBe(false);
+    expect(state.pendingAsk).toEqual({ ask: ASK, toolUseId: "toolu_ask_1" });
+    expect(state.pending).toBeNull();
+    expect(state.entries.map((e) => e.kind)).toEqual(["user", "assistant", "ask"]);
+    expect(state.entries[2]).toMatchObject({ resolution: "pending", ask: ASK });
+  });
+
+  it("回答 → 補上 tool_result,不再懸空", () => {
+    const state = applyAskResolution(withPendingAsk(), {
+      kind: "answered",
+      answer: { choice: "cat" },
+    });
+    expect(findDanglingToolUseIds(state.messages)).toEqual([]);
+    expect(canSend(state)).toBe(true);
+    expect(state.pendingAsk).toBeNull();
+  });
+
+  it("關閉 → 一樣補上 tool_result,不再懸空", () => {
+    const state = applyAskResolution(withPendingAsk(), { kind: "dismissed" });
+    expect(findDanglingToolUseIds(state.messages)).toEqual([]);
+    expect(canSend(state)).toBe(true);
+    expect(state.pendingAsk).toBeNull();
+  });
+});
+
+describe("反問卡補回去的 tool_result 形狀", () => {
+  it("選了一個選項:answered:true + choice,**不帶 isError**", () => {
+    const block = lastResult(
+      applyAskResolution(withPendingAsk(), {
+        kind: "answered",
+        answer: { choice: "cat" },
+      }),
+    );
+    expect(block.toolUseId).toBe("toolu_ask_1");
+    expect(block.isError).toBeUndefined();
+    expect(JSON.parse(block.content)).toEqual({ answered: true, choice: "cat" });
+  });
+
+  it("自由輸入與表單:各自的欄位原樣回去", () => {
+    const free = lastResult(
+      applyAskResolution(withPendingAsk(), {
+        kind: "answered",
+        answer: { freeText: "都不是,是三月那篇" },
+      }),
+    );
+    expect(JSON.parse(free.content)).toEqual({
+      answered: true,
+      freeText: "都不是,是三月那篇",
+    });
+
+    const form = lastResult(
+      applyAskResolution(withPendingAsk(ASK_FORM), {
+        kind: "answered",
+        answer: { values: { title: "新標題", note: "" } },
+      }),
+    );
+    expect(JSON.parse(form.content)).toEqual({
+      answered: true,
+      values: { title: "新標題", note: "" },
+    });
+  });
+
+  it("關閉:answered:false + 原因,**仍然不是錯誤**(與提案取消相反)", () => {
+    const block = lastResult(
+      applyAskResolution(withPendingAsk(), { kind: "dismissed" }),
+    );
+    expect(block.isError).toBeUndefined();
+    const parsed = JSON.parse(block.content) as { answered: boolean; reason: string };
+    expect(parsed.answered).toBe(false);
+    expect(parsed.reason).toMatch(/dismissed/i);
+  });
+
+  it("超長的自由輸入被截斷並標注", () => {
+    const block = lastResult(
+      applyAskResolution(withPendingAsk(), {
+        kind: "answered",
+        answer: { freeText: "字".repeat(CLIENT_TOOL_RESULT_MAX_CHARS * 2) },
+      }),
+    );
+    expect(block.content.length).toBeLessThan(CLIENT_TOOL_RESULT_MAX_CHARS + 200);
+    expect(block.content).toContain("truncated");
+  });
+
+  it("沒有待回答的卡時,重複處置不會產生第二則 tool_result", () => {
+    const once = applyAskResolution(withPendingAsk(), { kind: "dismissed" });
+    const twice = applyAskResolution(once, {
+      kind: "answered",
+      answer: { choice: "cat" },
+    });
+    expect(twice).toBe(once);
+  });
+});
+
+describe("反問卡的渲染條目", () => {
+  it("解決後只改動對應 toolUseId 的那一張卡,並記下選了什麼", () => {
+    const first = applyAskResolution(withPendingAsk(), { kind: "dismissed" });
+    const second = applyAskResolution(
+      applyChatOutcome(first, askOutcome(ASK, "toolu_ask_2")),
+      { kind: "answered", answer: { choice: "dog" } },
+    );
+    const cards = second.entries.filter((e) => e.kind === "ask");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toMatchObject({ resolution: "dismissed" });
+    expect(cards[0]).not.toHaveProperty("answer");
+    expect(cards[1]).toMatchObject({
+      resolution: "answered",
+      answer: { choice: "dog" },
+    });
+  });
+
+  it("回答之後可以再送下一則訊息,transcript 仍然合法", () => {
+    const answered = applyAskResolution(withPendingAsk(), {
+      kind: "answered",
+      answer: { choice: "cat" },
+    });
+    const next = applyChatOutcome(
+      appendUserMessage(answered, "那就改那一篇"),
+      readThenTextOutcome(),
+    );
+    expect(findDanglingToolUseIds(next.messages)).toEqual([]);
+    expect(canSend(next)).toBe(true);
+  });
+
+  it("純度:同輸入同輸出,而且不修改輸入", () => {
+    const a = applyAskResolution(withPendingAsk(), {
+      kind: "answered",
+      answer: { choice: "cat" },
+    });
+    const b = applyAskResolution(withPendingAsk(), {
+      kind: "answered",
+      answer: { choice: "cat" },
+    });
+    expect(a).toEqual(b);
+
+    const before = withPendingAsk();
+    const snapshot = structuredClone(before);
+    applyAskResolution(before, { kind: "dismissed" });
     expect(before).toEqual(snapshot);
   });
 });

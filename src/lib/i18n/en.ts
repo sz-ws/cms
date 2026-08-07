@@ -681,6 +681,7 @@ export const en = {
   "agent.toolTruncated": "result truncated",
   "agent.toolsAvailable": "{count} tools available",
   "agent.lockedByProposal": "Answer the confirmation above to carry on.",
+  "agent.lockedByAsk": "Answer the question above to carry on.",
 
   // confirmation card — the core surface of the whole panel (spec §5)
   "agent.proposal.heading": "Waiting for your confirmation",
@@ -696,6 +697,18 @@ export const en = {
   "agent.proposal.failed": "Failed",
   "agent.proposal.cancelled": "Cancelled — nothing was run",
   "agent.proposal.resultLabel": "Result",
+
+  // elicitation card — the assistant asking instead of guessing (spec §4.6)
+  "agent.ask.heading": "A quick question",
+  "agent.ask.note": "Your answer goes straight back into the conversation.",
+  "agent.ask.dismiss": "Skip",
+  "agent.ask.submit": "Send",
+  "agent.ask.sending": "Sending…",
+  "agent.ask.answered": "Answered",
+  "agent.ask.dismissed": "Skipped — no answer given",
+  "agent.ask.otherPlaceholder": "Something else…",
+  "agent.ask.required": "required",
+  "agent.ask.missingRequired": "Fill in the required fields first.",
 
   // in-flight status line (static text; design red line: no pulsing indicators)
   "agent.stream.thinking": "Thinking…",

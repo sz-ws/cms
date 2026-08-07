@@ -1,5 +1,6 @@
 import type { AiChatContentBlock, AiChatMessage } from "@/ext/providers/ai";
 import type {
+  AgentAsk,
   AgentChatOutcome,
   AgentProposal,
   AgentToolCallLog,
@@ -17,6 +18,10 @@ import type {
 // 一條,錯誤不會在按下的當下出現,而是在使用者下一次送出訊息時,以一句看不懂的
 // 上游錯誤現身。這種「延遲一拍才炸」的規則不能只靠事件處理器碰巧寫對,要有測試
 // 釘住;所以它住在一個沒有 React、沒有 fetch、沒有 DOM 的檔案裡。
+//
+// 反問卡(spec §4.6)完全適用同一條規則,連出口的數量都一樣:**回答與關閉都要補
+// tool_result**。差別只在內容 —— 拒答是合法的資料(admin 就是不想回答),不是錯誤,
+// 所以那一則不帶 isError,與提案「取消」刻意標成 isError 的處置相反。
 //
 // ── 兩份資料,一個真相 ──────────────────────────────────────────────────────
 // state 同時帶 `messages`(送去 /chat 的線上形狀)與 `entries`(渲染用的條目)。
@@ -44,6 +49,20 @@ export interface ProposalOutcome {
   detail: string;
 }
 
+/** 反問卡的處置。pending = 卡片還在等人回答。 */
+export type AskResolution = "pending" | "answered" | "dismissed";
+
+/**
+ * admin 給的答案。options 模式給 choice(allowFreeText 時可再帶 freeText),
+ * fields 模式給 values。三個欄位都選填是刻意的:這個形狀同時是**回給模型的
+ * tool_result 內容**與**卡片解決後要顯示的東西**,而模式由卡片自己決定。
+ */
+export interface AskAnswer {
+  choice?: string;
+  freeText?: string;
+  values?: Record<string, string>;
+}
+
 /** 渲染用的條目。UI 只認識這個 union,不必自己解析 content blocks。 */
 export type TranscriptEntry =
   | { kind: "user"; id: string; text: string }
@@ -57,6 +76,16 @@ export type TranscriptEntry =
       outcome?: ProposalOutcome;
     }
   | {
+      kind: "ask";
+      id: string;
+      ask: AgentAsk;
+      /** 對位用(同一份 transcript 裡可以有很多張卡)。 */
+      toolUseId: string;
+      resolution: AskResolution;
+      /** resolution:"answered" 時 admin 選了/填了什麼。 */
+      answer?: AskAnswer;
+    }
+  | {
       kind: "notice";
       id: string;
       tone: "maxSteps" | "error";
@@ -64,12 +93,21 @@ export type TranscriptEntry =
       detail?: string;
     };
 
+/** 待回答的反問卡。 */
+export interface PendingAsk {
+  ask: AgentAsk;
+  toolUseId: string;
+}
+
 export interface TranscriptState {
   /** 送去 /chat 的完整 transcript。 */
   messages: AiChatMessage[];
   entries: TranscriptEntry[];
   /** 待人工確認的提案;非 null 時 composer 必須鎖住(一次只處理一張卡)。 */
   pending: AgentProposal | null;
+  /** 待回答的反問卡;同樣鎖住 composer。與 pending 不可能同時非 null —— loop 一輪
+   *  最多攔下一個 tool_use(agent-loop 的攔截段)。 */
+  pendingAsk: PendingAsk | null;
   /** 下一個 entry id 的序號(見檔頭的純度說明)。 */
   seq: number;
 }
@@ -79,8 +117,19 @@ export type ProposalDecision =
   | { kind: "confirmed"; ok: boolean; result?: unknown; error?: string }
   | { kind: "cancelled" };
 
+/** 反問卡的出口。兩條都會補一則 tool_result(見檔頭)。 */
+export type AskDecision =
+  | { kind: "answered"; answer: AskAnswer }
+  | { kind: "dismissed" };
+
 export function emptyTranscript(): TranscriptState {
-  return { messages: [], entries: [], pending: null, seq: 0 };
+  return {
+    messages: [],
+    entries: [],
+    pending: null,
+    pendingAsk: null,
+    seq: 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -129,9 +178,13 @@ export function findDanglingToolUseIds(messages: readonly AiChatMessage[]): stri
   return used.filter((id) => !answered.has(id));
 }
 
-/** 可以送出下一則訊息嗎。有待確認的卡、或有懸空的 tool_use 都不行。 */
+/** 可以送出下一則訊息嗎。有待處理的卡(確認或反問)、或有懸空的 tool_use 都不行。 */
 export function canSend(state: TranscriptState): boolean {
-  return state.pending === null && findDanglingToolUseIds(state.messages).length === 0;
+  return (
+    state.pending === null &&
+    state.pendingAsk === null &&
+    findDanglingToolUseIds(state.messages).length === 0
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +264,7 @@ export function appendUserMessage(
     entries: built.entries,
     seq: built.seq,
     pending: state.pending,
+    pendingAsk: state.pendingAsk,
   };
 }
 
@@ -231,6 +285,7 @@ export function applyChatOutcome(
     outcome.toolCalls,
   );
   let pending = state.pending;
+  let pendingAsk = state.pendingAsk;
 
   if (outcome.status === "proposal") {
     pending = outcome.proposal;
@@ -238,6 +293,15 @@ export function applyChatOutcome(
       kind: "proposal",
       id,
       proposal: outcome.proposal,
+      resolution: "pending",
+    }));
+  } else if (outcome.status === "ask") {
+    pendingAsk = { ask: outcome.ask, toolUseId: outcome.toolUseId };
+    built = pushEntry(built, (id) => ({
+      kind: "ask",
+      id,
+      ask: outcome.ask,
+      toolUseId: outcome.toolUseId,
       resolution: "pending",
     }));
   } else if (outcome.status === "max_steps") {
@@ -256,6 +320,7 @@ export function applyChatOutcome(
     entries: built.entries,
     seq: built.seq,
     pending,
+    pendingAsk,
   };
 }
 
@@ -329,5 +394,77 @@ export function applyProposalResolution(
     entries,
     seq: state.seq,
     pending: null,
+    pendingAsk: state.pendingAsk,
+  };
+}
+
+/** 決定 → 要接回 transcript 的 tool_result 內文(spec §4.6)。 */
+function askResultContent(decision: AskDecision): string {
+  if (decision.kind === "dismissed") {
+    // **不帶 isError**:admin 不想回答是一個合法的答案,模型接著該做的是換個
+    // 做法或直接說做不到,而不是把它當成一次失敗去重試。與提案「取消」刻意
+    // 標成 isError 相反 —— 那邊要防的是模型把 cancelled 讀成「做完了」。
+    return jsonText({
+      answered: false,
+      reason: "dismissed by the administrator",
+    });
+  }
+  const { choice, freeText, values } = decision.answer;
+  return bounded(
+    jsonText({
+      answered: true,
+      ...(choice === undefined ? {} : { choice }),
+      ...(freeText === undefined ? {} : { freeText }),
+      ...(values === undefined ? {} : { values }),
+    }),
+  );
+}
+
+/**
+ * 處置目前這張反問卡(回答、或關閉)。
+ *
+ * 與 applyProposalResolution 是同一個形狀、同一條鐵律:**兩條路都補一則
+ * tool_result**。沒有待處理的反問時原樣回傳(重複點擊、關閉與回答的競態)。
+ */
+export function applyAskResolution(
+  state: TranscriptState,
+  decision: AskDecision,
+): TranscriptState {
+  const pending = state.pendingAsk;
+  if (!pending) return state;
+
+  const resultMessage: AiChatMessage = {
+    role: "user",
+    content: [
+      {
+        type: "tool_result",
+        toolUseId: pending.toolUseId,
+        content: askResultContent(decision),
+      },
+    ],
+  };
+
+  const resolution: AskResolution =
+    decision.kind === "dismissed" ? "dismissed" : "answered";
+
+  let patched = false;
+  const entries = state.entries.map((entry) => {
+    if (patched || entry.kind !== "ask") return entry;
+    if (entry.toolUseId !== pending.toolUseId) return entry;
+    if (entry.resolution !== "pending") return entry;
+    patched = true;
+    return {
+      ...entry,
+      resolution,
+      ...(decision.kind === "answered" ? { answer: decision.answer } : {}),
+    };
+  });
+
+  return {
+    messages: [...state.messages, resultMessage],
+    entries,
+    seq: state.seq,
+    pending: state.pending,
+    pendingAsk: null,
   };
 }
