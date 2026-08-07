@@ -56,6 +56,15 @@ const ACTIONS: Partial<Record<OrderStatus, ActionDef[]>> = {
       path: (n) => `orders/${n}/status`,
       body: { to: "shipped" },
     },
+    // 純記帳:退款動作本身在銀行/金流後台完成(gateway 退款 API 刻意不做,見
+    // types.ts)。這個按鈕只是把那件已經發生的事寫進訂單 —— 少了它,狀態機宣告
+    // 合法的 paid → refunded 沒有任何入口,訂單會永遠停在「已付款」。
+    {
+      label: "標記已退款",
+      path: (n) => `orders/${n}/status`,
+      body: { to: "refunded" },
+      confirm: "這只是記帳 —— 退款請先在金流/銀行端完成。確定標記為已退款?",
+    },
   ],
   shipped: [
     {

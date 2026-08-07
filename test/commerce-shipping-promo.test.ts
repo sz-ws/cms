@@ -177,6 +177,8 @@ function makeServices(): CoreServices {
 let services: CoreServices;
 // 模擬 manual provider 未設定(instructions 失敗)→ createCheckout 回 ok:false。
 let brokenPayment = false;
+/** 在 quote 與 redeem 之間跑一次(見 resolveProvider)—— 測 race 用的縫。 */
+let duringCheckout: (() => Promise<void>) | null = null;
 
 function ctx(): ApiCtx {
   return {
@@ -189,7 +191,12 @@ let shippingConfig: ShippingConfig | null = null;
 
 const checkoutHandler = createCommerceCheckoutHandler({
   table: SHOP_TABLE,
-  resolveProvider: async () => (brokenPayment ? "missing" : "manualtest"),
+  // resolveProvider 落在 quotePromo 與 redeemPromo **之間**,所以它同時是測試用來
+  // 打開那個 race 窗口的鉤子(見「免運被改掉」那一條)。
+  resolveProvider: async () => {
+    await duringCheckout?.();
+    return brokenPayment ? "missing" : "manualtest";
+  },
   resolveShippingConfig: async () => shippingConfig,
   promoTable: PROMO_TABLE,
 });
@@ -258,6 +265,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  duringCheckout = null;
   await d1().exec(`DELETE FROM ${SHOP_TABLE};`);
   await d1().exec(`DELETE FROM ${PAY_TABLE};`);
   await d1().exec(`DELETE FROM ${PROMO_TABLE};`);
@@ -392,6 +400,33 @@ describe("checkout 整合(運費 + 優惠碼)", () => {
       .prepare(`SELECT used FROM ${PROMO_TABLE} WHERE code = 'SAVE10'`)
       .first<{ used: number }>();
     expect(used?.used).toBe(1);
+  });
+
+  // 金額一律以**核銷回傳的那一列**為準,而那是兩次讀之間可能被 admin 改過的東西。
+  // 折扣一直是這樣算的;運費原本只有「是 freeship 就清零」單向的一半,少了相反方向,
+  // 結果是這張單同時吃到折扣**和**已經不存在的免運。
+  it("免運碼在 quote 與 redeem 之間被改成 percent → 運費還原,不會兩頭賺", async () => {
+    shippingConfig = SHIP;
+    await seedPromo({ code: "SHIPFREE", type: "freeship", value: 0, max_uses: 9 });
+    // quote 讀到 freeship 之後、原子核銷之前,admin 把同一張碼改成九折。
+    duringCheckout = async () => {
+      await d1()
+        .prepare(`UPDATE ${PROMO_TABLE} SET type = 'percent', value = 10 WHERE code = 'SHIPFREE'`)
+        .run();
+    };
+
+    const { body } = await checkout({ shippingMethodId: "cvs", promoCode: "SHIPFREE" });
+
+    // 折扣照新的算(600 的 10%),運費**還原**成 cvs 的 60 —— 不是被 quote 清掉的 0。
+    expect(body.amounts).toEqual({
+      subtotal: 600,
+      discount: 60,
+      shipping: 60,
+      total: 600,
+    });
+    // 落庫的那一份也要是還原後的值,不能只有回應對。
+    const order = await getOrder({ db: db() }, SHOP_TABLE, body.orderNo as string);
+    expect(order?.amounts).toMatchObject({ shipping: 60, discount: 60, total: 600 });
   });
 
   it("無效碼 422 + reason;用罄的碼在核銷 race 也擋住", async () => {

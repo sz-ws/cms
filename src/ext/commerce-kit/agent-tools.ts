@@ -96,6 +96,7 @@ const STATUS_ZH: Record<string, string> = {
   shipped: "已出貨",
   completed: "已完成",
   cancelled: "已取消",
+  refunded: "已退款",
 };
 
 function toSummary(order: CommerceOrder): CommerceOrderSummary {
@@ -252,14 +253,17 @@ export function createCommerceAgentTools(
     defineAgentTool({
       name: `${extId}.orders.transition`,
       description:
-        "Move a shop order to shipped, completed or cancelled. " +
-        "The order state machine decides what is legal: paid → shipped → completed, and cancelled only while the money " +
-        `has not arrived yet; anything else fails with illegal_transition. Marking an order paid is not done here — that is ${extId}.orders.verify.`,
+        "Move a shop order to shipped, completed, cancelled or refunded. " +
+        "The order state machine decides what is legal: paid → shipped → completed, cancelled only while the money " +
+        "has not arrived yet, and refunded only from paid; anything else fails with illegal_transition. " +
+        "Refunded is bookkeeping only — it records a refund the shop already made in its bank or payment dashboard, " +
+        "it does not move any money. " +
+        `Marking an order paid is not done here — that is ${extId}.orders.verify.`,
       kind: "write",
       schema: z
         .object({
           orderNo: orderNoSchema,
-          to: z.enum(["shipped", "completed", "cancelled"]),
+          to: z.enum(["shipped", "completed", "cancelled", "refunded"]),
           note: noteSchema.optional(),
         })
         .strict(),

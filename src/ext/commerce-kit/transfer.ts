@@ -2,7 +2,12 @@ import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { isManualPaymentProvider } from "../payment-kit/manual";
 import type { ApiCtx } from "../types";
-import { getOrder, setOrderNote, transitionOrder } from "./orders";
+import {
+  getOrder,
+  rewriteTransferReport,
+  setOrderNote,
+  transitionOrder,
+} from "./orders";
 import { isOrderStatus, type OrderStatus } from "./types";
 
 // commerce-kit:匯款流程的三個 handler。
@@ -59,12 +64,21 @@ export function createTransferReportHandler(opts: { table: string }) {
     );
     if (moved) return Response.json({ ok: true });
 
-    // 已在 awaiting_verify(重報,如打錯末五碼)→ 只更新回報欄位。
-    const order = await getOrder(_ctx.services, opts.table, body.orderNo);
-    if (order && order.status === "awaiting_verify") {
-      await transitionOrder(_ctx.services, opts.table, body.orderNo, "awaiting_verify", extras);
-      return Response.json({ ok: true });
-    }
+    // 已在 awaiting_verify(重報,如打錯末五碼)→ 只重寫回報欄位,狀態不動。
+    //
+    // 這裡**不能**再呼叫一次 transitionOrder:上面那次剛回 false,而它失敗的原因正是
+    // 「awaiting_verify 不是自己的合法來源」—— 同樣的呼叫不會有不同的結果,只會安靜
+    // 地丟掉客人剛改好的末五碼,然後回報成功(見 orders.ts 的 rewriteTransferReport)。
+    const rewritten = await rewriteTransferReport(
+      _ctx.services,
+      opts.table,
+      body.orderNo,
+      extras,
+    );
+    if (rewritten) return Response.json({ ok: true });
+
+    // 走到這裡:訂單不存在,或它的狀態既不能轉進 awaiting_verify 也不是
+    // awaiting_verify(已付款、已取消…)。兩者對客人而言都是「這張單現在不收回報」。
     return Response.json({ ok: false, error: "not_found" }, { status: 404 });
   };
 }
@@ -159,9 +173,13 @@ export function createTransferVerifyHandler(opts: {
   };
 }
 
+// 這個 enum 是**入口**,ORDER_TRANSITIONS 才是規則 —— 兩者都要有那個值,狀態才
+// 到得了。refunded 一度只存在於規則裡(paid → refunded 宣告合法、pill 顏色也備好
+// 了),但三個入口(這裡、agent tool、後台按鈕)全都沒有它,所以那個狀態實際上
+// 到不了、紅色 pill 是死程式碼。退款動作本身仍然刻意不做,這裡只負責記帳。
 const statusSchema = z
   .object({
-    to: z.enum(["shipped", "completed", "cancelled"]),
+    to: z.enum(["shipped", "completed", "cancelled", "refunded"]),
     note: z.string().trim().max(200).optional(),
   })
   .strict();

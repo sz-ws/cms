@@ -613,9 +613,18 @@ describe("summarize:訂單 write tools(1.31.0)", () => {
   });
 
   it("認不得的 to 原樣寫出來,不猜(模型送了什麼,admin 就看到什麼)", () => {
+    // 這個值刻意是幻覺 —— summarize 拿到的是**未經 schema 驗證**的模型輸入,所以
+    // 它必須對「不在 enum 裡的字」也生得出一句話。(原本這裡用的是 refunded,而
+    // refunded 後來成了合法值,測到的就不再是這條規則了。)
+    expect(
+      say(`${EXT_ID}.orders.transition`, { orderNo: "SO7", to: "teleported" }, "zh-Hant"),
+    ).toBe("把訂單 SO7 轉為teleported");
+  });
+
+  it("refunded 有中文標籤(它是合法值,不該掉進「原樣寫出來」那條路)", () => {
     expect(
       say(`${EXT_ID}.orders.transition`, { orderNo: "SO7", to: "refunded" }, "zh-Hant"),
-    ).toBe("把訂單 SO7 轉為refunded");
+    ).toBe("把訂單 SO7 轉為已退款");
   });
 
   it("缺 orderNo → 明說缺,而不是生出一句看起來很篤定的話", () => {

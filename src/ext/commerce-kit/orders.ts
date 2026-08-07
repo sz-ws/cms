@@ -242,6 +242,38 @@ export async function transitionOrder(
   return rows.length > 0;
 }
 
+/**
+ * 重寫匯款回報欄位 —— **狀態不動**,只在訂單仍為 awaiting_verify 時成立。
+ *
+ * 為什麼不能用 transitionOrder 做這件事:它的 `WHERE status IN (合法來源)` 是由
+ * ORDER_TRANSITIONS 反查的,而能轉去 awaiting_verify 的來源只有 pending_payment
+ * (awaiting_verify 不在自己的來源清單裡,那是刻意的 —— 自我轉移一旦合法,狀態機
+ * 對每一個狀態都鬆一格)。所以「客人打錯末五碼、在 admin 核帳前重報一次」這條路
+ * 用 transitionOrder 必然命中 0 列:新的末五碼被安靜丟掉,admin 對帳時看到的還是
+ * 舊的錯號碼。修法是給它一條不經過狀態機的專屬 UPDATE,而不是把 awaiting_verify
+ * 加進自己的來源清單。
+ *
+ * 回傳「有沒有真的改到」。呼叫端**必須**看這個值 —— 這個 bug 的另一半就是原本的
+ * 程式碼不看回傳值,對著沒改到的資料回報成功。
+ */
+export async function rewriteTransferReport(
+  deps: CommerceDb,
+  table: string,
+  orderNo: string,
+  extras: Pick<TransitionExtras, "transferLast5" | "transferReportedAt">,
+): Promise<boolean> {
+  assertTable(table);
+  const rows = await deps.db.all<{ orderNo: string }>(sql`
+    UPDATE ${sql.raw(table)} SET
+      transfer_last5 = COALESCE(${extras.transferLast5 ?? null}, transfer_last5),
+      transfer_reported_at = COALESCE(${extras.transferReportedAt ?? null}, transfer_reported_at),
+      updated_at = ${Date.now()}
+    WHERE order_no = ${orderNo} AND status = 'awaiting_verify'
+    RETURNING order_no AS orderNo
+  `);
+  return rows.length > 0;
+}
+
 /** 追加訂單附註(核帳紀錄等;換行分隔,同 transitionOrder 的追加語意)。
  *  不動狀態,查無此單靜默略過。 */
 export async function setOrderNote(

@@ -330,6 +330,41 @@ describe("匯款全流程:回報 → 核帳 → hook 翻單", () => {
     expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.status).toBe("paid");
   });
 
+  // 這一條釘的是一個曾經**安靜失敗又回報成功**的路徑。上面那個「退回後重報」走的是
+  // pending_payment → awaiting_verify 的正常轉移;客人打錯末五碼、在 admin 核帳前
+  // 自己重報一次,狀態**還停在 awaiting_verify**,而那條路原本又呼叫了一次剛剛才回
+  // false 的 transitionOrder,末五碼整個被丟掉,handler 卻無條件回 ok:true。
+  it("仍在 awaiting_verify 時重報 → 末五碼真的被改到,而且不是假的 ok", async () => {
+    const { body } = await checkout();
+    const orderNo = body.orderNo as string;
+
+    await reportHandler(reportReq(orderNo, "11111"), {}, ctx());
+    expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.transferLast5).toBe(
+      "11111",
+    );
+
+    // 沒有經過退回 —— 訂單此刻仍是 awaiting_verify。
+    const again = await reportHandler(reportReq(orderNo, "22222"), {}, ctx());
+    expect(again.status).toBe(200);
+
+    const order = await getOrder({ db: db() }, SHOP_TABLE, orderNo);
+    expect(order?.status).toBe("awaiting_verify");
+    expect(order?.transferLast5).toBe("22222");
+  });
+
+  it("狀態不收回報時 → 404,不是假的 ok", async () => {
+    const { body } = await checkout();
+    const orderNo = body.orderNo as string;
+    await reportHandler(reportReq(orderNo), {}, ctx());
+    await verifyHandler(verifyReq(true), { orderNo }, ctx("editor")); // → paid
+
+    const late = await reportHandler(reportReq(orderNo, "99999"), {}, ctx());
+    expect(late.status).toBe(404);
+    expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.transferLast5).toBe(
+      "12345",
+    );
+  });
+
   it("後台直接切換:未回報(pending_payment)也可核可入帳;退回僅限已回報", async () => {
     const { body } = await checkout();
     const orderNo = body.orderNo as string;
@@ -403,5 +438,39 @@ describe("匯款全流程:回報 → 核帳 → hook 翻單", () => {
       ctx(),
     );
     expect(cancel.status).toBe(200);
+  });
+
+  // refunded 曾經只存在於規則裡:ORDER_TRANSITIONS 宣告 paid → refunded 合法、pill
+  // 顏色也備好了,但三個入口(狀態路由的 enum、agent tool 的 enum、後台按鈕)全都
+  // 沒有它,所以那個狀態實際上到不了。這一條釘住「規則宣告的,入口就到得了」。
+  it("記帳用的 refunded:paid → refunded 到得了,已完成的單不行", async () => {
+    function statusReq(to: string): Request {
+      return new Request("https://cms.test/x", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to }),
+      });
+    }
+
+    const { body } = await checkout();
+    const orderNo = body.orderNo as string;
+    await reportHandler(reportReq(orderNo), {}, ctx());
+    await verifyHandler(verifyReq(true), { orderNo }, ctx());
+
+    expect((await statusHandler(statusReq("refunded"), { orderNo }, ctx())).status).toBe(
+      200,
+    );
+    expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.status).toBe("refunded");
+
+    // 出貨完成之後不是退款的合法來源 —— 狀態機仍然是唯一的規則。
+    const other = await checkout();
+    const otherNo = other.body.orderNo as string;
+    await reportHandler(reportReq(otherNo), {}, ctx());
+    await verifyHandler(verifyReq(true), { orderNo: otherNo }, ctx());
+    await statusHandler(statusReq("shipped"), { orderNo: otherNo }, ctx());
+    await statusHandler(statusReq("completed"), { orderNo: otherNo }, ctx());
+    expect(
+      (await statusHandler(statusReq("refunded"), { orderNo: otherNo }, ctx())).status,
+    ).toBe(409);
   });
 });

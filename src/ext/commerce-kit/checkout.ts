@@ -187,6 +187,8 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
       shipping = chosen.fee;
       shippingMethodName = chosen.name;
     }
+    /** 優惠碼動它之前的運費原價。核銷之後要據此還原 —— 見下面 redeemPromo 那一段。 */
+    const shippingFee = shipping;
 
     // Phase 4 優惠碼:先唯讀試算(不合格 → 422 帶 reason,讓客人看得懂),
     // 真正佔用量的原子核銷放在 payment session 之前(金額必須先定案)。
@@ -247,7 +249,10 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
         );
       }
       amounts.discount = promoDiscount(redeemed, subtotal);
-      if (redeemed.type === "freeship") amounts.shipping = 0;
+      // **兩個方向都要寫**,不是只有清零。quote 讀到 freeship 時上面已經把運費歸零,
+      // 若 admin 在 quote 與 redeem 之間把同一張碼改成 percent(upsert 不動 used,
+      // 是正常編輯),只清零不還原的結果是這張單同時拿到折扣**和**免運。
+      amounts.shipping = redeemed.type === "freeship" ? 0 : shippingFee;
       amounts.total = amounts.subtotal - amounts.discount + amounts.shipping;
       if (amounts.total < 1 || amounts.total > 99_999_999) {
         await restorePromoUse(ctx.services, opts.promoTable!, promoCode);
