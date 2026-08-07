@@ -1,7 +1,11 @@
+import { toCodeOutput } from "@/ext/agent-code";
 import type { AiChatContentBlock, AiChatMessage } from "@/ext/providers/ai";
 import type {
   AgentAsk,
   AgentChatOutcome,
+  AgentCode,
+  AgentCodeOutput,
+  AgentCodeRun,
   AgentProposal,
   AgentToolCallLog,
 } from "@/ext/agent-loop";
@@ -22,6 +26,10 @@ import type {
 // 反問卡(spec §4.6)完全適用同一條規則,連出口的數量都一樣:**回答與關閉都要補
 // tool_result**。差別只在內容 —— 拒答是合法的資料(admin 就是不想回答),不是錯誤,
 // 所以那一則不帶 isError,與提案「取消」刻意標成 isError 的處置相反。
+//
+// JS 沙盒(spec §4.7)的出口比前兩張卡多,而規則一字不變:**跑完、逾時、丟例外、
+// 被關掉,四條路都要補 tool_result**。四條裡有三條是「沒有答案」,所以特別容易在
+// 實作時只接上成功那一條 —— 那正是這條規則住在一個有測試的純函式檔裡的理由。
 //
 // ── 兩份資料,一個真相 ──────────────────────────────────────────────────────
 // state 同時帶 `messages`(送去 /chat 的線上形狀)與 `entries`(渲染用的條目)。
@@ -63,6 +71,14 @@ export interface AskAnswer {
   values?: Record<string, string>;
 }
 
+/**
+ * 沙盒卡的處置。
+ *   pending  = 還在跑(或還沒開始跑)—— 這是**唯一**會自動離開的狀態;
+ *   ran      = 跑完了,成功或失敗都算(答案在 output 裡);
+ *   declined = admin 關掉了卡片,程式碼沒有跑。
+ */
+export type CodeResolution = "pending" | "ran" | "declined";
+
 /** 渲染用的條目。UI 只認識這個 union,不必自己解析 content blocks。 */
 export type TranscriptEntry =
   | { kind: "user"; id: string; text: string }
@@ -89,6 +105,16 @@ export type TranscriptEntry =
       answer?: AskAnswer;
     }
   | {
+      kind: "code";
+      id: string;
+      code: AgentCode;
+      /** 對位用(同一份 transcript 裡可以有很多張卡)。 */
+      toolUseId: string;
+      resolution: CodeResolution;
+      /** resolution:"ran" 時沙盒回報了什麼(卡片據此顯示成功/失敗與 logs)。 */
+      output?: AgentCodeOutput;
+    }
+  | {
       kind: "notice";
       id: string;
       tone: "maxSteps" | "error";
@@ -102,6 +128,12 @@ export interface PendingAsk {
   toolUseId: string;
 }
 
+/** 待執行的沙盒卡。 */
+export interface PendingCode {
+  code: AgentCode;
+  toolUseId: string;
+}
+
 export interface TranscriptState {
   /** 送去 /chat 的完整 transcript。 */
   messages: AiChatMessage[];
@@ -111,6 +143,9 @@ export interface TranscriptState {
   /** 待回答的反問卡;同樣鎖住 composer。與 pending 不可能同時非 null —— loop 一輪
    *  最多攔下一個 tool_use(agent-loop 的攔截段)。 */
   pendingAsk: PendingAsk | null;
+  /** 待執行的沙盒卡;同樣鎖住 composer。與上面兩個同理,三者最多一個非 null。
+   *  差別只在**誰去處理它**:前兩張等 admin 按,這一張等瀏覽器跑完。 */
+  pendingCode: PendingCode | null;
   /** 下一個 entry id 的序號(見檔頭的純度說明)。 */
   seq: number;
 }
@@ -125,12 +160,24 @@ export type AskDecision =
   | { kind: "answered"; answer: AskAnswer }
   | { kind: "dismissed" };
 
+/**
+ * 沙盒卡的出口。
+ *
+ * `ran` 涵蓋**所有真的跑過的結果** —— 成功、丟例外、逾時都是同一個 kind,差別在
+ * AgentCodeRun 裡的 ok/error。刻意不為失敗另開一個 kind:那會讓「四條路都要補
+ * tool_result」變成「五條路」,而每多一條就多一個會被忘記接上的出口。
+ */
+export type CodeDecision =
+  | { kind: "ran"; run: AgentCodeRun }
+  | { kind: "declined" };
+
 export function emptyTranscript(): TranscriptState {
   return {
     messages: [],
     entries: [],
     pending: null,
     pendingAsk: null,
+    pendingCode: null,
     seq: 0,
   };
 }
@@ -181,11 +228,13 @@ export function findDanglingToolUseIds(messages: readonly AiChatMessage[]): stri
   return used.filter((id) => !answered.has(id));
 }
 
-/** 可以送出下一則訊息嗎。有待處理的卡(確認或反問)、或有懸空的 tool_use 都不行。 */
+/** 可以送出下一則訊息嗎。有待處理的卡(確認 / 反問 / 沙盒)、或有懸空的 tool_use
+ *  都不行。 */
 export function canSend(state: TranscriptState): boolean {
   return (
     state.pending === null &&
     state.pendingAsk === null &&
+    state.pendingCode === null &&
     findDanglingToolUseIds(state.messages).length === 0
   );
 }
@@ -268,6 +317,7 @@ export function appendUserMessage(
     seq: built.seq,
     pending: state.pending,
     pendingAsk: state.pendingAsk,
+    pendingCode: state.pendingCode,
   };
 }
 
@@ -289,6 +339,7 @@ export function applyChatOutcome(
   );
   let pending = state.pending;
   let pendingAsk = state.pendingAsk;
+  let pendingCode = state.pendingCode;
 
   if (outcome.status === "proposal") {
     pending = outcome.proposal;
@@ -304,6 +355,15 @@ export function applyChatOutcome(
       kind: "ask",
       id,
       ask: outcome.ask,
+      toolUseId: outcome.toolUseId,
+      resolution: "pending",
+    }));
+  } else if (outcome.status === "code") {
+    pendingCode = { code: outcome.code, toolUseId: outcome.toolUseId };
+    built = pushEntry(built, (id) => ({
+      kind: "code",
+      id,
+      code: outcome.code,
       toolUseId: outcome.toolUseId,
       resolution: "pending",
     }));
@@ -324,6 +384,7 @@ export function applyChatOutcome(
     seq: built.seq,
     pending,
     pendingAsk,
+    pendingCode,
   };
 }
 
@@ -398,6 +459,7 @@ export function applyProposalResolution(
     seq: state.seq,
     pending: null,
     pendingAsk: state.pendingAsk,
+    pendingCode: state.pendingCode,
   };
 }
 
@@ -469,5 +531,78 @@ export function applyAskResolution(
     seq: state.seq,
     pending: state.pending,
     pendingAsk: null,
+    pendingCode: state.pendingCode,
+  };
+}
+
+/**
+ * 決定 → 要接回 transcript 的 tool_result 內文 + 渲染用的結果(spec §4.7)。
+ *
+ * 收斂與截斷全在 @/ext/agent-code 的 toCodeOutput(純函式,server 與前端共用同
+ * 一份);這裡只負責把它包成一則 tool_result。
+ */
+function codeResult(decision: CodeDecision): {
+  content: string;
+  output?: AgentCodeOutput;
+} {
+  if (decision.kind === "declined") {
+    // **不帶 isError**,與反問卡的「跳過」同理:admin 不想讓它跑是一個合法的決定,
+    // 不是一次失敗。模型接著該做的是換個做法(或直接說它算不出來),而不是把這
+    // 當成一次錯誤去重試同一段程式碼。
+    return {
+      content: jsonText({
+        ok: false,
+        declined: true,
+        reason:
+          "The administrator did not run this code. Nothing was executed. Do not retry the same snippet.",
+      }),
+    };
+  }
+  const output = toCodeOutput(decision.run);
+  return { content: bounded(jsonText(output)), output };
+}
+
+/**
+ * 處置目前這張沙盒卡(跑完了、或被關掉)。
+ *
+ * 與另外兩支 apply*Resolution 是同一個形狀、同一條鐵律:**每一條出口都補一則
+ * tool_result**。這裡的出口比較多(成功 / 例外 / 逾時 / 被關掉),但它們在型別上
+ * 只有兩個 kind —— 前三種都是 `ran`,差別在 run.ok 與 run.error。少了哪一種都不會
+ * 在當下出錯,而是在使用者下一次送出訊息時被上游拒收。
+ *
+ * 沒有待處理的沙盒卡時原樣回傳(重複回報、關閉與完成的競態)。
+ */
+export function applyCodeResolution(
+  state: TranscriptState,
+  decision: CodeDecision,
+): TranscriptState {
+  const pending = state.pendingCode;
+  if (!pending) return state;
+
+  const { content, output } = codeResult(decision);
+  const resultMessage: AiChatMessage = {
+    role: "user",
+    content: [{ type: "tool_result", toolUseId: pending.toolUseId, content }],
+  };
+
+  const resolution: CodeResolution =
+    decision.kind === "declined" ? "declined" : "ran";
+
+  let patched = false;
+  const entries = state.entries.map((entry) => {
+    if (patched || entry.kind !== "code") return entry;
+    if (entry.toolUseId !== pending.toolUseId) return entry;
+    if (entry.resolution !== "pending") return entry;
+    patched = true;
+    return { ...entry, resolution, ...(output ? { output } : {}) };
+  });
+
+  return {
+    messages: [...state.messages, resultMessage],
+    entries,
+    seq: state.seq,
+    pending: state.pending,
+    pendingAsk: state.pendingAsk,
+    pendingCode: null,
   };
 }

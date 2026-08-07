@@ -28,6 +28,7 @@ import {
 import {
   appendUserMessage,
   applyChatOutcome,
+  applyCodeResolution,
   applyProposalResolution,
   canSend,
   emptyTranscript,
@@ -37,6 +38,7 @@ import type { TranscriptState } from "../src/components/admin/agent/transcript";
 import type {
   AgentAsk,
   AgentChatOutcome,
+  AgentCode,
   AgentProposal,
 } from "../src/ext/agent-loop";
 
@@ -426,5 +428,110 @@ describe("key 綁使用者", () => {
 
   it("前綴帶版本,而且掃得到自己寫過的東西", () => {
     expect(AGENT_TRANSCRIPT_KEY_PREFIX.startsWith("sz.agent.transcript.")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JS 沙盒卡(spec §4.7)
+// ---------------------------------------------------------------------------
+
+// 沙盒卡在 localStorage 這一側有一件事與另外兩張卡不同:**還原出來的待執行卡會自己
+// 跑完**(面板一掛載就執行、補結果、續跑 /chat)。之所以可以接受,正是這個功能的前提
+// 本身 —— 那段程式碼沒有副作用,重跑一次與跑第一次是同一件事。對照組是「不存
+// pendingCode」:那樣還原出來的 transcript 帶著懸空的 tool_use,整份對話只能整包丟掉。
+//
+// 所以這裡要釘的與另外兩張卡一樣:它回得來、它那一個懸空是合法的、指錯地方就整包丟掉。
+
+const CODE: AgentCode = { code: "[1,2,3].reduce((a,b)=>a+b,0)", reason: "算總和" };
+
+function codeOutcome(): AgentChatOutcome {
+  return {
+    status: "code",
+    text: "",
+    code: CODE,
+    toolUseId: "toolu_code_1",
+    appended: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "toolu_code_1", name: "core.code.run", input: CODE },
+        ],
+      },
+    ],
+    steps: 1,
+    toolCalls: [],
+  };
+}
+
+describe("沙盒卡的存取", () => {
+  it("待執行的沙盒卡跟著回來,而且那一個懸空是合法的", () => {
+    const state = applyChatOutcome(appendUserMessage(emptyTranscript(), "總和?"), codeOutcome());
+    const restored = deserializeTranscript(serializeTranscript(state) as string);
+    expect(restored).toEqual(state);
+    expect(restored?.pendingCode).toEqual({ code: CODE, toolUseId: "toolu_code_1" });
+    expect(findDanglingToolUseIds(restored!.messages)).toEqual(["toolu_code_1"]);
+    expect(canSend(restored!)).toBe(false);
+  });
+
+  it("跑完之後的 state 也回得來(含 result 這種任意 JSON 值),而且可以繼續送", () => {
+    const state = applyCodeResolution(
+      applyChatOutcome(appendUserMessage(emptyTranscript(), "總和?"), codeOutcome()),
+      { kind: "ran", run: { ok: true, logs: ["adding"], resultJson: '{"sum":6}' } },
+    );
+    const restored = deserializeTranscript(serializeTranscript(state) as string);
+    expect(restored).toEqual(state);
+    expect(canSend(restored!)).toBe(true);
+    const card = restored!.entries.find((e) => e.kind === "code");
+    expect(card).toMatchObject({
+      resolution: "ran",
+      output: { ok: true, result: { sum: 6 }, logs: ["adding"] },
+    });
+  });
+
+  it("pendingCode 指向一個已經有結果的 tool_use → 整包丟掉", () => {
+    const payload = payloadOf(conversation(1));
+    expect(
+      restoreFrom({
+        ...payload,
+        state: { ...payload.state, pendingCode: { code: CODE, toolUseId: "toolu_read_0" } },
+      }),
+    ).toBeNull();
+  });
+
+  it("與另一張卡同時待處理 → 整包丟掉(loop 一輪最多攔一個 tool_use)", () => {
+    const payload = payloadOf(
+      applyChatOutcome(appendUserMessage(emptyTranscript(), "改"), proposalOutcome()),
+    );
+    expect(
+      restoreFrom({
+        ...payload,
+        state: {
+          ...payload.state,
+          pendingCode: { code: CODE, toolUseId: PROPOSAL.toolUseId },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("存進來的程式碼超過 8,000 字上限 → 整包丟掉(還原出的卡會顯示模型沒送過的東西)", () => {
+    const payload = payloadOf(
+      applyChatOutcome(appendUserMessage(emptyTranscript(), "總和?"), codeOutcome()),
+    );
+    const entries = payload.state.entries.map((entry) =>
+      entry.kind === "code" ? { ...entry, code: { code: "x".repeat(9_000) } } : entry,
+    );
+    expect(restoreFrom({ ...payload, state: { ...payload.state, entries } })).toBeNull();
+  });
+
+  it("§4.7 之前寫下的 payload(沒有 pendingCode 這個鍵)仍然讀得回來", () => {
+    // 「鍵不存在」與「鍵是 null」本來就同義。為了一個純追加的欄位把所有人手上的
+    // 對話丟掉,代價與收穫不成比例(persist.ts 的 stateSchema 有完整說明)。
+    const payload = payloadOf(conversation(2));
+    const legacyState: Partial<TranscriptState> = { ...payload.state };
+    delete legacyState.pendingCode;
+    const restored = restoreFrom({ ...payload, state: legacyState });
+    expect(restored).not.toBeNull();
+    expect(restored?.pendingCode).toBeNull();
+    expect(canSend(restored!)).toBe(true);
   });
 });

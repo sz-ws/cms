@@ -42,6 +42,7 @@ vi.mock("@/ext/loader", async () => {
 import {
   AGENT_MAX_STEPS,
   AGENT_MAX_TOKENS,
+  CORE_CODE_RUN,
   CORE_UI_ASK,
   TOOL_RESULT_MAX_CHARS,
   TOOL_RESULT_ROUND_MAX_CHARS,
@@ -320,8 +321,14 @@ describe("鐵律:write tool 在 loop 內永不執行(spec §1.2)", () => {
       chat: script.chat,
     });
     const names = script.calls[0]!.tools.map((t) => t.name).sort();
-    // core.ui.ask 不來自 registry —— 它是 loop 合成附加的反問工具(§4.6)。
-    expect(names).toEqual([CORE_UI_ASK, "test.thing.create", "test.thing.list"]);
+    // core.ui.ask / core.code.run 不來自 registry —— 它們是 loop 合成附加的
+    // (§4.6 反問卡、§4.7 JS 沙盒)。
+    expect(names).toEqual([
+      CORE_CODE_RUN,
+      CORE_UI_ASK,
+      "test.thing.create",
+      "test.thing.list",
+    ]);
     expect(script.calls[0]!.system).toBe("sys");
     expect(script.calls[0]!.maxTokens).toBe(AGENT_MAX_TOKENS);
   });
@@ -1262,10 +1269,12 @@ describe("core.ui.ask:合成、不進 registry(§4.6)", () => {
     });
 
     const defs = script.calls[0]!.tools;
+    // 合成的那幾筆附在**尾端**,順序固定(ask 先於 code)。
     expect(defs.map((d) => d.name)).toEqual([
       "test.thing.create",
       "test.thing.list",
       CORE_UI_ASK,
+      CORE_CODE_RUN,
     ]);
     const ask = defs.find((d) => d.name === CORE_UI_ASK)!;
     // JSON Schema 真的轉得出來(superRefine 之前的物件),而不是退化成 any。
@@ -1564,6 +1573,338 @@ describe("core.ui.ask:與串流並用", () => {
       ctx: CTX,
       chatStream: scriptedChatStream([
         [{ type: "result", result: askResult(ASK_OPTIONS, "先問一下。") }],
+      ]).chatStream,
+      onEvent: () => {},
+    });
+    expect(withEvents).toEqual(withoutEvents);
+  });
+});
+
+// =========================================================== JS 沙盒(§4.7)
+
+// docs/spec-admin-agent.md §4.7:core.code.run 走與 core.ui.ask 完全相同的那條路,
+// 所以這一組測試釘的東西也一樣 —— 只是這一次「不執行」的份量更重:
+//
+//   (a) 它被合成進餵給 LLM 的清單,而 registry 一無所知(slash 選單 / 面板工具清單 /
+//       /execute / audit 因此自然列不到它);
+//   (b) **server 端永不執行它** —— 沒有 tool 被跑、DB 沒有變化、agent_audit 一列都
+//       沒有。這不是「目前沒有這條路徑」,而是「餵一個要求跑程式碼的 LLM 回應進來,
+//       什麼都不會發生」;
+//   (c) 攔截後 transcript 的形狀正確:assistant 只留那一個 tool_use,程式碼原文原樣
+//       交給前端;
+//   (d) 參數送壞了走 harness 紀律(錯誤當 tool_result 接回續跑),不丟給前端。
+
+const CODE_INPUT = {
+  code: "const xs=[3,1,2].sort((a,b)=>a-b); xs[1]",
+  reason: "算出中位數",
+};
+
+function codeResultMessage(input: unknown, text = "", id = "tu-code"): AiChatResult {
+  return {
+    ok: true,
+    text,
+    toolUses: [{ id, name: CORE_CODE_RUN, input }],
+    stopReason: "tool_use",
+    model: "fake-model",
+  };
+}
+
+describe("core.code.run:合成、不進 registry(§4.7)", () => {
+  it("餵給 LLM 的清單多一筆 core.code.run,而 registry 一無所知", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([FINAL]);
+
+    await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    const def = script.calls[0]!.tools.find((d) => d.name === CORE_CODE_RUN)!;
+    expect(def).toBeDefined();
+    // JSON Schema 真的轉得出來,而不是退化成 any。
+    expect(def.inputSchema).toMatchObject({ type: "object" });
+    const props = def.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(["code", "reason"]);
+    expect(def.inputSchema.required).toEqual(["code"]);
+    // 說明裡最重要的那一句必須在:沒有它,模型會寫 fetch('/api/…') 然後一直重試。
+    expect(def.description).toContain("NO access to this site's data");
+
+    // registry 不認得它 —— /execute、slash 選單、面板工具清單、audit 因此都列不到。
+    expect(fakes.registry.get(CORE_CODE_RUN)).toBeNull();
+    expect(fakes.registry.names()).not.toContain(CORE_CODE_RUN);
+    expect(fakes.registry.list().map((t) => t.name)).not.toContain(CORE_CODE_RUN);
+  });
+
+  it("registry 已有同名 tool → 合成那筆讓位,並吵一聲(反問卡照樣在)", async () => {
+    const fakes = makeFakes();
+    fakes.registry.register(
+      defineAgentTool({
+        name: CORE_CODE_RUN,
+        description: "A real registered tool that happens to collide.",
+        kind: "read",
+        schema: z.object({}).strict(),
+        run: async () => ({}),
+      }),
+    );
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const script = scriptedChat([FINAL]);
+
+    await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    const defs = script.calls[0]!.tools.filter((d) => d.name === CORE_CODE_RUN);
+    expect(defs).toHaveLength(1);
+    expect(defs[0]!.description).toContain("happens to collide");
+    // 一個合成工具撞名不該把另一個也拖下水。
+    expect(script.calls[0]!.tools.filter((d) => d.name === CORE_UI_ASK)).toHaveLength(1);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("core.code.run:攔截(§4.7)", () => {
+  it("呼叫它 → status:'code',server 端什麼都沒執行、audit 一列都沒有、loop 結束", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([codeResultMessage(CODE_INPUT, "我算一下。")]);
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    expect(outcome.status).toBe("code");
+    if (outcome.status !== "code") throw new Error("unreachable");
+    // 程式碼原文原樣交出去 —— 面板要把它攤在卡片上給 admin 看。
+    expect(outcome.code).toEqual(CODE_INPUT);
+    expect(outcome.toolUseId).toBe("tu-code");
+    expect(outcome.text).toBe("我算一下。");
+    expect(outcome.steps).toBe(1);
+    expect(outcome.toolCalls).toEqual([]);
+
+    // **server 端永不執行**:沒有 tool 被跑、DB 沒變、audit 沒有任何一列。
+    expect(fakes.readRun).not.toHaveBeenCalled();
+    expect(fakes.writeRun).not.toHaveBeenCalled();
+    expect(await writeRowCount()).toBe(0);
+    expect(await auditRows()).toHaveLength(0);
+    expect(script.calls).toHaveLength(1);
+
+    // appended 是 delta,且 assistant 訊息只留這一個 tool_use。
+    expect(outcome.appended).toHaveLength(1);
+    const assistant = outcome.appended[0]!;
+    expect(assistant.role).toBe("assistant");
+    expect(
+      assistant.content
+        .filter((b) => b.type === "tool_use")
+        .map((b) => (b.type === "tool_use" ? b.id : "")),
+    ).toEqual(["tu-code"]);
+  });
+
+  it("沒給 reason 也走 code(它是給人看的,不是必要的)", async () => {
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chat: scriptedChat([codeResultMessage({ code: "1+1" })]).chat,
+    });
+    if (outcome.status !== "code") throw new Error("unreachable");
+    expect(outcome.code).toEqual({ code: "1+1" });
+  });
+
+  it("同回合的 read 也被丟掉(它補不了 tool_result)", async () => {
+    const fakes = makeFakes();
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: scriptedChat([
+        {
+          ok: true,
+          text: "",
+          toolUses: [
+            { id: "tu-read", name: "test.thing.list", input: {} },
+            { id: "tu-code", name: CORE_CODE_RUN, input: CODE_INPUT },
+          ],
+          stopReason: "tool_use",
+        },
+      ]).chat,
+    });
+
+    expect(outcome.status).toBe("code");
+    expect(fakes.readRun).not.toHaveBeenCalled();
+    const ids = outcome.appended[0]!.content
+      .filter((b) => b.type === "tool_use")
+      .map((b) => (b.type === "tool_use" ? b.id : ""));
+    expect(ids).toEqual(["tu-code"]);
+  });
+
+  it("先後規則:依 block 順序,先出現的那一個勝出(code 對 write、code 對 ask)", async () => {
+    const codeFirst = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chat: scriptedChat([
+        {
+          ok: true,
+          text: "",
+          toolUses: [
+            { id: "tu-code", name: CORE_CODE_RUN, input: CODE_INPUT },
+            { id: "tu-write", name: "test.thing.create", input: { id: "x1" } },
+          ],
+          stopReason: "tool_use",
+        },
+      ]).chat,
+    });
+    expect(codeFirst.status).toBe("code");
+    expect(await writeRowCount()).toBe(0);
+
+    const askFirst = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chat: scriptedChat([
+        {
+          ok: true,
+          text: "",
+          toolUses: [
+            { id: "tu-ask", name: CORE_UI_ASK, input: ASK_OPTIONS },
+            { id: "tu-code", name: CORE_CODE_RUN, input: CODE_INPUT },
+          ],
+          stopReason: "tool_use",
+        },
+      ]).chat,
+    });
+    expect(askFirst.status).toBe("ask");
+  });
+
+  it("write 在 code 之前 → 走提案(鐵律不受影響)", async () => {
+    const fakes = makeFakes();
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: scriptedChat([
+        {
+          ok: true,
+          text: "",
+          toolUses: [
+            { id: "tu-write", name: "test.thing.create", input: { id: "x1" } },
+            { id: "tu-code", name: CORE_CODE_RUN, input: CODE_INPUT },
+          ],
+          stopReason: "tool_use",
+        },
+      ]).chat,
+    });
+    expect(outcome.status).toBe("proposal");
+    expect(fakes.writeRun).not.toHaveBeenCalled();
+    expect(await writeRowCount()).toBe(0);
+  });
+});
+
+describe("core.code.run:參數驗不過(§4.7 沿 §4.5 harness 紀律)", () => {
+  async function runBadCode(input: unknown) {
+    const fakes = makeFakes();
+    const script = scriptedChat([codeResultMessage(input), FINAL]);
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+    const block = outcome.appended[1]?.content[0];
+    if (!block || block.type !== "tool_result") {
+      throw new Error("expected a tool_result to be appended");
+    }
+    return { outcome, block, script };
+  }
+
+  it("缺 code / 空 code / 超長 code / 多餘的鍵,一律接回錯誤並續跑", async () => {
+    for (const bad of [
+      { reason: "什麼都沒有" },
+      { code: "" },
+      { code: "x".repeat(9_000) },
+      { code: "1", timeoutMs: 999_999 },
+    ]) {
+      const { outcome, block, script } = await runBadCode(bad);
+      // 前端看到的是一輪正常的對話,不是一張畫不出來的卡。
+      expect(outcome.status).toBe("text");
+      expect(script.calls).toHaveLength(2);
+      expect(block.toolUseId).toBe("tu-code");
+      expect(block.isError).toBe(true);
+      expect(block.content).toContain("invalid_args");
+      // 第二次上游呼叫看得到那個錯誤 —— 模型才有機會改。
+      expect(script.calls[1]!.messages).toHaveLength(3);
+      expect(await auditRows()).toHaveLength(0);
+    }
+  });
+
+  it("toolCalls 記一筆:面板的條目對位靠它(這不是 audit)", async () => {
+    const { outcome } = await runBadCode({ code: "" });
+    expect(outcome.toolCalls).toEqual([
+      { toolName: CORE_CODE_RUN, ok: false, error: "invalid_args", truncated: false },
+    ]);
+    expect(await auditRows()).toHaveLength(0);
+  });
+});
+
+describe("core.code.run:與串流並用", () => {
+  it("攔截時只發 step / text_delta —— 沒有 tool、tool_done(什麼都沒跑)", async () => {
+    const script = scriptedChatStream([
+      [
+        { type: "text_delta", text: "我算一下" },
+        { type: "result", result: codeResultMessage(CODE_INPUT, "我算一下") },
+      ],
+    ]);
+    const events: AgentLoopEvent[] = [];
+
+    const outcome = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chatStream: script.chatStream,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(outcome.status).toBe("code");
+    expect(events).toEqual([
+      { type: "step", step: 1 },
+      { type: "text_delta", text: "我算一下" },
+    ]);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("給不給 onEvent,outcome 一字不差", async () => {
+    const withoutEvents = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chat: scriptedChat([codeResultMessage(CODE_INPUT, "我算一下")]).chat,
+    });
+    const withEvents = await runAgentChat({
+      messages: USER_ASK,
+      system: "sys",
+      registry: makeFakes().registry,
+      ctx: CTX,
+      chatStream: scriptedChatStream([
+        [{ type: "result", result: codeResultMessage(CODE_INPUT, "我算一下") }],
       ]).chatStream,
       onEvent: () => {},
     });

@@ -745,3 +745,76 @@ describe("POST /api/admin/agent/chat — 反問卡(core.ui.ask)", () => {
     expect(await auditRows()).toHaveLength(0);
   });
 });
+
+// ==================================================== JS 沙盒(§4.7)
+
+// docs/spec-admin-agent.md §4.7:core.code.run 與 core.ui.ask 一樣不在 registry 裡,
+// 所以這一檔(走**真的** registry、真的 route)是它最誠實的測法。三件事:
+//   · loop 認得那個名字,所以攔得下來;
+//   · /execute 不認得它 —— 一個「在 server 上跑模型寫的程式碼」的入口在程式碼裡
+//     不存在,而不是靠某個 if 擋住;
+//   · 從頭到尾 audit 一列都沒有。
+
+describe("POST /api/admin/agent/chat — JS 沙盒(core.code.run)", () => {
+  const CODE_INPUT = {
+    code: "const xs=[5,1,3].sort((a,b)=>a-b); xs[1]",
+    reason: "算出中位數",
+  };
+  const RUNNING: FakeChatResult[] = [
+    {
+      ok: true,
+      text: "我算一下。",
+      toolUses: [{ id: "tu-code", name: "core.code.run", input: CODE_INPUT }],
+      stopReason: "tool_use",
+    },
+  ];
+
+  it("JSON 模式:status:'code' 原樣透傳,server 端什麼都沒執行、audit 沒有任何一列", async () => {
+    aiState.results = RUNNING;
+    const res = await chatPost(chatReq({ messages: HELLO.messages }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      code: unknown;
+      toolUseId: string;
+      text: string;
+      appended: { role: string; content: { type: string; id?: string }[] }[];
+    };
+    expect(body.status).toBe("code");
+    // 程式碼原文原樣交給前端 —— 面板要把它攤在卡片上。
+    expect(body.code).toEqual(CODE_INPUT);
+    expect(body.toolUseId).toBe("tu-code");
+    expect(body.text).toBe("我算一下。");
+    expect(body.appended).toHaveLength(1);
+    expect(
+      body.appended[0]!.content.filter((b) => b.type === "tool_use"),
+    ).toHaveLength(1);
+    expect(await countRows("contents")).toBe(0);
+    expect(await auditRows()).toHaveLength(0);
+    expect(aiState.calls).toHaveLength(1);
+  });
+
+  it("SSE 模式:沒有 tool 事件,最後一個 outcome 就是那張卡", async () => {
+    aiState.results = RUNNING;
+    const events = await readSse(
+      await chatPost(sseChatReq({ messages: HELLO.messages })),
+    );
+    expect(events.map((e) => e.event)).toEqual(["step", "text_delta", "outcome"]);
+    expect(events[events.length - 1]!.data).toMatchObject({
+      status: "code",
+      toolUseId: "tu-code",
+      code: CODE_INPUT,
+    });
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("/execute 不認得它 —— server 上沒有執行模型寫的程式碼的入口", async () => {
+    const res = await executePost(
+      executeReq({ toolName: "core.code.run", args: { code: "1+1" } }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ ok: false, error: "unknown_tool" });
+    expect(await auditRows()).toHaveLength(0);
+  });
+});

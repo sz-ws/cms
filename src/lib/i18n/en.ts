@@ -684,6 +684,7 @@ export const en = {
   "agent.toolsAvailable": "{count} tools available",
   "agent.lockedByProposal": "Answer the confirmation above to carry on.",
   "agent.lockedByAsk": "Answer the question above to carry on.",
+  "agent.lockedByCode": "Waiting for the calculation above to finish.",
 
   // confirmation card — the core surface of the whole panel (spec §5)
   "agent.proposal.heading": "Waiting for your confirmation",
@@ -711,6 +712,23 @@ export const en = {
   "agent.ask.otherPlaceholder": "Something else…",
   "agent.ask.required": "required",
   "agent.ask.missingRequired": "Fill in the required fields first.",
+
+  // JavaScript sandbox card (spec §4.7). No confirmation button: the snippet has
+  // no side effects, cannot reach this site's data and has no network. What it
+  // does need is to be *visible* — hence the code is shown in full on the card.
+  "agent.code.running": "Working it out",
+  "agent.code.done": "Calculated",
+  "agent.code.failed": "Could not calculate it",
+  "agent.code.declined": "Not run",
+  "agent.code.declinedNote": "You stopped this one — nothing was run.",
+  "agent.code.decline": "Don't run it",
+  "agent.code.note":
+    "This runs in a sandbox inside your browser. It has no network, no access to your site's data, and leaves nothing behind.",
+  "agent.code.codeLabel": "Code",
+  "agent.code.resultLabel": "Result",
+  "agent.code.logsLabel": "Output",
+  "agent.code.errorLabel": "Error",
+  "agent.code.noResult": "It returned no value.",
 
   // result cards (spec §5.1). The chart labels are produced server-side by each
   // tool's display() — see src/ext/agent-tools-core.ts. Anything the dashboard

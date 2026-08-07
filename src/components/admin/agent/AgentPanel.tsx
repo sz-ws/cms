@@ -10,6 +10,7 @@ import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
 import { RingDot } from "@/components/admin/dashboard/RingDot";
 import type { AgentChatOutcome, AgentLoopEvent } from "@/ext/agent-loop";
 import { AskCard } from "./AskCard";
+import { CodeCard } from "./CodeCard";
 import { Composer } from "./Composer";
 import { DisplayCards } from "./DisplayCard";
 import { MessageBubble } from "./MessageBubble";
@@ -20,6 +21,7 @@ import {
   appendUserMessage,
   applyAskResolution,
   applyChatOutcome,
+  applyCodeResolution,
   applyProposalResolution,
   canSend,
   emptyTranscript,
@@ -27,6 +29,7 @@ import {
 import type {
   AskAnswer,
   AskDecision,
+  CodeDecision,
   ProposalDecision,
   TranscriptState,
 } from "./transcript";
@@ -57,6 +60,16 @@ import {
 // 提案處置之後會**自動再打一次 /chat**:tool_result 接回去了,模型還沒看過它。
 // 少了這一步,admin 按下確認之後會看到一個結果卡然後沒有下文。反問卡(§4.6)的
 // 回答與關閉走同一條路 —— 它只是換一種 tool_result 內容。
+//
+// ── §4.7:JS 沙盒 ───────────────────────────────────────────────────────────
+// 第三張會讓對話停下來的卡,而它是**唯一一張不等人**的:outcome 帶著程式碼進來,
+// 下面那個 effect 立刻把它丟進 ./code-sandbox(worker + QuickJS,惰性載入),跑完
+// 補 tool_result、續跑 /chat。admin 唯一的介入是「不要執行」,而那條路照樣補一則
+// tool_result(見 transcript.ts 檔頭的鐵律)。
+//
+// 執行那一層是 dynamic import 的:沙盒會拉進約 600 KB 的 QuickJS/WASM,而絕大多數
+// 對話一次都不會用到它。這一層與 AgentPanel 自己的 next/dynamic 界線是兩件獨立的
+// 事,兩道都要 —— 面板那道讓它不進全站 bundle,這一道讓它不進面板的 chunk。
 //
 // ── 1.32.0:串流 ────────────────────────────────────────────────────────────
 // 送出改帶 `Accept: text/event-stream`,回應逐事件到達(SSE 的切割與顯示狀態都是
@@ -123,8 +136,36 @@ export function AgentPanel({ tools, userId, onStatusChange }: AgentPanelProps) {
   /** 進行中的那一次 /chat。開新對話、重新送出、unmount 都要中止它 —— 不中止的話
    *  一個離開了的畫面仍在 server 上跑 8 步的 loop。 */
   const abortRef = useRef<AbortController | null>(null);
+  /** 進行中的那一次沙盒執行(§4.7)。unmount 與「不要執行」都要中止它,否則一個
+   *  離開了的畫面仍留著一個在跑無窮迴圈的 worker。 */
+  const codeAbortRef = useRef<AbortController | null>(null);
+  /** 已經開跑過的沙盒卡 toolUseId。下面那個 effect 每次 state 變動都會重跑,靠它
+   *  保證同一張卡只跑一次 —— 跑兩次會補出兩則同 id 的 tool_result。 */
+  const codeStartedRef = useRef<string | null>(null);
+  /**
+   * 已經補過結果的沙盒卡 toolUseId。
+   *
+   * 這是「一張卡只補一則 tool_result」的**真正**守門,而且非它不可:沙盒跑完那一刻
+   * 是在一個 microtask 裡 setState,而 React 要等一次排程過的 render 才會把新的
+   * state 交出來 —— 在那之間 admin 按下的「不要執行」讀到的仍是舊的 state,於是同
+   * 一個 toolUseId 會被補上第二則 tool_result,而那份 transcript 下一句話就送不出去。
+   * 用 ref **同步**佔位就沒有這個縫。
+   */
+  const codeSettledRef = useRef<string | null>(null);
+  /** 最新的 state。沙盒是非同步的,補結果時要接在**當下**那份 transcript 後面。 */
+  const stateRef = useRef(state);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    stateRef.current = state;
+  });
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      codeAbortRef.current?.abort();
+    },
+    [],
+  );
 
   // 落地。deps 只有 state 與 key —— 串流中變動的是 streaming 那個暫態,不是這裡,
   // 所以逐字到達的過程不會觸發任何一次序列化(transcript 一輪只在 outcome 到達時
@@ -274,13 +315,73 @@ export function AgentPanel({ tools, userId, onStatusChange }: AgentPanelProps) {
     onAskResolve({ kind: "answered", answer });
   }
 
-  // 兩種卡都鎖住 composer(一次只處理一張)。文案分開:被鎖住的人要知道自己該
-  // 做的是「按確認」還是「回答問題」。
+  /**
+   * 沙盒卡的**唯一**出口(spec §4.7):跑完、丟例外、逾時、被按掉,四條路都走這裡,
+   * 而這裡保證同一張卡只補一則 tool_result。
+   *
+   * 先佔位再做事的順序是重點,理由見 codeSettledRef —— 佔位必須是同步的,因為與它
+   * 競爭的是一次滑鼠點擊,而 React 的 state 那時候還沒更新。
+   */
+  function settleCode(decision: CodeDecision): void {
+    const pending = stateRef.current.pendingCode;
+    if (!pending || codeSettledRef.current === pending.toolUseId) return;
+    codeSettledRef.current = pending.toolUseId;
+    // 跑完那條路上 worker 早就自己收掉了;被按掉那條路上這一行才是真的在殺它。
+    codeAbortRef.current?.abort();
+    codeAbortRef.current = null;
+    void runChat(applyCodeResolution(stateRef.current, decision));
+  }
+
+  /**
+   * 沙盒卡:自己跑起來(spec §4.7)。
+   *
+   * 這是三張卡裡唯一不等人按的一張,所以它需要一個 effect 而不是一個事件處理器。
+   * 三道守門缺一不可:
+   *   · `codeStartedRef` —— 這個 effect 的 deps 有 state,而 state 每次都會換物件;
+   *     少了它,同一張卡會在每一次 render 之後再跑一次;
+   *   · `busy || executing` —— 上一輪 /chat 還在跑時不要插隊;
+   *   · `signal.aborted` —— admin 已經按掉了,那條路自己補了結果。
+   *
+   * **從 localStorage 還原出來的待執行卡也走這裡**,而且那是對的:重跑一段沒有副
+   * 作用的計算與跑第一次是同一件事(persist.ts 的 isRestorableState 有完整說明)。
+   */
+  useEffect(() => {
+    const pendingCode = state.pendingCode;
+    if (!pendingCode || busy || executing) return;
+    if (codeStartedRef.current === pendingCode.toolUseId) return;
+    codeStartedRef.current = pendingCode.toolUseId;
+
+    const controller = new AbortController();
+    codeAbortRef.current = controller;
+    void (async () => {
+      // 惰性載入(見檔頭):QuickJS 那一整包在這一行之前不會被抓下來。
+      const { runCodeInSandbox } = await import("./code-sandbox");
+      const run = await runCodeInSandbox(pendingCode.code.code, controller.signal);
+      if (controller.signal.aborted) return;
+      // 成功、丟例外、逾時三條路在這裡是同一條 —— 差別全在 run.ok / run.error。
+      settleCode({ kind: "ran", run });
+    })();
+    // deps 刻意不含 runChat / settleCode:它們是每次 render 重新建立的函式,而這裡
+    // 只在上面那個 async 裡呼叫一次。放進去只會讓 effect 每次 render 都重跑,然後
+    // 全部撞在 codeStartedRef 上 —— 靠守門擋住的空轉,不如一開始就不要發生。
+    // 而「呼叫到的是哪一版」在這裡沒有意義:settleCode 自己讀 stateRef.current。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, busy, executing]);
+
+  /** 「不要執行」:殺掉 worker,補一則「admin 沒有執行」的 tool_result,續跑。 */
+  function onCodeDecline(): void {
+    settleCode({ kind: "declined" });
+  }
+
+  // 三種卡都鎖住 composer(一次只處理一張)。文案分開:被鎖住的人要知道自己該
+  // 做的是「按確認」、「回答問題」,還是「等它算完」。
   const lockedNote = state.pending
     ? t("agent.lockedByProposal")
     : state.pendingAsk
       ? t("agent.lockedByAsk")
-      : null;
+      : state.pendingCode
+        ? t("agent.lockedByCode")
+        : null;
 
   return (
     // 高度的推導見 AgentPanelLoader(那裡同時要給載入中的佔位用同一個數字)。
@@ -351,6 +452,16 @@ export function AgentPanel({ tools, userId, onStatusChange }: AgentPanelProps) {
                     running={busy && entry.resolution === "pending"}
                     onAnswer={onAskAnswer}
                     onDismiss={() => onAskResolve({ kind: "dismissed" })}
+                  />
+                );
+              case "code":
+                return (
+                  <CodeCard
+                    key={entry.id}
+                    code={entry.code}
+                    resolution={entry.resolution}
+                    output={entry.output}
+                    onDecline={onCodeDecline}
                   />
                 );
               case "notice":

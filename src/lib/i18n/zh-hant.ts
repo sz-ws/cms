@@ -670,6 +670,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.toolsAvailable": "可用工具 {count} 個",
   "agent.lockedByProposal": "先處理上面的確認,才能繼續對話。",
   "agent.lockedByAsk": "先回答上面的問題,才能繼續對話。",
+  "agent.lockedByCode": "等上面那段計算跑完。",
 
   // 確認卡 —— 整個面板的核心 surface(spec §5)
   "agent.proposal.heading": "等你確認",
@@ -696,6 +697,22 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.ask.otherPlaceholder": "都不是,我自己寫…",
   "agent.ask.required": "必填",
   "agent.ask.missingRequired": "還有必填的欄位沒填。",
+
+  // JS 沙盒卡(spec §4.7)。沒有確認按鈕:那段程式碼沒有副作用、碰不到站上的資料、
+  // 也沒有網路。它需要的不是「被批准」,是**被看見** —— 所以程式碼原文攤在卡上。
+  "agent.code.running": "正在算",
+  "agent.code.done": "算好了",
+  "agent.code.failed": "算不出來",
+  "agent.code.declined": "沒有執行",
+  "agent.code.declinedNote": "你按掉了這一次 —— 什麼都沒有跑。",
+  "agent.code.decline": "不要執行",
+  "agent.code.note":
+    "這段程式碼跑在你瀏覽器裡的沙盒:沒有網路、碰不到這個站的資料,跑完也不留下任何東西。",
+  "agent.code.codeLabel": "程式碼",
+  "agent.code.resultLabel": "結果",
+  "agent.code.logsLabel": "輸出",
+  "agent.code.errorLabel": "錯誤",
+  "agent.code.noResult": "沒有回傳任何值。",
 
   // 結果卡(spec §5.1)。圖表標籤由各 tool 的 display() 在 server 端產出
   // (src/ext/agent-tools-core.ts)。dashboard 已經命名過的東西(「各類型內容數」、

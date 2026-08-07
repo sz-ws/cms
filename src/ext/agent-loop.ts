@@ -5,6 +5,8 @@ import {
   askArgsSchema,
 } from "./agent-ask";
 import type { AgentAsk } from "./agent-ask";
+import { CODE_DESCRIPTION, codeArgsSchema } from "./agent-code";
+import type { AgentCode } from "./agent-code";
 import { agentDisplaySchema } from "./agent-display";
 import type { AgentDisplay } from "./agent-display";
 import { invokeAgentTool } from "./agent-tools";
@@ -57,6 +59,17 @@ import type {
 // 就是一個 tool,但**永遠不執行**,呼叫它的結果是一張結構化的問題卡,答案由前端
 // 以 tool_result 接回 transcript 續跑。與 write 提案共用同一條攔截規則,見下面的
 // haltingAssistantMessage 與 loop 內的攔截段。
+//
+// ── §4.7:JS 沙盒(core.code.run)────────────────────────────────────────────
+// 第二個合成 tool,走**完全相同**的那條路:不進 registry、server 端永不執行、
+// 攔截後回一個新的 outcome 變體(status:"code")帶著程式碼原文,由面板在瀏覽器端
+// 跑完、把結果補成 tool_result 接回 transcript 續跑。
+//
+// 為什麼不在 server 上跑:那段程式碼是**模型寫的**,而模型的脈絡裡有 read tool 撈
+// 回來的站台內容 —— 一個被注入的模型可以寫出把資料送出去的程式碼。在 server 上跑
+// 等於讓那段程式碼站在 D1、R2、所有 binding 的旁邊;在瀏覽器的 QuickJS 裡跑,它站
+// 在一個連 fetch 都沒有的空房間裡。安全根據的完整版寫在
+// components/admin/agent/code-sandbox.worker.ts。
 //
 // ── 1.32.0:過程事件(AgentLoopEvent)────────────────────────────────────────
 // params.onEvent 是**唯一**的新行為開關。給了它就會邊跑邊回報(step / text_delta /
@@ -140,7 +153,7 @@ export function toAiToolDefs(tools: readonly AgentTool[]): AiToolDef[] {
 }
 
 // ---------------------------------------------------------------------------
-// core.ui.ask —— 合成的反問工具(spec §4.6)
+// 合成工具(spec §4.6 反問卡、§4.7 JS 沙盒)
 // ---------------------------------------------------------------------------
 
 /**
@@ -156,28 +169,55 @@ export function toAiToolDefs(tools: readonly AgentTool[]): AiToolDef[] {
  */
 export const CORE_UI_ASK = "core.ui.ask";
 
-// 形狀與說明在 agent-ask.ts(同層,見該檔頭)。這裡只留「什麼時候攔、攔了怎麼辦」。
-export type { AgentAsk, AgentAskField, AgentAskOption } from "./agent-ask";
+/**
+ * JS 沙盒的 tool 名(§4.7)。理由與 CORE_UI_ASK 逐字相同,而且**更強**:
+ * core.code.run 若真的進了 registry,/execute 就會在 server 上執行一段模型寫的
+ * 程式碼 —— 那正是整個設計要避免的事。不進 registry 讓那條路在程式碼裡不存在,
+ * 而不是靠某個 if 擋住。
+ */
+export const CORE_CODE_RUN = "core.code.run";
 
-/** registry 的 defs + 合成的 ask。 */
-function withAskTool(defs: AiToolDef[]): AiToolDef[] {
-  // 理論上不可能(沒有人會去註冊一個 core.ui.* 的 tool),但真的撞名時要讓位給
-  // 註冊的那一筆:它是可執行的,而合成這一筆只會讓模型呼叫到一個永遠停下來的
-  // 東西。撞名本身是 bug,所以要吵。
-  if (defs.some((def) => def.name === CORE_UI_ASK)) {
-    console.error(
-      `[agent-loop] a registered tool is named "${CORE_UI_ASK}"; the synthetic ask tool stands down`,
-    );
-    return defs;
+// 形狀與說明在 agent-ask.ts / agent-code.ts(同層,見各自的檔頭)。這裡只留
+// 「什麼時候攔、攔了怎麼辦」。
+export type { AgentAsk, AgentAskField, AgentAskOption } from "./agent-ask";
+export type { AgentCode, AgentCodeOutput, AgentCodeRun } from "./agent-code";
+
+/** 合成工具的清單:名字 + 說明 + 要轉成 JSON Schema 的那份 zod。 */
+const SYNTHETIC_TOOLS: readonly {
+  name: string;
+  description: string;
+  schema: z.ZodType;
+}[] = [
+  { name: CORE_UI_ASK, description: ASK_DESCRIPTION, schema: askArgsObjectSchema },
+  { name: CORE_CODE_RUN, description: CODE_DESCRIPTION, schema: codeArgsSchema },
+];
+
+/** registry 的 defs + 合成的那幾筆(附在**尾端**,順序即 SYNTHETIC_TOOLS)。 */
+function withSyntheticTools(defs: AiToolDef[]): AiToolDef[] {
+  const taken = new Set(defs.map((def) => def.name));
+  const synthetic: AiToolDef[] = [];
+  for (const tool of SYNTHETIC_TOOLS) {
+    // 理論上不可能(沒有人會去註冊一個 core.ui.* / core.code.* 的 tool),但真的
+    // 撞名時要讓位給註冊的那一筆:它是可執行的,而合成這一筆只會讓模型呼叫到一個
+    // 永遠停下來的東西。撞名本身是 bug,所以要吵。
+    if (taken.has(tool.name)) {
+      console.error(
+        `[agent-loop] a registered tool is named "${tool.name}"; the synthetic one stands down`,
+      );
+      continue;
+    }
+    synthetic.push({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: toJsonSchema(tool.name, tool.schema),
+    });
   }
-  return [
-    ...defs,
-    {
-      name: CORE_UI_ASK,
-      description: ASK_DESCRIPTION,
-      inputSchema: toJsonSchema(CORE_UI_ASK, askArgsObjectSchema),
-    },
-  ];
+  return synthetic.length === 0 ? defs : [...defs, ...synthetic];
+}
+
+/** 這個名字是一個合成工具嗎(攔截規則用)。 */
+function isSyntheticTool(name: string): boolean {
+  return name === CORE_UI_ASK || name === CORE_CODE_RUN;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +297,20 @@ export type AgentChatOutcome =
       /** 助理在反問之前說的話(可能為空字串)。 */
       text: string;
       ask: AgentAsk;
+      toolUseId: string;
+    })
+  | (AgentOutcomeBase & {
+      /**
+       * JS 沙盒(spec §4.7)。形狀鏡射 ask,連鐵律都一樣:**跑完、逾時、丟例外、
+       * 被 admin 關掉四條路都必須補一則 tool_result**(前端的 applyCodeResolution)。
+       *
+       * server 端對這個 outcome 唯一做的事就是把程式碼原文交出去 —— 它不執行、
+       * 不記 audit、不看那段程式碼寫了什麼。
+       */
+      status: "code";
+      /** 助理在跑程式碼之前說的話(可能為空字串)。 */
+      text: string;
+      code: AgentCode;
       toolUseId: string;
     })
   | (AgentOutcomeBase & { status: "max_steps"; text: string })
@@ -552,7 +606,7 @@ function proposalSummary(
 
 /**
  * 停下來的那一回合的 assistant 訊息:保留文字與**被留下的那一個** tool_use,丟掉
- * 同一回合其餘的 tool_use。write 提案與 core.ui.ask 共用(兩者都是「停下來等人」)。
+ * 同一回合其餘的 tool_use。write 提案與兩個合成工具共用(都是「停下來等人」)。
  *
  * 為什麼要動這則訊息:一個 tool_use 沒有對應的 tool_result,transcript 就是壞的
  * (上游拒收)。留下的那一個之後會由 /execute、「取消」、或反問卡的回答/關閉補上
@@ -570,6 +624,64 @@ function haltingAssistantMessage(
     content: assistant.content.filter(
       (block) => block.type !== "tool_use" || block.id === keepToolUseId,
     ),
+  };
+}
+
+/** zod 的 issue → 一行一句、模型讀得懂的字串。 */
+function issueLines(error: z.ZodError<unknown>): string[] {
+  return error.issues.map(
+    (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
+  );
+}
+
+/** 合成工具的參數驗不過時,要接回 transcript 的那一組東西。 */
+interface SyntheticRetry {
+  assistantMessage: AiChatMessage;
+  resultMessage: AiChatMessage;
+  log: AgentToolCallLog;
+  /** 這一筆佔用的整輪預算。 */
+  used: number;
+}
+
+/**
+ * 合成工具送壞了 → 錯誤摘要包成該 tool_use 的 tool_result 接回、續 loop
+ * (§4.5 的 harness 紀律:模型看得到自己送壞了才會改)。**不把它丟給前端** ——
+ * 一張畫不出來的卡片對 admin 而言就是「助理沒有反應」。
+ *
+ * toolCalls 也記一筆。這不是 audit(什麼都沒執行,agent_audit 不會多一列),是
+ * **渲染條目的對位**:面板依「一則訊息裡有幾個 tool_result 就吃幾筆 log」對位
+ * (transcript.ts 的 foldAppended),這裡少記一筆,後面每一輪的工具名都會整組錯位。
+ *
+ * 反問卡與 JS 沙盒共用同一支:兩者的錯誤處置逐字相同,而寫成兩份的那一天,其中
+ * 一份會忘記記那筆 log。
+ */
+function syntheticInvalidArgs(
+  assistant: AiChatMessage,
+  use: AiChatToolUse,
+  issues: string[],
+  remaining: number,
+): SyntheticRetry {
+  const bounded = boundedResult(jsonText({ error: "invalid_args", issues }), remaining);
+  return {
+    assistantMessage: haltingAssistantMessage(assistant, use.id),
+    resultMessage: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          toolUseId: use.id,
+          content: bounded.content,
+          isError: true,
+        },
+      ],
+    },
+    log: {
+      toolName: use.name,
+      ok: false,
+      error: "invalid_args",
+      truncated: bounded.truncated,
+    },
+    used: bounded.used,
   };
 }
 
@@ -699,6 +811,7 @@ function withStepBudgetNote(
  *     → tool_use(read)    → 執行、記 audit、tool_result 接回,續 loop
  *     → tool_use(write)   → **不執行**。回提案,結束
  *     → core.ui.ask       → 不執行、不記 audit。回反問卡,結束(§4.6)
+ *     → core.code.run     → 不執行、不記 audit。回沙盒卡,結束(§4.7)
  *
  * 永不 throw:上游錯誤(含 tool_use_not_supported)一律收斂成 status:"error",
  * 錯誤碼原樣透傳給前端 —— 面板要能對「這個 mode/model 不支援工具呼叫」給出專屬提示,
@@ -708,8 +821,8 @@ export async function runAgentChat(
   params: AgentChatParams,
 ): Promise<AgentChatOutcome> {
   const chat = params.chat ?? defaultChat;
-  // 合成的 core.ui.ask 附在最後(見 CORE_UI_ASK):registry 不認得它,LLM 認得。
-  const tools = withAskTool(toAiToolDefs(params.registry.list()));
+  // 合成的 core.ui.ask / core.code.run 附在最後:registry 不認得它們,LLM 認得。
+  const tools = withSyntheticTools(toAiToolDefs(params.registry.list()));
 
   // onEvent 缺席 → emit 是 no-op、streaming 是 null,整個函式的行為與 1.31.0
   // 逐位元相同。onEvent 自己 throw 一律吞掉(見 AgentChatParams.onEvent)。
@@ -804,28 +917,35 @@ export async function runAgentChat(
 
     // ── 攔截:這一輪的第一個「非 read」 ──────────────────────────────────
     //
-    // write → 確認卡(鐵律:write 永不在 loop 內執行);core.ui.ask → 反問卡。
-    // 兩者都是「停下來等人」,所以共用一條規則:**依 block 順序**先出現的那一個
-    // 勝出,同回合其餘的 tool_use 一律丟棄(haltingAssistantMessage)。
+    // write → 確認卡(鐵律:write 永不在 loop 內執行);core.ui.ask → 反問卡;
+    // core.code.run → 沙盒卡。三者都是「停下來等人 / 等瀏覽器」,所以共用一條
+    // 規則:**依 block 順序**先出現的那一個勝出,同回合其餘的 tool_use 一律丟棄
+    // (haltingAssistantMessage)。
     //
     // 依順序而不是「write 優先」是刻意的:模型在同一回合先問後寫時,該先送到
     // admin 面前的是那個問題 —— 它連自己要寫什麼都還沒確定。
     const halting = uses.find(
       (use) =>
-        use.name === CORE_UI_ASK ||
+        isSyntheticTool(use.name) ||
         params.registry.get(use.name)?.kind === "write",
     );
 
-    if (halting && halting.name === CORE_UI_ASK) {
-      const parsed = askArgsSchema.safeParse(halting.input);
-      const assistantMessage = haltingAssistantMessage(assistant, halting.id);
+    if (halting && isSyntheticTool(halting.name)) {
+      const parsed =
+        halting.name === CORE_UI_ASK
+          ? askArgsSchema.safeParse(halting.input)
+          : codeArgsSchema.safeParse(halting.input);
+
       if (parsed.success) {
-        // 不執行任何東西、不記 audit:這是一次對話,不是一次資料存取。答案本來
-        // 就會以 tool_result 的形式進 transcript,而 transcript 是使用者自己的。
-        return {
-          status: "ask",
+        // 不執行任何東西、不記 audit。
+        //
+        // ask:這是一次對話,不是一次資料存取 —— 答案本來就會以 tool_result 的
+        // 形式進 transcript,而 transcript 是使用者自己的。
+        // code:server 這一側**根本沒有執行行為可記** —— 那段程式碼跑在 admin
+        // 自己的瀏覽器裡,而且碰不到站上的任何資料(§4.7)。
+        const assistantMessage = haltingAssistantMessage(assistant, halting.id);
+        const common = {
           text: lastText,
-          ask: parsed.data,
           toolUseId: halting.id,
           appended: [...appended, assistantMessage],
           steps: step,
@@ -833,44 +953,21 @@ export async function runAgentChat(
           model: res.model,
           ...(usage ? { usage } : {}),
         };
+        return halting.name === CORE_UI_ASK
+          ? { status: "ask", ask: parsed.data as AgentAsk, ...common }
+          : { status: "code", code: parsed.data as AgentCode, ...common };
       }
 
-      // 送壞了 → 錯誤摘要包成 tool_result 接回、續 loop(§4.5 的 harness 紀律:
-      // 模型看得到自己送壞了才會改)。不把它丟給前端 —— 一張畫不出來的卡片對
-      // admin 而言就是「助理沒有反應」。
-      const bounded = boundedResult(
-        jsonText({
-          error: "invalid_args",
-          issues: parsed.error.issues.map(
-            (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
-          ),
-        }),
+      const retry = syntheticInvalidArgs(
+        assistant,
+        halting,
+        issueLines(parsed.error),
         remaining,
       );
-      remaining -= bounded.used;
-      const resultMessage: AiChatMessage = {
-        role: "user",
-        content: [
-          {
-            type: "tool_result",
-            toolUseId: halting.id,
-            content: bounded.content,
-            isError: true,
-          },
-        ],
-      };
-      // toolCalls 也記一筆。這不是 audit(什麼都沒執行,agent_audit 不會多一列),
-      // 是**渲染條目的對位**:面板依「一則訊息裡有幾個 tool_result 就吃幾筆 log」
-      // 對位(transcript.ts 的 foldAppended),這裡少記一筆,後面每一輪的工具名
-      // 都會整組錯位。
-      toolCalls.push({
-        toolName: CORE_UI_ASK,
-        ok: false,
-        error: "invalid_args",
-        truncated: bounded.truncated,
-      });
-      appended.push(assistantMessage, resultMessage);
-      transcript = [...transcript, assistantMessage, resultMessage];
+      remaining -= retry.used;
+      toolCalls.push(retry.log);
+      appended.push(retry.assistantMessage, retry.resultMessage);
+      transcript = [...transcript, retry.assistantMessage, retry.resultMessage];
       continue;
     }
 

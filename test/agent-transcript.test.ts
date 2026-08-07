@@ -16,6 +16,7 @@ import {
   appendUserMessage,
   applyAskResolution,
   applyChatOutcome,
+  applyCodeResolution,
   applyProposalResolution,
   canSend,
   emptyTranscript,
@@ -25,6 +26,8 @@ import type { TranscriptState } from "../src/components/admin/agent/transcript";
 import type {
   AgentAsk,
   AgentChatOutcome,
+  AgentCode,
+  AgentCodeRun,
   AgentProposal,
 } from "../src/ext/agent-loop";
 import type { AiChatMessage } from "../src/ext/providers/ai";
@@ -567,6 +570,217 @@ describe("反問卡的渲染條目", () => {
     const before = withPendingAsk();
     const snapshot = structuredClone(before);
     applyAskResolution(before, { kind: "dismissed" });
+    expect(before).toEqual(snapshot);
+  });
+});
+
+// ================================================================ JS 沙盒(§4.7)
+
+// docs/spec-admin-agent.md §4.7:沙盒卡的出口比另外兩張卡多 —— 跑完、丟例外、逾時、
+// 被 admin 按掉。**四條都必須補一則 tool_result**,而四條裡有三條是「沒有答案」,
+// 所以特別容易在實作時只接上成功那一條。
+//
+// 這一組測試就是那條鐵律本身:每一條路走完之後,findDanglingToolUseIds 都必須是空的。
+
+const CODE: AgentCode = {
+  code: "const xs=[3,1,2].sort((a,b)=>a-b); xs[1]",
+  reason: "算出中位數",
+};
+
+function codeOutcome(code: AgentCode = CODE, toolUseId = "toolu_code_1"): AgentChatOutcome {
+  return {
+    status: "code",
+    text: "我算一下。",
+    code,
+    toolUseId,
+    appended: [
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "我算一下。" },
+          { type: "tool_use", id: toolUseId, name: "core.code.run", input: code },
+        ],
+      },
+    ],
+    steps: 1,
+    toolCalls: [],
+    model: "test-model",
+  };
+}
+
+function withPendingCode(code: AgentCode = CODE): TranscriptState {
+  return applyChatOutcome(
+    appendUserMessage(emptyTranscript(), "中位數是多少?"),
+    codeOutcome(code),
+  );
+}
+
+/** 沙盒的原始回報。 */
+function sandboxRun(patch: Partial<AgentCodeRun> = {}): AgentCodeRun {
+  return { ok: true, logs: [], ...patch };
+}
+
+describe("沙盒卡:四條路都不留懸空 tool_use", () => {
+  it("卡片送達之後 transcript 是懸空的,composer 鎖住", () => {
+    const state = withPendingCode();
+    expect(findDanglingToolUseIds(state.messages)).toEqual(["toolu_code_1"]);
+    expect(canSend(state)).toBe(false);
+    expect(state.pendingCode).toEqual({ code: CODE, toolUseId: "toolu_code_1" });
+    expect(state.pending).toBeNull();
+    expect(state.pendingAsk).toBeNull();
+    expect(state.entries.map((e) => e.kind)).toEqual(["user", "assistant", "code"]);
+    expect(state.entries[2]).toMatchObject({ resolution: "pending", code: CODE });
+  });
+
+  it("① 跑完 → 補上 tool_result", () => {
+    const state = applyCodeResolution(withPendingCode(), {
+      kind: "ran",
+      run: sandboxRun({ resultJson: "2" }),
+    });
+    expect(findDanglingToolUseIds(state.messages)).toEqual([]);
+    expect(canSend(state)).toBe(true);
+    expect(state.pendingCode).toBeNull();
+  });
+
+  it("② 丟例外 → 一樣補上", () => {
+    const state = applyCodeResolution(withPendingCode(), {
+      kind: "ran",
+      run: sandboxRun({ ok: false, error: "TypeError: x is not a function" }),
+    });
+    expect(findDanglingToolUseIds(state.messages)).toEqual([]);
+    expect(canSend(state)).toBe(true);
+  });
+
+  it("③ 逾時 → 一樣補上", () => {
+    const state = applyCodeResolution(withPendingCode(), {
+      kind: "ran",
+      run: sandboxRun({ ok: false, error: "execution was stopped after 5000 ms." }),
+    });
+    expect(findDanglingToolUseIds(state.messages)).toEqual([]);
+    expect(canSend(state)).toBe(true);
+  });
+
+  it("④ admin 按掉 → 一樣補上", () => {
+    const state = applyCodeResolution(withPendingCode(), { kind: "declined" });
+    expect(findDanglingToolUseIds(state.messages)).toEqual([]);
+    expect(canSend(state)).toBe(true);
+    expect(state.pendingCode).toBeNull();
+  });
+});
+
+describe("沙盒卡補回去的 tool_result 形狀", () => {
+  it("成功:ok:true + 還原後的真值,**不帶 isError**", () => {
+    const block = lastResult(
+      applyCodeResolution(withPendingCode(), {
+        kind: "ran",
+        run: sandboxRun({ resultJson: "2", logs: ["sorted"] }),
+      }),
+    );
+    expect(block.toolUseId).toBe("toolu_code_1");
+    expect(block.isError).toBeUndefined();
+    expect(JSON.parse(block.content)).toEqual({
+      ok: true,
+      logs: ["sorted"],
+      result: 2,
+    });
+  });
+
+  it("失敗:ok:false + error,而且已經收集到的 logs 照樣回去", () => {
+    const block = lastResult(
+      applyCodeResolution(withPendingCode(), {
+        kind: "ran",
+        run: sandboxRun({ ok: false, error: "RangeError: boom", logs: ["step 1"] }),
+      }),
+    );
+    const parsed = JSON.parse(block.content) as {
+      ok: boolean;
+      error: string;
+      logs: string[];
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toContain("RangeError");
+    expect(parsed.logs).toEqual(["step 1"]);
+  });
+
+  it("被按掉:ok:false + declined,**仍然不是錯誤**(同反問卡的「跳過」)", () => {
+    const block = lastResult(
+      applyCodeResolution(withPendingCode(), { kind: "declined" }),
+    );
+    expect(block.isError).toBeUndefined();
+    const parsed = JSON.parse(block.content) as {
+      ok: boolean;
+      declined: boolean;
+      reason: string;
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.declined).toBe(true);
+    // 而且告訴模型別再送同一段程式碼進來。
+    expect(parsed.reason).toMatch(/not run/i);
+    expect(parsed.reason).toMatch(/Do not retry/i);
+  });
+
+  it("巨大的結果被兩道上限收住:先 §4.7 的結果上限,再 client 的整筆上限", () => {
+    const huge = JSON.stringify(Array.from({ length: 20_000 }, (_, i) => i));
+    const block = lastResult(
+      applyCodeResolution(withPendingCode(), {
+        kind: "ran",
+        run: sandboxRun({ resultJson: huge }),
+      }),
+    );
+    expect(block.content.length).toBeLessThan(CLIENT_TOOL_RESULT_MAX_CHARS + 200);
+    // 標注留了下來 —— 模型看得到自己拿到的不是完整的值。
+    expect(block.content).toContain("cut short");
+  });
+
+  it("沒有待執行的卡時,重複處置不會產生第二則 tool_result", () => {
+    const once = applyCodeResolution(withPendingCode(), { kind: "declined" });
+    const twice = applyCodeResolution(once, {
+      kind: "ran",
+      run: sandboxRun({ resultJson: "2" }),
+    });
+    expect(twice).toBe(once);
+  });
+});
+
+describe("沙盒卡的渲染條目", () => {
+  it("解決後只改動對應 toolUseId 的那一張卡,並記下沙盒回報了什麼", () => {
+    const first = applyCodeResolution(withPendingCode(), { kind: "declined" });
+    const second = applyCodeResolution(
+      applyChatOutcome(first, codeOutcome(CODE, "toolu_code_2")),
+      { kind: "ran", run: sandboxRun({ resultJson: "2" }) },
+    );
+    const cards = second.entries.filter((e) => e.kind === "code");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toMatchObject({ resolution: "declined" });
+    expect(cards[0]).not.toHaveProperty("output");
+    expect(cards[1]).toMatchObject({
+      resolution: "ran",
+      output: { ok: true, result: 2 },
+    });
+  });
+
+  it("跑完之後可以再送下一則訊息,transcript 仍然合法", () => {
+    const ran = applyCodeResolution(withPendingCode(), {
+      kind: "ran",
+      run: sandboxRun({ resultJson: "2" }),
+    });
+    const next = applyChatOutcome(
+      appendUserMessage(ran, "那平均呢?"),
+      readThenTextOutcome(),
+    );
+    expect(findDanglingToolUseIds(next.messages)).toEqual([]);
+    expect(canSend(next)).toBe(true);
+  });
+
+  it("純度:同輸入同輸出,而且不修改輸入", () => {
+    const decision = { kind: "ran" as const, run: sandboxRun({ resultJson: "2" }) };
+    expect(applyCodeResolution(withPendingCode(), decision)).toEqual(
+      applyCodeResolution(withPendingCode(), decision),
+    );
+
+    const before = withPendingCode();
+    const snapshot = structuredClone(before);
+    applyCodeResolution(before, { kind: "declined" });
     expect(before).toEqual(snapshot);
   });
 });

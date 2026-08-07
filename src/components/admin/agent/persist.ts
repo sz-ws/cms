@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { askArgsSchema } from "@/ext/agent-ask";
+import { codeArgsSchema } from "@/ext/agent-code";
 import { agentDisplaySchema } from "@/ext/agent-display";
 import type { AgentProposal } from "@/ext/agent-loop";
 import type { AiChatContentBlock, AiChatMessage } from "@/ext/providers/ai";
@@ -147,6 +148,15 @@ const askAnswerSchema = z.object({
   values: z.record(z.string(), z.string()).optional(),
 });
 
+/** 沙盒卡跑完之後的結果(spec §4.7)。`result` 是任意 JSON 值 —— 那正是重點。 */
+const codeOutputSchema = z.object({
+  ok: z.boolean(),
+  result: z.unknown().optional(),
+  note: z.string().optional(),
+  logs: z.array(z.string()).optional(),
+  error: z.string().optional(),
+});
+
 const entryIdSchema = z.string().min(1);
 
 const entrySchema = z.union([
@@ -175,6 +185,16 @@ const entrySchema = z.union([
     answer: askAnswerSchema.optional(),
   }),
   z.object({
+    kind: z.literal("code"),
+    id: entryIdSchema,
+    // 同反問卡:吃 agent-code 的同一份 schema(含 8,000 字上限)。存進來的程式碼
+    // 若超過那個上限,還原出來的卡片會顯示一段模型從來沒送過的東西。
+    code: codeArgsSchema,
+    toolUseId: z.string().min(1),
+    resolution: z.enum(["pending", "ran", "declined"]),
+    output: codeOutputSchema.optional(),
+  }),
+  z.object({
     kind: z.literal("notice"),
     id: entryIdSchema,
     tone: z.enum(["maxSteps", "error"]),
@@ -189,6 +209,14 @@ const stateSchema = z.object({
   pendingAsk: z
     .object({ ask: askArgsSchema, toolUseId: z.string().min(1) })
     .nullable(),
+  // `.default(null)` 讓 §4.7 之前寫下的 payload 仍然讀得回來。這**不是**跨版本
+  // 搬運(見 PAYLOAD_VERSION 的說明):沒有欄位要改寫、沒有一條只跑一次的路徑,
+  // 只是「這個鍵不存在」與「這個鍵是 null」本來就同義。為了一個純追加的欄位把
+  // 所有人手上的對話丟掉,代價與收穫不成比例。
+  pendingCode: z
+    .object({ code: codeArgsSchema, toolUseId: z.string().min(1) })
+    .nullable()
+    .default(null),
   seq: z.number().int().min(0),
 });
 
@@ -207,29 +235,42 @@ const payloadSchema = z.object({
  * 這份 state 可以被寫出去 / 讀回來嗎。
  *
  * 通過 schema 只代表**形狀**對,不代表這份對話**送得出去**。真正的判準是
- * transcript.ts 的那條鐵律,而它有一個合法的例外:等人按的那張卡。
+ * transcript.ts 的那條鐵律,而它有一個合法的例外:還沒被處置的那張卡。
  *
  *   · 沒有待處理的卡 → 一個懸空的 tool_use 都不能有;
- *   · 有 pending / pendingAsk → 恰好一個懸空,而且必須就是那張卡的 toolUseId。
+ *   · 有 pending / pendingAsk / pendingCode → 恰好一個懸空,而且必須就是那張卡的
+ *     toolUseId。
  *
  * 第二條的「必須是那一個」不是潔癖:pending 指著一個**已經有結果**的 tool_use 時,
  * 按下確認會補出第二則同 id 的 tool_result;而 pending 指著一個**不存在**的
  * tool_use 時,那張卡按下去等於憑空生出一則結果。兩種都會讓下一次 /chat 被拒收。
+ *
+ * 沙盒卡(§4.7)算在同一個例外裡,而且它的還原**會自己跑完**:面板一掛載就把它
+ * 執行掉、補上結果、續跑 /chat。這件事之所以可以接受,正是這個功能的前提本身 ——
+ * 那段程式碼沒有副作用,重跑一次與跑第一次是同一件事。對照組是「不存 pendingCode」:
+ * 那樣還原出來的 transcript 帶著懸空的 tool_use,整份對話只能整包丟掉。
  *
  * 另外兩條與渲染有關:entry id 是 React key(重複 → 畫面錯亂),而 seq 是下一個 id
  * 的序號(倒退 → 新條目與舊條目撞號)。這兩件事 schema 驗不出來,因為它們是**條目
  * 之間**的關係。
  */
 export function isRestorableState(state: TranscriptState): boolean {
-  // transcript.ts:loop 一輪最多攔下一個 tool_use,兩張卡不可能同時待處理。
-  if (state.pending !== null && state.pendingAsk !== null) return false;
+  // transcript.ts:loop 一輪最多攔下一個 tool_use,三張卡不可能同時待處理。
+  const cards = [state.pending, state.pendingAsk, state.pendingCode].filter(
+    (card) => card !== null,
+  );
+  if (cards.length > 1) return false;
 
   const ids = new Set(state.entries.map((entry) => entry.id));
   if (ids.size !== state.entries.length) return false;
   if (state.seq < state.entries.length) return false;
 
   const dangling = findDanglingToolUseIds(state.messages);
-  const allowed = state.pending?.toolUseId ?? state.pendingAsk?.toolUseId ?? null;
+  const allowed =
+    state.pending?.toolUseId ??
+    state.pendingAsk?.toolUseId ??
+    state.pendingCode?.toolUseId ??
+    null;
   if (allowed === null) return dangling.length === 0;
   return dangling.length === 1 && dangling[0] === allowed;
 }
