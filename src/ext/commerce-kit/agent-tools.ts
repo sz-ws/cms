@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { defineAgentTool } from "../agent-tools";
+import { defineAgentTool, readStringArg } from "../agent-tools";
 import type { AgentTool, AgentToolCtx } from "../agent-tools";
+import type { Locale } from "@/lib/i18n/index";
 import { makeScopedSettings } from "../settings-env";
 import type { ApiCtx } from "../types";
 import { getOrder, listOrders } from "./orders";
@@ -77,6 +78,25 @@ const AGENT_STAMP = "(AI 助理提案,admin 確認)";
 function stampNote(note: string | undefined): string {
   return note ? `${note} ${AGENT_STAMP}` : AGENT_STAMP;
 }
+
+// ── 確認卡摘要(1.31.0)────────────────────────────────────────────────────────
+// 這兩句是站方按下「確認執行」之前唯一讀到的字,而按下去等於「宣稱收到了錢」或
+// 「宣稱貨出了」。所以摘要一定要指名**哪一張單**;args 是模型未驗證的原始 input
+// (見 AgentTool.summarize),缺編號時寧可明說缺,也不要生出一句看起來很篤定的話。
+
+/** 缺 orderNo 時給一個看得出「這裡是空的」的佔位字,而不是空白。 */
+function summaryOrderNo(args: unknown, locale: Locale): string {
+  const orderNo = readStringArg(args, "orderNo");
+  if (orderNo) return orderNo;
+  return locale === "zh-Hant" ? "(未指定編號)" : "(no order number)";
+}
+
+/** 狀態的中文說法。訂單頁與對帳佇列用的是同一組詞,摘要不另創一套。 */
+const STATUS_ZH: Record<string, string> = {
+  shipped: "已出貨",
+  completed: "已完成",
+  cancelled: "已取消",
+};
 
 function toSummary(order: CommerceOrder): CommerceOrderSummary {
   return {
@@ -216,6 +236,12 @@ export function createCommerceAgentTools(
       schema: z
         .object({ orderNo: orderNoSchema, note: noteSchema.optional() })
         .strict(),
+      summarize: (args, locale) => {
+        const orderNo = summaryOrderNo(args, locale);
+        return locale === "zh-Hant"
+          ? `把訂單 ${orderNo} 標記為已收款(手動核帳)`
+          : `Mark order ${orderNo} as paid (manual verification)`;
+      },
       run: async (ctx, args) =>
         runHandler(verifyHandler, ctx, args.orderNo, {
           approve: true,
@@ -237,6 +263,20 @@ export function createCommerceAgentTools(
           note: noteSchema.optional(),
         })
         .strict(),
+      summarize: (args, locale) => {
+        const orderNo = summaryOrderNo(args, locale);
+        const to = readStringArg(args, "to");
+        if (locale === "zh-Hant") {
+          // 認不得的 to 就原樣寫出來(而不是猜):模型送了什麼,admin 就看到什麼。
+          const label = STATUS_ZH[to] ?? to;
+          return label
+            ? `把訂單 ${orderNo} 轉為${label}`
+            : `把訂單 ${orderNo} 轉為新狀態`;
+        }
+        return to
+          ? `Move order ${orderNo} to ${to}`
+          : `Move order ${orderNo} to a new status`;
+      },
       run: async (ctx, args) =>
         runHandler(statusHandler, ctx, args.orderNo, {
           to: args.to,

@@ -192,6 +192,11 @@ export function buildAgentSystemPrompt(input: AgentPromptInput): string {
     // ── 4. 工具紀律 ────────────────────────────────────────────────────────
     "## Tool discipline",
     "",
+    // wire 名對照:上游的 tool name 規則不允許點(ai-chat.ts 的 toWireToolName 在
+    // 邊界把點換成破折號),所以模型在 tools 清單裡看到的是 core-content-search。
+    // 這句話讓「admin 打 /shop.orders.list、prompt 寫 core.content.search、清單列
+    // core-content-list」三種寫法在模型眼裡是同一個東西 —— 弱一點的模型不會自己橋。
+    "- Tool names in this prompt and in the admin UI are dotted (core.content.search); in your tool list the same tools appear with dashes (core-content-search). They are the same tools — always call the dashed name exactly as listed.",
     "- To find content, use core.content.search (full-text, ranked, covers every type including drafts). Do not list a whole collection and scan it yourself.",
     "- The *.list tools return summaries only (id, title, slug, status, updatedAt). When you need field values, call the matching *.get with the id.",
     "- Ask for the smallest page you need. A large listing spends the context you need for the actual task.",
@@ -213,11 +218,17 @@ export function buildAgentSystemPrompt(input: AgentPromptInput): string {
 /**
  * 讀當下站台狀態,組出 system prompt。每個 /chat request 呼叫一次(spec §4.5:
  * 「組裝是 per-request 動態的」——剛裝的 extension 應該在下一句話就被認得)。
+ *
+ * `locale` 可由呼叫端先解析好傳進來(route 就是這樣做的:同一次請求裡 system
+ * prompt 的回覆語言與確認卡摘要的語言必須是同一個答案,解析兩次等於留一條它們
+ * 會分岔的縫)。省略則自行 resolveLocale()。
  */
-export async function loadAgentSystemPrompt(): Promise<string> {
+export async function loadAgentSystemPrompt(
+  preresolvedLocale?: Locale,
+): Promise<string> {
   // 見檔頭:loader 只能 dynamic import。
   const { getExtRuntime } = await import("./loader");
-  const locale = await resolveLocale();
+  const locale = preresolvedLocale ?? (await resolveLocale());
   const [siteTitle, runtime, types] = await Promise.all([
     getSetting<string>("core.siteTitle", ""),
     getExtRuntime(),
@@ -241,8 +252,12 @@ export async function loadAgentSystemPrompt(): Promise<string> {
  * 取捨:**以 getLocale() 為準**(那是 admin 實際看到的介面語言,也是 spec 那句話的
  * 主詞),只有在它讀不到設定而拋錯時才落到繁中。理由是一致性 —— 讓 agent 用一種
  * 語言回覆、而整個後台是另一種語言,才是使用者真正會抱怨的事。
+ *
+ * 1.31.0 起對外:確認卡摘要(AgentTool.summarize)也要 admin 介面語言,而那個
+ * 答案必須與 system prompt 裡那句「Reply in …」出自同一支函式 —— 兩份解析邏輯
+ * 遲早會在 fallback 的取捨上分岔,而症狀是「AI 用中文說話、確認卡卻是英文」。
  */
-async function resolveLocale(): Promise<Locale> {
+export async function resolveLocale(): Promise<Locale> {
   try {
     return await getLocale();
   } catch (e) {

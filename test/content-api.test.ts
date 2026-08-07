@@ -361,8 +361,8 @@ describe("revoke (§6.6)", () => {
 // ---- §6.7:CORE_API 1.9.0;customApiRoutes ^1.9.0 可裝;read-only gate ----
 
 describe("core api 1.9.0 + manifest gate (§6.7)", () => {
-  it("CORE_API_VERSION is 1.30.0 (still ^1.9.0-compatible: same major, newer minor)", () => {
-    expect(CORE_API_VERSION).toBe("1.30.0");
+  it("CORE_API_VERSION is 1.31.0 (still ^1.9.0-compatible: same major, newer minor)", () => {
+    expect(CORE_API_VERSION).toBe("1.31.0");
   });
 
   it("manifest with GET customApiRoutes + ^1.9.0 parses", () => {

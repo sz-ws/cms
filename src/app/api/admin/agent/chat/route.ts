@@ -161,20 +161,27 @@ export async function POST(req: Request): Promise<Response> {
   }));
 
   // 見檔頭:全部 handler 內 dynamic import。
-  const [{ buildAgentToolRegistry }, { createServices }, { loadAgentSystemPrompt }, { runAgentChat }] =
-    await Promise.all([
-      import("@/ext/agent-tools-runtime"),
-      import("@/ext/services"),
-      import("@/ext/agent-prompt"),
-      import("@/ext/agent-loop"),
-    ]);
+  const [
+    { buildAgentToolRegistry },
+    { createServices },
+    { loadAgentSystemPrompt, resolveLocale },
+    { runAgentChat },
+  ] = await Promise.all([
+    import("@/ext/agent-tools-runtime"),
+    import("@/ext/services"),
+    import("@/ext/agent-prompt"),
+    import("@/ext/agent-loop"),
+  ]);
 
+  // 解析一次,兩個消費者共用:system prompt 的「Reply in …」與確認卡摘要的語言
+  // (AgentTool.summarize,1.31.0)。分別解析等於留一條它們會分岔的縫。
+  const locale = await resolveLocale();
   const [registry, services, system] = await Promise.all([
     // 兩個端點共用同一個接線點 —— /chat 看得到的 tool 與 /execute 認得的 tool
     // 因此不可能分叉(agent-tools-runtime.ts 檔頭)。
     buildAgentToolRegistry(),
     createServices("core"),
-    loadAgentSystemPrompt(),
+    loadAgentSystemPrompt(locale),
   ]);
 
   const outcome = await runAgentChat({
@@ -182,6 +189,7 @@ export async function POST(req: Request): Promise<Response> {
     system,
     registry,
     ctx: { user, services },
+    locale,
   });
   // 上游/工具層的失敗一律以 200 + status:"error" 透傳(同 /api/ai/generate 的
   // 「provider 結果被動透傳」哲學):HTTP 層只表達「這個請求本身有沒有被接受」。

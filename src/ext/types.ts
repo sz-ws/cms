@@ -359,6 +359,10 @@ const agentToolSchema = z.object({
   kind: z.enum(["read", "write"]),
   schema: zodSchemaLike,
   execute: fn,
+  // 1.31.0:確認卡的人話摘要。列出來而不是靠 z.object() 預設放行未知鍵 —— 這份
+  // schema 是「extension 宣告的 agentTools 長什麼樣」的單一來源,一個沒寫在這裡
+  // 的欄位等於沒有人保證它的型別(寫成字串也照樣通過)。
+  summarize: fn.optional(),
 });
 
 const manifestSchema = z

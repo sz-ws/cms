@@ -2,8 +2,9 @@ import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { declarativeExtensions as dxTable } from "@/lib/schema";
-import { defineAgentTool } from "../agent-tools";
+import { defineAgentTool, readStringArg } from "../agent-tools";
 import type { AgentTool, AgentToolCtx } from "../agent-tools";
+import type { Locale } from "@/lib/i18n/index";
 import type { ContentEntry, ContentProvider, ContentTypeDef } from "../capabilities";
 import { toTypeDef } from "./runtime";
 import { parseManifest } from "./manifest";
@@ -115,6 +116,40 @@ function typeLabel(ct: DeclarativeContentType): string {
 }
 
 /**
+ * 同一個標題,但解成 admin 的介面語言 —— 確認卡摘要(summarize)用。
+ *
+ * 與上面那支分開,是因為兩邊的讀者不同:description 給 LLM 看,固定英文才不會讓
+ * prompt 的語言隨站台設定飄移;摘要給人看,一個標了 `{ "zh-Hant": "作品" }` 的
+ * manifest 就該在卡片上寫「作品」,而不是它的英文名。
+ */
+function localizedTypeLabel(ct: DeclarativeContentType, locale: Locale): string {
+  return resolveLocalizedString(ct.label, locale) ?? ct.name;
+}
+
+/**
+ * update 摘要的括號段:`(id: abc;3 個欄位)`。
+ *
+ * id 或 data 任一缺席就整段省略 —— 摘要收到的是模型未經驗證的 input(見
+ * AgentTool.summarize),半句「(id: ;0 個欄位)」比沒有括號更難讀,也更容易讓
+ * admin 誤以為那是真的參數。
+ */
+function updateTarget(args: unknown, locale: Locale): string {
+  const id = readStringArg(args, "id");
+  const data =
+    typeof args === "object" && args !== null
+      ? (args as { data?: unknown }).data
+      : undefined;
+  const fieldCount =
+    typeof data === "object" && data !== null && !Array.isArray(data)
+      ? Object.keys(data).length
+      : -1;
+  if (id.length === 0 || fieldCount < 0) return "";
+  return locale === "zh-Hant"
+    ? `(id: ${id};${fieldCount} 個欄位)`
+    : ` (id: ${id}; ${fieldCount} fields)`;
+}
+
+/**
  * 為單一 declarative content type 產生 agent tools。
  *
  * `isSubmission`(收件匣型別)由呼叫端依整份 manifest 判定後傳入 —— 判定需要看
@@ -189,6 +224,19 @@ export function contentTypeAgentTools(
       `Permanently delete one "${label}" (${def.type}) ${noun} by id. This cannot be undone.`,
     kind: "write",
     schema: z.object({ id: z.string().min(1) }).strict(),
+    summarize: (args, locale) => {
+      const l = localizedTypeLabel(ct, locale);
+      const id = readStringArg(args, "id");
+      if (locale === "zh-Hant") {
+        // 「無法復原」留在最後:確認卡只有一行,最重的那句話要在句尾被讀到。
+        return id
+          ? `永久刪除一筆「${l}」(id: ${id})—— 無法復原`
+          : `永久刪除一筆「${l}」—— 無法復原`;
+      }
+      return id
+        ? `Permanently delete one "${l}" entry (id: ${id}) — cannot be undone`
+        : `Permanently delete one "${l}" entry — cannot be undone`;
+    },
     run: async (ctx, args) => {
       const provider = await contentProvider(ctx, def);
       const existing = await provider.get(def.type, args.id);
@@ -217,6 +265,12 @@ export function contentTypeAgentTools(
           slug: z.string().min(1).optional(),
         })
         .strict(),
+      summarize: (_args, locale) => {
+        const l = localizedTypeLabel(ct, locale);
+        return locale === "zh-Hant"
+          ? `建立一筆新的「${l}」`
+          : `Create a new "${l}" entry`;
+      },
       run: async (ctx, args) => {
         const provider = await contentProvider(ctx, def);
         return provider.create(def.type, {
@@ -240,6 +294,13 @@ export function contentTypeAgentTools(
           status: z.enum(["draft", "published"]).optional(),
         })
         .strict(),
+      summarize: (args, locale) => {
+        const l = localizedTypeLabel(ct, locale);
+        const target = updateTarget(args, locale);
+        return locale === "zh-Hant"
+          ? `更新一筆「${l}」${target}`
+          : `Update one "${l}" entry${target}`;
+      },
       run: async (ctx, args) => {
         const provider = await contentProvider(ctx, def);
         return provider.update(def.type, args.id, {

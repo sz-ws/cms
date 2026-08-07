@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SessionUser } from "@/lib/auth";
+import type { Locale } from "@/lib/i18n/index";
 import type { CoreServices } from "./services";
 
 // docs/spec-admin-agent.md §2:行動層(agent tool registry)。
@@ -37,6 +38,32 @@ export interface AgentTool {
   /** args 驗證。Phase B 會轉成 JSON Schema 餵給 LLM。 */
   schema: z.ZodType;
   execute(ctx: AgentToolCtx, args: unknown): Promise<unknown>;
+  /**
+   * 確認卡的人話摘要(admin 介面語言)。省略 → 退回 description 第一句 + args 預覽。
+   *
+   * 為什麼要有這個方法:description 是寫給 LLM 看的英文,而確認卡那一行是 admin
+   * **按下「確認執行」之前唯一讀到的字**。對一個繁中後台來說,那一行不該是英文。
+   *
+   * 收到的 args 是 **LLM 的原始 input,未經 schema 驗證** —— write 在 loop 內永不
+   * 執行,所以在提案的時點根本沒有 parse 過(agent-loop.ts 的 proposal 分支)。
+   * 實作必須逐欄防禦性讀取(readStringArg 之類),任何欄位缺失都要生得出一句合理的
+   * 話,而且**絕不 throw**:摘要炸掉會讓 admin 面前那張卡失去它唯一的說明。
+   * 真的 throw 或回空字串時,loop 會退回推導版摘要 —— 但那是保險絲,不是設計。
+   */
+  summarize?(args: unknown, locale: Locale): string;
+}
+
+/**
+ * summarize 專用的防禦性欄位讀取:非物件 / 缺鍵 / 型別不對一律回空字串。
+ *
+ * 存在的理由就是上面那句「args 未經驗證」。把它放在契約旁邊而不是各自實作一份,
+ * 是因為每個 summarize 作者都會遇到同一個陷阱(`(args as {id:string}).id` 在模型
+ * 少填一個欄位時就是 undefined,接著 `.slice()` 一炸,卡片就白了)。
+ */
+export function readStringArg(args: unknown, key: string): string {
+  if (typeof args !== "object" || args === null) return "";
+  const value = (args as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : "";
 }
 
 /**
@@ -83,6 +110,11 @@ export function defineAgentTool<S extends z.ZodType>(def: {
   kind: AgentToolKind;
   schema: S;
   run: (ctx: AgentToolCtx, args: z.output<S>) => Promise<unknown>;
+  /**
+   * 見 AgentTool.summarize。args 刻意**不**用 z.output<S> —— 那會讓作者以為自己
+   * 拿到的是驗過的形狀,而摘要跑在唯一沒有 parse 的時點上。
+   */
+  summarize?: (args: unknown, locale: Locale) => string;
 }): AgentTool {
   const tool: AgentTool = {
     name: def.name,
@@ -92,6 +124,7 @@ export function defineAgentTool<S extends z.ZodType>(def: {
     // async 是刻意的:parse 失敗要走 rejected promise,而不是同步 throw ——
     // 回傳型別寫著 Promise,呼叫端就有權只用 .catch()/await 攔錯。
     execute: async (ctx, args) => def.run(ctx, def.schema.parse(args)),
+    ...(def.summarize ? { summarize: def.summarize } : {}),
   };
   assertToolShape(tool);
   return tool;

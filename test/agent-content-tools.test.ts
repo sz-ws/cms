@@ -458,3 +458,108 @@ describe("listDeclarativeAgentTools", () => {
     ]);
   });
 });
+
+// ------------------------------------------------------------- 確認卡摘要
+
+// 1.31.0:AgentTool.summarize —— 確認卡那一行是 admin 按下「確認執行」之前唯一讀到
+// 的字,所以它要用 admin 的介面語言、要指名動的是哪一筆,而且**餵什麼進去都不能炸**
+// (摘要跑在唯一沒有 parse 的時點上:write 永不在 loop 內執行)。
+describe("summarize:自動生成的 write 動詞(1.31.0)", () => {
+  /** label 寫成 per-locale 物件 —— 摘要該解出「作品」,而 description 仍取 en。 */
+  const LOCALIZED: DeclarativeContentType = {
+    name: "item",
+    label: { en: "Gallery item", "zh-Hant": "作品" },
+    fields: [{ key: "title", type: "text", required: true }],
+  };
+
+  const tools = () => byName(contentTypeAgentTools("gallery", LOCALIZED));
+  const say = (name: string, args: unknown, locale: "en" | "zh-Hant"): string => {
+    const tool = tools().get(name)!;
+    return tool.summarize!(args, locale);
+  };
+
+  it("read tool 沒有摘要 —— 它不會產生確認卡", () => {
+    expect(tools().get("content.gallery_item.list")!.summarize).toBeUndefined();
+    expect(tools().get("content.gallery_item.get")!.summarize).toBeUndefined();
+  });
+
+  it("label 依 locale 解析(description 仍固定取 en,讀者是 LLM)", () => {
+    expect(say("content.gallery_item.create", { data: {} }, "zh-Hant")).toBe(
+      "建立一筆新的「作品」",
+    );
+    expect(say("content.gallery_item.create", { data: {} }, "en")).toBe(
+      'Create a new "Gallery item" entry',
+    );
+    expect(tools().get("content.gallery_item.create")!.description).toContain(
+      '"Gallery item"',
+    );
+  });
+
+  it("update:指名 id 與被改的欄位數 —— 「動的是哪一筆」要看得見", () => {
+    const args = { id: "abc", data: { title: "新標題", shotAt: "2026-01-01" } };
+    expect(say("content.gallery_item.update", args, "zh-Hant")).toBe(
+      "更新一筆「作品」(id: abc;2 個欄位)",
+    );
+    expect(say("content.gallery_item.update", args, "en")).toBe(
+      'Update one "Gallery item" entry (id: abc; 2 fields)',
+    );
+  });
+
+  it("update:id 或 data 缺席 → 整段括號省略,不生出半句假參數", () => {
+    for (const args of [{ data: { title: "x" } }, { id: "abc" }, {}]) {
+      expect(say("content.gallery_item.update", args, "zh-Hant")).toBe(
+        "更新一筆「作品」",
+      );
+      expect(say("content.gallery_item.update", args, "en")).toBe(
+        'Update one "Gallery item" entry',
+      );
+    }
+  });
+
+  it("delete:不可復原那句留在句尾;缺 id 時仍是一句完整的話", () => {
+    expect(say("content.gallery_item.delete", { id: "abc" }, "zh-Hant")).toBe(
+      "永久刪除一筆「作品」(id: abc)—— 無法復原",
+    );
+    expect(say("content.gallery_item.delete", { id: "abc" }, "en")).toBe(
+      'Permanently delete one "Gallery item" entry (id: abc) — cannot be undone',
+    );
+    expect(say("content.gallery_item.delete", {}, "zh-Hant")).toBe(
+      "永久刪除一筆「作品」—— 無法復原",
+    );
+  });
+
+  it("餵任何垃圾都不 throw,且一定生得出非空字串(args 未經 schema 驗證)", () => {
+    const junk = [
+      undefined,
+      null,
+      "not an object",
+      42,
+      [],
+      {},
+      { id: 123, data: "not an object" },
+      { id: "abc", data: [1, 2] },
+      { data: null },
+    ];
+    for (const name of [
+      "content.gallery_item.create",
+      "content.gallery_item.update",
+      "content.gallery_item.delete",
+    ]) {
+      for (const args of junk) {
+        for (const locale of ["zh-Hant", "en"] as const) {
+          const out = say(name, args, locale);
+          expect(out.trim().length, `${name} ${JSON.stringify(args)}`).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it("沒有 label 的型別退回 type name(既有 fallback 鏈不變)", () => {
+    const bare = byName(
+      contentTypeAgentTools("gallery", { name: "item", fields: [] }),
+    );
+    expect(bare.get("content.gallery_item.create")!.summarize!({}, "zh-Hant")).toBe(
+      "建立一筆新的「item」",
+    );
+  });
+});

@@ -751,3 +751,99 @@ describe("system prompt(spec §4.5 五段)", () => {
     expect(prompt).toContain("title (text, required)");
   });
 });
+
+// =========================================================== 確認卡摘要
+
+// 1.31.0:proposal.summary 的來源從「description 第一句 + args 預覽」(英文)改成
+// 優先走 tool.summarize(admin 介面語言)。這一段釘住三件事:locale 真的一路傳到
+// summarize、壞掉的 summarize 不會讓提案消失、以及既有的推導版一字未改。
+describe("proposal.summary:AgentTool.summarize(1.31.0)", () => {
+  const WRITE = {
+    name: "test.thing.create",
+    description: "Create one thing. This cannot be undone.",
+    kind: "write" as const,
+    schema: z.object({ id: z.string().min(1) }).strict(),
+    run: async () => ({ ok: true }),
+  };
+
+  function registryWith(
+    summarize?: (args: unknown, locale: "en" | "zh-Hant") => string,
+  ): AgentToolRegistryImpl {
+    const registry = new AgentToolRegistryImpl();
+    registry.register(
+      defineAgentTool(summarize ? { ...WRITE, summarize } : WRITE),
+    );
+    return registry;
+  }
+
+  /** 跑一輪、拿回確認卡那一行字。locale 省略 = 不傳(測預設值)。 */
+  async function summaryOf(
+    registry: AgentToolRegistryImpl,
+    locale?: "en" | "zh-Hant",
+    input: unknown = { id: "x1" },
+  ): Promise<string> {
+    const outcome = await runAgentChat({
+      messages: [{ role: "user", content: [{ type: "text", text: "建一筆" }] }],
+      system: "sys",
+      registry,
+      ctx: CTX,
+      ...(locale ? { locale } : {}),
+      chat: scriptedChat([toolUseResult("test.thing.create", input)]).chat,
+    });
+    if (outcome.status !== "proposal") {
+      throw new Error(`expected proposal, got ${outcome.status}`);
+    }
+    return outcome.proposal.summary;
+  }
+
+  const BILINGUAL = (_args: unknown, locale: "en" | "zh-Hant") =>
+    locale === "zh-Hant" ? "建立一筆新的「東西」" : "Create a new thing";
+
+  it("AgentChatParams.locale 一路傳到 summarize", async () => {
+    expect(await summaryOf(registryWith(BILINGUAL), "zh-Hant")).toBe(
+      "建立一筆新的「東西」",
+    );
+    expect(await summaryOf(registryWith(BILINGUAL), "en")).toBe("Create a new thing");
+  });
+
+  it("省略 locale → \"en\"(同 getLocale() 未設定時的回答)", async () => {
+    expect(await summaryOf(registryWith(BILINGUAL))).toBe("Create a new thing");
+  });
+
+  it("summarize 拿到的是模型的原始 input(未經 schema 驗證)", async () => {
+    const seen: unknown[] = [];
+    const registry = registryWith((args) => {
+      seen.push(args);
+      return "ok";
+    });
+    // schema 要 id:string,這裡故意送一個過不了 parse 的形狀 —— 提案階段沒有 parse。
+    await summaryOf(registry, "en", { id: 42, bogus: true });
+    expect(seen).toEqual([{ id: 42, bogus: true }]);
+  });
+
+  it("summarize throw → 退回推導版,提案本身不受影響", async () => {
+    const registry = registryWith(() => {
+      throw new Error("boom");
+    });
+    const summary = await summaryOf(registry, "zh-Hant");
+    expect(summary).toContain("Create one thing");
+    expect(summary).toContain('"id":"x1"');
+  });
+
+  it("summarize 回空白 → 同樣退回推導版(空白摘要 = 沒有摘要)", async () => {
+    expect(await summaryOf(registryWith(() => "   "), "zh-Hant")).toContain(
+      "Create one thing",
+    );
+  });
+
+  it("沒有 summarize 的 tool:推導版一字未改", async () => {
+    const summary = await summaryOf(registryWith(), "zh-Hant");
+    expect(summary).toBe('Create one thing — {"id":"x1"}');
+  });
+
+  it("summarize 的回傳仍受摘要長度上限約束", async () => {
+    const summary = await summaryOf(registryWith(() => "字".repeat(600)), "zh-Hant");
+    expect(summary.endsWith("…")).toBe(true);
+    expect(summary.length).toBeLessThan(400);
+  });
+});

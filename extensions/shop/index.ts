@@ -58,9 +58,11 @@ export const shop = defineExtension({
   id: "shop",
   name: "商店",
   version: "0.1.0",
-  // ^1.30.0:宣告了 agentTools(1.30.0 的新表面)。舊 core 會安靜地忽略那個欄位,
-  // 所以 defineExtension 把「宣告了就必須標版號」列為硬規則。
-  coreApi: "^1.30.0",
+  // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
+  // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
+  // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
+  // 實際用到的那一版。
+  coreApi: "^1.31.0",
   description:
     "購物車、結帳與訂單管理:讀取 catalog 商品、透過 payment capability 收款(刷卡/匯款)、匯款人工對帳。",
   icon: "shopping-cart",

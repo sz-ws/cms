@@ -180,6 +180,16 @@ describe("defineExtension:agentTools 的命名空間與形狀(1.30.0)", () => {
     ).toThrow(/description/);
   });
 
+  it("summarize 不是 function → 拒(1.31.0:選填,但寫了就要是函式)", () => {
+    expect(() =>
+      defineExtension(manifest({ agentTools: [rawTool({ summarize: "一句話" })] })),
+    ).toThrow(/agentTools/);
+    // 省略仍然合法 —— 沒有 summarize 的 tool 退回推導版摘要。
+    expect(() =>
+      defineExtension(manifest({ agentTools: [rawTool({})] })),
+    ).not.toThrow();
+  });
+
   it("execute 不是 function / schema 不是 zod → 拒", () => {
     expect(() =>
       defineExtension(manifest({ agentTools: [rawTool({ execute: "nope" })] })),
@@ -558,5 +568,74 @@ describe("commerce-kit 訂單 tools(裝了 shop,AI 就會操作訂單)", () => {
         to: "paid",
       }),
     ).toMatchObject({ ok: false, error: "invalid_args" });
+  });
+});
+
+// ------------------------------------------------- 4. 訂單 tools 的確認卡摘要
+
+// 1.31.0:按下這兩張確認卡等於「宣稱收到了錢」與「宣稱貨出了」,所以摘要必須指名
+// 哪一張單。args 是模型未經 schema 驗證的原始 input(write 永不在 loop 內執行),
+// 缺欄位一律要能生出一句合理的話,絕不 throw。
+describe("summarize:訂單 write tools(1.31.0)", () => {
+  const tools = createCommerceAgentTools({ extId: EXT_ID, table: ORDERS_TABLE });
+  const say = (name: string, args: unknown, locale: "en" | "zh-Hant"): string => {
+    const tool = tools.find((t) => t.name === name)!;
+    return tool.summarize!(args, locale);
+  };
+
+  it("read tool 沒有摘要 —— 它不會產生確認卡", () => {
+    expect(tools.find((t) => t.name === `${EXT_ID}.orders.list`)!.summarize).toBeUndefined();
+    expect(tools.find((t) => t.name === `${EXT_ID}.orders.get`)!.summarize).toBeUndefined();
+  });
+
+  it("verify:兩種語言都指名訂單編號,並說明這是手動核帳", () => {
+    expect(say(`${EXT_ID}.orders.verify`, { orderNo: "SO42" }, "zh-Hant")).toBe(
+      "把訂單 SO42 標記為已收款(手動核帳)",
+    );
+    expect(say(`${EXT_ID}.orders.verify`, { orderNo: "SO42" }, "en")).toBe(
+      "Mark order SO42 as paid (manual verification)",
+    );
+  });
+
+  it("transition:狀態說中文,用的是訂單頁那組詞", () => {
+    for (const [to, zh] of [
+      ["shipped", "已出貨"],
+      ["completed", "已完成"],
+      ["cancelled", "已取消"],
+    ] as const) {
+      expect(say(`${EXT_ID}.orders.transition`, { orderNo: "SO7", to }, "zh-Hant")).toBe(
+        `把訂單 SO7 轉為${zh}`,
+      );
+      expect(say(`${EXT_ID}.orders.transition`, { orderNo: "SO7", to }, "en")).toBe(
+        `Move order SO7 to ${to}`,
+      );
+    }
+  });
+
+  it("認不得的 to 原樣寫出來,不猜(模型送了什麼,admin 就看到什麼)", () => {
+    expect(
+      say(`${EXT_ID}.orders.transition`, { orderNo: "SO7", to: "refunded" }, "zh-Hant"),
+    ).toBe("把訂單 SO7 轉為refunded");
+  });
+
+  it("缺 orderNo → 明說缺,而不是生出一句看起來很篤定的話", () => {
+    expect(say(`${EXT_ID}.orders.verify`, {}, "zh-Hant")).toContain("(未指定編號)");
+    expect(say(`${EXT_ID}.orders.verify`, {}, "en")).toContain("(no order number)");
+    expect(say(`${EXT_ID}.orders.transition`, { to: "shipped" }, "zh-Hant")).toBe(
+      "把訂單 (未指定編號) 轉為已出貨",
+    );
+  });
+
+  it("餵任何垃圾都不 throw,且一定生得出非空字串", () => {
+    for (const args of [undefined, null, "SO1", 42, [], {}, { orderNo: 1, to: 2 }]) {
+      for (const name of [`${EXT_ID}.orders.verify`, `${EXT_ID}.orders.transition`]) {
+        for (const locale of ["zh-Hant", "en"] as const) {
+          expect(
+            say(name, args, locale).trim().length,
+            `${name} ${JSON.stringify(args)}`,
+          ).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 });

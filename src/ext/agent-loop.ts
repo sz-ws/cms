@@ -6,6 +6,7 @@ import type {
   AgentToolRegistry,
 } from "./agent-tools";
 import { recordAgentToolRun } from "./agent-audit";
+import type { Locale } from "@/lib/i18n/index";
 import { toAssistantMessage } from "./providers/ai";
 import type {
   AiChatContentBlock,
@@ -157,6 +158,12 @@ export interface AgentChatParams {
   registry: AgentToolRegistry;
   ctx: AgentToolCtx;
   /**
+   * admin 介面語言,只用來挑確認卡摘要的語言(AgentTool.summarize)。省略 → "en",
+   * 與 getLocale() 未設定時的回答一致 —— route 一律傳,預設值是給直接呼叫 loop 的
+   * 測試與工具用的。
+   */
+  locale?: Locale;
+  /**
    * 注入點:預設 src/lib/ai.ts 的 chatAiWithTools(dynamic import,避免把
    * loader/services 這條鏈綁進本檔的靜態相依)。測試以假 provider 取代。
    */
@@ -304,12 +311,35 @@ function truncate(raw: string, max: number): string {
 /**
  * 確認卡的人話摘要。
  *
- * v1 由 code 推導,不另外要 LLM 產生:再問一次模型要多一次呼叫與多一次幻覺的機會,
- * 而確認卡是整個系統唯一「admin 據以按下確認」的字。tool description 的第一句是
- * 作者寫給人看的、必定與該 tool 實際做的事一致;參數預覽讓「動的是哪一筆」看得見。
- * 模型自己的說法不會消失 —— 它在 outcome.text 裡,面板照樣渲染在卡片上方。
+ * v1 由 code 產出,不另外要 LLM 寫:再問一次模型要多一次呼叫與多一次幻覺的機會,
+ * 而確認卡是整個系統唯一「admin 據以按下確認」的字。模型自己的說法不會消失 ——
+ * 它在 outcome.text 裡,面板照樣渲染在卡片上方。
+ *
+ * 兩條路,依序:
+ *   1. tool.summarize(1.31.0):作者寫的 admin 語言短句。這是**該走的**那條。
+ *   2. 退回推導:description 第一句(作者寫給人看的、必定與 tool 實際做的事一致)
+ *      + args 預覽(讓「動的是哪一筆」看得見)。英文,但總比沒有好。
+ *
+ * summarize throw 或回空白就走 (2):一個壞掉的摘要函式不該讓提案本身消失 ——
+ * 沒有摘要的確認卡等於要 admin 對著一團 JSON 按確認。
  */
-function proposalSummary(tool: AgentTool, input: unknown): string {
+function proposalSummary(
+  tool: AgentTool,
+  input: unknown,
+  locale: Locale,
+): string {
+  if (tool.summarize) {
+    try {
+      const written = tool.summarize(input, locale);
+      // 回非字串也走這裡(.trim() 會 throw),與「回空字串」同樣退回推導版。
+      const trimmed = written.trim();
+      if (trimmed.length > 0) {
+        return truncate(trimmed, PROPOSAL_SUMMARY_MAX_CHARS);
+      }
+    } catch (e) {
+      console.error(`[agent-loop] "${tool.name}".summarize failed`, e);
+    }
+  }
   const firstSentence = tool.description.split(". ")[0] ?? tool.description;
   const preview = truncate(jsonText(input), PROPOSAL_ARGS_PREVIEW_MAX_CHARS);
   return truncate(
@@ -425,7 +455,9 @@ export async function runAgentChat(
           args: writeUse.input,
           // tool 必定存在(writeUse 是從 registry 查到 kind 才選出來的);
           // 型別上仍可能是 null,退回 tool 名讓摘要不至於空白。
-          summary: tool ? proposalSummary(tool, writeUse.input) : writeUse.name,
+          summary: tool
+            ? proposalSummary(tool, writeUse.input, params.locale ?? "en")
+            : writeUse.name,
         },
         appended: [...appended, proposalAssistantMessage(assistant, writeUse.id)],
         steps: step,

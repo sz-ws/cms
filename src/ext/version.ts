@@ -457,4 +457,28 @@
 //     路 —— 「訂單翻 paid 的路徑只有 settleManual → payment:succeeded → hook 這一條」
 //     這條 1.28.0 立下的紀律,對 agent 一樣成立。
 //   宣告 agentTools 的 code extension 必須宣告 coreApi "^1.30.0"(defineExtension 強制)。
-export const CORE_API_VERSION = "1.30.0";
+// 1.31.0(docs/spec-admin-agent.md §2:確認卡摘要的 i18n):
+//   - AgentTool 新增選填方法 `summarize?(args: unknown, locale: Locale): string`
+//     (src/ext/agent-tools.ts;defineAgentTool 同步收這個欄位)。純新增、選填 →
+//     minor bump,比照 1.29.0 的 AiProvider.chat 前例。
+//   - 為什麼要:確認卡那一行是 admin **按下「確認執行」之前唯一讀到的字**,而在
+//     此之前它是由 tool description(寫給 LLM 看的英文)第一句 + args JSON 預覽拼
+//     出來的。繁中後台的最關鍵一行字是英文,那是產品缺陷,不是取捨。
+//   - `args` 是 **LLM 的原始 input,未經該 tool 的 zod schema 驗證** —— write 在
+//     loop 內永不執行(§1.2),所以在提案的時點根本沒有 parse 過。實作必須防禦性
+//     讀取(同批附上 `readStringArg(args, key)`),缺欄位要生得出合理字串,**絕不
+//     throw**。summarize throw 或回空白時 agent-loop 退回原本的推導版摘要,提案本身
+//     不受影響 —— 那是保險絲,不是設計。
+//   - **未實作 summarize 的既有/第三方 tool 完全不受影響**:fallback 路徑一字未改,
+//     摘要與 1.30.0 產出的完全相同。故不宣告新版號也不會壞,只是拿不到人話摘要。
+//   - 同批(非 CORE_API 表面):core 自動生成的三個 write 動詞(dx/agent-tools.ts 的
+//     create/update/delete)與 commerce-kit 的 verify/transition 都實作了 summarize,
+//     zh-Hant 與 en 各一句;label 走既有的 LocalizedString 解析,依 locale 取值
+//     (description 那份仍固定取 en —— 讀者是 LLM,語言不該隨站台設定飄移)。
+//     agent-loop 的 AgentChatParams 新增選填 `locale`(預設 "en"),由 /chat route
+//     以 agent-prompt 的 resolveLocale()(1.31.0 起 export)解析一次後同時餵給
+//     system prompt 與摘要 —— 解析兩次等於留一條「AI 說中文、確認卡是英文」的縫。
+//   consume `summarize` 的 code extension 應宣告 coreApi "^1.31.0":更舊的 core 上
+//   defineExtension 的 agentToolSchema 沒有這個欄位,而 agent-loop 也不會呼叫它 ——
+//   結果是摘要安靜地退回英文推導版,沒有任何錯誤訊息。
+export const CORE_API_VERSION = "1.31.0";
