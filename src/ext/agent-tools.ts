@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SessionUser } from "@/lib/auth";
 import type { Locale } from "@/lib/i18n/index";
+import type { AgentDisplay } from "./agent-display";
 import type { CoreServices } from "./services";
 
 // docs/spec-admin-agent.md §2:行動層(agent tool registry)。
@@ -51,6 +52,26 @@ export interface AgentTool {
    * 真的 throw 或回空字串時,loop 會退回推導版摘要 —— 但那是保險絲,不是設計。
    */
   summarize?(args: unknown, locale: Locale): string;
+  /**
+   * 這份結果長什麼樣(admin 介面語言)。省略 → 只有摺疊的工具清單,沒有卡片。
+   *
+   * 為什麼呈現由 tool 宣告而不是由模型宣告:給模型一個「畫個圖」的 tool,等於讓
+   * 它把自己寫的數字畫成圖表 —— 而圖表最強的一件事就是讓數字看起來像事實。這裡
+   * 反過來,是 tool 拿**自己剛跑完的結果**去產生 widget spec,模型從頭到尾碰不到
+   * 那些數字(見 agent-display.ts 檔頭)。
+   *
+   * 與 summarize 的關鍵差別在**收到的東西可不可信**:summarize 拿到的是 LLM 的
+   * 原始 input(write 在 loop 內永不執行,所以那個時點根本沒 parse 過);display
+   * 拿到的是**這個 tool 自己 run() 剛回傳的結果** —— 形狀由作者自己決定,已經是
+   * 可信的。但**防禦性要求一模一樣**:結果可能因為 DB 沒資料而是空的、可能因為
+   * 上游改了形狀而不是預期的樣子,實作必須逐欄防禦性讀取,拿不出東西就回
+   * `undefined`,**絕不 throw**。throw 會被 loop 的保險絲吞掉(那筆 log 就沒有
+   * display),但那是保險絲,不是設計。
+   *
+   * 回傳值還要再過 `agentDisplaySchema`(agent-loop):不合法的形狀一律丟掉,
+   * 不畫半殘的卡。失敗或被截斷的結果不會走到這裡 —— 那份資料本來就不完整。
+   */
+  display?(result: unknown, locale: Locale): AgentDisplay | undefined;
 }
 
 /**
@@ -115,6 +136,12 @@ export function defineAgentTool<S extends z.ZodType>(def: {
    * 拿到的是驗過的形狀,而摘要跑在唯一沒有 parse 的時點上。
    */
   summarize?: (args: unknown, locale: Locale) => string;
+  /**
+   * 見 AgentTool.display。result 同樣用 unknown 而不是 run 的回傳型別:TypeScript
+   * 推不出 `run` 的回傳(它宣告成 Promise<unknown>),而假裝推得出來只會讓作者
+   * 少寫那幾行防禦性讀取 —— 這個函式跑在渲染卡片的最後一哩,炸掉就是一張白卡。
+   */
+  display?: (result: unknown, locale: Locale) => AgentDisplay | undefined;
 }): AgentTool {
   const tool: AgentTool = {
     name: def.name,
@@ -125,6 +152,7 @@ export function defineAgentTool<S extends z.ZodType>(def: {
     // 回傳型別寫著 Promise,呼叫端就有權只用 .catch()/await 攔錯。
     execute: async (ctx, args) => def.run(ctx, def.schema.parse(args)),
     ...(def.summarize ? { summarize: def.summarize } : {}),
+    ...(def.display ? { display: def.display } : {}),
   };
   assertToolShape(tool);
   return tool;

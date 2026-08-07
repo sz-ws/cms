@@ -67,6 +67,9 @@ export interface AskAnswer {
 export type TranscriptEntry =
   | { kind: "user"; id: string; text: string }
   | { kind: "assistant"; id: string; text: string }
+  // calls 直接沿用 loop 的 log 形狀,所以 1.33.0 的 `display`(結果卡)是**免費**
+  // 跟著進來的 —— 本模組一行都不用改。這是刻意的:條目與 log 若各自定義形狀,
+  // 每加一個顯示用欄位就要在中間補一次搬運,而那條搬運線遲早會漏掉一個欄位。
   | { kind: "toolCalls"; id: string; calls: AgentToolCallLog[] }
   | {
       kind: "proposal";

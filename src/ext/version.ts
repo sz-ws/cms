@@ -513,4 +513,39 @@
 //     Accept 的呼叫端行為完全不變,auth / same-origin / rate limit 一律未動。
 //   consume `chatStream` 的 code extension 應宣告 coreApi "^1.32.0";更舊的 core 上
 //   該方法不存在,呼叫端會安靜地退回非串流路徑(沒有錯誤訊息的降級),所以務必宣告。
-export const CORE_API_VERSION = "1.32.0";
+// 1.33.0(docs/spec-admin-agent.md §5.1:agent tool 結果的卡片式呈現):
+//   - AgentTool 新增選填方法 `display?(result: unknown, locale: Locale):
+//     AgentDisplay | undefined`(src/ext/agent-tools.ts;defineAgentTool 與
+//     types.ts 的 agentToolSchema 同步收這個欄位)。純新增、選填 → minor bump,
+//     完全比照 1.31.0 的 summarize 前例:**未實作 display 的既有/第三方 tool 一個
+//     位元都不受影響**,面板照舊只有摺疊的工具清單。
+//   - 新表面 `AgentDisplay` 與 `agentDisplaySchema`(新檔 src/ext/agent-display.ts):
+//     `{ kind:"proportion", preset, data: ProportionWidgetData }` 或
+//     `{ kind:"trend", preset, data: TrendWidgetData }`。兩個資料契約與兩份 preset
+//     id 陣列**直接 import 自 src/components/admin/dashboard/widgets/types.ts**,
+//     不複製 —— 那個檔因此升格為 ext 表面的一部分,必須永遠維持純型別 + const
+//     陣列(它現在會被 worker 端引用,引入 React 會讓 agent tool 的執行路徑載不起來;
+//     該檔頭已加上這條註記)。
+//   - **為什麼呈現由 tool 宣告,不由模型宣告**:另一條路是給模型一個「畫個圖」的
+//     tool,把要畫的數字當參數送進來 —— 那等於讓它把自己寫的字畫成圖表,而圖表
+//     最強的一件事就是讓數字看起來像事實。這裡反過來:display() 拿到的是**該 tool
+//     自己 run() 剛回傳的結果**,模型從頭到尾碰不到那些數字。它能決定的只有「要不
+//     要呼叫這個 tool」,而那本來就是它的職權。
+//   - 防禦紀律同 summarize:實作必須防禦性讀取、拿不出東西回 `undefined`、**絕不
+//     throw**。agent-loop 對每次呼叫包 try/catch 保險絲,並把產物過
+//     `agentDisplaySchema`(段數 ≤12、序列 ≤60、字串 ≤120、`.strict()`);驗不過
+//     一律丟掉並 console.error,**不截斷、不修補** —— 半殘的圖表比沒有圖表更誤導。
+//   - 三條界線寫進 agent-loop:display 只在 read tool **執行成功且結果未被截斷**時
+//     產生;**只搭最後的 outcome 走,不進串流事件**(transcript 由 outcome 組裝,
+//     串流是暫態);**write 提案永遠沒有 display** —— 不靠任何 if,而是因為 write
+//     在 loop 內根本不執行(§1.2)。
+//   - 同批(非 CORE_API 表面):三個新的 core read tool —— `core.stats.overview`
+//     (getDashboardData → bar-list)、`core.stats.activity`(getWeeklyActivity →
+//     trend-bars)、`core.stats.storage`(getDatabaseStats + D1_QUOTA_BYTES →
+//     progress-ring)。三個都復用既有聚合函式,不重寫查詢:dashboard 上的數字與
+//     agent 說出來的數字必須是同一個來源。面板端新增 DisplayCard.tsx,渲染一律
+//     走 dashboard 既有的 preset 查找表(DashboardWidget),不新增圖表元件。
+//   consume `display` 的 code extension 應宣告 coreApi "^1.33.0":更舊的 core 上
+//   agentToolSchema 沒有這個欄位、agent-loop 也不會呼叫它 —— 結果是卡片安靜地不
+//   出現,沒有任何錯誤訊息。
+export const CORE_API_VERSION = "1.33.0";

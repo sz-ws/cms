@@ -712,6 +712,15 @@ export const en = {
   "agent.ask.required": "required",
   "agent.ask.missingRequired": "Fill in the required fields first.",
 
+  // result cards (spec §5.1). The chart labels are produced server-side by each
+  // tool's display() — see src/ext/agent-tools-core.ts. Anything the dashboard
+  // already names ("Content by type", "Database", …) is reused from
+  // dashboard.widgets.* on purpose: the same number must not carry two names
+  // depending on which screen you read it from.
+  "agent.display.activityWindow": "last {days} days",
+  "agent.display.activityCompare": "vs prior {days}d",
+  "agent.display.dbUsed": "Used",
+
   // in-flight status line (static text; design red line: no pulsing indicators)
   "agent.stream.thinking": "Thinking…",
   "agent.stream.thinkingStep": "Thinking… (step {step})",

@@ -5,6 +5,13 @@
 //
 // 這裡刻意窄:preset 元件不知道資料從哪來(core 統計 / extension DB / 未來
 // declarative dashboardCards kind:"widget"),只吃這兩個型別。
+//
+// ⚠️ CORE_API 1.33.0 起,本檔同時是 **ext 表面的來源**:src/ext/agent-display.ts
+// (AgentTool.display 的形狀)直接 import 下面兩個資料契約與兩個 preset 陣列,而
+// src/ext 是跑在 worker 上的 CORE_API 表面。因此本檔**必須維持純型別 + const 陣列**
+// —— 一旦引入 React(或任何 client-only 模組),agent tool 的執行路徑就會把 React
+// 拉進 worker bundle,而那條相依鏈在 workers pool 的測試環境根本載不起來。
+// 需要元件的東西放 index.tsx,不要放這裡。
 
 /** 佔比家族(donut / bar-list / progress-ring / progress-segments)共用契約。 */
 export interface ProportionWidgetData {

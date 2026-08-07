@@ -363,6 +363,10 @@ const agentToolSchema = z.object({
   // schema 是「extension 宣告的 agentTools 長什麼樣」的單一來源,一個沒寫在這裡
   // 的欄位等於沒有人保證它的型別(寫成字串也照樣通過)。
   summarize: fn.optional(),
+  // 1.33.0:結果的卡片式呈現(AgentTool.display)。同 summarize 只驗「是 function」
+  // —— 它的回傳值另有一道守門(agent-loop 對每次呼叫的產物跑 agentDisplaySchema),
+  // 而那道守門才是真正決定畫不畫的地方。這裡只確保宣告的欄位不是一個字串。
+  display: fn.optional(),
 });
 
 const manifestSchema = z

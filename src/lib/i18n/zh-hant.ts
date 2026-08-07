@@ -697,6 +697,14 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.ask.required": "必填",
   "agent.ask.missingRequired": "還有必填的欄位沒填。",
 
+  // 結果卡(spec §5.1)。圖表標籤由各 tool 的 display() 在 server 端產出
+  // (src/ext/agent-tools-core.ts)。dashboard 已經命名過的東西(「各類型內容數」、
+  // 「資料庫」…)一律沿用 dashboard.widgets.* —— 同一個數字不該因為在哪一頁看到
+  // 就換一個名字。
+  "agent.display.activityWindow": "近 {days} 天",
+  "agent.display.activityCompare": "較前 {days} 天",
+  "agent.display.dbUsed": "已使用",
+
   // 串流中的狀態行(靜態文字,設計紅線:不准任何閃爍/呼吸/pulsing 指示)
   "agent.stream.thinking": "思考中…",
   "agent.stream.thinkingStep": "思考中…(第 {step} 步)",

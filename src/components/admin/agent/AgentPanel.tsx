@@ -11,6 +11,7 @@ import { RingDot } from "@/components/admin/dashboard/RingDot";
 import type { AgentChatOutcome, AgentLoopEvent } from "@/ext/agent-loop";
 import { AskCard } from "./AskCard";
 import { Composer } from "./Composer";
+import { DisplayCards } from "./DisplayCard";
 import { MessageBubble } from "./MessageBubble";
 import { ProposalCard } from "./ProposalCard";
 import { ToolCallsSection } from "./ToolCallsSection";
@@ -54,6 +55,12 @@ import type { StreamingState } from "./stream";
 //
 // 降級是自然的:回應的 content-type 不是 event-stream(舊 core、中間有代理把它
 // 緩衝掉)就退回讀一次 JSON,兩條路最後都是同一個 AgentChatOutcome。
+//
+// ── 1.33.0:結果卡 ──────────────────────────────────────────────────────────
+// 帶 `display` 的工具呼叫會在摺疊的工具清單**上方**多渲染一張圖表卡(DisplayCard)。
+// 那張卡的每一個數字都來自 tool 自己的 run() 結果,不經過模型(見 ext/agent-display.ts)
+// —— 所以它可以被當成事實讀,而卡片上方那段助理文字不行。這件事在這個檔案裡沒有
+// 任何決策空間:display 隨 outcome 進來,這裡只負責畫。
 
 /** AI 設定所在的 admin 設定頁錨點(SettingsWorkspace 的 sectionAnchorId 慣例)。 */
 const AI_SETTINGS_HREF = "/admin/settings#section-core-ai";
@@ -255,7 +262,19 @@ export function AgentPanel({ tools }: AgentPanelProps) {
                   </MessageBubble>
                 );
               case "toolCalls":
-                return <ToolCallsSection key={entry.id} calls={entry.calls} />;
+                // 卡片是答案,摺疊區是內幕:先畫這一輪所有帶 display 的結果卡,
+                // 再接既有的「用了 N 個工具」摺疊列。順序不是排版偏好 —— 讀者要的
+                // 是數字,佐證放在數字下面才不會擋路(spec §5.1)。
+                return (
+                  <div key={entry.id} className="flex flex-col gap-2.5">
+                    <DisplayCards
+                      displays={entry.calls.flatMap((call) =>
+                        call.display ? [call.display] : [],
+                      )}
+                    />
+                    <ToolCallsSection calls={entry.calls} />
+                  </div>
+                );
               case "proposal":
                 return (
                   <ProposalCard

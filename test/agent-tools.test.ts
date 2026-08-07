@@ -241,13 +241,18 @@ describe("invokeAgentTool(schema 驗證與錯誤收斂)", () => {
 // -------------------------------------------------------------- core tools
 
 describe("core 內建 tools(spec §2 表格第一列)", () => {
-  it("四個 tool 齊備,而且全部是 read", () => {
+  it("七個 tool 齊備,而且全部是 read", () => {
     const tools = coreAgentTools();
+    // 1.33.0 加入三個統計 tool(core.stats.*)。清單寫死是刻意的:core tool 是
+    // 每個站台都存在的表面,多一個少一個都該在這裡被看見,而不是等到面板上發現。
     expect(tools.map((t) => t.name).sort()).toEqual([
       "core.content.get",
       "core.content.search",
       "core.extensions.list",
       "core.settings.get",
+      "core.stats.activity",
+      "core.stats.overview",
+      "core.stats.storage",
     ]);
     expect(tools.every((t) => t.kind === "read")).toBe(true);
   });

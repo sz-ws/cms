@@ -5,6 +5,8 @@ import {
   askArgsSchema,
 } from "./agent-ask";
 import type { AgentAsk } from "./agent-ask";
+import { agentDisplaySchema } from "./agent-display";
+import type { AgentDisplay } from "./agent-display";
 import { invokeAgentTool } from "./agent-tools";
 import type {
   AgentTool,
@@ -59,6 +61,15 @@ import type {
 // tool / tool_done),沒給就與 1.31.0 逐位元相同。刻意做成 callback 而不是把
 // runAgentChat 改成 generator:確認制的規則全寫在這一個函式的控制流裡,把它翻成
 // generator 等於為了顯示層重寫安全表面。
+//
+// ── 1.33.0:結果卡(AgentToolCallLog.display)──────────────────────────────────
+// read tool **執行成功之後**,由 tool 自己的 display() 把那份結果轉成 widget spec
+// (見 agent-display.ts:呈現一律由 tool 宣告,不由模型宣告)。三條界線:
+//   · 只搭最後的 outcome 走,**不進 AgentLoopEvent** —— transcript 由 outcome 組裝,
+//     串流是暫態,一張畫出來又被換掉的卡片就只是閃了一下;
+//   · 失敗或被截斷的結果不附卡片(見 runReadRound 內的說明);
+//   · **write 提案永遠沒有卡片** —— 不是靠哪裡多寫一個 if,而是因為 write 在 loop
+//     內根本不執行,沒有結果可以拿來畫(§1.2)。
 
 /** 步數上限(spec §4)。到頂回明確狀態,不是靜默停止。 */
 export const AGENT_MAX_STEPS = 8;
@@ -185,6 +196,15 @@ export interface AgentToolCallLog {
   error?: string;
   /** result 是否因為上限被截斷(截斷本身也標注在 tool_result 內文裡)。 */
   truncated: boolean;
+  /**
+   * 這筆結果的卡片式呈現(1.33.0)。由 tool 自己的 display() 產出、經
+   * agentDisplaySchema 驗過;沒宣告 / 產不出來 / 驗不過 → 這個鍵不存在。
+   *
+   * **只搭最後的 outcome 走,不進串流事件**(AgentLoopEvent)。理由與本檔既有的
+   * 串流註解一致:transcript 只由最後的 outcome 組裝,串流是暫態 —— 一張在串流
+   * 中先畫出來、再被正式條目換掉的卡片,對使用者而言是同一張圖閃了一下。
+   */
+  display?: AgentDisplay;
 }
 
 interface AgentOutcomeBase {
@@ -334,6 +354,44 @@ interface ReadRoundResult {
 }
 
 /**
+ * 一筆結果的卡片宣告(1.33.0)。**只在 tool 執行成功之後才呼叫**。
+ *
+ * 兩道關口,順序不能顛倒:
+ *   1. try/catch 保險絲 —— 照 proposalSummary 的既有寫法。一個壞掉的 display()
+ *      不該讓已經跑完的查詢消失;沒有卡片的答案仍然是答案,炸掉的一輪不是。
+ *   2. agentDisplaySchema.safeParse —— 驗不過就丟掉並 console.error。**不截斷、
+ *      不修補**:一張少了一半段落或畫著 NaN 的卡,比沒有卡更容易讓人讀錯數字,
+ *      而使用者沒有任何線索知道它是壞的。錯要讓寫 tool 的人看見,不要讓看板的人
+ *      承擔。
+ */
+function resolveDisplay(
+  tool: AgentTool,
+  result: unknown,
+  locale: Locale,
+): AgentDisplay | undefined {
+  if (!tool.display) return undefined;
+  let raw: unknown;
+  try {
+    raw = tool.display(result, locale);
+  } catch (e) {
+    console.error(`[agent-loop] "${tool.name}".display failed`, e);
+    return undefined;
+  }
+  if (raw === undefined) return undefined;
+  const parsed = agentDisplaySchema.safeParse(raw);
+  if (!parsed.success) {
+    console.error(
+      `[agent-loop] "${tool.name}".display returned an invalid shape`,
+      parsed.error.issues.map(
+        (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
+      ),
+    );
+    return undefined;
+  }
+  return parsed.data;
+}
+
+/**
  * 執行這一輪的所有 read tool_use,組出對應的 tool_result blocks。
  *
  * 全部塞進**同一則** user 訊息:上游(尤其 anthropic)要求一個 assistant 回合裡的
@@ -406,11 +464,18 @@ async function runReadRound(
       // 少一個可有可無的欄位少一分與某個 provider 不相容的機會。
       ...(outcome.ok ? {} : { isError: true }),
     });
+    // 卡片只搭「成功而且完整」的結果:失敗時根本沒有資料可畫;被截斷時,模型
+    // 看到的是半份資料而卡片畫的是全份,兩者並排出現只會讓人不知道該信哪一個。
+    const display =
+      outcome.ok && !bounded.truncated
+        ? resolveDisplay(tool, outcome.result, params.locale ?? "en")
+        : undefined;
     logs.push({
       toolName: tool.name,
       ok: outcome.ok,
       ...(outcome.ok ? {} : { error: outcome.error }),
       truncated: bounded.truncated,
+      ...(display ? { display } : {}),
     });
     emit({ type: "tool_done", name: tool.name, ok: outcome.ok });
   }
