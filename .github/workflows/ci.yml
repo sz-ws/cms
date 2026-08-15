@@ -24,12 +24,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # 三個 action 都用當前的 major。舊的 v4 一律以 Node 20 宣告,而 GitHub 已經
+      # 在 runner 上強制把它們拉到 Node 24 跑,每次 CI 都留一條 deprecation 註記 ——
+      # 那條註記本身無害,但它會坐在 annotation 區,久了就沒有人再看那一區了。
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      # ⚠️ 這一步必須排在 setup-node **之前**:setup-node 的 `cache: pnpm` 要先找得到
+      # pnpm 才算得出 store 路徑,順序反過來會在快取那一步失敗。
+      - uses: pnpm/action-setup@v6
         # 版本刻意不寫死在這裡:packageManager 已經釘了 pnpm@9.4.0,
         # 寫兩份就是等著它們哪天不一致。
-      - uses: actions/setup-node@v4
+      # setup-node v5 起,package.json 有 packageManager 就會自動開快取。這裡照舊
+      # 明寫 `cache: pnpm` —— 行為相同,但不依賴那個自動判定(v6 又把自動的那條路
+      # 收窄成只認 npm,明寫的這條完全不受影響)。
+      - uses: actions/setup-node@v7
         with:
           # .node-version 是唯一真相(rolldown 要求 ^20.19 || >=22.12)。
           node-version-file: .node-version
