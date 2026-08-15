@@ -23,6 +23,14 @@ const SECURITY_HEADERS = [
   // HSTS。Cloudflare 前面已經強制 https,這條是給直連與預載清單用的。
   // 不加 preload —— 那是不可逆的,應該由站台擁有者自己決定。
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+  // 切斷跨來源開啟者關係(XS-Leaks / tabnabbing)。這個 app 目前**沒有任何 popup
+  // 流程**:OIDC 走整頁 redirect(/api/auth/oauth/[provider]/start),passkey 是
+  // WebAuthn 不開視窗,全 repo 零 `window.open`。所以取最嚴的 same-origin。
+  //
+  // ⚠️ 下游若裝了走 **popup OAuth** 的 extension,popup 會拿不到 opener、
+  // postMessage 回不來(而且是靜默的)。那種情況把值改成
+  // `same-origin-allow-popups` —— 仍擋得住「被別人開啟」,只放行自己開的視窗。
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   // 關掉這個 app 完全用不到的強權能力。
   //
   // ⚠️ publickey-credentials-get / -create 必須明確保留 self ——
@@ -55,8 +63,14 @@ const SECURITY_HEADERS = [
 // 要真正收緊需要 nonce 化,那是一個獨立的工程(且 OpenNext 下要驗證 nonce
 // 能不能穿過 edge render)。在那之前開 enforce 只會讓站台白畫面。
 //
-// 怎麼升級成 enforce:部署後從瀏覽器 console 收集 CSP 違規報告,把真正需要的
-// 來源加進來,確認乾淨後把下面這行的 key 改成 "Content-Security-Policy" 即可。
+// 怎麼升級成 enforce:讓站台跑一陣子,收 /api/csp-report 進來的違規(見下方
+// report-uri),把真正需要的來源加進來,確認乾淨後把下面這行的 key 改成
+// "Content-Security-Policy" 即可。
+//
+// ⚠️ **改 enforce 之前 `script-src` 必須先加 `'wasm-unsafe-eval'`** —— 後台助理的
+// JS 沙盒(QuickJS)是執行期從 bytes 編譯 wasm 的,現在不會壞只是因為這條還沒
+// enforce。同時要確認 worker-src:沙盒的 Worker 走 `new URL(...)` 同源打包產物,
+// 理論上吃 default-src 'self' 的 fallback,但要實測而不是推論。
 const CSP_REPORT_ONLY = {
   key: "Content-Security-Policy-Report-Only",
   value: [
@@ -75,10 +89,22 @@ const CSP_REPORT_ONLY = {
     "form-action 'self'",
     "frame-ancestors 'none'",
     "upgrade-insecure-requests",
+    // 沒有這一行的 Report-Only 等於沒有開:違規只會出現在**打開 devtools 的那個人**
+    // 的 console 裡,而升級成 enforce 的前提正是「先確定真實流量上沒有東西會被擋」。
+    // 端點見 src/app/api/csp-report/route.ts(公開、限流、不落庫,轉給錯誤回報層)。
+    //
+    // 用 report-uri 而不是新的 report-to:report-to 需要另外送 `Reporting-Endpoints`
+    // 標頭,而那個標頭的值必須是**絕對網址** —— next.config 是建置期產物,這裡不
+    // 可能知道每個下游站的 origin。report-uri 雖然標為 deprecated,但相對路徑可用,
+    // 且 Chrome/Firefox/Safari 現行版本都還照送。
+    "report-uri /api/csp-report",
   ].join("; "),
 };
 
 const nextConfig: NextConfig = {
+  // `X-Powered-By: Next.js` 對使用者零價值,對掃描器是免費的指紋(框架 + 大版號 →
+  // 直接對照已知漏洞清單)。關掉它不影響任何功能。
+  poweredByHeader: false,
   // Local tunnel used to reach this dev server from another device/browser.
   // Keep this exact rather than allowing every *.okuso.uk subdomain.
   allowedDevOrigins: ["3001.okuso.uk"],
