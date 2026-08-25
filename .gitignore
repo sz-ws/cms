@@ -72,3 +72,7 @@ docs/*.md
 .pi/
 .mcp.json
 opencode.json
+
+# wrangler / Node 在容器環境會把快取寫到 repo 根(update-check 檢查、V8 compile cache)。
+node-compile-cache/
+update-check/
