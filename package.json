@@ -20,6 +20,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:generate": "node -e \"console.error('\\n  db:generate 已停用。\\n\\n  migrations/ 從 0005 起改為手寫 SQL(drizzle 產不出 FTS5 虛擬表、partial\\n  unique index 與資料回填),meta/_journal.json 因此凍結在 idx 4。在這個\\n  狀態下跑 drizzle-kit generate 會產出撞名的 CREATE TABLE 與 ADD COLUMN,\\n  套用時才炸。\\n\\n  改用:pnpm db:new <slug> —— 自動挑下一個編號並鋪好慣例檔頭。\\n  寫完 SQL 後同步改 src/lib/schema.ts(同名同欄),然後跑\\n  pnpm test:run test/migration-parity.test.ts 驗證(從零套用全部 migration\\n  到真 D1,逐表逐欄逐索引與 schema.ts 比對)。\\n')\" && exit 1",
     "db:new": "node scripts/db-new-migration.mjs",
+    "db:checksums": "node scripts/db-checksums.mjs",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "lint": "eslint",

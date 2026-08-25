@@ -11,6 +11,11 @@
 //      跑在 workerd 的 D1 上才算證明(node 端 mock 不算)。
 //   3. drizzle journal(meta/_journal.json)凍結在 idx 4:誰哪天手滑跑了
 //      drizzle-kit generate 並 commit,journal 會長出撞號的新 entry,這裡先紅。
+//   4. migrations/ 是 append-only:舊檔在每個既有部署的 D1 上都已經套用過,事後
+//      改它不會回頭改任何資料庫 —— 只會讓「從零套用」與「既有站」分岔成兩個
+//      schema,而且兩邊都不報錯。上面第 1 點天生看不到這種分岔(改過的舊檔配
+//      改過的 schema.ts,從零套用照樣自洽),所以另外記一本雜湊帳:
+//      migrations/meta/_checksums.json,由 `pnpm db:checksums` 維護。
 //
 // 專用 MIGRATIONS_DB binding(vitest.config.ts):共用的 DB 上各測試檔已用
 // CREATE TABLE IF NOT EXISTS 鋪了自己的最小鏡像,從零套用會撞名。
@@ -21,10 +26,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 import { is, getTableName } from "drizzle-orm";
-import { getTableConfig, SQLiteTable } from "drizzle-orm/sqlite-core";
+import { getTableConfig, SQLiteTable, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import type { SQLiteColumn, Index } from "drizzle-orm/sqlite-core";
 import * as schema from "@/lib/schema";
 import journal from "../migrations/meta/_journal.json";
+import checksums from "../migrations/meta/_checksums.json";
 
 const db = () => (env as unknown as { MIGRATIONS_DB: D1Database }).MIGRATIONS_DB;
 
@@ -82,10 +88,35 @@ const drizzleTables = Object.values(schema).filter((v): v is SQLiteTable =>
 
 type IndexCfg = Index["config"];
 const indexConfigs = (t: SQLiteTable): IndexCfg[] =>
-  getTableConfig(t).indexes.map((i) => (i as Index).config ?? (i as unknown as { config: IndexCfg }).config);
+  getTableConfig(t).indexes.map((i) => (i as Index).config);
 
 const sqlLiteral = (v: unknown): string =>
   typeof v === "string" ? `'${v.replace(/'/g, "''")}'` : String(v);
+
+// partial index 的 WHERE 述詞:drizzle 渲染成 `"ext_jobs"."kind" = 'recurring'`,
+// 手寫 migration 寫的是 `kind = 'recurring'` —— 同一個述詞的兩種寫法,正規化(去
+// 識別字引號、去表名限定、壓掉可有可無的空白)後才比得了。
+// 為什麼非比不可:述詞就是 ext_jobs_recurring 那條完整性不變量的**全部內容**
+// (「每個 (ext, job) 至多一列 recurring」),只比「有沒有 WHERE」等於沒比 ——
+// 把述詞改成 kind = 'once' 會靜靜地換掉一條不變量而測試全綠。
+const dialect = new SQLiteSyncDialect();
+const normalizePredicate = (predicate: string, table: string): string =>
+  predicate
+    .replace(/["`]/g, "")
+    .replaceAll(`${table}.`, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*([=<>!(),])\s*/g, "$1")
+    .trim();
+
+// 換行先正規化成 LF:repo 沒有 .gitattributes,Windows 上 core.autocrlf 的
+// checkout 會拿到 CRLF —— 那不該讓帳本永遠紅。與 scripts/db-checksums.mjs 同法。
+const sha256 = async (text: string): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text.replace(/\r\n/g, "\n")),
+  );
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
 
 describe("migration parity — migrations/ 與 schema.ts 說的是同一個資料庫", () => {
   beforeAll(async () => {
@@ -145,6 +176,24 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
     }
   });
 
+  it("既有 migration 未被改動(append-only 帳本 migrations/meta/_checksums.json)", async () => {
+    const ledger = checksums.files as Record<string, string>;
+    const actual: Record<string, string> = {};
+    for (const f of files) actual[f.name] = await sha256(f.sql);
+
+    expect(
+      Object.keys(actual).sort(),
+      "帳本與 migrations/ 的檔案清單對不上:多出來的是新檔沒登錄(跑 pnpm db:checksums);少的是已出貨的 migration 被刪了(不該刪)。",
+    ).toEqual(Object.keys(ledger).sort());
+
+    for (const name of Object.keys(actual)) {
+      expect(
+        actual[name],
+        `${name} 的內容與帳本不符 —— 已出貨的 migration 是 append-only:它在既有部署的 D1 上早就套用過,改檔案不會回頭改資料庫,只會讓新站與舊站分岔成兩個 schema。要改 schema 請開下一個 migration(pnpm db:new);真的是刻意重寫這個檔,才跑 pnpm db:checksums 重新登錄。`,
+      ).toBe(ledger[name]);
+    }
+  });
+
   // ── 表集合 ────────────────────────────────────────────────────────────────
   it("表集合一致:migration 建的每張表都在 schema.ts,反之亦然", async () => {
     const actual = (
@@ -156,8 +205,8 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
       .filter((n) => !isExemptTable(n))
       .sort();
     const expected = drizzleTables.map((t) => getTableConfig(t).name).sort();
-    // 差集訊息比 toEqual 的 diff 好讀:少了誰 = migration 忘了建 / schema.ts 忘了刪;
-    // 多了誰 = 手寫 migration 建了表卻沒進 schema.ts(0007 式漂移)。
+    // 讀 diff 的方法:actual 少了誰 = migration 忘了建 / schema.ts 忘了刪;
+    // actual 多了誰 = 手寫 migration 建了表卻沒進 schema.ts(0007 式漂移)。
     expect(actual).toEqual(expected);
   });
 
@@ -236,7 +285,7 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
       // `<table>_<col>_unique` 的顯式 CREATE UNIQUE INDEX,如 users_email_unique)。
       const expected = new Map<
         string,
-        { unique: boolean; columns: string[]; partial: boolean }
+        { unique: boolean; columns: string[]; where: string | undefined }
       >();
       for (const idx of indexConfigs(table)) {
         const cols = idx.columns.map((c) => {
@@ -245,16 +294,35 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
             throw new Error(`${idx.name}:SQL expression 欄位,需擴充比對器`);
           return name;
         });
-        expected.set(idx.name, { unique: idx.unique, columns: cols, partial: idx.where !== undefined });
+        expected.set(idx.name, {
+          unique: idx.unique,
+          columns: cols,
+          where: idx.where
+            ? normalizePredicate(
+                dialect.sqlToQuery(idx.where.inlineParams()).sql,
+                cfg.name,
+              )
+            : undefined,
+        });
       }
       for (const col of cfg.columns as SQLiteColumn[]) {
         if (col.isUnique)
           expected.set(col.uniqueName ?? `${cfg.name}_${col.name}_unique`, {
             unique: true,
             columns: [col.name],
-            partial: false,
+            where: undefined,
           });
       }
+
+      // PRAGMA index_list 只說 partial 與否,述詞本身要去 sqlite_master 拿 DDL。
+      const ddlByName = new Map(
+        (
+          await db()
+            .prepare("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name = ?")
+            .bind(cfg.name)
+            .all<{ name: string; sql: string | null }>()
+        ).results.map((r) => [r.name, r.sql]),
+      );
 
       expect(
         list.map((i) => i.name).sort(),
@@ -264,7 +332,18 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
       for (const idx of list) {
         const want = expected.get(idx.name)!;
         expect(idx.unique === 1, `${idx.name} UNIQUE`).toBe(want.unique);
-        expect(idx.partial === 1, `${idx.name} partial(WHERE 述詞有無)`).toBe(want.partial);
+        expect(idx.partial === 1, `${idx.name} partial(WHERE 述詞有無)`).toBe(
+          want.where !== undefined,
+        );
+        if (want.where !== undefined) {
+          const ddl = ddlByName.get(idx.name);
+          const m = /\sWHERE\s+([\s\S]+)$/i.exec(ddl ?? "");
+          expect(m, `${idx.name}:sqlite_master 讀不到 WHERE 述詞(DDL:${ddl})`).toBeTruthy();
+          expect(
+            normalizePredicate(m![1], cfg.name),
+            `${idx.name} partial 述詞(migration 的 WHERE 與 schema.ts 的 .where() 必須是同一個條件)`,
+          ).toBe(want.where);
+        }
         const cols = (
           await db().prepare(`PRAGMA index_info('${idx.name}')`).all<{
             seqno: number;

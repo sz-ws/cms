@@ -1,0 +1,23 @@
+{
+  "note": "migrations/ 的 append-only 帳本:每個已提交的 NNNN_*.sql 的 sha256(內容先把 CRLF 正規化成 LF)。舊檔在既有部署的 D1 上早就套用過了,改檔案不會回頭改資料庫 —— 所以舊檔的雜湊變動就是要在 review 擋下的東西。新增 migration 後跑 `pnpm db:checksums` 登錄;test/migration-parity.test.ts 會驗這份帳本。",
+  "algorithm": "sha256",
+  "normalization": "CRLF→LF",
+  "files": {
+    "0000_omniscient_thunderbolts.sql": "943fed54f3f39340379f07ab50aaba443e82f8f24c617e0b68e7fce7445cdc45",
+    "0001_workable_xorn.sql": "435b4313cba6f6ad1690f6483b159e972d590a12fbe65f61a3a97f2a7e5cae72",
+    "0002_uneven_micromacro.sql": "e3ea5709ec3ade6a7e648a2834fdc0c4d4c86d633cad59b3a627c6884b6052fb",
+    "0003_natural_squadron_supreme.sql": "376e8cdb05687296f24c77cc0e6d89bd82a0f9e0044665e1a55ea1be24f839c7",
+    "0004_nosy_blue_marvel.sql": "816d8561aa43649891e74df49470d1112828b224893872c5779a9199a5838438",
+    "0005_flying_content_search.sql": "59f4191c2eee36d40ff2d5d909b83cbce7172d241a62824e7640e6b10ff3bf27",
+    "0006_scheduled_publish.sql": "8b7e2cb3d165d766efe3455ab9a105524f9d20ef78602e666926000337029b32",
+    "0007_ext_jobs.sql": "24be5abe33035fef71eee1d4e20fa68750cdd793157a8d8b8ab6d912caa4090d",
+    "0008_user_avatar.sql": "8a26ffc05409cb885012b7e40c918436ef5c7ea80b6e26bf1d1d6c8aeb21a866",
+    "0009_login_identities.sql": "d49fd4b55ac2be9d660ace36934bdfe566e9f7d154eb2c9f423d5fcdf5bce524",
+    "0010_content_revisions.sql": "78918fb9f1100fb1d9af8acef220436193fb140e4bda929c0ca8b712e3433b3b",
+    "0011_content_locale.sql": "c60421fee3c98834e9addd5022a50cf956bd24d205eb95b7238d7ccbe4ec3400",
+    "0014_content_submissions.sql": "c159c5d671e3badf38457f984be05bb59c8652da3d229a18f1e0eeb569d76c05",
+    "0015_storage_history.sql": "ec3ffce0506043bd3312807833efdb442e78c3f93bb9e75acb3b0bc24bfec291",
+    "0016_agent_audit.sql": "d3087ebad9593d37a8cdfb37713754098a893ba9d0c5f379592934ee17525316",
+    "0017_ai_usage.sql": "9f6ca6adb8c9bc5d26a69793766bdc941c7d18d3521484b8845d4c29a861943e"
+  }
+}

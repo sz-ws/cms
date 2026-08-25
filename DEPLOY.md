@@ -166,4 +166,10 @@ serving normally, just without `width`/`height` attributes in the markup.
   `src/lib/schema.ts` (same names, same columns), and verify with
   `pnpm test:run test/migration-parity.test.ts` — it applies every migration from
   scratch on a real D1 (workerd) and diffs the result against `schema.ts`
-  table-by-table, column-by-column, index-by-index.
+  table-by-table, column-by-column, index-by-index (partial-index predicates
+  included).
+- Migrations are append-only: once a file ships it is already applied on every
+  existing deployment's D1, so editing it changes nothing there and silently
+  forks new sites from old ones. `pnpm db:checksums` records each file's sha256
+  in `migrations/meta/_checksums.json`; the same test fails if a shipped file
+  changes. Need a different schema? Write the next migration.

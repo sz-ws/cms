@@ -44,6 +44,8 @@ const header = `-- <一行說明:這個 migration 改了什麼>
 -- migration 是 append-only 的:本檔不改任何既有檔案一個字。
 --
 -- 紀律(test/migration-parity.test.ts 機器驗證,紅燈擋在 merge 前):
+--   * 寫完 SQL 後跑 \`pnpm db:checksums\` 把本檔登錄進 append-only 帳本
+--     (migrations/meta/_checksums.json);登錄後這個檔就不該再被改一個字。
 --   * 表/欄位/索引**同時**宣告於 src/lib/schema.ts(同名同欄),遵守 0014 立下的
 --     規則 —— schema.ts 是資料庫的完整描述,不是產生器的輸入。
 --   * drizzle 建模不了的構造(FTS5 虛擬表等)是唯一例外:加進該測試的
@@ -52,7 +54,7 @@ const header = `-- <一行說明:這個 migration 改了什麼>
 --     真需要時先擴充切分器)。
 --   * 設計取捨寫在這個檔頭 —— 讓下一個讀 SQL 的人拿得到「為什麼」。
 --
--- 完成後:pnpm test:run test/migration-parity.test.ts && pnpm db:migrate:local
+-- 完成後:pnpm db:checksums && pnpm test:run test/migration-parity.test.ts && pnpm db:migrate:local
 
 `;
 
@@ -60,5 +62,6 @@ fs.writeFileSync(file, header);
 console.log(`✓ 建立 migrations/${name}`);
 console.log("  1. 在檔尾寫 SQL(檔頭的 <一行說明> 記得換掉)");
 console.log("  2. 同步宣告 src/lib/schema.ts(同名同欄)");
-console.log("  3. pnpm test:run test/migration-parity.test.ts");
-console.log("  4. pnpm db:migrate:local");
+console.log("  3. pnpm db:checksums(登錄進 append-only 帳本)");
+console.log("  4. pnpm test:run test/migration-parity.test.ts");
+console.log("  5. pnpm db:migrate:local");
