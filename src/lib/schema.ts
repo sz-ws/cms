@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { isNotNull } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -83,9 +83,9 @@ export const webauthnChallenges = sqliteTable("webauthn_challenges", {
 
 // spec-login-providers.md §2:第三方登入身分 ↔ user 列的綁定。手寫 migration
 // (migrations/0009_login_identities.sql,照 0006–0008 precedent,不動 drizzle
-// journal/meta)——此處僅 model 欄位供 query builder 使用;唯一/一般索引
-// (user_identities_provider_sub / user_identities_user)由該 migration 的原生
-// SQL 建立,不在此重複宣告。
+// journal/meta)。唯一/一般索引(user_identities_provider_sub /
+// user_identities_user)由該 migration 的原生 SQL 建立,並在下方同名同欄宣告
+// (0014 立下的規則;test/migration-parity.test.ts 鎖住)。
 // id = crypto.randomUUID();provider = declarative extension id(如 "google-login");
 // provider_user_id = OIDC sub;display = provider 回的 email 或 name(僅 UI 顯示)。
 export const userIdentities = sqliteTable(
@@ -226,24 +226,37 @@ export const declarativeExtensions = sqliteTable("declarative_extensions", {
 
 // spec-extension-jobs.md:extension 貢獻的週期性 / 一次性任務(engine 見
 // src/lib/jobs.ts 的 `ext-jobs` core job)。手寫 migration(migrations/0007_ext_jobs.sql,
-// 照 0006 precedent,不動 drizzle journal/meta)——此處僅 model 欄位供 query builder
-// 使用;`ext_jobs_due` 一般索引與 `ext_jobs_recurring` partial unique 索引皆由該
-// migration 的原生 SQL 建立,不在此重複宣告。
-export const extJobs = sqliteTable("ext_jobs", {
-  id: text("id").primaryKey(), // crypto.randomUUID()
-  extId: text("ext_id").notNull(),
-  jobId: text("job_id").notNull(),
-  kind: text("kind", { enum: ["once", "recurring"] }).notNull(),
-  runAt: integer("run_at").notNull(), // 下次到期 epoch ms
-  payload: text("payload"), // JSON;僅 once 使用
-  attempts: integer("attempts").notNull().default(0), // 僅 once 使用
-  status: text("status", { enum: ["pending", "dead"] })
-    .notNull()
-    .default("pending"), // dead 僅 once 會到達
-  lastRun: integer("last_run"), // 上次實際執行 epoch ms(觀測)
-  lastError: text("last_error"), // 上次失敗訊息(觀測;成功清 NULL)
-  createdAt: integer("created_at").notNull(),
-});
+// 照 0006 precedent,不動 drizzle journal/meta)。
+//
+// 兩個索引原本只活在 0007 的原生 SQL 裡(0010 檔頭點名這是「schema.ts 變成資料庫
+// 不完整描述」的漂移,並宣示不再重蹈)——此處補齊宣告(同名同欄),讓 schema.ts
+// 回到完整描述;test/migration-parity.test.ts 從此鎖住這個不變量。db:generate 已
+// 停用,宣告是描述不是產生器輸入,故補宣告不產生任何 DDL 副作用。
+export const extJobs = sqliteTable(
+  "ext_jobs",
+  {
+    id: text("id").primaryKey(), // crypto.randomUUID()
+    extId: text("ext_id").notNull(),
+    jobId: text("job_id").notNull(),
+    kind: text("kind", { enum: ["once", "recurring"] }).notNull(),
+    runAt: integer("run_at").notNull(), // 下次到期 epoch ms
+    payload: text("payload"), // JSON;僅 once 使用
+    attempts: integer("attempts").notNull().default(0), // 僅 once 使用
+    status: text("status", { enum: ["pending", "dead"] })
+      .notNull()
+      .default("pending"), // dead 僅 once 會到達
+    lastRun: integer("last_run"), // 上次實際執行 epoch ms(觀測)
+    lastError: text("last_error"), // 上次失敗訊息(觀測;成功清 NULL)
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    // 到期掃描(ext-jobs core job 的唯一熱路徑查詢)。
+    index("ext_jobs_due").on(t.status, t.runAt),
+    // 完整性不變量:每個 (ext, job) 至多一列 recurring;partial unique(0007 的
+    // 述詞是 kind = 'recurring')。
+    uniqueIndex("ext_jobs_recurring").on(t.extId, t.jobId).where(eq(t.kind, "recurring")),
+  ],
+);
 
 // 公開表單收件語意(migrations/0014_content_submissions.sql,手寫,照 0006–0010 precedent)。
 // 「別人寄給你的訊息」與「等著發佈的內容」是兩件事;後者住 contents.status,前者住這張
@@ -276,31 +289,34 @@ export const contentSubmissions = sqliteTable(
 );
 
 // D1 用量歷史(migrations/0015_storage_history.sql,手寫,照 0006–0014 precedent)。
-// 每張被追蹤的表一列(name = SQLite 表名),由該 migration 建立的 12 個 AFTER
-// INSERT / DELETE / UPDATE trigger 即時維護 —— 本表**只被讀**,除了那些 trigger
-// 與 migration 的一次性回填之外沒有任何應用層寫入路徑。
+// **每次探測一列**:`storage-probe` core job(src/lib/jobs.ts)把 D1 查詢 meta 回報
+// 的 `size_after`(真實資料庫大小,byte)存成快照歷史。除該 job 之外沒有其他應用層
+// 寫入路徑。
 //
 // 為什麼需要:D1 每個 database 有硬上限(Free 500 MB / Paid 10 GB,不可調升),
-// 且沒有 VACUUM —— 刪除不會把空間還回來,撞牆後只能 export → 重建 → import。
-// 為什麼是 trigger 而不是定期全表掃:D1 按 rows read 計費,`SELECT count(*)` /
-// `sum(length(...))` 掃整個 contents 是拿計費額度換一個數字。完整取捨(含 bytes
-// 的定義與三個已知落差)寫在 migration 檔頭;讀取端是 src/lib/jobs.ts 的
-// `storage-probe` core job,它只讀這張永遠 4 列的小表。
-//
-// trigger 是 raw-SQL-only 構造(drizzle 無法建模,同 content_fts 的處境),故
-// **改動本表欄位時必須同步改那 12 個 trigger**,否則計數器會安靜地漂移。
-// 本表沒有索引(單一 PK)。
-export const storageHistory = sqliteTable("storage_history", {
-  // 探測時間 epoch ms,同時是主鍵(一毫秒一列足矣)。
-  at: integer("at").primaryKey(),
-  // D1 每次查詢 meta 都回的 `size_after` —— **真實**資料庫大小(byte)。
-  // 不是估算:這是 Cloudflare 自己用的數字,免費、零設定。
-  sizeAfter: integer("size_after").notNull(),
-  // 探測查詢自身的 rows_read(觀測用,證明這支 job 幾乎不花錢)。
-  rowsRead: integer("rows_read"),
-  // 保留欄:未來標記「歸檔後」「清理後」等事件,讓歷史看得出因果。
-  note: text("note"),
-});
+// 且沒有 VACUUM —— 刪除不會把空間還回來,撞牆後只能 export → 重建 → import,
+// 所以預警的價值全部在「早」,而成長速率比當下數值更有用。
+// 為什麼是 size_after 快照而不是 trigger 計數器(0015 的第一版設計,2026-08-02
+// 整個換掉):trigger 只能算邏輯位元組(系統性低估、FTS5 影子表掛不上),還要付
+// 永久 2 倍寫入放大。完整取捨寫在 migration 檔頭。
+export const storageHistory = sqliteTable(
+  "storage_history",
+  {
+    // 探測時間 epoch ms,同時是主鍵(一毫秒一列足矣)。
+    at: integer("at").primaryKey(),
+    // D1 每次查詢 meta 都回的 `size_after` —— **真實**資料庫大小(byte)。
+    // 不是估算:這是 Cloudflare 自己用的數字,免費、零設定。
+    sizeAfter: integer("size_after").notNull(),
+    // 探測查詢自身的 rows_read(觀測用,證明這支 job 幾乎不花錢)。
+    rowsRead: integer("rows_read"),
+    // 保留欄:未來標記「歸檔後」「清理後」等事件,讓歷史看得出因果。
+    note: text("note"),
+  },
+  // 「最近 N 列算成長速率」的掃描路徑。migration 的 SQL 建的是 `(at DESC)`;同
+  // agent_audit_at_desc 的處境:本版 drizzle 的 index builder 不接受排序方向,
+  // 名稱與欄位一致即足夠(schema.ts 是描述,不是產生器的輸入)。
+  (t) => [index("storage_history_at_desc").on(t.at)],
+);
 
 // Admin AI agent 稽核軌跡(migrations/0016_agent_audit.sql,手寫,照 0006–0015
 // precedent)。docs/spec-admin-agent.md §1.3:每一次 agent tool 執行(read 與 write

@@ -161,4 +161,9 @@ serving normally, just without `width`/`height` attributes in the markup.
   `wrangler` stays on a 4.x release.
 - `pnpm exec wrangler deploy --dry-run` gives you a config and bundle preflight before the real deploy.
 - Watch the worker size reported by `opennextjs-cloudflare build` — it should stay under 8 MB compressed.
-- Schema changes are hand-written SQL in `migrations/`; `db:generate` is disabled on purpose.
+- Schema changes are hand-written SQL in `migrations/`; `db:generate` is disabled on
+  purpose. Scaffold the next migration with `pnpm db:new <slug>`, mirror the DDL in
+  `src/lib/schema.ts` (same names, same columns), and verify with
+  `pnpm test:run test/migration-parity.test.ts` — it applies every migration from
+  scratch on a real D1 (workerd) and diffs the result against `schema.ts`
+  table-by-table, column-by-column, index-by-index.

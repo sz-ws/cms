@@ -23,7 +23,14 @@ export default defineConfig(async () => {
             // 與 .dev.vars 同值(32-byte base64);供 AES-GCM secret 加密測試用。
             SECRETS_KEY: "GQ+clWLADtK1luUJYOxMfq6KBbzZL40jyjGQ3fYlwvY="  /* TEST-ONLY key, generated for public repo; never used anywhere real */,
           },
-          d1Databases: { DB: "test-db" },
+          d1Databases: {
+            DB: "test-db",
+            // migration-parity.test.ts 專用:DB 是跨測試檔共用的(各檔用
+            // CREATE TABLE IF NOT EXISTS 鋪自己的最小鏡像),在上面從零套用
+            // migrations/ 會撞名。獨立一顆才能證明「全新 D1 + 全部 migration」
+            // 這條 fresh-install 路徑,不與任何其他檔案互相汙染。
+            MIGRATIONS_DB: "migrations-test-db",
+          },
         },
       }),
     ],
