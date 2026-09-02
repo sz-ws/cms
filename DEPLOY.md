@@ -159,6 +159,12 @@ serving normally, just without `width`/`height` attributes in the markup.
 
 - The project pins `pnpm@9.4.0` and requires Node **22.12+** (see `.node-version`);
   `wrangler` stays on a 4.x release.
+- `next` and `@opennextjs/cloudflare` move **together**. Each OpenNext release
+  declares the exact `next` range it was built against (via its `@opennextjs/aws`
+  peer), and the range is narrow: `1.20.2` is the last release that accepts
+  `next@16.2.x`; `1.20.3+` requires `next@>=16.3.3`. `pnpm install` prints an
+  "unmet peer" line when the pair drifts — treat that as a build blocker, not a
+  warning, and bump both or neither.
 - `pnpm exec wrangler deploy --dry-run` gives you a config and bundle preflight before the real deploy.
 - Watch the worker size reported by `opennextjs-cloudflare build` — it should stay under 8 MB compressed.
 - Schema changes are hand-written SQL in `migrations/`; `db:generate` is disabled on
