@@ -4,7 +4,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Boxes, ChevronsUpDown, LogOut, UserRound } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -31,7 +30,7 @@ import {
 // persist-keys 而不是 persist:後者拉 zod,而這個元件每一頁 admin 都在。
 import { clearAllStoredTranscripts } from "./agent/persist-keys";
 import { AdminNavGroup } from "./AdminNavGroup";
-import { iconForNavItem } from "./adminNavIcons";
+import { iconForNavItem, type AdminIcon } from "./adminNavIcons";
 
 // Admin sidebar. Structure/behavior (a11y, mobile drawer, keyboard toggle) come
 // from Intent UI's sidebar-01 block (react-aria); the visual language is
@@ -90,9 +89,9 @@ function initialsOf(name: string): string {
 // the Intent UI blue fill via the --sidebar-current-* vars and layer our own
 // state classes.
 //
-// Icons: 16px at stroke 1.75 and the *same* opacity as the label. Lucide's
-// default 2px stroke at 17px is the look of every Tailwind admin template, and
-// icons lighter than their labels read as two layers that never got aligned.
+// Icons: 16px solid glyphs (see adminNavIcons.tsx for why solid) at the *same*
+// opacity as the label — icons lighter than their labels read as two layers
+// that never got aligned.
 function navItemClasses(active: boolean): string {
   return cn(
     "group/nav relative h-8 rounded-[8px] px-2.5 text-[13px] font-medium",
@@ -105,7 +104,7 @@ function navItemClasses(active: boolean): string {
     "grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 supports-[grid-template-columns:subgrid]:grid-cols-[16px_minmax(0,1fr)]",
     "[&:has(svg+[data-slot=sidebar-label])_svg:has(+[data-slot=sidebar-label])]:me-0",
     "[&_[data-slot=sidebar-label]]:col-start-auto [&_[data-slot=sidebar-label]]:pe-0",
-    "[&_svg]:size-4 [&_svg]:stroke-[1.75]",
+    "[&_svg]:size-4",
     // The active icon's blue is set *on the svg* in renderItem, not here: Intent's
     // current-state rule targets `svg:not([class*='text-'])` with higher
     // specificity than a plain `[&_svg]:` descendant utility and would win.
@@ -170,7 +169,7 @@ export function AdminSidebar({
 
   function renderItem(item: AdminNavItem) {
     const active = isActive(item);
-    const Icon: LucideIcon = iconForNavItem(item);
+    const Icon: AdminIcon = iconForNavItem(item);
     return (
       <SidebarItem
         key={item.href}
