@@ -76,3 +76,9 @@ opencode.json
 # wrangler / Node 在容器環境會把快取寫到 repo 根(update-check 檢查、V8 compile cache)。
 node-compile-cache/
 update-check/
+
+# GitNexus 程式碼知識圖(npx gitnexus analyze 的本機索引,每台機器自己建)
+.gitnexus/
+
+# Claude Code 的本機權限白名單,每台機器自己的
+.claude/settings.local.json

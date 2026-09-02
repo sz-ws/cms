@@ -45,6 +45,9 @@ export const DefaultCountries: Country[] = [
 
 /* flag */
 const Flag = ({ code }: { code: string }) => (
+  // ui-sandbox 的示範元件:旗幟從 flagcdn 直抓,next/image 得先在 next.config 開
+  // remotePatterns 才能吃外站 —— 為一個 sandbox demo 開全站的遠端圖片白名單不值得。
+  // eslint-disable-next-line @next/next/no-img-element
   <img
     src={`https://flagcdn.com/w160/${code.toLowerCase()}.png`}
     alt={code}

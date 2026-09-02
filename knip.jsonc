@@ -1,0 +1,56 @@
+{
+  // 死碼 / 死依賴掃描:`npx knip`。不裝進 devDependencies —— 它不是 build 或測試
+  // 的一環,只是偶爾清倉時跑一次的工具;pinned 版本沒有意義。
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "src/app/**/{page,layout,route,default,not-found,error,loading,template,sitemap,robots}.{ts,tsx}",
+    "src/app/**/opengraph-image.tsx",
+    "instrumentation.ts",
+    "instrumentation-client.ts",
+    "sentry.*.config.ts",
+    "custom-worker.ts",
+    "open-next.config.ts",
+    "next.config.ts",
+    // code extension 由 extensions/registry.ts 以動態 import 掛入,knip 看不到那條線。
+    "extensions/registry.ts",
+    "extensions/*/index.ts",
+    "extensions/cron/worker/index.js",
+    // 下游 catalog 頁面用的公開 client 元件(extensions/shop/README.md 有寫),
+    // repo 內刻意沒有 importer。
+    "extensions/shop/AddToCartButton.tsx",
+    // 被 gitignored 的 verify.local.ts(scripts/ensure-licensing-stub.mjs 在每次
+    // build 前生成)消費;knip 看不到那個檔。
+    "src/licensing/verify.ts",
+    "scripts/*.{mjs,mts,ts}",
+    "cli/src/**/*.ts",
+    "test/**/*.test.ts"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "extensions/**/*.{ts,tsx}", "cli/**/*.ts"],
+  "ignore": [
+    // 元件詞彙表(docs/component-vocabulary.md):core 自己沒用到是預期的,
+    // 它們是給 declarative extension 引用的目錄。
+    "src/components/ui/**",
+    "src/licensing/verify.local.ts",
+    "dist-ext/**",
+    "src/ext/commerce-kit/**"
+  ],
+  "ignoreDependencies": [
+    // 只被詞彙表元件用到的套件,跟上面同一個理由。
+    "@shadcn/react",
+    "cmdk",
+    "embla-carousel-react",
+    "input-otp",
+    "next-themes",
+    "react-resizable-panels",
+    "sonner",
+    "tw-animate-css",
+    // `cloudflare:test` 是 @cloudflare/vitest-pool-workers 的虛擬模組,不是 npm 套件。
+    "cloudflare",
+    "@cloudflare/vitest-pool-workers",
+    "drizzle-kit",
+    "eslint-config-next",
+    "wrangler"
+  ],
+  "ignoreBinaries": ["wrangler", "opennextjs-cloudflare"],
+  "vitest": { "config": ["vitest.config.ts", "vitest.cli.config.ts"] }
+}
