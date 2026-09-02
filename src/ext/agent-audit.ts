@@ -1,3 +1,4 @@
+import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agentAudit } from "@/lib/schema";
 import type { SessionUser } from "@/lib/auth";
@@ -105,4 +106,125 @@ export async function recordAgentToolRun(entry: AgentAuditEntry): Promise<void> 
   } catch (e) {
     console.error(`[agent-audit] failed to record "${entry.toolName}"`, e);
   }
+}
+
+// ── 讀取 ────────────────────────────────────────────────────────────────────
+// spec §1.3 的最後一句:「admin 可在面板查看」。這裡是那句話的資料層;頁面在
+// src/app/(admin)/admin/agent/audit/。讀取只有這一種形狀 —— **最近 N 列 + 篩選**,
+// 走 agent_audit_at_desc 索引。沒有「依 id 取單列」:稽核是拿來翻的,不是拿來
+// 連結的;沒有 COUNT:一張只會長不會縮的表,總數這個數字每看一次都要掃全表,
+// 而它回答不了任何「發生了什麼」的問題。
+
+/** 篩選條件。全部可省略 = 最近 N 列。 */
+export interface AgentAuditFilter {
+  kind?: AgentToolKind;
+  source?: AgentAuditSource;
+  /** true = 只看成功;false = 只看失敗;省略 = 都看。 */
+  ok?: boolean;
+  /** 精確比對 tool 名稱(面板點某個 tool 進來看它的歷史)。 */
+  tool?: string;
+  /** keyset 游標:只取比它更早的列。來自上一頁的 `nextCursor`。 */
+  cursor?: AgentAuditCursor;
+  /** 每頁列數,預設 50,上限 200。 */
+  limit?: number;
+}
+
+/**
+ * keyset 游標。`at` 是 epoch ms,一毫秒內兩次 tool 執行並非不可能(loop 內連續
+ * 兩個 read),所以第二個鍵 `id` 負責同毫秒內的順序 —— 沒有它,翻頁會在毫秒邊界
+ * 漏列或重複。offset 分頁在這張表上不對:新列一直從頂端進來,offset 會漂。
+ */
+export interface AgentAuditCursor {
+  at: number;
+  id: string;
+}
+
+export interface AgentAuditRow {
+  id: string;
+  at: number;
+  userId: string;
+  userEmail: string;
+  tool: string;
+  kind: AgentToolKind;
+  source: AgentAuditSource;
+  args: string;
+  ok: boolean;
+  result: string | null;
+  error: string | null;
+}
+
+export interface AgentAuditPage {
+  rows: AgentAuditRow[];
+  /** 還有更早的列時給下一頁的游標;沒有就是 null。 */
+  nextCursor: AgentAuditCursor | null;
+}
+
+export const AGENT_AUDIT_PAGE_DEFAULT = 50;
+export const AGENT_AUDIT_PAGE_MAX = 200;
+
+/** URL 用的游標編碼:`<at>.<id>`。id 是 UUID(無「.」),故第一個「.」就是分界。 */
+export function formatAuditCursor(cursor: AgentAuditCursor): string {
+  return `${cursor.at}.${cursor.id}`;
+}
+
+/** 解不開就回 null(當作沒有游標),不 throw —— 這是從 URL 來的字串。 */
+export function parseAuditCursor(raw: string | null | undefined): AgentAuditCursor | null {
+  if (!raw) return null;
+  const dot = raw.indexOf(".");
+  if (dot <= 0 || dot === raw.length - 1) return null;
+  const at = Number(raw.slice(0, dot));
+  const id = raw.slice(dot + 1);
+  if (!Number.isSafeInteger(at) || at < 0 || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+  return { at, id };
+}
+
+export async function listAgentAudit(
+  filter: AgentAuditFilter = {},
+): Promise<AgentAuditPage> {
+  const limit = Math.min(
+    AGENT_AUDIT_PAGE_MAX,
+    Math.max(1, Math.floor(filter.limit ?? AGENT_AUDIT_PAGE_DEFAULT)),
+  );
+  const where: SQL[] = [];
+  if (filter.kind) where.push(eq(agentAudit.kind, filter.kind));
+  if (filter.source) where.push(eq(agentAudit.source, filter.source));
+  if (filter.ok !== undefined) where.push(eq(agentAudit.ok, filter.ok ? 1 : 0));
+  if (filter.tool) where.push(eq(agentAudit.tool, filter.tool));
+  if (filter.cursor) {
+    const { at, id } = filter.cursor;
+    // (at, id) 嚴格小於游標 —— 同毫秒的列以 id 排序決定先後(見 AgentAuditCursor)。
+    where.push(
+      or(
+        lt(agentAudit.at, at),
+        and(eq(agentAudit.at, at), lt(agentAudit.id, id)),
+      )!,
+    );
+  }
+
+  // 多取一列判斷「還有沒有下一頁」,比多打一次 COUNT 便宜且不會漂。
+  const rows = await db()
+    .select()
+    .from(agentAudit)
+    .where(where.length ? and(...where) : undefined)
+    .orderBy(desc(agentAudit.at), desc(agentAudit.id))
+    .limit(limit + 1);
+
+  const page = rows.slice(0, limit).map((r) => ({
+    id: r.id,
+    at: r.at,
+    userId: r.userId,
+    userEmail: r.userEmail,
+    tool: r.tool,
+    kind: r.kind,
+    source: r.source,
+    args: r.args,
+    ok: r.ok === 1,
+    result: r.result,
+    error: r.error,
+  }));
+  const last = page[page.length - 1];
+  return {
+    rows: page,
+    nextCursor: rows.length > limit && last ? { at: last.at, id: last.id } : null,
+  };
 }

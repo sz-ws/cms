@@ -38,6 +38,8 @@ interface AdminShellProps {
     installed: string;
     system: string;
   };
+  /** Breadcrumb titles for core sub-pages that are not sidebar items (href → title). */
+  crumbTitles?: Record<string, string>;
 }
 
 /** Extension admin pages are routed under /admin/ext/*; everything else is core. */
@@ -140,11 +142,15 @@ export function AdminShell({
   brandLogo,
   children,
   navLabels,
+  crumbTitles,
 }: AdminShellProps) {
   const groups = buildGroups(menu, navLabels);
 
-  // Href → title map for breadcrumb labeling (top-level admin routes only).
-  const menuTitles: Record<string, string> = {};
+  // Href → title map for breadcrumb labeling. Menu items first; `crumbTitles`
+  // covers core sub-pages that are reachable but deliberately not in the
+  // sidebar (e.g. /admin/agent/audit), so their crumb reads the page title
+  // instead of a capitalised path segment.
+  const menuTitles: Record<string, string> = { ...crumbTitles };
   for (const item of menu) menuTitles[item.href] = item.title;
 
   // Extension ids that have admin surfaces — pass them to the client-side

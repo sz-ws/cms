@@ -698,6 +698,31 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "agent.ask.required": "必填",
   "agent.ask.missingRequired": "還有必填的欄位沒填。",
 
+  // 執行紀錄(spec §1.3「admin 可在面板查看」;§8 開放問題 2 —— 做成獨立頁
+  // /admin/agent/audit)。用詞刻意保留 read/write 的分野:查詢是助理自己做的,
+  // 寫入一定經過人按確認。
+  "agent.audit.link": "執行紀錄",
+  "agent.audit.title": "助理執行紀錄",
+  "agent.audit.subtitle":
+    "助理在這個站上執行過的每一個工具 —— 它自己做的查詢,以及你確認過的變更。",
+  "agent.audit.back": "回到助理",
+  "agent.audit.filter.all": "全部",
+  "agent.audit.filter.read": "查詢",
+  "agent.audit.filter.write": "變更",
+  "agent.audit.filter.failed": "失敗",
+  "agent.audit.filter.clearTool": "清除工具篩選",
+  "agent.audit.kind.read": "查詢",
+  "agent.audit.kind.write": "變更",
+  "agent.audit.source.chat": "自動執行",
+  "agent.audit.source.execute": "經你確認",
+  "agent.audit.args": "參數",
+  "agent.audit.result": "結果",
+  "agent.audit.error": "錯誤",
+  "agent.audit.empty": "還沒有紀錄 —— 助理還沒執行過任何工具。",
+  "agent.audit.emptyFiltered": "這個篩選下沒有紀錄。",
+  "agent.audit.older": "更早的",
+  "agent.audit.showTool": "只看這個工具",
+
   // JS 沙盒卡(spec §4.7)。沒有確認按鈕:那段程式碼沒有副作用、碰不到站上的資料、
   // 也沒有網路。它需要的不是「被批准」,是**被看見** —— 所以程式碼原文攤在卡上。
   "agent.code.running": "正在算",

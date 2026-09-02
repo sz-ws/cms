@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import dynamic from "next/dynamic";
-import { RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { RotateCcw, ScrollText } from "lucide-react";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { clearStoredTranscript, transcriptStorageKey } from "./persist";
 import type { AgentPanelStatus } from "./AgentPanel";
@@ -111,6 +112,16 @@ export function AgentPanelLoader({ tools, title, userId }: AgentPanelLoaderProps
         <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
           {title}
         </h1>
+        <div className="flex items-center gap-3">
+          {/* 稽核頁入口。永遠顯示(不像「開新對話」只在有內容時出現):它指向的是
+              整個站的紀錄,與這一段對話有沒有內容無關。 */}
+          <Link
+            href="/admin/agent/audit"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-1 py-1 text-[11.5px] text-black/35 transition-colors duration-150 hover:text-black/70"
+          >
+            <ScrollText className="size-3" />
+            {t("agent.audit.link")}
+          </Link>
         {status.hasContent && (
           <button
             type="button"
@@ -122,6 +133,7 @@ export function AgentPanelLoader({ tools, title, userId }: AgentPanelLoaderProps
             {t("agent.newChat")}
           </button>
         )}
+        </div>
       </div>
 
       <AgentPanel

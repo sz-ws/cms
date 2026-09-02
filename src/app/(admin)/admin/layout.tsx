@@ -98,6 +98,9 @@ export default async function AdminLayout({
         siteTitle={siteTitle}
         brandLogo={brandLogo}
         navLabels={navLabels}
+        // 不在 sidebar、但有自己標題的 core 子頁。少了這裡,麵包屑會退回把路徑段
+        // 首字大寫(「Audit」),與整個後台的本地化脫節。
+        crumbTitles={{ "/admin/agent/audit": messages["agent.audit.title"] }}
       >
         {children}
       </AdminShell>

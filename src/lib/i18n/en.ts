@@ -713,6 +713,32 @@ export const en = {
   "agent.ask.required": "required",
   "agent.ask.missingRequired": "Fill in the required fields first.",
 
+  // Activity log (spec §1.3 "admin can inspect it"; §8 open question 2 —
+  // answered with a page of its own at /admin/agent/audit). Wording keeps the
+  // read/write split visible: reads happen on the assistant's own initiative,
+  // writes only after the person confirmed.
+  "agent.audit.link": "Activity log",
+  "agent.audit.title": "Assistant activity",
+  "agent.audit.subtitle":
+    "Every tool the assistant has run on this site — the lookups it did on its own, and the changes you confirmed.",
+  "agent.audit.back": "Back to the assistant",
+  "agent.audit.filter.all": "All",
+  "agent.audit.filter.read": "Lookups",
+  "agent.audit.filter.write": "Changes",
+  "agent.audit.filter.failed": "Failed",
+  "agent.audit.filter.clearTool": "Clear tool filter",
+  "agent.audit.kind.read": "lookup",
+  "agent.audit.kind.write": "change",
+  "agent.audit.source.chat": "on its own",
+  "agent.audit.source.execute": "you confirmed",
+  "agent.audit.args": "Parameters",
+  "agent.audit.result": "Result",
+  "agent.audit.error": "Error",
+  "agent.audit.empty": "Nothing yet — the assistant hasn't run any tools.",
+  "agent.audit.emptyFiltered": "Nothing matches this filter.",
+  "agent.audit.older": "Older",
+  "agent.audit.showTool": "Only this tool",
+
   // JavaScript sandbox card (spec §4.7). No confirmation button: the snippet has
   // no side effects, cannot reach this site's data and has no network. What it
   // does need is to be *visible* — hence the code is shown in full on the card.
