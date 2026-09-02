@@ -92,16 +92,19 @@ const SHOP_ICONS: Record<string, LucideIcon> = {
 };
 
 /**
- * Guess a Content-group icon from the extension page's title. Titles come from
- * the extension manifest (Gallery / Blog / Pages / …); we keyword-match rather
- * than key off an extension id so the mapping survives renames and new exts.
+ * Guess a Content-group icon for an extension page without a declared `icon`.
+ * Keyword-match on the href (which carries the extension id: /admin/ext/gallery)
+ * *and* the title. Matching the title alone broke the moment titles were
+ * localized — 「相片集」 contains no "galler", so every zh-Hant site got the
+ * puzzle-piece fallback, which in a sidebar always reads as a placeholder.
  */
-function contentIconFor(title: string): LucideIcon {
-  const t = title.toLowerCase();
-  if (/(galler|photo|image|media)/.test(t)) return Images;
-  if (/(blog|post|article|news|writ)/.test(t)) return FileText;
-  if (/(page|showcase|structural|layout)/.test(t)) return LayoutTemplate;
-  if (/(contact|message|inbox|mail)/.test(t)) return Mail;
+function contentIconFor(href: string, title: string): LucideIcon {
+  const t = `${href} ${title}`.toLowerCase();
+  if (/(galler|photo|image|media|相片|圖片|相簿)/.test(t)) return Images;
+  if (/(blog|post|article|news|writ|文章|部落格)/.test(t)) return FileText;
+  if (/(page|showcase|structural|layout|頁面)/.test(t)) return LayoutTemplate;
+  if (/(contact|message|inbox|mail|聯絡|訊息)/.test(t)) return Mail;
+  if (/(cron|schedule|排程)/.test(t)) return Clock;
   return Puzzle;
 }
 
@@ -110,6 +113,6 @@ export function iconForNavItem(item: AdminNavItem): LucideIcon {
   const declared = iconFromToken(item.icon);
   if (declared) return declared;
   if (item.kind === "shop") return SHOP_ICONS[item.href] ?? Package;
-  if (item.kind === "extension") return contentIconFor(item.title);
+  if (item.kind === "extension") return contentIconFor(item.href, item.title);
   return CORE_ICONS[item.href] ?? LayoutDashboard;
 }

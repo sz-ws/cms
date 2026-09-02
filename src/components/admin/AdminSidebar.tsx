@@ -83,25 +83,35 @@ function initialsOf(name: string): string {
 }
 
 // Paper & Ink nav item: 8px radius, 13px medium, text-black/55 idle →
-// text-black/90 + white surface + shadow-ring + 2px accent bar when active.
-// Hover is a whisper. We neutralize the Intent UI blue fill via the
-// --sidebar-current-* vars and layer our own state classes.
+// text-black/90 + white surface + shadow-ring when active; the icon turns
+// dither-blue and that is the whole "active" mark (the mock's 2px edge bar was
+// dropped: on a rounded white card it sat half outside the corner radius and
+// read as a rendering glitch, not a marker). Hover is a whisper. We neutralize
+// the Intent UI blue fill via the --sidebar-current-* vars and layer our own
+// state classes.
+//
+// Icons: 16px at stroke 1.75 and the *same* opacity as the label. Lucide's
+// default 2px stroke at 17px is the look of every Tailwind admin template, and
+// icons lighter than their labels read as two layers that never got aligned.
 function navItemClasses(active: boolean): string {
   return cn(
-    "group/nav relative h-9 rounded-[8px] px-2.5 text-[13px] font-medium",
+    "group/nav relative h-8 rounded-[8px] px-2.5 text-[13px] font-medium",
     "[--sidebar-current-bg:transparent] [--sidebar-current-fg:var(--color-fg)]",
     "transition-[background-color,color,box-shadow,transform] duration-150 ease-out",
     "active:scale-[0.97]",
     // Intent sidebar items default to a 5-column grid (room for badges/menus) and
     // add extra icon/end padding. For our simple icon + label nav, collapse that
     // back to a tight 2-col track so the label sits close to the icon.
-    "grid-cols-[17px_minmax(0,1fr)] gap-x-2 supports-[grid-template-columns:subgrid]:grid-cols-[17px_minmax(0,1fr)]",
+    "grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 supports-[grid-template-columns:subgrid]:grid-cols-[16px_minmax(0,1fr)]",
     "[&:has(svg+[data-slot=sidebar-label])_svg:has(+[data-slot=sidebar-label])]:me-0",
     "[&_[data-slot=sidebar-label]]:col-start-auto [&_[data-slot=sidebar-label]]:pe-0",
-    "[&_svg]:size-[17px] [&_svg]:text-black/40",
+    "[&_svg]:size-4 [&_svg]:stroke-[1.75]",
+    // The active icon's blue is set *on the svg* in renderItem, not here: Intent's
+    // current-state rule targets `svg:not([class*='text-'])` with higher
+    // specificity than a plain `[&_svg]:` descendant utility and would win.
     active
       ? cn(
-          "bg-white text-black/90 [&_svg]:text-[rgb(86,114,228)]",
+          "bg-white text-black/90",
           "shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08)]",
           "hover:bg-white",
         )
@@ -109,16 +119,6 @@ function navItemClasses(active: boolean): string {
   );
 }
 
-/** 2px dither-blue left bar for the active item (mock's `.nav.active::before`). */
-function ActiveMarker({ active }: { active: boolean }) {
-  if (!active) return null;
-  return (
-    <span
-      aria-hidden
-      className="absolute top-1/2 left-[-1px] h-4 w-[2px] -translate-y-1/2 rounded-full bg-[rgb(86,114,228)] in-data-[state=collapsed]:hidden"
-    />
-  );
-}
 
 export function AdminSidebar({
   user,
@@ -179,8 +179,16 @@ export function AdminSidebar({
         isCurrent={active}
         className={navItemClasses(active)}
       >
-        <ActiveMarker active={active} />
-        <Icon />
+        {/* Icon colour lives on the svg (see navItemClasses): active = dither blue;
+            idle = the label's own 55% so icon and text read as one line, lifting
+            together on hover. */}
+        <Icon
+          className={
+            active
+              ? "text-[rgb(86,114,228)]"
+              : "text-black/55 transition-colors duration-150 group-hover/nav:text-black/90"
+          }
+        />
         <SidebarLabel className="truncate pe-0 text-[13px]">{item.title}</SidebarLabel>
       </SidebarItem>
     );

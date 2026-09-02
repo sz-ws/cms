@@ -31,19 +31,24 @@ export function AdminNavGroup({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          "flex w-full items-center gap-1.5 rounded-[8px] px-2.5 py-1.5",
-          "text-[11.5px] font-normal text-black/40",
+          "group/nav-group flex w-full items-center gap-1.5 rounded-[8px] px-2.5 py-1",
+          "text-[11px] font-normal text-black/35",
           "transition-colors duration-150 ease-out hover:text-black/60",
           // Hide entirely when the sidebar is docked/collapsed (icons only).
           "in-data-[collapsible=dock]:hidden",
         )}
       >
         <span>{label}</span>
+        {/* The chevron is an affordance, not a label: it shows on hover/focus (and
+            stays while a group is collapsed, so the folded state is visible).
+            Four permanent chevrons down the rail is the shadcn-sidebar tell. */}
         <ChevronDown
           aria-hidden
           className={cn(
-            "ml-auto size-3.5 opacity-55 transition-transform duration-200 ease-out",
-            open ? "rotate-0" : "-rotate-90",
+            "ml-auto size-3 transition-[opacity,transform] duration-150 ease-out",
+            open
+              ? "rotate-0 opacity-0 group-hover/nav-group:opacity-55 group-focus-visible/nav-group:opacity-55"
+              : "-rotate-90 opacity-55",
           )}
         />
       </button>

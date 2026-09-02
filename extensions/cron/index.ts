@@ -39,7 +39,7 @@ export const cron = defineExtension({
   adminPages: [
     {
       slug: "",
-      title: "Cron",
+      title: { en: "Cron", "zh-Hant": "排程" },
       component: CronAdminPage,
     },
   ],
