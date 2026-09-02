@@ -67,17 +67,24 @@ const SECURITY_HEADERS = [
 // report-uri),把真正需要的來源加進來,確認乾淨後把下面這行的 key 改成
 // "Content-Security-Policy" 即可。
 //
-// ⚠️ **改 enforce 之前 `script-src` 必須先加 `'wasm-unsafe-eval'`** —— 後台助理的
-// JS 沙盒(QuickJS)是執行期從 bytes 編譯 wasm 的,現在不會壞只是因為這條還沒
-// enforce。同時要確認 worker-src:沙盒的 Worker 走 `new URL(...)` 同源打包產物,
-// 理論上吃 default-src 'self' 的 fallback,但要實測而不是推論。
+// `'wasm-unsafe-eval'` 已經在 script-src 裡(2026-09-02;理由見該行)—— 後台助理的
+// JS 沙盒(QuickJS)是執行期從 bytes 編譯 wasm 的,少了它一 enforce 沙盒就死。
+// ⚠️ enforce 前還剩一件要**實測**的:worker-src。沙盒的 Worker 走 `new URL(...)`
+// 同源打包產物,理論上吃 default-src 'self' 的 fallback,但要在 Report-Only 的
+// 收件裡確認真的沒有 worker-src 違規,而不是推論。
 const CSP_REPORT_ONLY = {
   key: "Content-Security-Policy-Report-Only",
   value: [
     "default-src 'self'",
     // 'unsafe-inline' 是目前的現實(見上方說明),留在 Report-Only 裡當作
     // 「我們知道這裡還沒收乾淨」的紀錄,而不是假裝已經安全。
-    "script-src 'self' 'unsafe-inline'",
+    //
+    // 'wasm-unsafe-eval' 是**必要的**,不是妥協:後台助理的 JS 沙盒(QuickJS,
+    // src/components/admin/agent/code-sandbox.worker.ts)在執行期從 bytes 編譯
+    // wasm,沒有這一項的 policy 一 enforce 沙盒就死。先放進 Report-Only,收件端
+    // 才不會被每一次沙盒啟動的 wasm-eval 違規灌滿,真正要看的違規才浮得上來。
+    // (它只放行 WebAssembly 編譯,不放行 JS 的 eval / new Function。)
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     // R2 走同源的 /api/files;data: 給 icon/inline SVG;blob: 給上傳預覽。
     "img-src 'self' data: blob:",

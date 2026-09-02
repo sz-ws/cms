@@ -47,8 +47,9 @@ function record(value: unknown): Record<string, unknown> | null {
 /**
  * `blocked-uri` 的值可能是關鍵字,也可能是完整網址。
  *
- * 關鍵字(inline / eval / wasm-eval / data / blob …)本身就是答案,原樣留著 ——
- * 尤其 `wasm-eval`,那是 QuickJS 沙盒需要 `'wasm-unsafe-eval'` 的直接證據。
+ * 關鍵字(inline / eval / wasm-eval / data / blob …)本身就是答案,原樣留著。
+ * `wasm-eval` 現在**不該**再出現(policy 已含 `'wasm-unsafe-eval'`,見 next.config.ts);
+ * 若它回來了,代表有人把那一項拿掉,而 QuickJS 沙盒正在被擋。
  * 網址則只留 origin:知道「是哪個第三方」就夠了,路徑與 query 可能帶查詢字串。
  */
 function normalizeBlocked(raw: unknown): string {
