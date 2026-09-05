@@ -27,6 +27,8 @@ export interface ParsedArgs {
   config?: string;
   /** 新 clone 的唯一站點識別;由 setup 衍生 Worker/D1/R2 名稱。 */
   siteSlug?: string;
+  /** 部署後驗證的正式 HTTPS origin；省略時由部署輸出取得 workers.dev URL。 */
+  siteUrl?: string;
   /** 僅限明確單站/開發帳號使用 shipped 的共用資源名稱。 */
   allowSharedDefaultNames: boolean;
   /** tag cache 用獨立的 D1(舊行為);預設兩個 binding 共用一個資料庫。 */
@@ -46,6 +48,7 @@ export interface ParsedArgs {
   ref?: string;
   /** 保留模板的 .git(clone 進既有 monorepo 時用)。 */
   skipGitInit: boolean;
+  deployAfterCreate: boolean;
   help: boolean;
   version: boolean;
   /** 解析層錯誤(未知旗標 / 缺旗標值);由呼叫端決定 exit code。 */
@@ -57,6 +60,7 @@ const FLAGS_WITH_VALUE = new Set([
   "--token",
   "--config",
   "--site-slug",
+  "--site-url",
   "--template",
   "--ref",
 ]);
@@ -68,6 +72,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     nonInteractive: false,
     skipCoreCheck: false,
     skipGitInit: false,
+    deployAfterCreate: false,
     separateTagCache: false,
     allowSharedDefaultNames: false,
     yes: false,
@@ -108,6 +113,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.allowSharedDefaultNames = true;
     } else if (arg === "--skip-git-init") {
       out.skipGitInit = true;
+    } else if (arg === "--deploy") {
+      out.deployAfterCreate = true;
     } else if (arg === "--separate-tag-cache") {
       out.separateTagCache = true;
     } else if (FLAGS_WITH_VALUE.has(arg)) {
@@ -120,6 +127,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       if (arg === "--token") out.token = value;
       if (arg === "--config") out.config = value;
       if (arg === "--site-slug") out.siteSlug = value;
+      if (arg === "--site-url") out.siteUrl = value;
       if (arg === "--template") out.template = value;
       if (arg === "--ref") out.ref = value;
       i++;
@@ -131,6 +139,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.config = arg.slice("--config=".length);
     } else if (arg.startsWith("--site-slug=")) {
       out.siteSlug = arg.slice("--site-slug=".length);
+    } else if (arg.startsWith("--site-url=")) {
+      out.siteUrl = arg.slice("--site-url=".length);
     } else if (arg.startsWith("--template=")) {
       out.template = arg.slice("--template=".length);
     } else if (arg.startsWith("--ref=")) {

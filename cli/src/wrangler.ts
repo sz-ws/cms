@@ -34,6 +34,26 @@ export interface D1Database {
   uuid: string;
 }
 
+/**
+ * 一次 SQL 的結果。
+ *
+ * 為什麼不是 `rows | null`:呼叫端拿到 null 只知道「失敗了」,而失敗原因(登入過期、
+ * 資料庫名字打錯、表還不存在、輸出不是 JSON)只有 wrangler 自己講得出來。把它吞掉,
+ * 使用者看到的就是一句「Could not verify …」而沒有下一步可走。
+ */
+export interface SqlResult {
+  /** null = 這次查詢沒有可信結果,不等於「沒有資料」。 */
+  rows: Record<string, unknown>[] | null;
+  /** rows 為 null 時的原因;成功時為 null。 */
+  detail: string | null;
+}
+
+/** 診斷訊息只帶一小段輸出 —— 完整的 wrangler 輸出可能有好幾頁,塞進錯誤訊息沒人讀得完。 */
+function excerpt(text: string, limit = 300): string {
+  const trimmed = text.trim();
+  return trimmed.length > limit ? `${trimmed.slice(0, limit)}…` : trimmed || "(no output)";
+}
+
 export interface WranglerClientOptions {
   exec: Executor;
   cwd: string;
@@ -57,6 +77,11 @@ export class WranglerClient {
 
   constructor(options: WranglerClientOptions) {
     this.o = options;
+  }
+
+  /** 解析後的 wrangler 執行檔。deploy 要在跑任何子程序前確認它真的存在。 */
+  get command(): string {
+    return this.o.cmd;
   }
 
   private async run(args: readonly string[], stdin?: string): Promise<ExecResult> {
@@ -250,5 +275,35 @@ export class WranglerClient {
       return { status: "failed", detail: (r.stderr || r.stdout).trim() };
     }
     return { status: "done" };
+  }
+
+  /** 受管部署的固定 SQL；呼叫端不得傳密碼、token 或加密設定。 */
+  async executeSql(databaseName: string, sql: string, readOnly = false): Promise<SqlResult> {
+    if (this.o.dryRun && !readOnly) {
+      return { rows: null, detail: "dry run: write statements are not sent." };
+    }
+    const result = await this.run(["d1", "execute", databaseName, "--remote", "--json", "--command", sql]);
+    if (result.code !== 0) {
+      return {
+        rows: null,
+        detail: (result.stderr || result.stdout).trim() || `wrangler exited ${result.code}`,
+      };
+    }
+    try {
+      const parsed: unknown = JSON.parse(result.stdout);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return { rows: null, detail: `wrangler returned no result set: ${excerpt(result.stdout)}` };
+      }
+      const rows: Record<string, unknown>[] = [];
+      for (const item of parsed) {
+        if (item?.success !== true || !Array.isArray(item.results)) {
+          return { rows: null, detail: `wrangler reported a failed statement: ${excerpt(result.stdout)}` };
+        }
+        rows.push(...item.results);
+      }
+      return { rows, detail: null };
+    } catch {
+      return { rows: null, detail: `wrangler output is not valid JSON: ${excerpt(result.stdout)}` };
+    }
   }
 }

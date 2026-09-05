@@ -56,6 +56,8 @@ export interface PreflightOptions {
   reporter: Reporter;
   /** true → 有 missing 就非零退出(predeploy 用)。 */
   gate: boolean;
+  /** 由 `cms deploy` 呼叫;標題印成它的一個階段而不是另一支指令。 */
+  managedDeploy?: boolean;
 }
 
 export interface PreflightReport {
@@ -186,7 +188,7 @@ export async function collectPreflight(
 export async function runPreflight(o: PreflightOptions): Promise<number> {
   const { reporter: r } = o;
   r.intro(
-    "sz-ws-cms preflight",
+    o.managedDeploy ? "cms deploy · settings check" : "sz-ws-cms preflight",
     o.gate ? "deploy gate: missing required settings will stop the deploy." : "read-only check of extension settings.",
   );
 

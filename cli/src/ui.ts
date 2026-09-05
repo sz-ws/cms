@@ -149,6 +149,18 @@ function colorFor(status: StepStatus, s: StyleSet): (t: string) => string {
   }
 }
 
+/**
+ * 給非動畫路徑的收尾行用;分鐘級的建置印成 125.4s 讀起來太吃力。
+ *
+ * 先把總秒數四捨五入、再拆成分秒。反過來(先拆再對秒數進位)會在 119.7s 印出
+ * 「1m 60s」—— 一個不存在的時間。
+ */
+export function formatElapsed(ms: number): string {
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
+}
+
 export interface StreamReporterOptions {
   write(chunk: string): void;
   /** TTY 才轉圈;測試與被導向的輸出一律關掉(否則輸出會塞滿控制碼)。 */
@@ -179,9 +191,19 @@ export function createReporter(o: StreamReporterOptions): Reporter {
       for (const line of lines) write(`${line}\n`);
     },
     async task(label, fn) {
+      const started = Date.now();
       if (!o.animate) {
+        // 只印開始行的話,CI 日誌裡「成功」「失敗」「還卡著」三種狀態長得一模一樣。
+        // 轉圈那條路徑靠原地重繪表達進行中,這條沒有,只能補一行收尾。
         write(`${s.dim("…")} ${label}\n`);
-        return fn();
+        try {
+          const value = await fn();
+          write(`${colorFor("ok", s)(SYMBOL.ok)} ${label} (${formatElapsed(Date.now() - started)})\n`);
+          return value;
+        } catch (error) {
+          write(`${colorFor("fail", s)(SYMBOL.fail)} ${label} (${formatElapsed(Date.now() - started)})\n`);
+          throw error;
+        }
       }
       const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
       let i = 0;

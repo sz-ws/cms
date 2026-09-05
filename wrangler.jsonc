@@ -44,13 +44,17 @@
   "images": { "binding": "IMAGES" },
   "d1_databases": [
     // database_id 為佔位值:本環境無 Cloudflare 帳號,無法 `wrangler d1 create`。
-    // 部署前(Phase 7)必須執行 `wrangler d1 create cms-db` 並把回傳的真實 UUID 換進來。
+    // `cms deploy` / `cms setup` 會建好資料庫、把真實 UUID 與 slug 化的名稱一起寫回這裡。
     { "binding": "DB", "database_name": "cms-db", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" },
     // tag cache(OpenNext d1NextTagCache):on-demand revalidateTag 的 tag 記錄。
-    // 這是**第二個**佔位值 —— 部署前必須 `wrangler d1 create cms-tag-cache` 並把真實 UUID
-    // 換進來。`revalidations` 表不用自己建:`opennextjs-cloudflare deploy` 會先跑
-    // populate-cache,由它 CREATE TABLE IF NOT EXISTS(schema 屬於 OpenNext,v1.19 加過
-    // stale/expire 兩欄 —— 所以不要手抄一份進版控,會漂移)。見 DEPLOY.md。
+    // **這是兩個 binding,不是兩個資料庫** —— CLI 預設把它指向上面那一個(名稱會一起
+    // 改寫成 cms-<slug>-db),理由是 Free plan 每帳號只有 10 個 D1,而這裡只存
+    // tag→revalidatedAt。要各自獨立就用 `cms setup --separate-tag-cache`;手動接的話,
+    // 兩個佔位值填同一個 id 即可,除非你自己另外建了一個資料庫。
+    // `revalidations` 表不用自己建:`opennextjs-cloudflare deploy` 會先跑
+    // populate-cache,由它 CREATE TABLE IF NOT EXISTS(表名與 src/lib/schema.ts 不衝突,
+    // 這是共用同一個資料庫安全的原因;schema 屬於 OpenNext,v1.19 加過 stale/expire
+    // 兩欄 —— 所以不要手抄一份進版控,會漂移)。見 DEPLOY.md。
     { "binding": "NEXT_TAG_CACHE_D1", "database_name": "cms-tag-cache", "database_id": "00000000-0000-0000-0000-000000000000" }
   ],
   "r2_buckets": [

@@ -263,3 +263,46 @@ describe("WranglerClient.parseAvailableAccounts", () => {
     expect(WranglerClient.isAccountAmbiguity(null)).toBe(false);
   });
 });
+
+describe("executeSql", () => {
+  const rows = JSON.stringify([{ success: true, results: [{ count: 3 }] }]);
+
+  it("成功時回 rows,detail 為 null", async () => {
+    const { client, calls } = makeClient((_c, args) => (args[0] === "d1" ? ok(rows) : undefined));
+    expect(await client.executeSql("cms-demo-db", "SELECT 1", true)).toEqual({
+      rows: [{ count: 3 }],
+      detail: null,
+    });
+    expect(calls[0].args).toContain("--remote");
+  });
+
+  // rows: null 只說得出「失敗了」。失敗原因(登入過期、資料庫名字打錯、表還不存在)
+  // 只有 wrangler 講得出來,吞掉它使用者就沒有下一步可走。
+  it("失敗時把 wrangler 自己的訊息帶回來", async () => {
+    const { client } = makeClient(() => fail("Couldn't find DB with name 'cms-demo-db'"));
+    const result = await client.executeSql("cms-demo-db", "SELECT 1", true);
+    expect(result.rows).toBeNull();
+    expect(result.detail).toContain("cms-demo-db");
+  });
+
+  it("輸出不是預期形狀時也講得出原因", async () => {
+    const { client } = makeClient(() => ok("not json at all"));
+    const broken = await client.executeSql("cms-demo-db", "SELECT 1", true);
+    expect(broken.rows).toBeNull();
+    expect(broken.detail).toContain("not valid JSON");
+
+    const { client: unsuccessful } = makeClient(() => ok(JSON.stringify([{ success: false }])));
+    const reported = await unsuccessful.executeSql("cms-demo-db", "SELECT 1", true);
+    expect(reported.rows).toBeNull();
+    expect(reported.detail).toContain("failed statement");
+  });
+
+  it("dry-run 下唯讀照跑、寫入不送出", async () => {
+    const { client, calls } = makeClient((_c, args) => (args[0] === "d1" ? ok(rows) : undefined), true);
+    expect((await client.executeSql("cms-demo-db", "SELECT 1", true)).rows).toEqual([{ count: 3 }]);
+    const write = await client.executeSql("cms-demo-db", "INSERT INTO settings VALUES (1)");
+    expect(write.rows).toBeNull();
+    expect(write.detail).toContain("dry run");
+    expect(calls).toHaveLength(1);
+  });
+});

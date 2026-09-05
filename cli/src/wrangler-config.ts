@@ -52,6 +52,8 @@ export interface WranglerConfig {
   /** setup 寫入的站點 slug;它是確認本機配置曾被安全命名的證據。 */
   siteSlug: string | undefined;
   siteSlugSpan: Span | undefined;
+  /** 已指定的 Cloudflare 帳號;undefined 代表設定檔沒寫,可以安全補上。 */
+  accountId: string | undefined;
   d1: D1Entry[];
   r2: R2Entry[];
 }
@@ -161,6 +163,7 @@ export function readWranglerConfig(text: string): WranglerConfig {
     selfReferenceServiceSpan: selfReference.span,
     siteSlug: siteSlug.slug,
     siteSlugSpan: siteSlug.span,
+    accountId: getStringMember(root, "account_id"),
     d1: readD1(root),
     r2: readR2(root),
   };

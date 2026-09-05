@@ -38,7 +38,8 @@ import { patchRegistryContent, camelCaseId } from "./patch.js";
 import { EXIT } from "./exit.js";
 import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
 import { WranglerClient } from "./wrangler.js";
-import { runSetup } from "./setup.js";
+import { runSetup, validateSiteSlug } from "./setup.js";
+import { runDeploy } from "./deploy.js";
 import { runSecrets } from "./secrets.js";
 import { runPreflight } from "./preflight.js";
 import {
@@ -47,7 +48,7 @@ import {
   DEFAULT_TEMPLATE,
 } from "./create.js";
 import { configureExtension } from "./configure.js";
-import { createUi, type UiEvent } from "./ui.js";
+import { createUi, type UiBundle, type UiEvent } from "./ui.js";
 
 export const VERSION = "0.6.0";
 
@@ -62,6 +63,7 @@ const USAGE = `@sz.ws/cms v${VERSION} — sz.ws CMS command-line tool
 Usage:
   cms create <dir> [options]    scaffold a new CMS project (clones the template)
   cms setup [options]           connect this repo to your Cloudflare account
+  cms deploy [options]          provision, build, migrate, deploy and verify this site
   cms secrets [options]         ensure SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN exist
                                 on the deployed Worker (run by the postdeploy hook)
   cms add <id> [options]        install a code extension
@@ -75,8 +77,9 @@ create options:
                                  or set SZWS_CMS_TEMPLATE)
   --ref <branch|tag>            clone a specific branch or tag
   --skip-git-init               keep the template .git instead of resetting it
+  --deploy                     continue through deployment and first-admin setup
 
-setup options:
+setup / deploy options:
   --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
   --site-slug <slug>            new site id (3–48 lowercase alnum/hyphen);
                                 Worker, D1 and R2 names derive from it
@@ -93,6 +96,10 @@ setup options:
 secrets options:
   --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
   --dry-run                     report which keys are missing, generate nothing
+
+deploy options:
+  --site-url <https://origin>    URL for verification (default: deployed workers.dev URL)
+                                deploy always applies migrations and verifies secrets
 
 add options:
   --source <url>                registry base URL
@@ -115,8 +122,10 @@ shared options:
 
 examples:
   npx @sz.ws/cms create acme-taipei
+  npx @sz.ws/cms create acme-taipei --deploy
   npx @sz.ws/cms create acme-taipei --template https://github.com/me/my-fork.git
   npx @sz.ws/cms setup --site-slug acme-taipei
+  npx @sz.ws/cms deploy --site-slug acme-taipei
   npx @sz.ws/cms setup --dry-run
   npx @sz.ws/cms secrets
   npx @sz.ws/cms secrets --dry-run
@@ -129,6 +138,11 @@ environment variables:
   SZWS_REGISTRY_TOKEN           registry access token (same as --token)
   SZWS_CMS_TEMPLATE             default template URL for the create command
   CLOUDFLARE_ACCOUNT_ID         specify which account to use when logged in to multiple
+  CMS_ADMIN_EMAIL              first deployment: administrator email
+  CMS_ADMIN_NAME               first deployment: administrator name
+  CMS_ADMIN_PASSWORD           first deployment: password (never pass on command line)
+  CMS_SITE_TITLE               first deployment: site title
+  CMS_SETUP_TOKEN              resume a first setup previously started outside cms deploy
 
 docs: https://sz.ws`;
 
@@ -265,6 +279,7 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
   }
   if (args.command === "create") return runCreateCommand(args, cwd);
   if (args.command === "setup") return runSetupCommand(args, cwd);
+  if (args.command === "deploy") return runDeployCommand(args, cwd);
   if (args.command === "secrets") return runSecretsCommand(args, cwd);
   if (args.command === "preflight") return runPreflightCommand(args, cwd);
   if (args.command !== "add") {
@@ -288,11 +303,30 @@ async function runCreateCommand(args: ParsedArgs, cwd: string): Promise<number> 
     return EXIT.NOT_FOUND;
   }
 
+  // --deploy 之後 runDeployCommand 沿用同一個 ui,所以互動性判定要跟它一致 ——
+  // 各自算一次的話,`create … --deploy --yes` 會在 create 階段冒出 deploy 不會問的提示。
   const ui = createUi({
-    interactive: process.stdin.isTTY === true && !args.nonInteractive,
+    interactive: args.deployAfterCreate
+      ? !(args.yes || args.nonInteractive) && process.stdin.isTTY === true
+      : process.stdin.isTTY === true && !args.nonInteractive,
     json: args.json,
   });
+  setupEvents = ui.events;
   ui.reporter.intro("cms create", dir);
+
+  // 目錄名的字元規則比 site slug 寬(允許兩個字、允許結尾連字號),而 --deploy 會把
+  // 目錄名直接當 slug 用。等 clone 完幾十 MB 再被 setup 擋下來,那次抓取完全是白費的。
+  if (args.deployAfterCreate && !args.siteSlug) {
+    const invalid = validateSiteSlug(dir);
+    if (invalid) {
+      ui.reporter.step("fail", `"${dir}" cannot be used as the Cloudflare site slug`, invalid);
+      ui.reporter.outro([
+        "nothing was cloned. either pick a slug-safe directory name, or keep this one and name the site explicitly:",
+        `  cms create ${dir} --deploy --site-slug <slug>`,
+      ]);
+      return EXIT.SETUP_PREREQ;
+    }
+  }
 
   const result = await runCreate({
     dir,
@@ -321,11 +355,15 @@ async function runCreateCommand(args: ParsedArgs, cwd: string): Promise<number> 
   }
 
   if (args.dryRun) {
+    if (args.deployAfterCreate) ui.reporter.note("after creation", ["cms deploy will install dependencies and complete deployment and first-admin setup."]);
     ui.reporter.outro(["dry run — nothing was created"]);
     return EXIT.OK;
   }
 
   ui.reporter.step("ok", `created ${dir}/`);
+  if (args.deployAfterCreate) {
+    return runDeployCommand({ ...args, siteSlug: args.siteSlug ?? dir }, result.dest!, ui);
+  }
   ui.reporter.outro(createNextSteps(dir));
   return EXIT.OK;
 }
@@ -367,6 +405,32 @@ async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
     skipMigrations: args.skipMigrations,
     skipSecrets: args.skipSecrets,
     siteSlug: args.siteSlug,
+    allowSharedDefaultNames: args.allowSharedDefaultNames,
+  });
+}
+
+/**
+ * `existing` 是 `create --deploy` 傳進來的同一份 UI。各自 createUi 一次的話,
+ * --json 的事件流會被第二份覆蓋掉(create 階段的事件整段消失),文字模式也會多出
+ * 一組重複的介紹。同一次執行只該有一個 UI。
+ */
+async function runDeployCommand(args: ParsedArgs, cwd: string, existing?: UiBundle): Promise<number> {
+  const assumeYes = args.yes || args.nonInteractive;
+  const interactive = !assumeYes && process.stdin.isTTY === true;
+  const ui = existing ?? createUi({ interactive, json: args.json });
+  setupEvents = ui.events;
+  const configPath = path.resolve(cwd, args.config ?? DEFAULT_CONFIG_FILE);
+  // 固定使用專案的 Wrangler；deploy 會先安裝 lockfile 中的依賴。
+  const client = new WranglerClient({
+    exec: spawnExecutor, cwd, cmd: path.join(cwd, "node_modules", ".bin", "wrangler"),
+    prefix: [], dryRun: args.dryRun, configPath,
+  });
+  return runDeploy({
+    cwd, configPath, client, reporter: ui.reporter, prompter: ui.prompter,
+    exec: spawnExecutor, dryRun: args.dryRun, assumeYes, interactive,
+    skipMigrations: args.skipMigrations, skipSecrets: args.skipSecrets,
+    siteSlug: args.siteSlug, siteUrl: args.siteUrl,
+    separateTagCache: args.separateTagCache,
     allowSharedDefaultNames: args.allowSharedDefaultNames,
   });
 }

@@ -58,6 +58,8 @@ export {
 
 /** R2 最長名稱是 63;最長衍生值 cms-<slug>-next-cache 需要保留 15 字元。 */
 export const SITE_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/;
+/** Cloudflare account id 恆為 32 位小寫 hex(見 wrangler.ts 的多帳號訊息解析)。 */
+const ACCOUNT_ID_RE = /^[0-9a-f]{32}$/;
 /**
  * tag cache 要不要用獨立的 D1。
  *
@@ -94,6 +96,8 @@ function stockSite(separateTagCache: boolean): SiteResources {
 }
 
 export interface SetupOptions {
+  /** cms deploy 接手 migration/secrets 與收尾，不再要求操作者另跑指令。 */
+  managedDeploy?: boolean;
   cwd: string;
   /** wrangler.jsonc 的絕對路徑。 */
   configPath: string;
@@ -123,6 +127,8 @@ export interface SetupOptions {
   separateTagCache?: boolean;
   /** 可注入,測試才能斷言「送進 secret put 的就是這個值」。 */
   generateSecret?: () => string;
+  /** 可注入,測試不必動到真的 process.env。 */
+  env?: NodeJS.ProcessEnv;
 }
 
 interface D1Plan {
@@ -366,11 +372,15 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   const generateSecret = o.generateSecret ?? defaultSecretGenerator;
   const relConfig = path.relative(o.cwd, o.configPath) || o.configPath;
 
+  // 受管部署下這是 `cms deploy` 的一個階段,不是另一支要使用者自己再跑一次的指令 ——
+  // 中途冒出 `sz-ws-cms setup` 會讓人以為流程換了工具、或以為自己還得補跑它。
   r.intro(
-    "sz-ws-cms setup",
+    o.managedDeploy ? "cms deploy · resources" : "sz-ws-cms setup",
     o.dryRun
       ? "rehearsal mode: detect and list plan, create no resources, modify no files."
-      : "connect this repo to your Cloudflare account.",
+      : o.managedDeploy
+        ? "provisioning the Cloudflare resources this site needs."
+        : "connect this repo to your Cloudflare account.",
   );
 
   // ---- 1. 讀設定檔 ----
@@ -569,11 +579,17 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       prepared.pending
         ? `set site slug: ${prepared.pending.siteSlug} (atomically updates 7 tenant fields)`
         : "set site slug: use existing config",
+      // 受管部署是把這兩步「延後」到 build / upload 之後,不是不做。講成
+      // `--skip-migrations` 是騙人的 —— 使用者根本沒下那個旗標,而且事情確實會發生。
       o.skipMigrations
-        ? "apply migrations: skipped (--skip-migrations)"
+        ? o.managedDeploy
+          ? "apply migrations: after build, by cms deploy"
+          : "apply migrations: skipped (--skip-migrations)"
         : `apply migrations: ${migrationTargets.map((e) => e.databaseName).join(", ") || "(none)"}`,
       o.skipSecrets
-        ? `set ${SECRETS_KEY} / ${AUTH_PEPPER}: skipped (--skip-secrets)`
+        ? o.managedDeploy
+          ? `set ${SECRETS_KEY} / ${AUTH_PEPPER} / ${SETUP_TOKEN}: after upload, by cms deploy`
+          : `set ${SECRETS_KEY} / ${AUTH_PEPPER}: skipped (--skip-secrets)`
         : `set ${SECRETS_KEY} / ${AUTH_PEPPER}: based on current state`,
     ]);
     r.outro(["rehearsal complete, nothing changed. remove --dry-run to actually proceed."]);
@@ -597,6 +613,8 @@ export async function runSetup(o: SetupOptions): Promise<number> {
 
   const siteConfigResult = await persistSiteResources(o, prepared.pending, relConfig);
   if (siteConfigResult !== null) return siteConfigResult;
+
+  await persistAccountId(o, relConfig);
 
   // ---- 5. 建 D1 + 回填 id ----
   const assignments = new Map<string, string>();
@@ -655,7 +673,11 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   // revalidations 表由 opennextjs-cloudflare deploy 的 populate-cache 自己建
   // (schema 屬於 OpenNext,手抄一份進版控會漂移)。
   if (o.skipMigrations) {
-    r.step("skip", "skipped migrations (--skip-migrations)");
+    if (o.managedDeploy) {
+      r.step("skip", "migrations deferred to cms deploy", "applied after the build passes the size check, before upload.");
+    } else {
+      r.step("skip", "skipped migrations (--skip-migrations)");
+    }
   } else {
     for (const entry of migrationTargets) {
       const outcome = await r.task(`applying migrations to ${entry.databaseName}`, () =>
@@ -681,6 +703,11 @@ export async function runSetup(o: SetupOptions): Promise<number> {
         );
       }
     }
+  }
+
+  if (o.managedDeploy) {
+    r.step("ok", "Cloudflare resources ready", "deployment will apply migrations and verify secrets automatically.");
+    return EXIT.OK;
   }
 
   // ---- 8. worker secrets ----
@@ -711,6 +738,38 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   for (const block of dangerBlocks()) r.note(block.title, block.lines);
   r.outro(["✓ setup complete — run `pnpm run deploy` next."]);
   return EXIT.OK;
+}
+
+/**
+ * 非互動(CI / --yes)下帳號是由 CLOUDFLARE_ACCOUNT_ID 決定的,而那個變數只活在
+ * 這一次執行裡 —— 不寫回設定檔的話,下一次沒帶環境變數的 `pnpm run deploy` 又會
+ * 撞回「多帳號無法判斷」。互動路徑早就會寫(見上面的 select 分支),這裡補上另一半。
+ *
+ * **只在設定檔還沒指定時寫**:既有的 account_id 可能是別人刻意選的帳號,
+ * 用環境變數蓋掉它等於偷偷換部署目標。
+ */
+async function persistAccountId(o: SetupOptions, relConfig: string): Promise<void> {
+  if (o.dryRun) return;
+  const accountId = (o.env ?? process.env).CLOUDFLARE_ACCOUNT_ID?.trim();
+  if (!accountId) return;
+  // 寫進設定檔的值會留在 repo 裡,而這一格永遠不會被覆寫(見上面的說明)——
+  // 寫錯一次就得有人手動去改。打錯字的環境變數不值得換來那個後果。
+  if (!ACCOUNT_ID_RE.test(accountId)) {
+    o.reporter.step("warn", `CLOUDFLARE_ACCOUNT_ID is not a Cloudflare account id, not writing it to ${relConfig}`,
+      "expected 32 lowercase hexadecimal characters (see `pnpm exec wrangler whoami`); this run still uses the value as given.");
+    return;
+  }
+  try {
+    const before = await readFile(o.configPath, "utf8");
+    if (readWranglerConfig(before).accountId !== undefined) return;
+    const written = writeAccountId(before, accountId);
+    if (written.changed.length === 0) return;
+    await writeFile(o.configPath, written.text, "utf8");
+    o.reporter.step("ok", `account_id written to ${relConfig}`, "wrangler will stop asking which account to use");
+  } catch (e) {
+    // 寫不進去不是致命的 —— 這次執行照樣走得完,只是下次還得再帶一次環境變數。
+    o.reporter.step("warn", `could not write account_id to ${relConfig}`, e instanceof Error ? e.message : String(e));
+  }
 }
 
 /** 在任何遠端建立前,單次寫入租戶邊界。回傳 null 代表成功。 */

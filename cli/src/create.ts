@@ -171,8 +171,6 @@ export async function runCreate(o: CreateOptions): Promise<CreateResult> {
 export function nextSteps(dir: string): string[] {
   return [
     `cd ${dir}`,
-    "pnpm install",
-    `npx @sz.ws/cms setup --site-slug ${dir}`,
-    "pnpm deploy",
+    `npx @sz.ws/cms deploy --site-slug ${dir}`,
   ];
 }

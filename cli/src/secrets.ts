@@ -102,6 +102,10 @@ export const NO_ROTATION_WARNINGS: readonly string[] = [
 ];
 
 export interface SecretsOptions {
+  /** 受管部署直接消費新 token；不把它寫入 Reporter/JSON transcript。 */
+  onSetupToken?: (value: string) => void | Promise<void>;
+  /** 由 `cms deploy` 呼叫;標題印成它的一個階段而不是另一支指令。 */
+  managedDeploy?: boolean;
   client: WranglerClient;
   reporter: Reporter;
   /** true → 只報告現況,一把都不產生、不送出。 */
@@ -124,7 +128,7 @@ export async function runSecrets(o: SecretsOptions): Promise<number> {
   const generateSecret = o.generateSecret ?? defaultSecretGenerator;
 
   r.intro(
-    "sz-ws-cms secrets",
+    o.managedDeploy ? "cms deploy · secrets" : "sz-ws-cms secrets",
     o.dryRun
       ? "rehearsal mode: report which managed secrets are missing, generate nothing."
       : "ensure the three managed secrets exist on the deployed Worker.",
@@ -183,6 +187,8 @@ export async function runSecrets(o: SecretsOptions): Promise<number> {
   for (const spec of missing) {
     // 值走 stdin 進 wrangler,不進 argv、不印到畫面 —— argv 會被 ps 看到,也會留在 history。
     const value = generateSecret();
+    // 先持久化 bootstrap resume token，避免遠端寫入成功後程序中斷而遺失唯一副本。
+    if (spec.reveal === true && o.onSetupToken) await o.onSetupToken(value);
     const outcome = await r.task(`setting ${spec.name}`, () =>
       o.client.putSecret(spec.name, value),
     );
@@ -195,13 +201,13 @@ export async function runSecrets(o: SecretsOptions): Promise<number> {
       "ok",
       `${spec.name} generated and set`,
       spec.reveal === true
-        ? "value is printed below — this is the only time it can be shown."
+        ? o.onSetupToken ? "setup token handed to the deployment workflow." : "value is printed below — this is the only time it can be shown."
         : "value exists only on Cloudflare, no local copy.",
     );
     if (spec.reveal === true) revealed = value;
   }
 
-  if (revealed !== null) {
+  if (revealed !== null && !o.onSetupToken) {
     // 這一把非印不可:CLI 不會替使用者開瀏覽器填表,而 wrangler 事後也讀不回
     // secret 的值。不印 = 使用者永遠建不出第一個管理員,只能自己覆寫一把。
     r.note(`${SETUP_TOKEN} — copy it now, it cannot be shown again`, [

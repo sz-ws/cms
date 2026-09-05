@@ -20,6 +20,17 @@ export interface ExecOptions {
   cwd: string;
   /** 要餵給子程序 stdin 的內容(例:secret 值,避免出現在 argv / shell history)。 */
   stdin?: string;
+  /**
+   * 把子程序直接接到本行程的終端。
+   *
+   * 只有 `wrangler login` 需要:它把 OAuth 網址印在自己的 stdout,而在 SSH /
+   * 容器裡瀏覽器開不起來,那行網址就是使用者唯一的出路。照預設把它收進字串,
+   * 畫面上只剩一個轉不停的圈,程序會一直等下去。
+   *
+   * 代價是我們讀不到輸出 —— 這個模式下 stdout / stderr 一律回空字串,呼叫端
+   * 只能靠 exit code 判斷。所以**不要**拿它跑需要解析輸出的指令。
+   */
+  inheritStdio?: boolean;
 }
 
 export type Executor = (
@@ -48,13 +59,31 @@ export function resolveWranglerCommand(cwd: string): { cmd: string; prefix: stri
   return { cmd: "npx", prefix: ["wrangler"] };
 }
 
+/**
+ * 傳給子程序的環境。
+ *
+ * 管理員密碼與 setup token 只有 CLI 這個行程用得到 —— 它們走 HTTPS 進 /api/setup,
+ * 沒有任何子程序需要讀。原封不動繼承下去的話,`pnpm install` 的每一個 lifecycle
+ * script、Next 的 build、以及 wrangler 全都看得到密碼明文;在 CI 上那等於把它交給
+ * 一整棵依賴樹。這裡把它們濾掉,是把爆炸半徑縮回這一個行程。
+ */
+export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (key.startsWith("CMS_ADMIN_") || key === "CMS_SETUP_TOKEN") continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 export const spawnExecutor: Executor = (cmd, args, opts) =>
   new Promise((resolve, reject) => {
     const child = spawn(cmd, [...args], {
       cwd: opts.cwd,
       // Windows 上 npx 是 npx.cmd,不透過 shell 會找不到(同 scripts/ensure-dev-env.mjs)。
       shell: process.platform === "win32",
-      stdio: ["pipe", "pipe", "pipe"],
+      env: childEnv(),
+      stdio: opts.inheritStdio === true ? "inherit" : ["pipe", "pipe", "pipe"],
     });
 
     let stdout = "";
@@ -70,6 +99,7 @@ export const spawnExecutor: Executor = (cmd, args, opts) =>
 
     // stdin 一律關閉:wrangler 的互動確認(例:d1 migrations apply)在非 TTY 下會自動跳過,
     // 我們已經在自己的 UI 問過一次了,不需要它再問第二次。
+    // (inheritStdio 下 child.stdin 是 null —— 那正是要的:登入流程需要真的鍵盤。)
     if (opts.stdin !== undefined) child.stdin?.write(opts.stdin);
     child.stdin?.end();
   });

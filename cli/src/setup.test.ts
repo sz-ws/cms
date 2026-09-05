@@ -184,6 +184,9 @@ async function setup(overrides: HarnessOverrides = {}): Promise<{
     // 舊流程測試刻意在單站假帳號跑;新租戶邊界案例會明確關掉這個逃生門。
     allowSharedDefaultNames: true,
     generateSecret: () => "deterministic-test-key",
+    // 預設不看真的環境變數:開發機上剛好設了 CLOUDFLARE_ACCOUNT_ID 的話,
+    // 每個案例都會多出一次 account_id 回寫,測試就會依執行環境而異。
+    env: {},
     ...overrides,
   });
   return { code, calls, out: output, prompter };
@@ -614,6 +617,36 @@ describe("runSetup — 略過旗標", () => {
     expect(out).toContain("--skip-migrations");
   });
 
+  // cms deploy 是用 skipMigrations/skipSecrets 把兩步「延後」到自己手上,
+  // 使用者根本沒下那兩個旗標。照抄旗標名等於對使用者說了一件沒發生的事。
+  it("受管部署下不提旗標 —— 那兩步是延後,不是略過", async () => {
+    const { code, out } = await setup({
+      managedDeploy: true,
+      skipMigrations: true,
+      skipSecrets: true,
+      account: { secrets: [] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(out).not.toContain("--skip-");
+    expect(out).toContain("migrations deferred to cms deploy");
+    expect(out).toContain("cms deploy · resources");
+    expect(out).not.toContain("sz-ws-cms setup");
+  });
+
+  it("受管部署的 dry-run 計畫也講實話", async () => {
+    const { code, out } = await setup({
+      managedDeploy: true,
+      dryRun: true,
+      skipMigrations: true,
+      skipSecrets: true,
+      account: { secrets: [] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(out).not.toContain("--skip-");
+    expect(out).toContain("apply migrations: after build, by cms deploy");
+    expect(out).toContain(`set ${SECRETS_KEY} / ${AUTH_PEPPER} / ${SETUP_TOKEN}: after upload, by cms deploy`);
+  });
+
   it("--skip-secrets 不碰 secret,但收尾要提醒", async () => {
     const { calls, out } = await setup({ skipSecrets: true });
     expect(argsOf(calls).some((s) => s.startsWith("secret"))).toBe(false);
@@ -686,6 +719,56 @@ describe("runSetup — 登入多個 Cloudflare 帳號", () => {
     expect(listCalls).toBe(2); // 重試過
     expect(code).toBe(EXIT.OK);
     expect(prompter.asked.some((q) => /which Cloudflare account/i.test(q))).toBe(true);
+  });
+});
+
+describe("runSetup — 非互動時的 account_id", () => {
+  const ACCOUNT = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+
+  it("環境變數指定的帳號會寫回設定檔,下次不必再帶一次", async () => {
+    const { code, out } = await setup({
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT },
+      account: { createdD1Uuid: DB_UUID, secrets: [] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(await readFile(configPath, "utf8")).toContain(`"account_id": "${ACCOUNT}"`);
+    expect(out).toContain("account_id written to");
+  });
+
+  it("設定檔已經指定帳號時絕不覆寫 —— 那可能是別人刻意選的部署目標", async () => {
+    const other = "fedcba9876543210fedcba9876543210";
+    await writeFile(configPath, CONFIG.replace(`"name": "cms",`, `"account_id": "${other}",\n  "name": "cms",`), "utf8");
+    const { code } = await setup({
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT },
+      account: { createdD1Uuid: DB_UUID, secrets: [] },
+    });
+    expect(code).toBe(EXIT.OK);
+    const text = await readFile(configPath, "utf8");
+    expect(text).toContain(`"account_id": "${other}"`);
+    expect(text).not.toContain(ACCOUNT);
+  });
+
+  it("--dry-run 一個字都不寫", async () => {
+    const { code } = await setup({
+      dryRun: true,
+      env: { CLOUDFLARE_ACCOUNT_ID: ACCOUNT },
+      account: { secrets: [] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(await readFile(configPath, "utf8")).not.toContain("account_id");
+  });
+
+  // 這一格寫進去之後永遠不會被覆寫(見 persistAccountId)。打錯字的環境變數
+  // 不值得換來「往後每次部署都指向一個不存在的帳號、而且要人手動去改設定檔」。
+  it("環境變數不像 account id 時只警告,不寫進設定檔", async () => {
+    const { code, out } = await setup({
+      env: { CLOUDFLARE_ACCOUNT_ID: "my-cloudflare-account" },
+      account: { createdD1Uuid: DB_UUID, secrets: [] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(await readFile(configPath, "utf8")).not.toContain("account_id");
+    expect(out).toContain("not a Cloudflare account id");
+    expect(out).toContain("32 lowercase hexadecimal");
   });
 });
 

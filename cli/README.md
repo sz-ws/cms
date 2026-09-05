@@ -1,15 +1,39 @@
 # @sz.ws/cms — `cms` / `sz-ws-cms`
 
-CLI for the sz.ws CMS. Four commands:
+CLI for the open-source sz.ws CMS. Each user deploys to their own Cloudflare account; no sz.ws account or hosted control service is required.
 
 | Command | Purpose |
 |---|---|
+| `cms create <dir> --deploy` | Clone the project and continue through deployment and first-admin setup |
+| `cms deploy` | Install dependencies, provision resources, build, apply migrations, deploy, initialize the site, and verify readiness |
 | `cms setup` | Connect repo to your Cloudflare account: create D1 / R2, fill ids back into `wrangler.jsonc`, apply migrations, set three secrets (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`) |
 | `cms secrets` | Ensure those three secrets exist on the **deployed** Worker. Run automatically by the repo's `postdeploy` hook, because `wrangler secret put` needs a Worker that already exists |
 | `cms add <id>` | Install code extension: fetch files from registry → write to `extensions/<id>/` → patch `extensions/registry.ts`, then ask for the extension's declared settings |
 | `cms preflight` | Read-only: list extension settings that are still unset. `--gate` exits non-zero on missing required ones (used by the repo's `predeploy`) |
 
-Both support fully non-interactive execution (`--yes` / `--non-interactive`) and `--dry-run`.
+Deployment supports non-interactive execution (`--yes` / `--non-interactive`) and `--dry-run`.
+
+## One-command deployment
+
+This workflow is implemented in the local development version and has not yet been published to npm. To use it from this checkout, run `pnpm cli:build`, then `node cli/dist/cli.js deploy --site-slug my-site`. The commands below describe usage after publication.
+
+```bash
+npx @sz.ws/cms create my-site --deploy
+# Or, inside an existing CMS project:
+npx @sz.ws/cms deploy --site-slug my-site
+```
+
+Use Node 22.12+ and pnpm. In an interactive terminal the CLI opens Cloudflare authorization if needed and asks for the account, site identifier, and initial administrator details. The authorization step gives `wrangler` the terminal, so its URL stays visible when the browser cannot open by itself. All resources remain in the selected user's Cloudflare account. With `create <dir> --deploy` the directory name becomes the site slug, so a name the slug rule rejects stops before anything is cloned; pass `--site-slug` to keep the directory name.
+
+The workflow installs locked dependencies, reuses the existing resource setup, builds with OpenNext, checks the **64 MiB uncompressed** upload limit, then applies pending migrations and deploys. It creates only missing managed secrets, verifies their names, initializes `core.siteUrl` only if absent, creates the first administrator through the CMS setup API, and checks `/login` for HTTP 200. A failed readiness check exits non-zero even if the Worker upload succeeded; if migrations were applied but the upload did not happen, the summary says which databases are now ahead of the running Worker.
+
+`--site-url https://cms.example.com` selects an existing custom domain for initialization and verification. Without it, the CLI uses the deployed Worker's `workers.dev` URL and reports that `core.siteUrl` was initialized to it — OIDC redirect URIs, payment callbacks, and absolute sitemap URLs are derived from that value, so rerun with `--site-url` (or change it in Settings) after attaching a custom domain. It does not register domains or change DNS. Existing users, secrets, and `core.siteUrl` values are preserved. Extension-specific third-party credentials remain application configuration; this command does not invent them.
+
+For CI, provide Cloudflare authentication plus `CLOUDFLARE_ACCOUNT_ID`. A first deployment also needs `CMS_ADMIN_EMAIL`, `CMS_ADMIN_NAME`, `CMS_ADMIN_PASSWORD`, and `CMS_SITE_TITLE` as environment variables; a missing one is reported before the build starts, not after it. Never pass passwords in command-line arguments. The `CMS_ADMIN_*` values and `CMS_SETUP_TOKEN` are removed from the environment of every child process the CLI spawns, so install lifecycle scripts, the build, and `wrangler` never see them. Existing sites do not need administrator inputs again.
+
+Interrupted first-admin setup resumes from a private, gitignored `.cms/bootstrap.json`, scoped to the Worker and database ID. Only the bootstrap token is stored there (file mode 0600); passwords and encryption keys are never persisted. The token file is removed after setup succeeds. If setup began outside this workflow and the original token is unavailable locally, supply `CMS_SETUP_TOKEN`; existing secrets are never rotated to recover it.
+
+`cms deploy --dry-run` inspects resources and reports the workflow without installing dependencies, building, migrating, uploading, generating secrets, or making HTTP requests to the site. Read-only discovery runs through the project's own `node_modules/.bin/wrangler`, so a dry run needs `pnpm install` to have completed. On a fresh clone it stops with exit 7 and says so; run `cms deploy` without `--dry-run` instead, which installs the locked dependencies first. Repeat `cms deploy` with the same options after fixing any reported failure; it preserves existing resources and keys. `--skip-migrations` and `--skip-secrets` belong to the lower-level `setup` command and are rejected by `deploy`.
 
 ---
 

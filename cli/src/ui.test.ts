@@ -3,6 +3,7 @@ import {
   createAutoPrompter,
   createReporter,
   displayWidth,
+  formatElapsed,
   makeStyles,
   padVisual,
   type Reporter,
@@ -61,7 +62,8 @@ describe("createReporter", () => {
   it("task 在非動畫模式下退化成純文字,回傳值原樣傳出", async () => {
     const { reporter, out } = capture(false);
     await expect(reporter.task("做事", async () => 42)).resolves.toBe(42);
-    expect(out()).toBe("… 做事\n");
+    // 開始行 + 收尾行。只有開始行的話,CI 日誌裡「做完了」跟「卡住了」長得一樣。
+    expect(out()).toMatch(/^… 做事\n✓ 做事 \(\d+\.\d+s\)\n$/);
     // 非 TTY 絕不能吐轉圈的控制碼,否則被導向的輸出會塞滿垃圾。
     expect(out()).not.toMatch(/\u001b/);
   });
@@ -73,6 +75,16 @@ describe("createReporter", () => {
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");
+  });
+
+  it("task 失敗時非動畫模式也留一行 —— 日誌要看得出是哪一步炸的", async () => {
+    const { reporter, out } = capture(false);
+    await expect(
+      reporter.task("炸", async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    expect(out()).toMatch(/^… 炸\n✗ 炸 \(\d+\.\d+s\)\n$/);
   });
 
   it("動畫模式結束後會清掉那一行", async () => {
@@ -153,5 +165,20 @@ describe("displayWidth / padVisual", () => {
     const b = padVisual("Merchant", 10);
     expect(displayWidth(a)).toBe(displayWidth(b));
     expect(a.length).not.toBe(b.length);
+  });
+});
+
+describe("formatElapsed", () => {
+  // 先拆分鐘再對餘數進位,119.7 秒會印成不存在的「1m 60s」。
+  it("不會印出 60 秒", () => {
+    expect(formatElapsed(119_700)).toBe("2m 00s");
+    expect(formatElapsed(59_950)).toBe("1m 00s");
+  });
+
+  it("一分鐘以內保留一位小數,超過就分秒", () => {
+    expect(formatElapsed(1_234)).toBe("1.2s");
+    expect(formatElapsed(59_400)).toBe("59.4s");
+    expect(formatElapsed(125_400)).toBe("2m 05s");
+    expect(formatElapsed(3_600_000)).toBe("60m 00s");
   });
 });

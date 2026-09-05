@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { run, EXIT, isDirectRun, VERSION } from "./cli.js";
+import { parseArgs } from "./args.js";
 
 const REGISTRY_HEADER = `import type { Extension } from "@/ext/types";\n`;
 const emptyRegistry =
@@ -668,5 +669,27 @@ describe("run preflight", () => {
     expect(parsed.command).toBe("preflight");
     expect(parsed.exitCode).toBe(code);
     expect(parsed.ok).toBe(false);
+  });
+});
+
+// 目錄名的字元規則比 site slug 寬(兩個字就成立、結尾可以是連字號),而 --deploy
+// 會把目錄名直接當 slug 用。等 clone 完幾十 MB 才被 setup 擋下來,那次抓取是白費的。
+describe("run — create --deploy 的 slug 前置檢查", () => {
+  it("目錄名當不了 site slug 時,clone 之前就停下來", async () => {
+    const args = parseArgs(["create", "ab", "--deploy"]);
+    expect(args).toMatchObject({ command: "create", id: "ab", deployAfterCreate: true });
+    expect(args.siteSlug).toBeUndefined();
+    const code = await run(["create", "ab", "--deploy", "--non-interactive"], repoDir);
+    expect(code).toBe(EXIT.SETUP_PREREQ);
+    expect(out()).toContain("--site-slug");
+    expect(out()).toContain("site slug must be");
+    await expect(stat(path.join(repoDir, "ab"))).rejects.toThrow();
+  });
+
+  // 對照組:合法的名字照樣往下走(--dry-run 讓它停在真的 clone 之前)。
+  it("合法的名字不受影響", async () => {
+    const code = await run(["create", "ab-c", "--deploy", "--dry-run", "--non-interactive"], repoDir);
+    expect(code).toBe(EXIT.OK);
+    expect(out()).not.toContain("cannot be used as the Cloudflare site slug");
   });
 });

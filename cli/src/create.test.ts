@@ -218,9 +218,7 @@ describe("nextSteps", () => {
   it("順序與 docs/deploy-playbook.md 一致,且 slug 沿用目錄名", () => {
     expect(nextSteps("acme")).toEqual([
       "cd acme",
-      "pnpm install",
-      "npx @sz.ws/cms setup --site-slug acme",
-      "pnpm deploy",
+      "npx @sz.ws/cms deploy --site-slug acme",
     ]);
   });
 });
