@@ -128,6 +128,35 @@ const nextConfig: NextConfig = {
   // .next/server/instrumentation.js,而 @opennextjs/aws 的 copyTracedFiles 一定
   // 會去找它 —— 見 package.json 的 `build` script 釘死 --webpack 的理由。
   serverExternalPackages: ["workers-og"],
+  // Sentry 的 server entry(`@sentry/nextjs` 的 index.server)會**急切地** require 一整條
+  // 只在 `next build` 期間才用得到的 withSentryConfig 鏈;10.73 起那條鏈多拉進了
+  // `@sentry/server-utils/orchestrion/webpack`,而它內嵌了一份 es-module-lexer ——
+  // 那份 lexer 在**模組頂層**就跑 `WebAssembly.compile()`。workerd 不准執行期編譯 wasm,
+  // 於是每一個新 isolate 都噴一次 `CompileError: Wasm code generation disallowed by
+  // embedder`(unhandled rejection;請求本身照樣 200)—— 一個純噪音的假錯誤,而它會把
+  // 錯誤回報端灌滿,真正該看的例外反而浮不上來。
+  //
+  // 那份 lexer 在執行期從來不會被呼叫(它存在的理由是讓 webpack plugin 在 `next build`
+  // 時解析原始碼),所以正解是把它從 **server bundle** 剪掉,而不是 patch 或降版。
+  //
+  // 壞掉的方式是良性的:Sentry 哪天改了這個子路徑,alias 就只是靜默地不再命中 ——
+  // 結果是那行噪音回來,不會讓建置或執行期壞掉。
+  //
+  // ⚠️ `next.config.ts` 這個檔案本身是 **Node 載入**的,不經過 webpack,所以下面
+  // `withSentryConfig(...)` 在建置期該做的事完全不受影響;被剪掉的只有「打包進 Worker
+  // 的那一份」。
+  //
+  // ⚠️ 這條只對 webpack 生效(見 package.json 的 `build` 釘死 `--webpack` 的理由)。
+  // 哪天真的換到 Turbopack,要在上面的 `turbopack` 裡補一條對應的 `resolveAlias`。
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "@sentry/server-utils/orchestrion/webpack": false,
+      };
+    }
+    return config;
+  },
   turbopack: {
     root: projectRoot,
   },
