@@ -224,8 +224,10 @@ describe("WranglerClient — 寫入操作", () => {
   });
 });
 
-// 這段錯誤訊息是逐字從實際輸出貼回來的(2026-08-03,四個帳號)。
-// 名稱會出現空白、`@`、單引號與中文 —— 用字元集去框名稱一定會漏。
+// 訊息骨架照 wrangler 實際輸出,但帳號名稱與 id 全是合成值 —— 這個 repo 是公開
+// 模板,真實帳號 id 與 email 不進版控,要對照真輸出請在本機看,不要貼回來。
+// 名稱刻意保留四種會咬到解析的形狀:含 `@`、含單引號、含空白、含中文 ——
+// 用字元集去框名稱一定會漏掉其中幾種。
 const REAL_AMBIGUITY_STDERR = `✘ [ERROR] More than one account available but unable to select one in non-interactive mode.
 
   Please set the appropriate \`account_id\` in your Wrangler configuration file or assign it to the \`CLOUDFLARE_ACCOUNT_ID\` environment variable.
@@ -237,7 +239,7 @@ const REAL_AMBIGUITY_STDERR = `✘ [ERROR] More than one account available but u
 `;
 
 describe("WranglerClient.parseAvailableAccounts", () => {
-  it("從真實的多帳號錯誤裡解析出全部四個帳號", () => {
+  it("從多帳號錯誤裡解析出全部四個帳號", () => {
     expect(WranglerClient.parseAvailableAccounts(REAL_AMBIGUITY_STDERR)).toEqual([
       { name: "alex@example.com's Account", id: "a1b2c3d4e5f60718293a4b5c6d7e8f90" },
       { name: "Personal", id: "0f1e2d3c4b5a69788796a5b4c3d2e1f0" },
