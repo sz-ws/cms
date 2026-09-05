@@ -87,6 +87,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "dashboard.widgets.databaseQuota": "額度",
   "dashboard.widgets.edit": "編輯",
   "dashboard.widgets.done": "完成",
+  "dashboard.widgets.cancel": "取消",
   "dashboard.widgets.show": "顯示中",
   "dashboard.widgets.hide": "已隱藏",
   "dashboard.widgets.moveUp": "上移",

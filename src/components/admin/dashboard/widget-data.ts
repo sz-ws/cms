@@ -1,8 +1,10 @@
 import { gte } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { getDB } from "@/lib/cf";
 import { contents } from "@/lib/schema";
 import { listFiles } from "@/lib/storage";
+import { storageIndexTag } from "@/ext/dx/cache-tags";
 import type { TrendWidgetData } from "./widgets";
 
 const DAY_MS = 86_400_000;
@@ -73,11 +75,14 @@ function formatBytes(bytes: number): string {
  * 不追求對帳精度;`truncated` 標示是否還有更多檔案未計入(caller 可據此在
  * valueLabel 加 "+" 後綴)。
  */
-export async function getStorageStats(): Promise<{
+export interface StorageStats {
   fileCount: number;
   totalBytes: number;
   truncated: boolean;
-}> {
+}
+
+/** cache miss 時才真的掃 R2；最多 5 個 ListObjects(Class A)。 */
+export async function scanStorageStats(): Promise<StorageStats> {
   let fileCount = 0;
   let totalBytes = 0;
   let cursor: string | undefined;
@@ -96,6 +101,27 @@ export async function getStorageStats(): Promise<{
   }
 
   return { fileCount, totalBytes, truncated };
+}
+
+/**
+ * R2 inventory snapshot。upload/delete 會 revalidate storage:index；一小時 TTL
+ * 只是人工繞過 storage abstraction 時的保底。cache plumbing 失敗就直接掃描，
+ * dashboard 不因快取層故障而消失。
+ */
+export async function getStorageStats(): Promise<StorageStats> {
+  try {
+    const run = unstable_cache(scanStorageStats, ["dashboard-storage-stats-v1"], {
+      tags: [storageIndexTag()],
+      revalidate: 3600,
+    });
+    return await run();
+  } catch (error) {
+    console.error(
+      "[dashboard:cache] storage snapshot failed; falling back to R2 scan",
+      error,
+    );
+    return scanStorageStats();
+  }
 }
 
 export { formatBytes };

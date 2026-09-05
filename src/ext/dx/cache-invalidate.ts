@@ -1,5 +1,5 @@
 import { revalidateTag } from "next/cache";
-import { contentTag, extTag } from "./cache-tags";
+import { contentTag, extTag, storageIndexTag } from "./cache-tags";
 
 // core-v2:content mutation 後精準失效 public content cache(見 content-cache.ts)。
 //
@@ -13,8 +13,9 @@ import { contentTag, extTag } from "./cache-tags";
 //
 // next 16 的 revalidateTag(tag, profile) 需要第二個 cache-life profile 參數;單一參數
 // 已 deprecated。這裡在 route handler / provider(非 Server Action)情境呼叫,故不能用
-// 只限 Server Action 的 updateTag() —— 傳官方建議的替代 profile "max"(最大保留、立即
-// on-demand 失效),即舊單參數行為的 drop-in。
+// 只限 Server Action 的 updateTag()。profile "max" 是 stale-while-revalidate：失效後
+// 第一位讀者可先拿 stale value，背景重建；適合 public content/dashboard 統計，不把
+// mutation latency 轉嫁給下一位訪客。
 const REVALIDATE_PROFILE = "max";
 
 /** 精準失效單一 content type(create/update/delete 後呼叫)。type = "<extId>.<typeName>"。 */
@@ -32,5 +33,14 @@ export function revalidateExt(extId: string): void {
     revalidateTag(extTag(extId), REVALIDATE_PROFILE);
   } catch (err) {
     console.error(`[dx:cache] revalidateExt failed ext=${extId}`, err);
+  }
+}
+
+/** R2 object 數量/總容量 snapshot：upload/delete 後整份失效。 */
+export function revalidateStorageIndex(): void {
+  try {
+    revalidateTag(storageIndexTag(), REVALIDATE_PROFILE);
+  } catch (err) {
+    console.error("[storage:cache] revalidateStorageIndex failed", err);
   }
 }

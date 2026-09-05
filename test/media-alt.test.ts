@@ -90,6 +90,9 @@ vi.mock("@/lib/cf", () => ({
 vi.mock("@/ext/loader", () => ({
   getExtRuntime: async () => ({ hooks: { doAction: async () => {} } }),
 }));
+vi.mock("@/ext/dx/cache-invalidate", () => ({
+  revalidateStorageIndex: () => {},
+}));
 
 import {
   listFiles,

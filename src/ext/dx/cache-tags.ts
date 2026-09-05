@@ -17,6 +17,11 @@ export function extTag(extId: string): string {
   return `ext:${extId}`;
 }
 
+/** Dashboard storage snapshot。所有 put/delete 都走同一個全域索引。 */
+export function storageIndexTag(): string {
+  return "storage:index";
+}
+
 /** 從完整 type key("<extId>.<typeName>")取出 extId 段(首個 "." 之前)。
  * extId / typeName 皆不含 ".",故以首個 "." 切割即安全;無 "." 時整串即 extId。 */
 export function extIdOfType(type: string): string {

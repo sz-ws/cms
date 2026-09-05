@@ -9,6 +9,7 @@ import { AdminShell, type AdminMenuItem } from "@/components/admin/AdminShell";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,21 @@ export default async function AdminLayout({
     }
   }
 
-  // Lazy fallback:節流的 core-jobs sweep(無 cron 環境的保底,見 src/lib/jobs.ts）。
-  // maybeRunJobs 全程 best-effort、永不 throw,節流時僅一次便宜的 settings 讀,
-  // 故不會拖慢 / 破壞 layout render。
-  await maybeRunJobs();
+  // Lazy fallback 不卡住 admin render:把保底 sweep 交給 waitUntil,在 response 之後完成。
+  //
+  // next dev 也走得到這條 —— initOpenNextCloudflareForDev() 會準備一份 context,
+  // getCloudflareContext() 不會 throw,只是它的 waitUntil 是 no-op。所以 dev 下 sweep
+  // 其實是一個沒人 await 的 floating promise;之所以無害,是因為 maybeRunJobs 內部
+  // 整個包在 try/catch,任何失敗只會 console.error,不會變成 unhandled rejection。
+  //
+  // 底下的同步 await 只在真的完全拿不到 Cloudflare context 時才會踩到(非 Worker、
+  // 非 dev 的執行環境),不是 next dev 的正常路徑。
+  const jobs = maybeRunJobs();
+  try {
+    getCloudflareContext().ctx.waitUntil(jobs);
+  } catch {
+    await jobs;
+  }
 
   const siteTitle = await getSetting<string>("core.siteTitle", "My Site");
   const brandLogo = await getSetting<string>("core.brandLogo", "");

@@ -29,11 +29,16 @@ function splitTo(to: string): { extId: string; typeName: string } | null {
   return { extId: to.slice(0, dot), typeName: to.slice(dot + 1) };
 }
 
-/** Load + parse the target extension's manifest and pull the referenced type. */
-async function loadTargetType(
+interface TargetMeta {
+  contentType: DeclarativeContentType;
+  detailBase: string | null;
+}
+
+/** 一次讀取、一次 parse，同時取得 target type 與公開 detail route base。 */
+async function loadTargetMeta(
   extId: string,
   typeName: string,
-): Promise<DeclarativeContentType | null> {
+): Promise<TargetMeta | null> {
   const rows = await db()
     .select({ manifest: declarativeExtensions.manifest })
     .from(declarativeExtensions)
@@ -49,25 +54,20 @@ async function loadTargetType(
   }
   const parsed = parseManifest(json);
   if (!parsed.ok || !parsed.manifest) return null;
-  return (
-    parsed.manifest.contentTypes?.find((c) => c.name === typeName) ?? null
+  const contentType = parsed.manifest.contentTypes?.find(
+    (content) => content.name === typeName,
   );
-}
-
-/** Detail-route base ("/gallery") for a type, or null if it has no detail route. */
-function detailBase(
-  manifestJson: unknown,
-  typeName: string,
-): string | null {
-  const parsed = parseManifest(manifestJson);
-  if (!parsed.ok || !parsed.manifest) return null;
+  if (!contentType) return null;
   const detail = (parsed.manifest.publicRoutes ?? []).find(
     (r) => r.contentType === typeName && r.view === "detail",
   );
-  if (!detail) return null;
-  const parts = detail.pattern.split("/").filter((s) => s.length > 0);
-  parts.pop(); // drop the trailing :slug segment
-  return `/${parts.join("/")}`;
+  let detailBase: string | null = null;
+  if (detail) {
+    const segments = detail.pattern.split("/").filter((s) => s.length > 0);
+    segments.pop(); // drop the trailing :slug segment
+    detailBase = `/${segments.join("/")}`;
+  }
+  return { contentType, detailBase };
 }
 
 /**
@@ -85,28 +85,12 @@ export async function resolveRelations(
   const parts = splitTo(to);
   if (!parts) return clean.map((id) => ({ id, title: id, href: null }));
 
-  const targetType = await loadTargetType(parts.extId, parts.typeName);
+  const target = await loadTargetMeta(parts.extId, parts.typeName);
   const fullType = `${parts.extId}.${parts.typeName}`;
   const provider = await getContentProvider();
 
-  // Re-read the manifest once for the detail base (loadTargetType already
-  // parsed it, but keep the concerns separate + cheap — one extra parse).
-  const rows = await db()
-    .select({ manifest: declarativeExtensions.manifest })
-    .from(declarativeExtensions)
-    .where(eq(declarativeExtensions.id, parts.extId))
-    .limit(1);
-  let base: string | null = null;
-  if (rows[0]?.manifest) {
-    try {
-      base = detailBase(JSON.parse(rows[0].manifest) as unknown, parts.typeName);
-    } catch {
-      base = null;
-    }
-  }
-
-  const titleField = targetType
-    ? pickTitleField(targetType.fields, targetType.slugField)
+  const titleField = target
+    ? pickTitleField(target.contentType.fields, target.contentType.slugField)
     : undefined;
 
   // N+1 caveat: one provider.get per id (bounded by the caller — a detail page
@@ -123,8 +107,8 @@ export async function resolveRelations(
       entry.slug ||
       entry.id;
     const href =
-      base && entry.slug && entry.status === "published"
-        ? `${base}/${entry.slug}`
+      target?.detailBase && entry.slug && entry.status === "published"
+        ? `${target.detailBase}/${entry.slug}`
         : null;
     return { id, title, href };
   });

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useReducer } from "react";
 import { useRouter } from "next/navigation";
+import { useT } from "@/lib/i18n/I18nProvider";
 import { ChevronUp, ChevronDown, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -25,6 +26,11 @@ import {
   type InsightConfigEntry,
   type InsightWidgetId,
 } from "@/lib/dashboard-insights-config";
+import {
+  initialInsightsEditState,
+  insightsEditReducer,
+  needsServerData,
+} from "./insights-edit";
 
 // roadmap: 「儀表板能不能自己選要放什麼」——composable-dashboard 方向的第一塊
 // 真正可編輯的地方(admin/page.tsx 原本的註解就講明拖拉/編輯模式/卡片調色盤
@@ -35,9 +41,9 @@ import {
 // 箭頭,不做自由拖拉——三個項目不值得為了拖放額外扛一個 DnD library。
 
 interface WidgetDataMap {
-  activity: TrendWidgetData;
+  activity?: TrendWidgetData;
   distribution: ProportionWidgetData;
-  storage: TrendWidgetData;
+  storage?: TrendWidgetData;
   /** null = 拿不到 DB 大小(如 build 期)—— 該卡片直接不渲染。 */
   database: ProportionWidgetData | null;
 }
@@ -46,11 +52,15 @@ interface DashboardInsightsProps {
   config: InsightConfigEntry[];
   widgetData: WidgetDataMap;
   defaultPresets: Record<InsightWidgetId, WidgetPresetId>;
+  /** 設定寫入是 admin only(PUT /api/settings 走 requireAuth("admin"))。
+   *  editor 也進得來 /admin,所以入口在這裡就要收掉 —— 否則按下去必吃 403。 */
+  canEdit: boolean;
   labels: {
     title: string;
     subtitle: string;
     edit: string;
     done: string;
+    cancel: string;
     show: string;
     hide: string;
     moveUp: string;
@@ -85,10 +95,12 @@ function renderWidget(
       />
     );
   }
+  const data = widgetData[entry.id];
+  if (!data) return null;
   return (
     <DashboardWidget
       preset={preset as (typeof TREND_PRESETS)[number]}
-      data={widgetData[entry.id] as TrendWidgetData}
+      data={data}
     />
   );
 }
@@ -174,55 +186,48 @@ export function DashboardInsights({
   config,
   widgetData,
   defaultPresets,
+  canEdit,
   labels,
 }: DashboardInsightsProps) {
   const router = useRouter();
-  const [localConfig, setLocalConfig] = useState(config);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const t = useT();
+  const [state, dispatch] = useReducer(
+    insightsEditReducer,
+    config,
+    initialInsightsEditState,
+  );
+  const localConfig = state.draft;
+  // canEdit 是最後一道:即使狀態被弄成 editing,沒有寫入權限就不顯示編輯 UI。
+  const editing = state.editing && canEdit;
+  const { saving, saveError } = state;
 
-  // database 可能沒有資料(build 期拿不到 D1 meta)—— 沒資料的 widget 不佔
-  // 版面(否則 grid 會留一個空格),但編輯模式仍列出(開關設定照存)。
+  // 隱藏的 widget 在 server 端根本不查資料；database 也可能因 build 期拿不到
+  // D1 meta 而沒有資料。兩者都不佔版面，但編輯模式仍列出完整開關。
   const enabled = localConfig.filter(
-    (e) => e.enabled && !(e.id === "database" && !widgetData.database),
+    (e) => e.enabled && widgetData[e.id] !== undefined && widgetData[e.id] !== null,
   );
   const [lead, ...rest] = enabled;
 
-  function toggle(id: InsightWidgetId) {
-    setLocalConfig((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)),
-    );
-  }
+  // 全部關掉、又沒有編輯權限:整段不渲染。留下標題加一句「點編輯開啟」對只能看的
+  // 人是死路 —— 那顆按鈕根本不在。
+  if (!canEdit && enabled.length === 0) return null;
 
-  function move(id: InsightWidgetId, dir: -1 | 1) {
-    setLocalConfig((prev) => {
-      const i = prev.findIndex((e) => e.id === id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-  }
-
-  function changePreset(id: InsightWidgetId, preset: WidgetPresetId) {
-    setLocalConfig((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, preset } : e)),
-    );
-  }
-
-  async function finishEditing() {
-    setSaving(true);
+  async function saveEditing() {
+    dispatch({ kind: "saveStarted" });
     try {
-      await fetch("/api/settings", {
+      const refreshNeeded = needsServerData(localConfig, config);
+      const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entries: { "core.dashboard.insights": localConfig } }),
       });
-      router.refresh();
-    } finally {
-      setSaving(false);
-      setEditing(false);
+      if (!response.ok) throw new Error("settings save failed");
+      // Reorder / preset / hide 都由 local state 完整反映，省掉一次全頁 RSC refresh。
+      // 只有從 hidden → visible 時，server 才需要補抓先前刻意沒查的 widget data。
+      if (refreshNeeded) router.refresh();
+      dispatch({ kind: "saveSucceeded" });
+    } catch {
+      dispatch({ kind: "saveFailed" });
     }
   }
 
@@ -235,26 +240,45 @@ export function DashboardInsights({
           </h2>
           <p className="text-[13px] text-black/40">{labels.subtitle}</p>
         </div>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => (editing ? finishEditing() : setEditing(true))}
-          className={cn(
-            "inline-flex h-9 items-center gap-1.5 rounded-[8px] px-3.5 text-[13px] font-medium transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50",
-            editing ? "bg-black text-white hover:bg-black/85" : "bg-black/[0.04] text-black/70 hover:bg-black/[0.07]",
-          )}
-        >
-          {editing ? (
-            <Check className="size-3.5" />
-          ) : (
-            <Pencil className="size-3.5" />
-          )}
-          {editing ? labels.done : labels.edit}
-        </button>
+        {canEdit && (
+          <div className="flex items-center gap-1">
+            {/* 取消:編輯模式唯一與存檔無關的出口。存檔失敗(editor 打 PUT 必吃
+                403、或斷線)時,沒有這顆就只能整頁重載才離得開。 */}
+            {editing && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => dispatch({ kind: "cancel", config })}
+                className="inline-flex h-9 items-center rounded-[8px] px-3 text-[13px] font-medium text-black/50 transition-colors hover:bg-black/[0.04] hover:text-black/80 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {labels.cancel}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                editing ? saveEditing() : dispatch({ kind: "open" })
+              }
+              className={cn(
+                "inline-flex h-9 items-center gap-1.5 rounded-[8px] px-3.5 text-[13px] font-medium transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50",
+                editing ? "bg-black text-white hover:bg-black/85" : "bg-black/[0.04] text-black/70 hover:bg-black/[0.07]",
+              )}
+            >
+              {editing ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Pencil className="size-3.5" />
+              )}
+              {editing ? labels.done : labels.edit}
+            </button>
+          </div>
+        )}
       </div>
 
+      {saveError && <p role="alert" className="text-sm text-destructive">{t("settingsWorkspace.saveFailedError")}</p>}
       {editing ? (
-        <div className="flex flex-col gap-2 rounded-[14px] bg-black/[0.02] p-2">
+        <fieldset disabled={saving} className="flex flex-col gap-2 rounded-[14px] bg-black/[0.02] p-2">
           {localConfig.map((entry, i) => (
             <EditRow
               key={entry.id}
@@ -262,12 +286,14 @@ export function DashboardInsights({
               index={i}
               total={localConfig.length}
               labels={labels}
-              onToggle={toggle}
-              onMove={move}
-              onPresetChange={changePreset}
+              onToggle={(id) => dispatch({ kind: "toggle", id })}
+              onMove={(id, dir) => dispatch({ kind: "move", id, dir })}
+              onPresetChange={(id, preset) =>
+                dispatch({ kind: "preset", id, preset })
+              }
             />
           ))}
-        </div>
+        </fieldset>
       ) : enabled.length === 0 ? (
         <p className="rounded-[14px] bg-black/[0.02] px-4 py-6 text-center text-[13px] text-black/40">
           {labels.empty}

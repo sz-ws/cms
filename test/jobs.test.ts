@@ -341,6 +341,22 @@ describe("runDueJobs — publish-due", () => {
 // ---- maybeRunJobs throttling ----
 
 describe("maybeRunJobs — throttling", () => {
+  it("does not duplicate jobs while the cron heartbeat is healthy", async () => {
+    const now = 9_000_000;
+    await insertContent({
+      id: "cron-owned",
+      status: "draft",
+      publishAt: now - 1,
+      data: { title: "Cron owns this window" },
+    });
+    await setSettings({ "ext.cron.lastTick": now - 30_000 });
+
+    await maybeRunJobs(now);
+
+    expect((await readRow("cron-owned"))?.status).toBe("draft");
+    expect(await getSetting<number>("core.jobs.lastSweep", 0)).toBe(0);
+  });
+
   it("no-ops within the sweep interval, then runs after it elapses", async () => {
     const base = 10_000_000;
     await insertContent({

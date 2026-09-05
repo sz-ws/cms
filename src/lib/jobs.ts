@@ -69,6 +69,26 @@ const SWEEP_INTERVAL_MS = 60_000;
 const lastRunKey = (jobId: string): string => `core.jobs.lastRun.${jobId}`;
 /** settings key:lazy fallback 最後一次 sweep 的 epoch ms(節流用)。 */
 const LAST_SWEEP_KEY = "core.jobs.lastSweep";
+/**
+ * cron extension 每次成功跑完的 heartbeat；新鮮時 lazy fallback 不重跑同一批 job。
+ *
+ * 寫的人是 extensions/cron/provider.ts 的 LAST_TICK_KEY(handleCallback 驗簽後
+ * set)。core 只讀不寫,兩邊靠這個字串字面量對上 —— core 沒有 import extension 的
+ * 權利,所以改名要兩處一起改。extension 沒裝 / 沒啟用時這個 key 永遠是 0,
+ * 也就是 fail-open:讀不到 heartbeat 就當 cron 不健康,lazy sweep 照跑。壞掉的方向
+ * 是「多跑一次 sweep」而不是「job 停擺」。
+ */
+const LAST_CRON_TICK_KEY = "ext.cron.lastTick";
+/**
+ * 容忍一次 cron jitter；超過兩個排程週期沒 heartbeat 才啟動 fallback。
+ *
+ * 這裡的「兩個週期」= 2 分鐘,前提是 cron trigger 至少每 2 分鐘觸發一次 ——
+ * wrangler.jsonc 出貨的 `triggers.crons` 是每分鐘一次的 `* * * * *`,成立。改成
+ * 每 5 分鐘一次(該檔註解裡「要更省可調成」的那個值)之後,每 5 分鐘裡有 3 分鐘
+ * heartbeat 是過期的,這道 gate 大多數時間形同不存在:lazy sweep 會照它自己的
+ * 60 秒節流繼續跑。要放寬排程頻率就要連這個窗一起放大。
+ */
+const CRON_HEALTH_WINDOW_MS = SWEEP_INTERVAL_MS * 2;
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -525,6 +545,7 @@ const CORE_JOBS: readonly CoreJob[] = [
  */
 export async function runDueJobs(now: number = Date.now()): Promise<JobRunReport[]> {
   const reports: JobRunReport[] = [];
+  const bookkeeping: Record<string, number> = {};
   for (const job of CORE_JOBS) {
     let result: JobRunResult;
     try {
@@ -533,13 +554,15 @@ export async function runDueJobs(now: number = Date.now()): Promise<JobRunReport
       // 失敗隔離:記錄後續跑,絕不中斷其他任務。
       result = { ok: false, detail: errorMessage(e) };
     }
-    // lastRun bookkeeping(best-effort:記帳失敗不影響任務結果回報)。
-    try {
-      await setSettings({ [lastRunKey(job.id)]: now });
-    } catch (e) {
-      console.error("[jobs] lastRun bookkeeping failed", job.id, e);
-    }
+    bookkeeping[lastRunKey(job.id)] = now;
     reports.push({ id: job.id, ...result });
+  }
+  // 四支 job 的 lastRun 一次 D1 batch 寫完，也只觸發一次 settings cache/hook。
+  // bookkeeping 仍是 best-effort：失敗不改變各 job 的真實執行結果。
+  try {
+    await setSettings(bookkeeping);
+  } catch (e) {
+    console.error("[jobs] lastRun bookkeeping batch failed", e);
   }
   return reports;
 }
@@ -553,16 +576,23 @@ export async function runDueJobs(now: number = Date.now()): Promise<JobRunReport
 let knownLastSweep = 0;
 
 /**
- * Lazy fallback 的節流 sweep。距上次 sweep 未滿 SWEEP_INTERVAL_MS 即 no-op(同 isolate
- * 內零 DB 讀;跨 isolate 首次才付一次便宜的 settings 讀)。**永不 throw**(全程
- * best-effort try/catch),故可安全嵌入 server component render。競態容忍:先寫
- * lastSweep 再跑,最壞情況兩次併發 sweep 同時進來——publish-due 本身冪等,可容忍重跑一次。
+ * Lazy fallback 的節流 sweep。最近兩分鐘有成功 cron heartbeat 時直接 no-op，避免
+ * cron 與第一個 admin request 重跑同一批 job。沒有健康 cron 才依 lastSweep 節流。
+ * **永不 throw**；競態容忍：先寫 lastSweep 再跑，publish-due 本身冪等。
  */
 export async function maybeRunJobs(now: number = Date.now()): Promise<void> {
   try {
     // in-memory 前擋:已知上次 sweep 在間隔內 → 連 settings 讀都不用。
     if (now - knownLastSweep <= SWEEP_INTERVAL_MS) return;
-    const lastSweep = await getSetting<number>(LAST_SWEEP_KEY, 0);
+    // 兩次 getSetting 共用同一份 request-cached settings Map，不會多一次全表讀。
+    const [lastSweep, lastCronTick] = await Promise.all([
+      getSetting<number>(LAST_SWEEP_KEY, 0),
+      getSetting<number>(LAST_CRON_TICK_KEY, 0),
+    ]);
+    if (now - (lastCronTick ?? 0) <= CRON_HEALTH_WINDOW_MS) {
+      knownLastSweep = Math.max(knownLastSweep, lastCronTick ?? 0);
+      return;
+    }
     knownLastSweep = lastSweep ?? 0;
     if (now - knownLastSweep <= SWEEP_INTERVAL_MS) return;
     // 先記帳(縮短併發窗)再執行。

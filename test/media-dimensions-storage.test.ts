@@ -68,6 +68,11 @@ vi.mock("@/lib/cf", () => ({ getStorage: () => fakeBucket }));
 vi.mock("@/ext/loader", () => ({
   getExtRuntime: async () => ({ hooks: { doAction: async () => {} } }),
 }));
+// put/delete 現在會失效 dashboard storage snapshot；此檔只驗 R2 metadata，
+// 沒有 Next request cache scope，故把失效器打樁掉避免無關的 stderr。
+vi.mock("@/ext/dx/cache-invalidate", () => ({
+  revalidateStorageIndex: () => {},
+}));
 
 import { putFile, headFile, listFiles } from "@/lib/storage";
 

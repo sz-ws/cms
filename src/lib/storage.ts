@@ -113,6 +113,19 @@ function makeKey(scope: string, filename: string): string {
   return `${scope}/${yyyy}/${mm}/${nanoid()}.${safeExt(filename)}`;
 }
 
+/**
+ * storage 是低頻 mutation、高頻 dashboard read；成功寫入後才精準失效統計 snapshot。
+ * 動態 import 避免 storage 基礎模組把 next/cache 拉進 scheduled/build 路徑。
+ */
+async function invalidateStorageIndex(): Promise<void> {
+  try {
+    const { revalidateStorageIndex } = await import("@/ext/dx/cache-invalidate");
+    revalidateStorageIndex();
+  } catch (error) {
+    console.error("[storage:cache] failed to load cache invalidator", error);
+  }
+}
+
 export async function putFile(
   scope: string, // "core" 或 extId
   filename: string, // 原始檔名(只取副檔名)
@@ -142,6 +155,7 @@ export async function putFile(
     ...(normalized ? { alt: normalized } : {}),
     ...dims,
   };
+  await invalidateStorageIndex();
   // storage:uploaded hook(03 §1:({ key, size, contentType }))。
   // 動態 import 打破循環相依(見檔頭註解)。
   const { getExtRuntime } = await import("@/ext/loader");
@@ -174,6 +188,7 @@ export async function headFile(key: string): Promise<StoredFile | null> {
 
 export async function deleteFile(key: string): Promise<void> {
   await getStorage().delete(key);
+  await invalidateStorageIndex();
 }
 
 export async function listFiles(

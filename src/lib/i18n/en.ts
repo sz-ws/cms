@@ -87,6 +87,7 @@ export const en = {
   "dashboard.widgets.databaseQuota": "quota",
   "dashboard.widgets.edit": "Edit",
   "dashboard.widgets.done": "Done",
+  "dashboard.widgets.cancel": "Cancel",
   "dashboard.widgets.show": "Shown",
   "dashboard.widgets.hide": "Hidden",
   "dashboard.widgets.moveUp": "Move up",

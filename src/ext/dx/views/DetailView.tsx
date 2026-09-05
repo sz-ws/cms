@@ -49,6 +49,8 @@ export async function DetailView({
   const locale = await getLocale();
   const def = toTypeDef(extId, contentType);
   // public 匿名讀取:走 tagged data cache(content:<type> / ext:<extId>),mutation 精準失效。
+  // core.locale 是管理介面語言；公開 route 尚未携帶內容 locale，不能用它過濾
+  // entry，否則切換後台語言會讓既有文章變成 404。與 ListView 保持同一查詢語意。
   const entry = await cachedPublicGetBySlug(extId, def.type, slug);
   if (!entry || entry.status !== "published") notFound();
 

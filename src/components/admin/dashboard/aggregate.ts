@@ -7,11 +7,13 @@ import {
   listDeclarativeTypes,
   type DeclarativeTypeInfo,
 } from "@/ext/dx/type-directory";
-import { getContentProvider } from "@/ext/dx/runtime";
 import { displayValue } from "@/ext/dx/views/field-utils";
-import type { ContentProvider } from "@/ext/capabilities";
 import { getLocale } from "@/lib/i18n/server";
 import type { Locale } from "@/lib/i18n/index";
+import {
+  getDashboardContentSnapshot,
+  type DashboardRecentRow,
+} from "./snapshot";
 
 // Task #4: server-side aggregation for the content-aware dashboard. Everything
 // here is driven by the enabled declarative extensions + the ContentProvider,
@@ -24,7 +26,6 @@ import type { Locale } from "@/lib/i18n/index";
 // declarative in a later task. We deliberately do not special-case any single
 // extension.
 
-const RECENT_PER_TYPE = 10; // cap per-type fetch for the recent list (no unbounded N+1)
 const RECENT_TOTAL = 9; // final merged recent-entries count
 
 /** One declarative content type, resolved to its full type key + owning ext. */
@@ -75,66 +76,39 @@ function titleFieldKey(ct: DeclarativeContentType): string {
   );
   if (byslug) return byslug.key;
   const firstText = ct.fields.find((f) => f.type === "text");
-  return (firstText ?? ct.fields[0]).key;
+  // 沒有任何欄位的型別回空字串而不是炸掉:這個 key 現在對「全部」型別都會算一次
+  // (要餵給 snapshot 做 data 裁切),不再只算有 recent 列的那些。
+  return (firstText ?? ct.fields[0])?.key ?? "";
 }
 
-/** total + published counts for a type via two capped count queries
- * (perPage:1 so we only read the `total`, never materialise rows). */
-async function statsFor(
-  provider: ContentProvider,
+/** Snapshot row → dashboard recent card。 */
+function recentFromSnapshot(
+  entry: DashboardRecentRow,
   t: DashboardType,
-): Promise<DashboardTypeStats> {
-  const [all, pub] = await Promise.all([
-    provider.query(t.typeKey, { perPage: 1, page: 1 }),
-    provider.query(t.typeKey, {
-      filter: { status: "published" },
-      perPage: 1,
-      page: 1,
-    }),
-  ]);
-  const total = all.total;
-  const published = pub.total;
-  return { ...t, total, published, drafts: Math.max(0, total - published) };
-}
-
-/** Newest entries for one type (capped), mapped to RecentEntry. */
-async function recentFor(
-  provider: ContentProvider,
-  t: DashboardType,
-): Promise<RecentEntry[]> {
-  const { items } = await provider.query(t.typeKey, {
-    sort: { field: "updatedAt", dir: "desc" },
-    perPage: RECENT_PER_TYPE,
-    page: 1,
-  });
+): RecentEntry {
   const titleKey = titleFieldKey(t.contentType);
   const titleField = t.contentType.fields.find((f) => f.key === titleKey);
-  return items.map((entry) => {
-    const raw = entry.data[titleKey];
-    const title = titleField
-      ? displayValue(titleField, raw).trim()
-      : String(raw ?? "");
-    return {
-      id: entry.id,
-      title: title.length > 0 ? title : "Untitled",
-      typeLabel: t.typeLabel,
-      extName: t.extName,
-      status: entry.status,
-      updatedAt: entry.updatedAt,
-      editHref: `${t.collectionHref}/edit?id=${encodeURIComponent(entry.id)}`,
-    };
-  });
+  const raw = entry.data[titleKey];
+  const title = titleField
+    ? displayValue(titleField, raw).trim()
+    : String(raw ?? "");
+  return {
+    id: entry.id,
+    title: title.length > 0 ? title : "Untitled",
+    typeLabel: t.typeLabel,
+    extName: t.extName,
+    status: entry.status,
+    updatedAt: entry.updatedAt,
+    editHref: `${t.collectionHref}/edit?id=${encodeURIComponent(entry.id)}`,
+  };
 }
 
 /**
  * Aggregate the whole dashboard server-side.
  *
- * Query count: ~2 count queries per type (total + published) + 1 list query per
- * type for the recent feed + 1 users count. For N content types that is O(N)
- * round-trips — fine at admin scale on D1. SCALING CAVEAT: if a deployment ever
- * has many dozens of content types this fans out linearly; a future
- * optimisation could push the per-type totals into a single GROUP BY over
- * `contents.type`/`status` and merge the recent feed with one windowed query.
+ * Query count:content counts + recent 固定走一次 D1 batch(兩條 statement)，不再隨
+ * content type 數量線性成長；user count 保留一條即時查詢，避免 user mutation 還要
+ * 多維護一套 dashboard cache invalidation。
  */
 export async function getDashboardData(): Promise<DashboardData> {
   // Ensure the extension runtime is warm (hooks/registry) — harmless, and keeps
@@ -142,22 +116,40 @@ export async function getDashboardData(): Promise<DashboardData> {
   await getExtRuntime();
 
   const locale = await getLocale();
-  const [types, provider, userRows] = await Promise.all([
+  const [types, userRows] = await Promise.all([
     listDashboardTypes(locale),
-    getContentProvider(),
     db().select({ n: sql<number>`count(*)` }).from(users),
   ]);
 
   const userCount = userRows[0]?.n ?? 0;
+  // 一起把標題欄位 key 交給 snapshot:recent 卡片只讀得到這一格,讓查詢端當場把
+  // document 裁到只剩它,快取裡就不會躺著一份草稿內文(見 snapshot.pickTitleOnly)。
+  const snapshot = await getDashboardContentSnapshot(
+    types.map((type) => ({
+      typeKey: type.typeKey,
+      titleKey: titleFieldKey(type.contentType),
+    })),
+  );
+  const countByType = new Map(snapshot.counts.map((row) => [row.type, row]));
+  const typeByKey = new Map(types.map((type) => [type.typeKey, type]));
 
-  const [statList, recentLists] = await Promise.all([
-    Promise.all(types.map((t) => statsFor(provider, t))),
-    Promise.all(types.map((t) => recentFor(provider, t))),
-  ]);
-
-  const recent = recentLists
-    .flat()
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+  const statList: DashboardTypeStats[] = types.map((type) => {
+    const count = countByType.get(type.typeKey);
+    const total = count?.total ?? 0;
+    const published = count?.published ?? 0;
+    return {
+      ...type,
+      total,
+      published,
+      drafts: Math.max(0, total - published),
+    };
+  });
+  const recent = snapshot.recent
+    .map((entry) => {
+      const type = typeByKey.get(entry.type);
+      return type ? recentFromSnapshot(entry, type) : null;
+    })
+    .filter((entry): entry is RecentEntry => entry !== null)
     .slice(0, RECENT_TOTAL);
 
   const totalEntries = statList.reduce((s, t) => s + t.total, 0);

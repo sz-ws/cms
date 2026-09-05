@@ -21,6 +21,7 @@ import { getExtRuntime } from "@/ext/loader";
 import { resolveDashboardCards } from "@/ext/dx/dashboard-cards";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { getSetting } from "@/lib/settings";
+import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,7 @@ export default async function DashboardPage() {
     subtitle: m["dashboard.widgets.subtitle"],
     edit: m["dashboard.widgets.edit"],
     done: m["dashboard.widgets.done"],
+    cancel: m["dashboard.widgets.cancel"],
     show: m["dashboard.widgets.show"],
     hide: m["dashboard.widgets.hide"],
     moveUp: m["dashboard.widgets.moveUp"],
@@ -151,16 +153,32 @@ export default async function DashboardPage() {
   //   · 資料庫用量:D1 有真實 hard limit(free 500MB / paid 10GB,超過寫不進去),
   //     所以與 storage(R2 無配額)相反,progress-ring 是正確的預設 —— 平常安靜,
   //     接近上限時一眼看得出來。方案由 core.d1.plan 設定(free|paid,預設 free)。
+  // 先讀使用者的 widget 開關，再決定要不要打 D1/R2。舊路徑先把四份資料全抓完
+  // 才讀 config，導致已隱藏的 storage 卡仍最多做 5 次 R2 ListObjects。
+  const insightConfig = normalizeInsightConfig(
+    await getSetting<unknown>("core.dashboard.insights", []),
+  );
+  const insightEnabled = (id: (typeof insightConfig)[number]["id"]) =>
+    insightConfig.some((entry) => entry.id === id && entry.enabled);
+
   const [weeklyActivity, storageStats, dbStats, d1PlanRaw] = data.hasTypes
     ? await Promise.all([
-        getWeeklyActivity(data.now),
-        getStorageStats(),
-        getDatabaseStats(),
-        getSetting<string>("core.d1.plan", "free"),
+        insightEnabled("activity") ? getWeeklyActivity(data.now) : null,
+        insightEnabled("storage") ? getStorageStats() : null,
+        insightEnabled("database") ? getDatabaseStats() : null,
+        insightEnabled("database")
+          ? getSetting<string>("core.d1.plan", "free")
+          : "free",
       ])
     : [null, null, null, "free"];
   const d1Plan: D1Plan = d1PlanRaw === "paid" ? "paid" : "free";
   const d1Quota = D1_QUOTA_BYTES[d1Plan];
+
+  // 洞察區的編輯模式寫的是 core.dashboard.insights,而 PUT /api/settings 是
+  // requireAuth("admin")。editor 進得來這頁(layout 只擋 guest),所以權限要在這裡
+  // 判,不然按下編輯只會走到一個必定 403 的死路。getSessionUser 有 React cache(),
+  // layout 這個 request 已經呼叫過,這裡不會多一次查詢。
+  const canEditInsights = (await getSessionUser())?.role === "admin";
 
   const distributionData: ProportionWidgetData | null = data.hasTypes
     ? {
@@ -173,13 +191,6 @@ export default async function DashboardPage() {
       }
     : null;
   const distributionPreset = data.types.length > 4 ? "bar-list" : "donut";
-
-  // roadmap:Insights 區的顯示/順序/preset 是使用者可編輯的(DashboardInsights
-  // 編輯模式),存在 core.dashboard.insights;normalizeInsightConfig 對齊目前已
-  // 知的 widget id 集合(見 lib/dashboard-insights-config.ts)。
-  const insightConfig = normalizeInsightConfig(
-    await getSetting<unknown>("core.dashboard.insights", []),
-  );
 
   const quickOptions = data.types.map((t) => ({
     label: t.typeLabel,
@@ -321,22 +332,30 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      {distributionData && weeklyActivity && storageStats && (
+      {distributionData && (
         <DashboardInsights
           config={insightConfig}
+          canEdit={canEditInsights}
           widgetData={{
-            activity: {
-              ...weeklyActivity,
-              label: labels.widgets.activity,
-              delta: weeklyActivity.delta
-                ? { ...weeklyActivity.delta, caption: labels.widgets.activityCaption }
-                : undefined,
-            },
+            activity: weeklyActivity
+              ? {
+                  ...weeklyActivity,
+                  label: labels.widgets.activity,
+                  delta: weeklyActivity.delta
+                    ? {
+                        ...weeklyActivity.delta,
+                        caption: labels.widgets.activityCaption,
+                      }
+                    : undefined,
+                }
+              : undefined,
             distribution: distributionData,
-            storage: {
-              label: `${labels.widgets.storage} · ${storageStats.fileCount}${storageStats.truncated ? "+" : ""} ${labels.widgets.storageMore}`,
-              value: formatBytes(storageStats.totalBytes),
-            },
+            storage: storageStats
+              ? {
+                  label: `${labels.widgets.storage} · ${storageStats.fileCount}${storageStats.truncated ? "+" : ""} ${labels.widgets.storageMore}`,
+                  value: formatBytes(storageStats.totalBytes),
+                }
+              : undefined,
             database: dbStats
               ? {
                   label: `${labels.widgets.database} · ${labels.widgets.databaseQuota} ${formatBytes(d1Quota)}`,
