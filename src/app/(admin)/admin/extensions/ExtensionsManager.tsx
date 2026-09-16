@@ -138,6 +138,11 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
         setError(t("extensions.notAllowed"));
       } else if (res.status === 500 && action === "enable") {
         setError(t("extensions.enableIncomplete"));
+      } else if (res.status === 409) {
+        // 相依或 canDisable 守門(src/ext/code-lifecycle.ts)回的是給人看的原因,
+        // 例如「請先啟用必要插件:wallet, inventory」—— 直接顯示,不要縮成「操作失敗」。
+        const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        setError(typeof body?.error === "string" && body.error ? body.error : t("extensions.actionFailed"));
       } else {
         setError(t("extensions.actionFailed"));
       }
