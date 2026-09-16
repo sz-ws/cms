@@ -62,7 +62,16 @@ beforeEach(async () => {
 
 describe("listAgentAudit", () => {
   it("returns newest first and maps ok/result/error faithfully", async () => {
-    await seed(3, (i) => ({ tool: `t.${i}`, ok: i !== 1 }));
+    // Real writes may share a millisecond, where UUID (not insertion order) is
+    // the documented tiebreaker. This case needs strictly increasing timestamps;
+    // the separate keyset test below covers equal timestamps.
+    let at = 1_700_000_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => at++);
+    try {
+      await seed(3, (i) => ({ tool: `t.${i}`, ok: i !== 1 }));
+    } finally {
+      clock.mockRestore();
+    }
     const page = await listAgentAudit();
     expect(page.rows.map((r) => r.tool)).toEqual(["t.2", "t.1", "t.0"]);
     expect(page.nextCursor).toBeNull();
