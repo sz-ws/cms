@@ -1,3 +1,4 @@
+import { resolveManagedOrder } from "./managed";
 import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { isManualPaymentProvider } from "../payment-kit/manual";
@@ -51,6 +52,7 @@ export function createTransferReportHandler(opts: { table: string }) {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
 
+    if (await resolveManagedOrder(_ctx.services, opts.table, body.orderNo)) return Response.json({ ok: false, error: "請登入會員訂單中心回報匯款" }, { status: 409 });
     const extras = {
       transferLast5: body.last5,
       transferReportedAt: Date.now(),
@@ -109,6 +111,7 @@ export function createTransferVerifyHandler(opts: {
     }
 
     const orderNo = params.orderNo ?? "";
+    if (await resolveManagedOrder(ctx.services, opts.table, orderNo)) return Response.json({ ok: false, error: "請至商城營運處理此訂單" }, { status: 409 });
     const order = await getOrder(ctx.services, opts.table, orderNo);
     if (!order) {
       return Response.json({ ok: false, error: "not_found" }, { status: 404 });

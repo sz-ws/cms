@@ -1,3 +1,5 @@
+import { getDB } from "@/lib/cf";
+import { ExtensionLifecycleConflict, assertCodeDependencies, writeCodeEnabled, writeCodeDisabled } from "./code-lifecycle";
 import { and, eq, like, notLike, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { db } from "@/lib/db";
@@ -94,6 +96,8 @@ export async function enableExtension(extId: string): Promise<void> {
     throw new CoreApiIncompatible(extId, ext.coreApi);
   }
 
+  await assertCodeDependencies(getDB(), ext, registry);
+
   // 2. 執行未套用的 migrations(原子性)
   await runMigrations(extId, ext.migrations ?? []);
 
@@ -109,19 +113,7 @@ export async function enableExtension(extId: string): Promise<void> {
 
   // 4. upsert extensions 表:enabled=1, version, updated_at=now(首次同時填 installed_at)。
   //    硬規則:ON CONFLICT DO UPDATE 的 SET 子句不得包含 installed_at。
-  await db()
-    .insert(extensions)
-    .values({
-      id: extId,
-      enabled: 1,
-      version: ext.version,
-      installedAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: extensions.id,
-      set: { enabled: 1, version: ext.version, updatedAt: now },
-    });
+  await writeCodeEnabled(getDB(), ext, registry, now);
 
   // memo 主動失效(belt-and-braces;跨 isolate 靠 stamp)。
   invalidateExtRuntimeMemo();
@@ -139,11 +131,8 @@ export async function enableExtension(extId: string): Promise<void> {
 
 export async function disableExtension(extId: string): Promise<void> {
   // update enabled=0 → doAction("ext:disabled")。不動資料表、不動 settings。
-  findManifest(extId); // 不存在 → ExtNotFound
-  await db()
-    .update(extensions)
-    .set({ enabled: 0, updatedAt: Date.now() })
-    .where(eq(extensions.id, extId));
+  const ext = findManifest(extId);
+  await writeCodeDisabled(getDB(), ext, registry, Date.now());
 
   invalidateExtRuntimeMemo();
   // 該 extension 的 public content cache 整批失效(disable 後不應再回舊資料)。
@@ -155,6 +144,7 @@ export async function disableExtension(extId: string): Promise<void> {
 
 export async function uninstallExtension(extId: string): Promise<void> {
   const ext = findManifest(extId);
+  if (ext.canUninstall === false) throw new ExtensionLifecycleConflict("此插件保留帳務與訂單歷史，請使用停用功能");
 
   // 先 disable
   await disableExtension(extId);

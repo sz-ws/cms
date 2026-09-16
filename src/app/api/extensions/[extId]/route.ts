@@ -1,3 +1,4 @@
+import { ExtensionLifecycleConflict } from "@/ext/code-lifecycle";
 import { z } from "zod";
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
@@ -59,6 +60,9 @@ export async function PATCH(
     else if (parsed.action === "disable") await disableExtension(extId);
     else await uninstallExtension(extId);
   } catch (e) {
+    if (e instanceof ExtensionLifecycleConflict) {
+      return Response.json({ error: e.message }, { status: 409 });
+    }
     if (e instanceof ExtNotFound) {
       return Response.json({ error: "not_found" }, { status: 404 });
     }

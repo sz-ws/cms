@@ -588,4 +588,8 @@
 //   consume `usage` 的 code extension 應宣告 coreApi "^1.34.0":更舊的 core 上這個
 //   欄位不存在,讀到的永遠是 undefined —— 而 undefined 在這個型別裡的意思是「上游
 //   沒回報」,於是降級會偽裝成一份「上游都不給用量」的假資料,沒有任何錯誤訊息。
-export const CORE_API_VERSION = "1.34.0";
+// 1.35.0: ledger-kit exact units and atomic, replay-safe local D1 reservations.
+// Ledger-backed extensions are opt-in; no default registry or core tables change.
+// 1.36.0: atomic extension-owned records alongside ledger reservations.
+// 1.37.0: opt-in managed commerce delegation and queryable payment receipts.
+export const CORE_API_VERSION = "1.37.0";

@@ -1,3 +1,5 @@
+import { sql } from "drizzle-orm";
+import type { ManagedCommerceProvider } from "./managed";
 import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
 import type { ApiCtx } from "../types";
@@ -111,6 +113,11 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
     _params: Record<string, string>,
     ctx: ApiCtx,
   ): Promise<Response> {
+    const managed = ctx.services.providers.getById<ManagedCommerceProvider>("commerce:orders", opts.table);
+    if (managed) return managed.checkout(req, ctx);
+    const managedSchema = await ctx.services.db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${`${opts.table}_managed`}`);
+    if (managedSchema) return Response.json({ ok: false, error: "商城營運插件未啟用，暫停結帳" }, { status: 503 });
+
     // 公開端點,session 不存在 → 以 IP 為 rate-limit key(callback route 前例)。
     const ip = req.headers.get("cf-connecting-ip") ?? "local";
     if (

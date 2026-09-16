@@ -62,6 +62,11 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     };
   }
 
+  async getStatus(orderNo: string) {
+    const row = await this.opts.services.db.get<{ status: "pending" | "paid" | "failed"; amount: number }>(sql`SELECT status, amount FROM ${sql.raw(this.opts.table)} WHERE order_no = ${orderNo}`);
+    return row ?? null;
+  }
+
   async createCheckout(req: CheckoutRequest): Promise<CheckoutSession> {
     const urls = await this.buildUrls();
     const session = await this.opts.adapter.buildCheckout(req, urls);
@@ -74,7 +79,10 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
       VALUES
         (${req.orderNo}, ${req.amount}, ${req.description.trim()},
          ${req.email ?? null}, 'pending', ${now}, ${now})
+      ON CONFLICT(order_no) DO NOTHING
     `);
+    const existing = await this.opts.services.db.get<{ amount: number; description: string; email: string | null }>(sql`SELECT amount, description, email FROM ${sql.raw(this.opts.table)} WHERE order_no = ${req.orderNo}`);
+    if (!existing || existing.amount !== req.amount || existing.description !== req.description.trim() || existing.email !== (req.email ?? null)) return { ok: false, error: "idempotency_conflict" };
     return session;
   }
 

@@ -105,6 +105,8 @@ export type CheckoutSession =
   | { ok: false; error: string };
 
 export interface PaymentProvider {
+  /** 1.37.0: authoritative local payment status, for retry and reconciliation. */
+  getStatus?(orderNo: string): Promise<{ status: "pending" | "paid" | "failed"; amount: number } | null>;
   createCheckout(req: CheckoutRequest): Promise<CheckoutSession>;
 }
 

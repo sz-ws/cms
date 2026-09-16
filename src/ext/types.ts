@@ -123,6 +123,12 @@ export interface Extension {
       brand?: string;
     };
   };
+  /** 1.36.0: enabled code extensions required for this extension. */
+  requiresExtensions?: string[];
+  /** Trusted SQL predicate, evaluated atomically with disabling. No user SQL. */
+  canDisable?: { sql: string; message: string };
+  /** Persistent financial plugins may permit disabling but forbid destructive uninstall. */
+  canUninstall?: boolean;
   migrations?: ExtMigration[];
   settings?: SettingField[];
   adminPages?: AdminPage[];
@@ -381,6 +387,9 @@ const manifestSchema = z
     version: z.string().regex(SEMVER_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(RANGE_RE, "invalid coreApi range"),
     description: localizedStringSchema.optional(),
+    canUninstall: z.boolean().optional(),
+    requiresExtensions: z.array(z.string().regex(ID_RE)).max(20).optional(),
+    canDisable: z.object({ sql: z.string().min(1).refine((sql) => !/;|--|\/\*|\*\//.test(sql), "invalid disable predicate"), message: z.string().min(1).max(300) }).strict().optional(),
     migrations: z.array(migrationSchema).optional(),
     uninstall: z.array(migrationSchema).optional(),
     settings: z.array(settingSchema).optional(),
@@ -421,6 +430,10 @@ const manifestSchema = z
       });
     };
 
+    if (ext.canUninstall !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.37.0")) ctx.addIssue({ code: "custom", message: "uninstall protection requires coreApi >= 1.37.0", path: ["coreApi"] });
+    duplicate(ext.requiresExtensions ?? [], "requiresExtensions", "required extension");
+    if (ext.requiresExtensions?.includes(ext.id)) ctx.addIssue({ code: "custom", message: "extension cannot depend on itself", path: ["requiresExtensions"] });
+    if ((ext.requiresExtensions?.length || ext.canDisable) && !rangeStartsAtOrAfter(ext.coreApi, "1.36.0")) ctx.addIssue({ code: "custom", message: "lifecycle guards require coreApi >= 1.36.0", path: ["coreApi"] });
     duplicate((ext.settings ?? []).map((item) => item.key), "settings", "setting key");
     duplicate((ext.migrations ?? []).map((item) => item.id), "migrations", "migration id");
     duplicate((ext.uninstall ?? []).map((item) => item.id), "uninstall", "uninstall migration id");

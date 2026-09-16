@@ -1,3 +1,4 @@
+import { resolveManagedOrder } from "./managed";
 import { sql } from "drizzle-orm";
 import type { CoreServices } from "../services";
 import {
@@ -220,6 +221,8 @@ export async function transitionOrder(
   extras: TransitionExtras = {},
 ): Promise<boolean> {
   assertTable(table);
+  const managed = await resolveManagedOrder(deps, table, orderNo);
+  if (managed) return managed.transition(orderNo, to, extras);
   const sources = transitionSources(to);
   if (sources.length === 0) return false; // 防禦:目前每個狀態都有至少一個來源
   const sourceList = sql.join(
