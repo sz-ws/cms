@@ -4,6 +4,12 @@ import { db } from "@/lib/db";
 import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
 import { CartView } from "./CartView";
 import { CheckoutView } from "./CheckoutView";
+import {
+  CHECKOUT_NOTICE_KEY,
+  REFERRAL_MODE_KEY,
+  REQUIRE_CONTACT_KEY,
+  resolveCheckoutOptions,
+} from "./checkout-options";
 
 // 商店公開頁(server 殼):/shop/cart 與 /shop/checkout。
 // 內容本體是 client 元件(購物車在 localStorage);這裡只讀設定決定付款方式
@@ -50,18 +56,43 @@ export function ShopCartPage() {
 }
 
 export async function ShopCheckoutPage() {
-  const [cardProvider, transferProvider, shippingRaw, promos] = await Promise.all([
+  const [
+    cardProvider,
+    transferProvider,
+    shippingRaw,
+    promos,
+    referralMode,
+    requireContact,
+    checkoutNotice,
+  ] = await Promise.all([
     getSetting<string>("ext.shop.cardProvider", ""),
     getSetting<string>("ext.shop.transferProvider", ""),
     getSetting<string>("ext.shop.shippingConfig", ""),
     // 優惠碼欄位只在店家真的建過碼時出現(空店不擺一個永遠沒用的輸入框)。
     listPromos({ db: db() }, "ext_shop_promos"),
+    // 結帳頁開關;原始值交給 resolveCheckoutOptions 正規化(壞值退回預設)。
+    getSetting<unknown>(REFERRAL_MODE_KEY, "field"),
+    getSetting<unknown>(REQUIRE_CONTACT_KEY, false),
+    getSetting<unknown>(CHECKOUT_NOTICE_KEY, ""),
   ]);
   // 運費設定與結帳 handler 走同一個 parse(壞設定 → 未啟用,不擋結帳)。
   const shippingConfig = parseShippingConfig(shippingRaw);
+  const { getExtRuntime } = await import("@/ext/loader");
+  const { getSessionUser } = await import("@/lib/auth");
+  // 受管訂單:shop-operations 啟用即委派(commerce-kit 依 provider 判斷,shop 端
+  // 沒有開關 —— 理由見 checkout-options.ts 檔頭與 README「商城營運模式」)。
+  const managedOrders = !!(await getExtRuntime()).byId("shop-operations");
+  const options = resolveCheckoutOptions({
+    managedOrders,
+    signedIn: managedOrders && !!(await getSessionUser()),
+    referralMode,
+    requireContact,
+    checkoutNotice,
+  });
   return (
     <PageShell title="結帳" backHref="/shop/cart" backLabel="回購物車">
       <CheckoutView
+        {...options}
         cardEnabled={Boolean(cardProvider.trim())}
         transferEnabled={Boolean(transferProvider.trim())}
         shippingConfig={shippingConfig}

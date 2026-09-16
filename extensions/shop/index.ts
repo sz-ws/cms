@@ -1,3 +1,5 @@
+import { shopMigrations } from "./schema";
+import { SHOP_CHECKOUT_SETTINGS } from "./checkout-options";
 import { defineExtension } from "@/ext/types";
 import type { ApiCtx } from "@/ext/types";
 import { db } from "@/lib/db";
@@ -35,6 +37,11 @@ import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 //     settleManual → payment:succeeded → 訂單 paid。
 // 兩條路對訂單而言完全同構 —— 都只靠下方那一個 hook。
 //
+// 受管訂單(0.2.0):裝了 shop-operations(私有插件)並啟用,commerce-kit 的結帳
+// handler 會把整筆結帳交給它的 `commerce:orders` provider(原子庫存、會員查單、
+// 對帳、推薦佣金)。shop 這邊不做判斷、沒有開關 —— 結帳頁只依插件啟用狀態切換
+// 表單(需登入、電話與地址必填、推薦碼欄位)。三個結帳頁開關在 checkout-options.ts。
+//
 // 不預裝(newebpay 前例):要用的站自行加進 extensions/registry.ts。
 
 const ORDERS_TABLE = "ext_shop_orders";
@@ -57,7 +64,7 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.1.0",
+  version: "0.2.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -83,61 +90,11 @@ export const shop = defineExtension({
       type: "text",
       default: "banktransfer",
     },
+    // 結帳頁開關(推薦碼欄位、電話地址必填、結帳頁說明);定義與說明見
+    // checkout-options.ts,README「設定」一節有整表。
+    ...SHOP_CHECKOUT_SETTINGS,
   ],
-  migrations: [
-    {
-      id: "0001_orders",
-      sql: `
-        CREATE TABLE IF NOT EXISTS ext_shop_orders (
-          order_no TEXT PRIMARY KEY,
-          status TEXT NOT NULL DEFAULT 'pending_payment',
-          lines TEXT NOT NULL,
-          subtotal INTEGER NOT NULL,
-          discount INTEGER NOT NULL DEFAULT 0,
-          shipping INTEGER NOT NULL DEFAULT 0,
-          total INTEGER NOT NULL,
-          payment_provider TEXT NOT NULL,
-          customer_name TEXT NOT NULL,
-          customer_email TEXT NOT NULL,
-          customer_phone TEXT,
-          ship_address TEXT,
-          transfer_last5 TEXT,
-          transfer_reported_at INTEGER,
-          note TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_ext_shop_orders_created
-          ON ext_shop_orders (created_at);
-        CREATE INDEX IF NOT EXISTS idx_ext_shop_orders_status
-          ON ext_shop_orders (status, created_at)
-      `,
-    },
-    {
-      // Phase 3–4:運費(訂單快照欄)+ 優惠碼表。migration id append-only ——
-      // 0001 已在外面跑過就不能改,新欄位一律走 ALTER。
-      id: "0002_shipping_promos",
-      sql: `
-        ALTER TABLE ext_shop_orders ADD COLUMN region TEXT;
-        ALTER TABLE ext_shop_orders ADD COLUMN shipping_method TEXT;
-        ALTER TABLE ext_shop_orders ADD COLUMN promo_code TEXT;
-        CREATE TABLE IF NOT EXISTS ext_shop_promos (
-          code TEXT PRIMARY KEY,
-          label TEXT NOT NULL DEFAULT '',
-          type TEXT NOT NULL,
-          value INTEGER NOT NULL DEFAULT 0,
-          min_subtotal INTEGER NOT NULL DEFAULT 0,
-          max_uses INTEGER,
-          used INTEGER NOT NULL DEFAULT 0,
-          starts_at INTEGER,
-          ends_at INTEGER,
-          enabled INTEGER NOT NULL DEFAULT 1,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      `,
-    },
-  ],
+  migrations: shopMigrations,
   uninstall: [
     {
       id: "0001_drop_orders",

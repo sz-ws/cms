@@ -33,6 +33,7 @@ export function AddToCartButton({
     <button
       type="button"
       onClick={onClick}
+      aria-live="polite"
       className={
         className ??
         "grid h-11 w-full place-items-center rounded-[12px] bg-black text-[14.5px] font-medium text-white hover:bg-black/85"

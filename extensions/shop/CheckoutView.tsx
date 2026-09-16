@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import type { CheckoutSession, ManualInstructionLine } from "@/ext/capabilities";
 import {
@@ -14,6 +14,7 @@ import {
   getCartSnapshot,
   subscribeCart,
 } from "./cart-store";
+import { resolveCheckoutOptions, type ReferralMode } from "./checkout-options";
 
 // 結帳頁(client)。三種 session 結局:
 //   form-post → 動態 <form> 送出跳轉 gateway(付款結果由回呼寫回)
@@ -25,6 +26,14 @@ import {
 //   - 配送選項用 shipping-engine 純函式即時試算(免 round-trip;伺服器結帳時
 //     用同一個函式重算定案,這裡顯示的只是預覽)。
 //   - 優惠碼按「套用」打 promo-quote 預覽;真正核銷在結帳送出時(伺服器原子佔用)。
+//
+// 受管訂單(0.2.0,shop-operations 啟用時):
+//   - 同一個 POST /api/ext/shop/checkout,但多帶 requestId(重送不重複建單)與
+//     referralCode;伺服器要求登入(guest 以上)、電話與地址必填。
+//   - 匯款回報改打 /api/ext/shop-operations/actions(action:"report")。
+//   - 三個開關(推薦碼欄位、電話地址必填、結帳頁說明)由 checkout-options.ts
+//     正規化;這裡對 props 再跑一次 resolveCheckoutOptions,自訂殼層少給幾個
+//     prop 也會得到一致的預設。
 
 /** 收件地區(台灣縣市)。引擎只做字串比對 —— 這份清單是 UI 層的事。 */
 const TW_REGIONS = [
@@ -53,7 +62,27 @@ const ERROR_HINT: Record<string, string> = {
   not_available: "付款服務暫時無法使用,請稍後再試。",
   not_configured: "付款方式尚未設定完成,請聯絡店家。",
   rate_limited: "嘗試次數過多,請稍後再試。",
+  referral_invalid: "這組推薦碼無法使用，請先移除後再結帳。",
+  referral_self: "無法使用自己的推薦碼，請先移除後再結帳。",
 };
+
+const REFERRAL_KEY = "shop.referral.v1";
+
+/** 推薦碼只由推薦連結帶入(referralMode "link")時沒有欄位可移除,改為自動移除後請客人再送一次。 */
+const LINK_REFERRAL_HINT: Record<string, string> = {
+  referral_invalid: "推薦連結已失效，請重新送出。",
+  referral_self: "無法使用自己的推薦連結，請重新送出。",
+};
+
+/** Drop the stored link attribution once the server rejects it, so the next checkout doesn't prefill it again. */
+function forgetStoredReferral(code: string) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(REFERRAL_KEY) || "null");
+    if (stored?.code === code) localStorage.removeItem(REFERRAL_KEY);
+  } catch {
+    /* optional browser attribution */
+  }
+}
 
 const PROMO_REASON: Record<string, string> = {
   not_found: "查無此優惠碼。",
@@ -97,6 +126,11 @@ export function CheckoutView({
   transferEnabled,
   shippingConfig = null,
   promoEnabled = false,
+  managedOrders = false,
+  signedIn = false,
+  referralMode,
+  requireContact = false,
+  notice = "",
 }: {
   cardEnabled: boolean;
   transferEnabled: boolean;
@@ -104,7 +138,24 @@ export function CheckoutView({
   shippingConfig?: ShippingConfig | null;
   /** 店家有啟用中的優惠碼才顯示輸入欄。 */
   promoEnabled?: boolean;
+  /** shop-operations 啟用中:結帳走受管訂單(需登入、電話與地址必填)。 */
+  managedOrders?: boolean;
+  /** 受管模式下是否已登入;未登入顯示登入提示(伺服器會拒絕未登入的結帳)。 */
+  signedIn?: boolean;
+  /** 推薦碼欄位模式(設定 ext.shop.referralMode);未給 = 受管時 "field"。非受管一律無效。 */
+  referralMode?: ReferralMode;
+  /** 電話與收件地址必填(設定 ext.shop.requireContact);受管模式一律必填。 */
+  requireContact?: boolean;
+  /** 結帳頁最上方的說明(設定 ext.shop.checkoutNotice);空 = 不顯示。 */
+  notice?: string;
 }) {
+  const options = resolveCheckoutOptions({
+    managedOrders,
+    signedIn,
+    referralMode,
+    requireContact,
+    checkoutNotice: notice,
+  });
   const items = useSyncExternalStore(
     subscribeCart,
     getCartSnapshot,
@@ -128,6 +179,24 @@ export function CheckoutView({
   const [last5, setLast5] = useState("");
   const [reported, setReported] = useState(false);
 
+  const request = useRef<{ fingerprint: string; id: string } | null>(null);
+  const [referralCode, setReferralCode] = useState("");
+  const referral = options.referralMode;
+  useEffect(() => {
+    if (referral === "off") return;
+    // 推薦連結(?ref=)存進瀏覽器的推薦碼;"field" 先填進欄位讓客人看得到、能移除,
+    // "link" 則靜默帶上。微任務內 setState,避開 effect 直接 setState 的 lint。
+    Promise.resolve().then(() => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(REFERRAL_KEY) || "null");
+        if (stored && typeof stored.code === "string" && stored.expiresAt > Date.now()) {
+          setReferralCode(stored.code);
+        }
+      } catch {
+        /* optional browser attribution */
+      }
+    });
+  }, [referral]);
   const noMethods = !cardEnabled && !transferEnabled;
 
   const subtotal = cartSubtotal(items);
@@ -189,17 +258,33 @@ export function CheckoutView({
     setBusy(true);
     setError(null);
     try {
+      const fingerprint = JSON.stringify({ items, name, email, phone, address, region, selectedShip, promo, method, referralCode });
+      if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
       const res = await fetch("/api/ext/shop/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(options.managedOrders
+            ? {
+                requestId: request.current.id,
+                ...(referral !== "off" && referralCode.trim()
+                  ? { referralCode: referralCode.trim().toUpperCase() }
+                  : {}),
+              }
+            : {}),
           items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
           name: name.trim(),
           email: email.trim(),
           ...(phone.trim() ? { phone: phone.trim() } : {}),
           ...(address.trim() ? { address: address.trim() } : {}),
           ...(region ? { region } : {}),
-          ...(selectedShip ? { shippingMethodId: selectedShip.id } : {}),
+          // 受管訂單要求一定要有配送方式:店家還沒設運費時送空字串,讓伺服器回
+          // 「請先設定配送方式與運費」而不是籠統的格式錯誤。
+          ...(selectedShip
+            ? { shippingMethodId: selectedShip.id }
+            : options.managedOrders
+              ? { shippingMethodId: "" }
+              : {}),
           ...(promo ? { promoCode: promo.code } : {}),
           method,
         }),
@@ -208,9 +293,19 @@ export function CheckoutView({
         | { ok: true; orderNo: string; session: CheckoutSession }
         | { ok: false; error: string };
       if (!data.ok) {
+        if (data.error === "referral_invalid" || data.error === "referral_self") {
+          forgetStoredReferral(referralCode.trim().toUpperCase());
+          if (referral === "link") {
+            // 沒有欄位可讓客人移除:清掉後直接請客人再送一次(換新的 requestId)。
+            setReferralCode("");
+            setError(LINK_REFERRAL_HINT[data.error]);
+            return;
+          }
+        }
         setError(ERROR_HINT[data.error] ?? `結帳失敗:${data.error}`);
         return;
       }
+      request.current = null;
       const session = data.session;
       if (!session.ok) {
         setError(ERROR_HINT[session.error] ?? `結帳失敗:${session.error}`);
@@ -244,11 +339,20 @@ export function CheckoutView({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/ext/shop/transfer-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: manual.orderNo, last5 }),
-      });
+      const res = await fetch(
+        options.managedOrders
+          ? "/api/ext/shop-operations/actions"
+          : "/api/ext/shop/transfer-report",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(options.managedOrders ? { action: "report" } : {}),
+            orderNo: manual.orderNo,
+            last5,
+          }),
+        },
+      );
       const data = (await res.json()) as { ok: boolean; error?: string };
       if (!data.ok) {
         setError(
@@ -272,12 +376,14 @@ export function CheckoutView({
       <div className="flex flex-col gap-6">
         <div className="rounded-[14px] bg-white px-6 py-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
           <p className="text-[13px] text-black/55">
-            訂單已成立,請於三日內匯款至以下帳戶:
+            {options.managedOrders
+              ? "訂單已成立，請依「我的訂單」顯示的付款期限付款。"
+              : "訂單已成立,請於三日內匯款至以下帳戶:"}
           </p>
           <dl className="mt-4 space-y-2.5">
             {manual.instructions.map((line) => (
               <div key={line.label} className="flex items-baseline gap-3">
-                <dt className="w-20 shrink-0 text-[12.5px] text-black/45">
+                <dt className="w-20 shrink-0 text-[12.5px] text-black/60">
                   {line.label}
                 </dt>
                 <dd className="font-mono text-[14px] text-black/85">
@@ -287,7 +393,7 @@ export function CheckoutView({
             ))}
           </dl>
           {manual.note ? (
-            <p className="mt-4 text-[12.5px] leading-relaxed text-black/50">
+            <p className="mt-4 text-[12.5px] leading-relaxed text-black/60">
               {manual.note}
             </p>
           ) : null}
@@ -334,7 +440,7 @@ export function CheckoutView({
             <button type="submit" disabled={busy || last5.length !== 5} className={PRIMARY_BTN}>
               {busy ? "送出中…" : "回報已匯款"}
             </button>
-            <p className="text-center text-[12px] text-black/40">
+            <p className="text-center text-[12px] text-black/60">
               稍後再匯也沒關係 —— 記下訂單編號
               <span className="font-mono"> {manual.orderNo} </span>
               即可。
@@ -347,7 +453,7 @@ export function CheckoutView({
 
   if (items.length === 0) {
     return (
-      <p className="text-[14px] text-black/50">
+      <p className="text-[14px] text-black/60">
         購物車是空的,先去
         <Link href="/shop/cart" className="underline underline-offset-4">
           購物車
@@ -359,6 +465,32 @@ export function CheckoutView({
 
   return (
     <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-5">
+      {options.notice ? (
+        <p className="whitespace-pre-line text-[13.5px] leading-relaxed text-black/70">
+          {options.notice}
+        </p>
+      ) : null}
+      {options.managedOrders ? (
+        <p className="text-[13.5px] text-black/60">
+          {options.signedIn ? (
+            "已登入會員。"
+          ) : (
+            <>
+              請先登入會員後結帳。
+              <Link
+                href="/login?next=%2Fshop%2Fcheckout"
+                className="ml-2 underline underline-offset-4"
+              >
+                登入
+              </Link>
+            </>
+          )}
+          {" · "}
+          <Link href="/shop/orders" className="underline underline-offset-4">
+            我的訂單
+          </Link>
+        </p>
+      ) : null}
       {/* 訂單摘要 */}
       <div className="rounded-[14px] bg-white px-6 py-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
         <ul className="space-y-2">
@@ -438,10 +570,12 @@ export function CheckoutView({
       </div>
       <div>
         <label htmlFor="shop-phone" className={LABEL}>
-          電話(選填)
+          {options.requireContact ? "電話" : "電話(選填)"}
         </label>
         <input
           id="shop-phone"
+          required={options.requireContact}
+          type="tel"
           className={FIELD}
           maxLength={30}
           value={phone}
@@ -471,10 +605,11 @@ export function CheckoutView({
 
       <div>
         <label htmlFor="shop-address" className={LABEL}>
-          收件地址(選填)
+          {options.requireContact ? "收件地址" : "收件地址(選填)"}
         </label>
         <input
           id="shop-address"
+          required={options.requireContact}
           className={FIELD}
           maxLength={200}
           value={address}
@@ -510,7 +645,7 @@ export function CheckoutView({
                     <span>{o.name}</span>
                     {o.applied.length > 0 ? (
                       <span
-                        className={`truncate text-[11.5px] ${active ? "text-white/60" : "text-black/40"}`}
+                        className={`truncate text-[11.5px] ${active ? "text-white/60" : "text-black/60"}`}
                       >
                         {o.applied.join("、")}
                       </span>
@@ -580,6 +715,23 @@ export function CheckoutView({
         </div>
       ) : null}
 
+      {/* 推薦碼(受管訂單 + referralMode "field";推薦連結帶入的碼已先填好) */}
+      {referral === "field" ? (
+        <div>
+          <label htmlFor="shop-referral" className={LABEL}>
+            推薦碼(選填)
+          </label>
+          <input
+            id="shop-referral"
+            className={`${FIELD} font-mono uppercase`}
+            maxLength={30}
+            autoComplete="off"
+            value={referralCode}
+            onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+          />
+        </div>
+      ) : null}
+
       {/* 付款方式 */}
       <fieldset>
         <legend className={LABEL}>付款方式</legend>
@@ -635,7 +787,7 @@ export function CheckoutView({
             : "成立訂單,取得匯款帳號"}
       </button>
       {noMethods ? (
-        <p className="text-center text-[12.5px] text-black/45">
+        <p className="text-center text-[12.5px] text-black/60">
           目前沒有可用的付款方式(店家尚未設定)。
         </p>
       ) : null}

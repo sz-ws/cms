@@ -26,7 +26,7 @@ export function CartView() {
 
   if (items.length === 0) {
     return (
-      <p className="text-[14px] text-black/50">
+      <p className="text-[14px] text-black/60">
         購物車是空的。
       </p>
     );
@@ -39,7 +39,7 @@ export function CartView() {
           <li key={item.productId} className="flex items-center gap-4 py-4">
             <div className="min-w-0 flex-1">
               <p className="truncate text-[14.5px] text-black/85">{item.name}</p>
-              <p className="mt-0.5 text-[12.5px] tabular-nums text-black/45">
+              <p className="mt-0.5 text-[12.5px] tabular-nums text-black/60">
                 NT$ {item.unitPrice.toLocaleString("zh-TW")}
               </p>
             </div>
@@ -77,7 +77,7 @@ export function CartView() {
           NT$ {cartSubtotal(items).toLocaleString("zh-TW")}
         </span>
       </div>
-      <p className="-mt-4 text-right text-[12px] text-black/40">
+      <p className="-mt-4 text-right text-[12px] text-black/60">
         運費與最終金額於結帳時計算。
       </p>
 
