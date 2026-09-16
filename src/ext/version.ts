@@ -592,4 +592,8 @@
 // Ledger-backed extensions are opt-in; no default registry or core tables change.
 // 1.36.0: atomic extension-owned records alongside ledger reservations.
 // 1.37.0: opt-in managed commerce delegation and queryable payment receipts.
-export const CORE_API_VERSION = "1.37.0";
+// 1.38.0: admin sidebar icon tokens for commerce and operations extensions
+// (archive, banknotes, bug, chart, clipboard, credit-card, gift, landmark, megaphone,
+// receipt, shopping-bag, shopping-cart, tag, truck, wallet). Unknown tokens still
+// fall back to the keyword heuristic, so older manifests keep rendering.
+export const CORE_API_VERSION = "1.38.0";
