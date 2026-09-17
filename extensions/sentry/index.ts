@@ -33,7 +33,7 @@ import { testEventHandler } from "./test-route";
 export const sentry = defineExtension({
   id: "sentry",
   name: { en: "Error tracking", "zh-Hant": "錯誤追蹤" },
-  version: "1.0.0",
+  version: "1.0.1",
   coreApi: "^1.26.0",
   description: {
     en: "Sends unhandled errors, failed extension hooks and failed cron ticks to a self-hosted GlitchTip (or Sentry) project.",
@@ -41,6 +41,7 @@ export const sentry = defineExtension({
       "把沒接住的例外、失敗的 extension hook 與失敗的 cron tick 送到自架的 GlitchTip(或 Sentry)專案。",
   },
   icon: "bug",
+  menu: { section: "system" },
   settings: [
     {
       key: "dsn",

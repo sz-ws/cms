@@ -21,11 +21,12 @@ import { CronTickProvider } from "./provider";
 export const cron = defineExtension({
   id: "cron",
   name: "Cron",
-  version: "1.0.0",
+  version: "1.0.1",
   coreApi: "^1.0.0",
   description:
     "分鐘級準時排程入口:外部 companion worker 以簽章回呼催動 core 的到期任務掃描。",
   icon: "clock",
+  menu: { section: "system" },
   settings: [
     {
       key: "secret",

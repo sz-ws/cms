@@ -64,7 +64,7 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.2.0",
+  version: "0.2.1",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -73,6 +73,8 @@ export const shop = defineExtension({
   description:
     "購物車、結帳與訂單管理:讀取 catalog 商品、透過 payment capability 收款(刷卡/匯款)、匯款人工對帳。",
   icon: "shopping-cart",
+  // 1.39.0:側欄「商務」一區;付款方式(banktransfer、newebpay)掛在這個資料夾底下。
+  menu: { section: "commerce", order: 20 },
   settings: [
     {
       key: "cardProvider",

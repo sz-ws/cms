@@ -48,11 +48,12 @@ async function buildInstructions(
 export const banktransfer = defineExtension({
   id: "banktransfer",
   name: "銀行轉帳",
-  version: "0.1.0",
+  version: "0.1.1",
   coreApi: "^1.28.0",
   description:
     "匯款收款(無金流閘道):結帳時出示收款帳號,款項由後台人工對帳後入帳。",
   icon: "landmark",
+  menu: { section: "commerce", parent: "shop" },
   settings: [
     {
       key: "bankName",

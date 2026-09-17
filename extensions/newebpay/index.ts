@@ -24,11 +24,12 @@ const ORDERS_TABLE = "ext_newebpay_orders";
 export const newebpay = defineExtension({
   id: "newebpay",
   name: "藍新金流",
-  version: "0.1.0",
+  version: "0.1.1",
   coreApi: "^1.14.0",
   description:
     "NewebPay MPG 2.0 收款:提供 payment capability(createCheckout)、訂單記錄與付款回呼處理。",
   icon: "credit-card",
+  menu: { section: "commerce", parent: "shop" },
   settings: [
     {
       key: "merchantId",
