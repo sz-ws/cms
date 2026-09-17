@@ -12,7 +12,7 @@ import { satisfies } from "./semver";
 import { interpretManifest } from "./dx/interpret";
 import { runDeclarativeMigrations } from "./dx/declarative-migrate";
 import { missingCapabilities } from "./features";
-import { computeExtRuntimeStamp } from "./runtime-stamp";
+import { getRequestStamps } from "@/lib/request-stamps";
 import type { Extension, HookName } from "./types";
 
 // manifest.migrations 兜底已成功套用的 extId(install route 是主要套用點;這裡
@@ -98,16 +98,16 @@ function coreApiIssue(ext: Extension): ExtensionRuntimeIssue | null {
 // 03 §4:每個 request 第一次用到 extension 系統時,建立當次 request 的 runtime。
 // 用 React cache() 做 per-request 快取,不可用 module 全域變數存 request 狀態。
 export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
-  // 1) 算 stamp(1 query)。失敗 → null,強制走完整載入且不寫 memo(§5:絕不 crash)。
-  let stamp: string | null = null;
-  try {
-    stamp = await computeExtRuntimeStamp();
-  } catch (e) {
+  // 1) 取 stamp(與 settings 的指紋同一趟 D1,見 @/lib/request-stamps)。失敗 → null,
+  //    強制走完整載入且不寫 memo(§5:絕不 crash)。
+  const stamped = (await getRequestStamps()).extensions;
+  if (!stamped.ok) {
     console.error(
       "[loader] runtime stamp query failed; falling back to full load",
-      e,
+      stamped.error,
     );
   }
+  const stamp = stamped.ok ? stamped.stamp : null;
 
   let codeEnabled: Extension[];
   let dxEnabled: Extension[];

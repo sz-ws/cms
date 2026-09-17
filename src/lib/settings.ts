@@ -1,7 +1,8 @@
 import { cache } from "react";
 import { db } from "./db";
 import { settings } from "./schema";
-import { getEnv, getDB } from "./cf";
+import { getEnv } from "./cf";
+import { getRequestStamps } from "./request-stamps";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
 
@@ -319,7 +320,8 @@ async function decryptSecret(stored: string): Promise<string> {
 // 兩層快取:
 //   1. React cache() —— 同一 request 內去重(一個請求裡多處 getSetting 只讀一次)。
 //   2. module 級 memo,以 stamp 驗新鮮度(手法同 loader.ts 的 getExtRuntime)——
-//      每個 request 用一次輕量 scalar query 對 settings 表算指紋,指紋不變就重用已 parse
+//      每個 request 對 settings 表算一次指紋(與 extension runtime 的指紋同一趟查詢,
+//      見 ./request-stamps.ts),指紋不變就重用已 parse
 //      的整包 Map,省下列傳輸 + Map 重建 + secret 判定的 JSON.parse;省的是常見的「沒改
 //      過 settings」路徑(getLocale、public 首頁、幾乎每個頁面都讀 settings)。
 //
@@ -341,19 +343,8 @@ async function decryptSecret(stored: string): Promise<string> {
 
 // 指紋:COUNT + MAX(updated_at)。所有寫入路徑(setSettings / setExtensionSettingsRaw、
 // manager enable/uninstall、install route)都 upsert updated_at=now 或改 row 數,故任一
-// mutation 必然改變此值(同 runtime-stamp.ts 的精神)。用 getDB() 直打 scalar 最省。
-const SETTINGS_STAMP_SQL =
-  "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), 0) AS m FROM settings";
-
+// mutation 必然改變此值(同 runtime-stamp.ts 的精神)。查詢本身在 ./request-stamps.ts。
 let settingsMemo: { stamp: string; value: Map<string, string> } | null = null;
-
-async function computeSettingsStamp(): Promise<string> {
-  const row = await getDB()
-    .prepare(SETTINGS_STAMP_SQL)
-    .first<{ n: number; m: number }>();
-  if (!row) return "0:0";
-  return `${row.n}:${row.m}`;
-}
 
 async function loadAllSettings(): Promise<Map<string, string>> {
   const rows = await db().select().from(settings);
@@ -362,12 +353,11 @@ async function loadAllSettings(): Promise<Map<string, string>> {
 
 const readAll = cache(async (): Promise<Map<string, string>> => {
   // stamp 失敗 → null,強制走全表讀且不寫 memo(無法在下個 request 驗證新鮮度)。
-  let stamp: string | null = null;
-  try {
-    stamp = await computeSettingsStamp();
-  } catch (e) {
-    console.error("[settings] stamp query failed; reading full table", e);
+  const stamped = (await getRequestStamps()).settings;
+  if (!stamped.ok) {
+    console.error("[settings] stamp query failed; reading full table", stamped.error);
   }
+  const stamp = stamped.ok ? stamped.stamp : null;
   if (stamp !== null && settingsMemo !== null && settingsMemo.stamp === stamp) {
     return settingsMemo.value; // 命中:重用已 parse 的整包 Map。
   }
