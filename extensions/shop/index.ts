@@ -64,7 +64,7 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.2.1",
+  version: "0.2.2",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -78,17 +78,15 @@ export const shop = defineExtension({
   settings: [
     {
       key: "cardProvider",
-      label: "刷卡 provider",
-      description:
-        "gateway payment provider id(如 newebpay,需先安裝該 extension)。留空 = 結帳頁不出現刷卡。",
+      label: "信用卡付款",
+      description: "輸入插件代號,例如 newebpay。不提供刷卡就留空。",
       type: "text",
       default: "",
     },
     {
       key: "transferProvider",
-      label: "匯款 provider",
-      description:
-        "manual payment provider id。留空 = 結帳頁不出現匯款。",
+      label: "匯款付款",
+      description: "輸入插件代號,預設是 banktransfer(銀行轉帳)。不提供匯款就留空。",
       type: "text",
       default: "banktransfer",
     },
