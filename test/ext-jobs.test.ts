@@ -199,6 +199,25 @@ describe("ext-jobs — recurring execution", () => {
     expect(report.processed).toBe(1);
   });
 
+  it("runs a recurring job on a tick that arrives a few seconds early; not one far ahead", async () => {
+    const handler = vi.fn(async () => {});
+    const now = 2_500_000;
+    rtState.enabled = [
+      fakeExt("acme", [{ id: "sync", every: EVERY_MIN, run: handler }]),
+    ];
+    await runDueJobs(now); // seed: run_at = now + EVERY_MS
+
+    await runDueJobs(now + EVERY_MS - 60_000); // a whole minute early
+    expect(handler).not.toHaveBeenCalled();
+
+    const early = now + EVERY_MS - 3_000; // cron tick jitter
+    await runDueJobs(early);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(expect.anything(), null, early);
+    const row = await getRecurringRow("acme", "sync");
+    expect(row?.run_at).toBe(early + EVERY_MS);
+  });
+
   it("only executes once under two concurrent sweeps hitting the same due row (CAS)", async () => {
     const handler = vi.fn(async () => {});
     const now = 3_000_000;
@@ -286,6 +305,21 @@ describe("ext-jobs — once jobs", () => {
     expect(await getOnceRow(id)).toBeNull(); // deleted on success
 
     expect(findReport(reports, "ext-jobs").processed).toBe(1);
+  });
+
+  it("never runs a once job before its run_at, even by a few seconds", async () => {
+    const handler = vi.fn(async () => {});
+    rtState.enabled = [fakeExt("acme", [{ id: "expire", run: handler }])];
+    const services = await scopedServicesFor("acme");
+    const now = 5_200_000;
+    const { id } = await services.jobs.schedule("expire", now + 3_000);
+
+    await runDueJobs(now);
+    expect(handler).not.toHaveBeenCalled();
+    expect(await getOnceRow(id)).not.toBeNull();
+
+    await runDueJobs(now + 3_000);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it("defaults payload to null when scheduled without one", async () => {

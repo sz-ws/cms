@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { getDB } from "./cf";
 import { contents, extJobs, storageHistory } from "./schema";
@@ -213,13 +213,20 @@ const publishDueJob: CoreJob = {
 //      ext_jobs 表 `kind='recurring'` 列 diff —— 缺補插(首輪 run_at =
 //      now + every*60_000,不立即執行)、多的刪(extension 停用或不再宣告)。
 //      `every` 變了不動既有 run_at(下輪 claim 時以新宣告值推進,避免每 sweep 改寫)。
-//   2. Claim:到期列(status='pending' AND run_at<=now)逐列 compare-and-set——
+//   2. Claim:到期列(status='pending' AND run_at<=now;recurring 另容許提早
+//      RECURRING_DUE_TOLERANCE_MS)逐列 compare-and-set——
 //      0 列受影響代表被併發 sweep 搶走,略過(at-most-once per attempt)。
 //   3. 執行:recurring 失敗只記 last_error,本輪結束,不重試不補跑;once 失敗走
 //      退避(RETRY_BACKOFF_MS)+ attempts 累加,滿 3 次轉 dead(留檔觀測,不再撿起)。
 // 逐 job try/catch 隔離(同 publish-due 哲學),絕不中斷其他到期列。
 
 const RETRY_BACKOFF_MS = 5 * 60_000;
+
+// recurring 的到期判斷容許提早這麼多。cron 每分鐘觸發,但實際觸發時刻會前後差幾秒;
+// claim 把 run_at 設成「這一輪的 now + every」,下一輪只要早到一秒就被判成還沒到期,
+// 整整晚一輪 —— 每分鐘的任務因此常常變成兩分鐘才跑一次。
+// once 不放寬:handler 收到的 now 可能被拿去跟期限比,提早跑會判定「還沒到」後把任務刪掉。
+const RECURRING_DUE_TOLERANCE_MS = 15_000;
 
 interface ExtJobRow {
   id: string;
@@ -323,7 +330,18 @@ const extJobsJob: CoreJob = {
         status: extJobs.status,
       })
       .from(extJobs)
-      .where(and(eq(extJobs.status, "pending"), lte(extJobs.runAt, now)));
+      .where(
+        and(
+          eq(extJobs.status, "pending"),
+          or(
+            lte(extJobs.runAt, now),
+            and(
+              eq(extJobs.kind, "recurring"),
+              lte(extJobs.runAt, now + RECURRING_DUE_TOLERANCE_MS),
+            ),
+          ),
+        ),
+      );
 
     let processed = 0;
     let failed = 0;
