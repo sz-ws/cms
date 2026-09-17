@@ -1,4 +1,7 @@
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
+import { isAgentAvailable } from "@/lib/ai";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { buildAgentToolRegistry } from "@/ext/agent-tools-runtime";
 import { AgentPanelLoader } from "@/components/admin/agent/AgentPanelLoader";
@@ -26,6 +29,35 @@ export default async function AgentPage() {
 
   const locale = await getLocale();
   const m = getMessages(locale);
+
+  // 1.39.0:AI 沒設定好時,側欄不給入口(admin/layout.tsx);直接打網址進來的人看到
+  // 的是去設定的路,而不是一個每句話都回「尚未設定」的對話框。稽核頁不擋 —— 關掉
+  // AI 之後,過去的執行紀錄照樣要查得到。
+  if (!(await isAgentAvailable())) {
+    return (
+      <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-5">
+        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
+          {m["agent.title"]}
+        </h1>
+        <div className="flex flex-col items-start gap-4 rounded-[20px] bg-white p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+          <Sparkles aria-hidden className="size-5 text-black/30" />
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[15px] font-semibold text-black/85">
+              {m["agent.unavailable.title"]}
+            </h2>
+            <p className="text-[13px] text-black/50">{m["agent.unavailable.body"]}</p>
+          </div>
+          <Link
+            href="/admin/settings#section-core-ai"
+            className="inline-flex h-8 items-center rounded-[8px] bg-black px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.97]"
+          >
+            {m["agent.unavailable.action"]}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const registry = await buildAgentToolRegistry();
   const tools: AgentToolSummary[] = registry.list().map((tool) => ({
     name: tool.name,

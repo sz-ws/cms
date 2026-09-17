@@ -2,8 +2,8 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Boxes, ChevronsUpDown, LogOut, UserRound } from "lucide-react";
+import { useId, useState } from "react";
+import { Boxes, ChevronRight, ChevronsUpDown, LogOut, UserRound } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -26,11 +26,13 @@ import {
   SidebarItem,
   SidebarLabel,
   SidebarSectionGroup,
+  useSidebar,
 } from "@/components/ui/intent/sidebar";
 // persist-keys 而不是 persist:後者拉 zod,而這個元件每一頁 admin 都在。
 import { clearAllStoredTranscripts } from "./agent/persist-keys";
 import { AdminNavGroup } from "./AdminNavGroup";
-import { iconForNavItem, type AdminIcon } from "./adminNavIcons";
+import { NavIcon } from "./adminNavIcons";
+import { pickActiveHref } from "./nav-active";
 
 // Admin sidebar. Structure/behavior (a11y, mobile drawer, keyboard toggle) come
 // from Intent UI's sidebar-01 block (react-aria); the visual language is
@@ -47,7 +49,10 @@ export interface AdminNavItem {
   href: string;
   title: string;
   kind: AdminNavKind;
+  /** Icon token or inline `<svg>` (already svg-guarded by AdminShell). */
   icon?: string;
+  /** 1.39.0: one level of nesting. A folder's href is its first child's. */
+  children?: AdminNavItem[];
 }
 
 export interface AdminNavGroupData {
@@ -65,13 +70,6 @@ interface AdminSidebarProps {
   /** core.brandLogo:自訂品牌圖;空 = 預設黑底 mark。 */
   brandLogo: string;
   groups: AdminNavGroupData[];
-}
-
-/** Split an href into its path and (optional) tab query for active matching. */
-function splitHref(href: string): { path: string; tab: string | null } {
-  const [path, query] = href.split("?");
-  const tab = query ? new URLSearchParams(query).get("tab") : null;
-  return { path, tab };
 }
 
 function initialsOf(name: string): string {
@@ -118,6 +116,24 @@ function navItemClasses(active: boolean): string {
   );
 }
 
+// Same colour contract as navItemClasses: active icon = dither blue on the svg,
+// idle = the label's 55%, lifting with the row on hover.
+function iconClasses(active: boolean): string {
+  return active
+    ? "text-[rgb(86,114,228)]"
+    : "text-black/55 transition-colors duration-150 group-hover/nav:text-black/90";
+}
+
+// A child row inside a folder: no icon column, label indented to sit under the
+// parent's label (10px padding + 16px icon + 10px gap = 36px), one step shorter
+// than a top-level row so the hierarchy reads without a guide line.
+function childItemClasses(active: boolean): string {
+  return cn(
+    navItemClasses(active),
+    "h-7 ps-9 grid-cols-[minmax(0,1fr)] supports-[grid-template-columns:subgrid]:grid-cols-[minmax(0,1fr)]",
+  );
+}
+
 
 export function AdminSidebar({
   user,
@@ -131,22 +147,21 @@ export function AdminSidebar({
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
-  const currentTab = searchParams.get("tab");
+  const { state, isMobile } = useSidebar();
+  const docked = state === "collapsed" && !isMobile;
+  const folderIdBase = useId();
+  // Folders open when they hold the current page; a click overrides that until
+  // the next full load. Keyed by folder href (its first child, stable per menu).
+  const [folderOverrides, setFolderOverrides] = useState<Record<string, boolean>>({});
 
-  /** Active if path matches; for Shop links the ?tab= must match too. */
-  function isActive(item: AdminNavItem): boolean {
-    const { path, tab } = splitHref(item.href);
-    const pathMatches =
-      path === "/admin"
-        ? pathname === "/admin"
-        : pathname === path || pathname.startsWith(`${path}/`);
-    if (!pathMatches) return false;
-    if (item.kind === "shop") {
-      // "Browse store" is active only with ?tab=browse; "Installed" only without.
-      return (currentTab ?? null) === (tab ?? null);
-    }
-    return true;
-  }
+  // One active leaf for the whole sidebar — the longest matching path — so an
+  // extension's main page (/admin/ext/shop) does not light up alongside its
+  // sub-page (/admin/ext/shop/verify). See nav-active.ts.
+  const activeHref = pickActiveHref(
+    groups.flatMap((group) => group.items),
+    pathname,
+    searchParams.get("tab"),
+  );
 
   async function onLogout() {
     if (signingOut) return;
@@ -168,8 +183,8 @@ export function AdminSidebar({
   }
 
   function renderItem(item: AdminNavItem) {
-    const active = isActive(item);
-    const Icon: AdminIcon = iconForNavItem(item);
+    if (item.children?.length) return renderFolder(item, item.children);
+    const active = item.href === activeHref;
     return (
       <SidebarItem
         key={item.href}
@@ -181,15 +196,80 @@ export function AdminSidebar({
         {/* Icon colour lives on the svg (see navItemClasses): active = dither blue;
             idle = the label's own 55% so icon and text read as one line, lifting
             together on hover. */}
-        <Icon
-          className={
-            active
-              ? "text-[rgb(86,114,228)]"
-              : "text-black/55 transition-colors duration-150 group-hover/nav:text-black/90"
-          }
-        />
+        <NavIcon item={item} className={iconClasses(active)} />
         <SidebarLabel className="truncate pe-0 text-[13px]">{item.title}</SidebarLabel>
       </SidebarItem>
+    );
+  }
+
+  function renderFolder(item: AdminNavItem, children: AdminNavItem[]) {
+    const holdsActive = children.some((child) => child.href === activeHref);
+
+    // Icon-only rail: there is no room to expand, so the folder is a link to its
+    // first page with the folder name as tooltip.
+    if (docked) {
+      return (
+        <SidebarItem
+          key={`folder:${item.href}`}
+          href={children[0].href}
+          tooltip={item.title}
+          isCurrent={holdsActive}
+          className={navItemClasses(holdsActive)}
+        >
+          <NavIcon item={item} className={iconClasses(holdsActive)} />
+          <SidebarLabel className="truncate pe-0 text-[13px]">{item.title}</SidebarLabel>
+        </SidebarItem>
+      );
+    }
+
+    const open = folderOverrides[item.href] ?? holdsActive;
+    const panelId = `${folderIdBase}-${item.href}`;
+    // Collapsed with the current page inside: the folder row carries the white
+    // chip so the sidebar still says where you are. Open: the child row does.
+    const chip = holdsActive && !open;
+    return (
+      <div key={`folder:${item.href}`} data-slot="admin-nav-folder" className="flex flex-col gap-y-0.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() =>
+            setFolderOverrides((prev) => ({ ...prev, [item.href]: !open }))
+          }
+          className={cn(
+            navItemClasses(chip),
+            "flex w-full items-center gap-x-2.5 text-start outline-hidden focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
+          )}
+        >
+          <NavIcon item={item} className={iconClasses(holdsActive)} />
+          <span className="min-w-0 flex-1 truncate">{item.title}</span>
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-black/30 transition-transform duration-150 ease-out",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+        <div id={panelId} hidden={!open} className="flex flex-col gap-y-0.5">
+          {children.map((child) => {
+            const active = child.href === activeHref;
+            return (
+              <SidebarItem
+                key={child.href}
+                href={child.href}
+                tooltip={child.title}
+                isCurrent={active}
+                className={childItemClasses(active)}
+              >
+                <SidebarLabel className="col-start-1 truncate pe-0 text-[13px]">
+                  {child.title}
+                </SidebarLabel>
+              </SidebarItem>
+            );
+          })}
+        </div>
+      </div>
     );
   }
 

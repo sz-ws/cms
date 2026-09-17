@@ -62,6 +62,42 @@ async function collect(
 
 const MSG = { messages: [{ role: "user" as const, content: "hi" }] };
 
+// 1.39.0:isConfigured() 決定 admin 側欄要不要出現「助理」。條件必須與 generate()/
+// chat() 回 not_configured 的判定一致 —— 不一致就會出現「有入口、進去全失敗」或反過來。
+describe("CoreAiProvider.isConfigured", () => {
+  beforeEach(() => {
+    settingsState.values = {};
+    cfState.ai = undefined;
+  });
+
+  it("is false when off, missing a model, or an unknown mode", async () => {
+    const provider = new CoreAiProvider();
+    expect(await provider.isConfigured()).toBe(false);
+    settingsState.values = { "core.ai.mode": "openai", "core.ai.apiKey": "sk-test" };
+    expect(await provider.isConfigured()).toBe(false);
+    settingsState.values = { "core.ai.mode": "mystery", "core.ai.model": "m" };
+    expect(await provider.isConfigured()).toBe(false);
+  });
+
+  it("needs an api key for openai and anthropic", async () => {
+    const provider = new CoreAiProvider();
+    for (const mode of ["openai", "anthropic"]) {
+      settingsState.values = { "core.ai.mode": mode, "core.ai.model": "m" };
+      expect(await provider.isConfigured()).toBe(false);
+      settingsState.values["core.ai.apiKey"] = "sk-test";
+      expect(await provider.isConfigured()).toBe(true);
+    }
+  });
+
+  it("needs the AI binding for workers-ai", async () => {
+    const provider = new CoreAiProvider();
+    settingsState.values = { "core.ai.mode": "workers-ai", "core.ai.model": "@cf/meta/llama" };
+    expect(await provider.isConfigured()).toBe(false);
+    cfState.ai = { run: async () => ({}) };
+    expect(await provider.isConfigured()).toBe(true);
+  });
+});
+
 describe("CoreAiProvider", () => {
   const provider = new CoreAiProvider();
   let fetchMock: ReturnType<typeof vi.fn>;

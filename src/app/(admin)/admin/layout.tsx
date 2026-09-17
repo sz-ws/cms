@@ -5,7 +5,9 @@ import { getSessionUser } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
-import { AdminShell, type AdminMenuItem } from "@/components/admin/AdminShell";
+import { AdminShell } from "@/components/admin/AdminShell";
+import { buildExtensionMenu, type AdminMenuItem } from "@/ext/admin-menu";
+import { isAgentAvailable } from "@/lib/ai";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
@@ -56,21 +58,22 @@ export default async function AdminLayout({
   const messages = getMessages(locale);
 
   // 固定項 + 每個 enabled extension 的 adminPages(showInMenu !== false)。
-  const extItems: AdminMenuItem[] = rt.enabled.flatMap((ext) =>
-    (ext.adminPages ?? [])
-      .filter((p) => p.showInMenu !== false)
-      .map((p) => ({
-        href: `/admin/ext/${ext.id}${p.slug ? `/${p.slug}` : ""}`,
-        title: resolveLocalizedString(p.title, locale) ?? p.slug,
-        icon: ext.icon,
-      })),
+  // 1.39.0:extension 可宣告分區與巢狀(menu.section / menu.parent),多頁的收成資料夾
+  // —— 規則在 ext/admin-menu.ts。
+  const extItems = buildExtensionMenu(
+    rt.enabled,
+    (value) => resolveLocalizedString(value, locale),
+    messages["nav.overview"],
   );
+
+  // 1.39.0:AI 沒設定好時不給入口 —— 點進去只會看到每一句都回「尚未設定」的面板。
+  const showAgent = user.role === "admin" && (await isAgentAvailable());
 
   let menu: AdminMenuItem[] = [
     { href: "/admin", title: messages["nav.dashboard"] },
     // AI 助理(docs/spec-admin-agent.md §1.1):admin-only,不可協商 —— editor/guest
     // 連入口都不渲染。頁面本身另有 requireAuth("admin"),API 端點各自再一道。
-    ...(user.role === "admin"
+    ...(showAgent
       ? [{ href: "/admin/agent", title: messages["nav.agent"] }]
       : []),
     { href: "/admin/media", title: messages["nav.media"] },
@@ -96,6 +99,7 @@ export default async function AdminLayout({
   const navLabels = {
     workspace: messages["nav.group.workspace"],
     content: messages["nav.group.content"],
+    commerce: messages["nav.group.commerce"],
     shop: messages["nav.group.shop"],
     browse: messages["nav.browse"],
     installed: messages["nav.installed"],

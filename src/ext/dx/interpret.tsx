@@ -394,6 +394,7 @@ export function interpretManifest(row: DeclarativeRow): ManifestInterpretation {
       coreApi: manifest.coreApi,
       description: manifest.description,
       icon: manifest.icon,
+      menu: manifest.menu,
       og: manifest.og,
       settings: (manifest.settings ?? []).map(toSettingField),
       adminPages: buildAdminPages(manifest.id, manifest, types, submissions),

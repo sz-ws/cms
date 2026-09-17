@@ -102,9 +102,26 @@ export interface AiProvider {
    *  一致;未實作的 provider 由呼叫端(src/lib/ai.ts 的 chatAiStreamWithTools)
    *  以 chat() 包成單一 result 事件,呼叫端無感。 */
   chatStream?(opts: AiChatOptions): AsyncGenerator<AiChatStreamEvent>;
+  /** 選填(1.39.0):設定是否齊到可以真的呼叫。只讀設定、不打上游 —— admin 每次換頁
+   *  都會問一次(側欄要不要出現「助理」)。未實作的 provider 視為已設定:換掉 core
+   *  provider 本身就是刻意的設定動作。 */
+  isConfigured?(): Promise<boolean>;
 }
 
 export class CoreAiProvider implements AiProvider {
+  /** 與 generate()/chat() 的 not_configured 判定同一組條件:mode 合法、有 model,
+   *  openai/anthropic 另需 apiKey,workers-ai 另需 AI binding。 */
+  async isConfigured(): Promise<boolean> {
+    const mode = await getSetting<AiMode>("core.ai.mode", "off");
+    const model = await getSetting<string>("core.ai.model", "");
+    if (!model) return false;
+    if (mode === "openai" || mode === "anthropic") {
+      return Boolean(await getSetting<string>("core.ai.apiKey", ""));
+    }
+    if (mode === "workers-ai") return getAI() !== undefined;
+    return false;
+  }
+
   async generate(opts: AiGenerateOptions): Promise<AiGenerateResult> {
     const mode = await getSetting<AiMode>("core.ai.mode", "off");
     const model = await getSetting<string>("core.ai.model", "");

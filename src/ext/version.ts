@@ -596,4 +596,13 @@
 // (archive, banknotes, bug, chart, clipboard, credit-card, gift, landmark, megaphone,
 // receipt, shopping-bag, shopping-cart, tag, truck, wallet). Unknown tokens still
 // fall back to the keyword heuristic, so older manifests keep rendering.
-export const CORE_API_VERSION = "1.38.0";
+// 1.39.0: admin sidebar sections, nesting and custom icons. Extensions may declare
+// `menu: { section: "content"|"commerce"|"system", parent: "<ext id>", order }`;
+// multi-page extensions fold into one folder, and `parent` nests an extension's
+// pages under another's (one level; a missing parent or a cycle falls back to top
+// level). `icon` accepts an inline <svg> checked by svg-guard, besides tokens. The
+// active nav item is the longest matching path. AiProvider gains optional
+// isConfigured(); the Assistant nav entry is hidden until AI is configured.
+// All additive: older extensions render exactly as before, except multi-page ones
+// now appear as a folder.
+export const CORE_API_VERSION = "1.39.0";

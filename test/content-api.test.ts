@@ -362,7 +362,7 @@ describe("revoke (§6.6)", () => {
 
 describe("core api 1.9.0 + manifest gate (§6.7)", () => {
   it("CORE_API_VERSION is 1.35.0 (still ^1.9.0-compatible: same major, newer minor)", () => {
-    expect(CORE_API_VERSION).toBe("1.38.0");
+    expect(CORE_API_VERSION).toBe("1.39.0");
   });
 
   it("manifest with GET customApiRoutes + ^1.9.0 parses", () => {

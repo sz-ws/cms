@@ -7,10 +7,13 @@ export const en = {
   "nav.settings": "Settings",
   "nav.users": "Users",
   "nav.agent": "Assistant",
+  // 1.39.0:側欄資料夾裡與資料夾同名的那一頁
+  "nav.overview": "Overview",
 
   // nav.group - sidebar group labels (AdminShell.tsx)
   "nav.group.workspace": "Workspace",
   "nav.group.content": "Content",
+  "nav.group.commerce": "Commerce",
   "nav.group.shop": "Shop",
   "nav.group.system": "System",
   "nav.browse": "Browse",
@@ -665,6 +668,9 @@ export const en = {
 
   // admin agent panel (src/components/admin/agent/*, docs/spec-admin-agent.md §5)
   "agent.title": "Assistant",
+  "agent.unavailable.title": "AI isn't set up yet",
+  "agent.unavailable.body": "Pick a service in Settings and add a model and key to start.",
+  "agent.unavailable.action": "Open settings",
   // The "stops for your confirmation" promise is an **opening** promise, not
   // standing page chrome: it lives in the empty state and leaves with it on the
   // first message. Once you are in the conversation the confirmation card

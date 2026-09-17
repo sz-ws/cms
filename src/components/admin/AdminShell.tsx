@@ -9,19 +9,15 @@ import {
 import { AdminNav } from "@/components/admin/AdminNav";
 import { SearchPalette } from "@/components/admin/SearchPalette";
 import { ExtensionLayoutLoader } from "@/ext/dx/extension-layouts";
+import { safeAdminIcon, type AdminMenuItem } from "@/ext/admin-menu";
 
 // 05 §1: fixed CMS shell = left sidebar + top nav + content. Built on Intent
 // UI's sidebar-01 block (react-aria). Server component: receives the dynamic
-// admin menu from layout.tsx, derives the three sidebar folder groups
-// (Admin / Content / Shop), and hands them to the client sidebar/nav.
+// admin menu from layout.tsx, derives the sidebar folder groups
+// (Workspace / Content / Commerce / Shop / System), and hands them to the client sidebar/nav.
 
-export interface AdminMenuItem {
-  href: string;
-  title: string;
-  order?: number;
-  /** extension/core/shop icon hint (lucide token string). */
-  icon?: string;
-}
+// 型別搬到 ext/admin-menu.ts(1.39.0,與選單建構規則住一起);這裡保留舊的匯入名。
+export type { AdminMenuItem };
 
 interface AdminShellProps {
   user: SessionUser;
@@ -33,6 +29,7 @@ interface AdminShellProps {
   navLabels: {
     workspace: string;
     content: string;
+    commerce: string;
     shop: string;
     browse: string;
     installed: string;
@@ -60,24 +57,51 @@ function isSystemHref(href: string): boolean {
 }
 
 /**
- * Split the flat menu into the three collapsible folder groups the mock shows.
- * Grouping is derived by *kind* of route, never by hardcoded extension names:
+ * Split the menu into the sidebar's folder groups. Grouping is derived from the
+ * route kind and the item's declared `section`, never from extension names:
  *
- * - Admin   → core items (Dashboard, Media, Settings, Users) — everything that
- *             is neither an extension page nor the Shop.
- * - Content → extension adminPages under /admin/ext/* (the content-type
- *             extensions: Gallery, Blog, Pages…), each appearing once.
- * - Shop    → the old "Extensions" manager, reframed: a synthetic pair of
- *             "Browse store" (registry Browse tab) + "Installed" (management),
- *             both pointing at the real /admin/extensions route. Rendered only
- *             when the manager is reachable in this session (admin).
+ * - Workspace → core items (Dashboard, Assistant, Media).
+ * - Content   → extension pages without a section (or section "content").
+ * - Commerce  → items declaring section "commerce" (1.39.0).
+ * - Shop      → the extensions manager, reframed as "Browse" + "Installed",
+ *               rendered only when the manager is reachable (admin).
+ * - System    → Users, extension items declaring section "system", Settings last.
+ *
+ * Items with `children` stay nested (one level); inline-SVG icons that fail
+ * svg-guard are dropped here, on the server, before reaching the client.
  */
+function toNavItem(item: AdminMenuItem): AdminNavItem {
+  const kind = isExtensionHref(item.href) ? "extension" : "core";
+  return {
+    href: item.href,
+    title: item.title,
+    icon: safeAdminIcon(item.icon),
+    kind,
+    ...(item.children?.length
+      ? {
+          children: item.children.map((child) => ({
+            href: child.href,
+            title: child.title,
+            kind: isExtensionHref(child.href) ? "extension" : "core",
+          })),
+        }
+      : {}),
+  };
+}
+
+function systemRank(href: string): number {
+  if (href === "/admin/users") return 0;
+  if (href === "/admin/settings") return 2;
+  return 1;
+}
+
 function buildGroups(
   menu: AdminMenuItem[],
   labels: AdminShellProps["navLabels"],
 ): AdminNavGroup[] {
   const coreItems: AdminNavItem[] = [];
   const contentItems: AdminNavItem[] = [];
+  const commerceItems: AdminNavItem[] = [];
   const systemItems: AdminNavItem[] = [];
   let hasShop = false;
 
@@ -89,24 +113,25 @@ function buildGroups(
     // Account 是「個人」不是「站台」:住在底部使用者晶片的選單(AdminSidebar
     // footer),不佔 nav 群組;menu 仍保留它供 breadcrumb 標題查表。
     if (item.href === "/admin/account") continue;
-    const nav: AdminNavItem = {
-      href: item.href,
-      title: item.title,
-      icon: item.icon,
-      kind: isExtensionHref(item.href) ? "extension" : "core",
-    };
-    if (nav.kind === "extension") contentItems.push(nav);
-    else if (isSystemHref(item.href)) systemItems.push(nav);
-    else coreItems.push(nav);
+    const nav = toNavItem(item);
+    if (item.section === "commerce") commerceItems.push(nav);
+    else if (item.section === "system" || isSystemHref(item.href)) systemItems.push(nav);
+    else if (item.section === "content" || nav.kind === "extension" || nav.children) {
+      contentItems.push(nav);
+    } else coreItems.push(nav);
   }
 
-  // 順序敘事:日常工作(Workspace)→ 內容(Content)→ 擴充(Shop)→ 系統(System)。
+  // 順序敘事:日常工作(Workspace)→ 內容 → 商務 → 擴充(Shop)→ 系統(System)。
   const groups: AdminNavGroup[] = [
     { id: "workspace", label: labels.workspace, items: coreItems },
   ];
 
   if (contentItems.length > 0) {
     groups.push({ id: "content", label: labels.content, items: contentItems });
+  }
+
+  if (commerceItems.length > 0) {
+    groups.push({ id: "commerce", label: labels.commerce, items: commerceItems });
   }
 
   if (hasShop) {
@@ -125,10 +150,9 @@ function buildGroups(
   }
 
   if (systemItems.length > 0) {
-    // Users 在前、Settings 恆為最後一項(最深的設定錨點放最底,慣例)。
-    systemItems.sort((a, b) =>
-      a.href === "/admin/settings" ? 1 : b.href === "/admin/settings" ? -1 : 0,
-    );
+    // Users 在前、extension 的系統項居中、Settings 恆為最後一項(最深的設定錨點
+    // 放最底,慣例)。sort 是 stable,同 rank 維持 menu 順序。
+    systemItems.sort((a, b) => systemRank(a.href) - systemRank(b.href));
     groups.push({ id: "system", label: labels.system, items: systemItems });
   }
 
@@ -151,7 +175,11 @@ export function AdminShell({
   // sidebar (e.g. /admin/agent/audit), so their crumb reads the page title
   // instead of a capitalised path segment.
   const menuTitles: Record<string, string> = { ...crumbTitles };
-  for (const item of menu) menuTitles[item.href] = item.title;
+  // 資料夾的 href 指向第一個子項:先寫資料夾、再寫子項,麵包屑顯示的是頁面標題。
+  for (const item of menu) {
+    menuTitles[item.href] = item.title;
+    for (const child of item.children ?? []) menuTitles[child.href] = child.title;
+  }
 
   // Extension ids that have admin surfaces — pass them to the client-side
   // layout loader so it can try a fixed-entry `extensions/<id>/layout.tsx`
@@ -159,6 +187,7 @@ export function AdminShell({
   const layoutExtIds = Array.from(
     new Set(
       menu
+        .flatMap((m) => [m, ...(m.children ?? [])])
         .filter((m) => m.href.startsWith("/admin/ext/"))
         .map((m) => m.href.split("/")[3])
         .filter((x): x is string => Boolean(x)),

@@ -1,4 +1,4 @@
-import type { ComponentType, SVGProps } from "react";
+import { createElement, type ComponentType, type SVGProps } from "react";
 import {
   AdjustmentsHorizontalIcon,
   ArchiveBoxIcon,
@@ -31,6 +31,8 @@ import {
   WalletIcon,
   WindowIcon,
 } from "@heroicons/react/16/solid";
+import { cn } from "@/lib/utils";
+import { isInlineSvgIcon } from "@/ext/admin-icon";
 import type { AdminNavItem } from "./AdminSidebar";
 
 /** Any icon component that renders an <svg> and takes a className. */
@@ -169,8 +171,37 @@ function contentIconFor(href: string, title: string): AdminIcon {
   return PuzzlePieceIcon;
 }
 
+type NavIconItem = Pick<AdminNavItem, "href" | "title" | "kind" | "icon">;
+
+/**
+ * Render a nav item's icon. 1.39.0: `icon` may be an inline `<svg>` (validated by
+ * svg-guard in the manifest schema and again in AdminShell before it reaches the
+ * client), rendered as-is so an extension can ship its own mark. The svg's own
+ * colour is forced to `currentColor` — Intent's sidebar sets `color` directly on
+ * any `svg` without a text-* class, which would otherwise pin a custom icon to
+ * muted-fg and ignore the active/idle colour set on the wrapper.
+ */
+export function NavIcon({ item, className }: { item: NavIconItem; className?: string }) {
+  if (item.icon && isInlineSvgIcon(item.icon)) {
+    return (
+      <span
+        aria-hidden
+        data-slot="nav-icon"
+        className={cn(
+          "inline-flex size-4 shrink-0 items-center justify-center [&>svg]:size-4 [&>svg]:text-current!",
+          className,
+        )}
+        dangerouslySetInnerHTML={{ __html: item.icon }}
+      />
+    );
+  }
+  // createElement, not <Icon/>: the component is one of the static Heroicons
+  // above, looked up per item — nothing is created during render.
+  return createElement(iconForNavItem(item), { "aria-hidden": true, className });
+}
+
 /** Resolve the icon for a nav item based on explicit token first, then fallback heuristics. */
-export function iconForNavItem(item: AdminNavItem): AdminIcon {
+export function iconForNavItem(item: NavIconItem): AdminIcon {
   const declared = iconFromToken(item.icon);
   if (declared) return declared;
   if (item.kind === "shop") return SHOP_ICONS[item.href] ?? CubeIcon;

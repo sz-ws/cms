@@ -9,10 +9,13 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "nav.settings": "設定",
   "nav.users": "成員",
   "nav.agent": "助理",
+  // 1.39.0:側欄資料夾裡與資料夾同名的那一頁
+  "nav.overview": "總覽",
 
   // nav.group
   "nav.group.workspace": "工作區",
   "nav.group.content": "內容",
+  "nav.group.commerce": "商務",
   "nav.group.shop": "市集",
   "nav.group.system": "系統",
   "nav.browse": "瀏覽",
@@ -652,6 +655,9 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
 
   // 後台 AI 助理面板(src/components/admin/agent/*,docs/spec-admin-agent.md §5)
   "agent.title": "助理",
+  "agent.unavailable.title": "AI 還沒設定好",
+  "agent.unavailable.body": "到設定選好服務、填好模型和金鑰,就能開始用了。",
+  "agent.unavailable.action": "去設定",
   // 「會先停下來等你確認」這句話是**開場承諾**,不是頁面常設說明:它住在空狀態
   // 裡,第一則訊息送出去就跟著空狀態一起消失。已經在對話中的人不需要每一輪都被
   // 重講一次規則 —— 那條規則此時已經由確認卡自己在現場示範。

@@ -3,6 +3,11 @@ import { validateSvg } from "./svg-guard";
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { validateSettingValue } from "../../lib/setting-validation";
 import { rangeStartsAtOrAfter } from "../semver";
+import {
+  adminIconIssue,
+  extensionMenuSchema,
+  type ExtensionMenu,
+} from "../admin-menu";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -532,8 +537,17 @@ export const manifestSchema = z
     version: z.string().regex(VERSION_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(CORE_API_RE, "invalid coreApi range"),
     description: localized().optional(),
-    // declarative extension icon hint (lucide token). 用於 admin sidebar / menus。
-    icon: z.string().optional(),
+    // admin 側欄圖示:圖示代號,或 1.39.0 起的內嵌 <svg>(過 svg-guard,見 ../admin-menu.ts)。
+    icon: z
+      .string()
+      .max(16384)
+      .superRefine((v, ctx) => {
+        const issue = adminIconIssue(v);
+        if (issue) ctx.addIssue({ code: "custom", message: issue });
+      })
+      .optional(),
+    // 1.39.0:側欄分區與巢狀(section / parent / order)。
+    menu: extensionMenuSchema.optional(),
     // PNG icon relative path in registry (e.g. "icon.png" under extensions/<id>/)
     iconUrl: z.string().optional(),
     // Top banner image relative path (e.g. "banner.png")
@@ -726,6 +740,13 @@ export const manifestSchema = z
   })
   .strict()
   .superRefine((m, ctx) => {
+    if (m.menu?.parent === m.id) {
+      ctx.addIssue({
+        code: "custom",
+        message: "extension menu cannot nest under itself",
+        path: ["menu", "parent"],
+      });
+    }
     const addDuplicateIssues = (
       values: readonly string[],
       path: string,
@@ -1051,8 +1072,10 @@ export interface DeclarativeManifest {
   version: string;
   coreApi: string;
   description?: LocalizedString;
-  /** lucide token used by admin nav/menu (e.g. "images", "mail", "layout-template"). */
+  /** admin 側欄圖示:代號(如 "images"、"mail")或內嵌 `<svg>`(1.39.0)。 */
   icon?: string;
+  /** 1.39.0:側欄分區與巢狀。 */
+  menu?: ExtensionMenu;
   /** PNG icon relative path in registry (e.g. "icon.png"). */
   iconUrl?: string;
   /** Top banner image relative path (e.g. "banner.png"). */

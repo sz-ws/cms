@@ -26,6 +26,23 @@ async function activeAiProvider(): Promise<AiProvider> {
   return registry.get<AiProvider>("ai:generate");
 }
 
+/**
+ * 1.39.0:admin 助理能不能用 —— 決定側欄入口與 /admin/agent 要不要開。
+ * 需要 provider 已設定,而且支援 tool calling(chat 或 chatStream 其一);只會
+ * generate 的第三方 provider 撐不起助理。任何例外一律當不可用:這是顯示判斷,
+ * 不該讓整個 admin layout 因為設定讀取失敗而掛掉。
+ */
+export async function isAgentAvailable(): Promise<boolean> {
+  try {
+    const provider = await activeAiProvider();
+    if (!provider.chat && !provider.chatStream) return false;
+    return provider.isConfigured ? await provider.isConfigured() : true;
+  } catch (e) {
+    console.error("[ai] cannot resolve agent availability", e);
+    return false;
+  }
+}
+
 export async function generateAiText(
   opts: AiGenerateOptions,
 ): Promise<AiGenerateResult> {

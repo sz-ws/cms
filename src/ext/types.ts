@@ -12,6 +12,11 @@ import type {
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { validateSettingValue } from "../lib/setting-validation";
 import { rangeStartsAtOrAfter } from "./semver";
+import {
+  adminIconIssue,
+  extensionMenuSchema,
+  type ExtensionMenu,
+} from "./admin-menu";
 
 // 03 §1:Extension 型別(完整內容,欄位一字不差照 spec)。
 // core-v2 §2.1 / §2.2 / §3.1:ApiCtx.services、manifest coreApi/provides、zod 驗證。
@@ -114,8 +119,13 @@ export interface Extension {
   version: string; // semver
   coreApi: string; // core-v2 §1:相容的 CORE_API_VERSION semver range,如 "^1.0.0"
   description?: LocalizedString;
-  /** admin nav / menu icon hint (lucide token or code-extension-resolved symbol name). */
+  /**
+   * admin 側欄圖示:圖示代號(如 "truck",見 adminNavIcons.tsx),或 1.39.0 起可直接
+   * 給一段 `<svg>`(過 svg-guard;用 currentColor 才會跟著側欄的選取色變)。
+   */
   icon?: string;
+  /** 1.39.0:側欄分區與巢狀(見 ./admin-menu.ts)。 */
+  menu?: ExtensionMenu;
   /** OG image 設定(declarative extensions only)。 */
   og?: {
     image?: {
@@ -387,6 +397,8 @@ const manifestSchema = z
     version: z.string().regex(SEMVER_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(RANGE_RE, "invalid coreApi range"),
     description: localizedStringSchema.optional(),
+    icon: z.string().max(16384).optional(),
+    menu: extensionMenuSchema.optional(),
     canUninstall: z.boolean().optional(),
     requiresExtensions: z.array(z.string().regex(ID_RE)).max(20).optional(),
     canDisable: z.object({ sql: z.string().min(1).refine((sql) => !/;|--|\/\*|\*\//.test(sql), "invalid disable predicate"), message: z.string().min(1).max(300) }).strict().optional(),
@@ -431,6 +443,9 @@ const manifestSchema = z
     };
 
     if (ext.canUninstall !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.37.0")) ctx.addIssue({ code: "custom", message: "uninstall protection requires coreApi >= 1.37.0", path: ["coreApi"] });
+    const iconIssue = ext.icon === undefined ? null : adminIconIssue(ext.icon);
+    if (iconIssue) ctx.addIssue({ code: "custom", message: iconIssue, path: ["icon"] });
+    if (ext.menu?.parent === ext.id) ctx.addIssue({ code: "custom", message: "extension menu cannot nest under itself", path: ["menu", "parent"] });
     duplicate(ext.requiresExtensions ?? [], "requiresExtensions", "required extension");
     if (ext.requiresExtensions?.includes(ext.id)) ctx.addIssue({ code: "custom", message: "extension cannot depend on itself", path: ["requiresExtensions"] });
     if ((ext.requiresExtensions?.length || ext.canDisable) && !rangeStartsAtOrAfter(ext.coreApi, "1.36.0")) ctx.addIssue({ code: "custom", message: "lifecycle guards require coreApi >= 1.36.0", path: ["coreApi"] });
