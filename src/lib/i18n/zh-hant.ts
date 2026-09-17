@@ -2,6 +2,8 @@ import type { MessageKey } from "./index";
 
 export const zhHant: Partial<Record<MessageKey, string>> = {
   // nav.menu
+  "admin.loading": "載入中…",
+  "admin.breadcrumb": "目前位置",
   "nav.dashboard": "儀表板",
   "nav.media": "媒體庫",
   "nav.extensions": "擴充功能",

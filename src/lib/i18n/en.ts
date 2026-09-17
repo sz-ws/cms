@@ -1,5 +1,7 @@
 export const en = {
   // nav.menu - sidebar navigation labels (layout.tsx)
+  "admin.loading": "Loading…",
+  "admin.breadcrumb": "Breadcrumb",
   "nav.dashboard": "Dashboard",
   "nav.media": "Media",
   "nav.extensions": "Extensions",

@@ -23,7 +23,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarItem,
   SidebarLabel,
   SidebarSectionGroup,
   useSidebar,
@@ -31,6 +30,7 @@ import {
 // persist-keys 而不是 persist:後者拉 zod,而這個元件每一頁 admin 都在。
 import { clearAllStoredTranscripts } from "./agent/persist-keys";
 import { AdminNavGroup } from "./AdminNavGroup";
+import { AdminNavLink } from "./AdminNavLink";
 import { NavIcon } from "./adminNavIcons";
 import { pickActiveHref } from "./nav-active";
 
@@ -83,9 +83,10 @@ function initialsOf(name: string): string {
 // text-black/90 + white surface + shadow-ring when active; the icon turns
 // dither-blue and that is the whole "active" mark (the mock's 2px edge bar was
 // dropped: on a rounded white card it sat half outside the corner radius and
-// read as a rendering glitch, not a marker). Hover is a whisper. We neutralize
-// the Intent UI blue fill via the --sidebar-current-* vars and layer our own
-// state classes.
+// read as a rendering glitch, not a marker). Hover is a whisper.
+//
+// The row is our own anchor (AdminNavLink), not Intent's SidebarItem — see that
+// file for why — so the classes here own the whole layout, no subgrid fighting.
 //
 // Icons: 16px solid glyphs (see adminNavIcons.tsx for why solid) at the *same*
 // opacity as the label — icons lighter than their labels read as two layers
@@ -93,19 +94,10 @@ function initialsOf(name: string): string {
 function navItemClasses(active: boolean): string {
   return cn(
     "group/nav relative h-8 rounded-[8px] px-2.5 text-[13px] font-medium",
-    "[--sidebar-current-bg:transparent] [--sidebar-current-fg:var(--color-fg)]",
+    "flex items-center gap-x-2.5",
     "transition-[background-color,color,box-shadow,transform] duration-150 ease-out",
     "active:scale-[0.97]",
-    // Intent sidebar items default to a 5-column grid (room for badges/menus) and
-    // add extra icon/end padding. For our simple icon + label nav, collapse that
-    // back to a tight 2-col track so the label sits close to the icon.
-    "grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 supports-[grid-template-columns:subgrid]:grid-cols-[16px_minmax(0,1fr)]",
-    "[&:has(svg+[data-slot=sidebar-label])_svg:has(+[data-slot=sidebar-label])]:me-0",
-    "[&_[data-slot=sidebar-label]]:col-start-auto [&_[data-slot=sidebar-label]]:pe-0",
-    "[&_svg]:size-4",
-    // The active icon's blue is set *on the svg* in renderItem, not here: Intent's
-    // current-state rule targets `svg:not([class*='text-'])` with higher
-    // specificity than a plain `[&_svg]:` descendant utility and would win.
+    "[&_svg]:size-4 [&_svg]:shrink-0",
     active
       ? cn(
           "bg-white text-black/90",
@@ -128,10 +120,7 @@ function iconClasses(active: boolean): string {
 // parent's label (10px padding + 16px icon + 10px gap = 36px), one step shorter
 // than a top-level row so the hierarchy reads without a guide line.
 function childItemClasses(active: boolean): string {
-  return cn(
-    navItemClasses(active),
-    "h-7 ps-9 grid-cols-[minmax(0,1fr)] supports-[grid-template-columns:subgrid]:grid-cols-[minmax(0,1fr)]",
-  );
+  return cn(navItemClasses(active), "h-7 ps-9");
 }
 
 
@@ -157,11 +146,25 @@ export function AdminSidebar({
   // One active leaf for the whole sidebar — the longest matching path — so an
   // extension's main page (/admin/ext/shop) does not light up alongside its
   // sub-page (/admin/ext/shop/verify). See nav-active.ts.
-  const activeHref = pickActiveHref(
+  const resolvedHref = pickActiveHref(
     groups.flatMap((group) => group.items),
     pathname,
     searchParams.get("tab"),
   );
+
+  // 點下去到新頁畫好之間有幾百毫秒(dynamic 頁,冷啟動時更久)。pathname 在導覽
+  // 結束前不會變,所以側欄若只看 pathname,那段時間整個介面像是沒收到點擊。
+  // 先把點到的那一列標成選中,導覽落地就交還給真實路徑。
+  //
+  // 記下「在哪個網址按的」而不是用 effect 清掉:網址一換,這筆就自動失效 ——
+  // 沒有 effect、沒有連鎖 render,也不會有清不掉的殘留高亮。
+  const routeKey = `${pathname}?${searchParams.toString()}`;
+  const [pending, setPending] = useState<{ href: string; from: string } | null>(
+    null,
+  );
+  const activeHref =
+    pending && pending.from === routeKey ? pending.href : resolvedHref;
+  const markPending = (href: string) => setPending({ href, from: routeKey });
 
   async function onLogout() {
     if (signingOut) return;
@@ -186,19 +189,20 @@ export function AdminSidebar({
     if (item.children?.length) return renderFolder(item, item.children);
     const active = item.href === activeHref;
     return (
-      <SidebarItem
+      <AdminNavLink
         key={item.href}
         href={item.href}
+        active={active}
         tooltip={item.title}
-        isCurrent={active}
         className={navItemClasses(active)}
+        onNavigateStart={markPending}
       >
         {/* Icon colour lives on the svg (see navItemClasses): active = dither blue;
             idle = the label's own 55% so icon and text read as one line, lifting
             together on hover. */}
         <NavIcon item={item} className={iconClasses(active)} />
-        <SidebarLabel className="truncate pe-0 text-[13px]">{item.title}</SidebarLabel>
-      </SidebarItem>
+        {!docked && <span className="min-w-0 flex-1 truncate">{item.title}</span>}
+      </AdminNavLink>
     );
   }
 
@@ -209,16 +213,16 @@ export function AdminSidebar({
     // first page with the folder name as tooltip.
     if (docked) {
       return (
-        <SidebarItem
+        <AdminNavLink
           key={`folder:${item.href}`}
           href={children[0].href}
+          active={holdsActive}
           tooltip={item.title}
-          isCurrent={holdsActive}
           className={navItemClasses(holdsActive)}
+          onNavigateStart={markPending}
         >
           <NavIcon item={item} className={iconClasses(holdsActive)} />
-          <SidebarLabel className="truncate pe-0 text-[13px]">{item.title}</SidebarLabel>
-        </SidebarItem>
+        </AdminNavLink>
       );
     }
 
@@ -255,17 +259,15 @@ export function AdminSidebar({
           {children.map((child) => {
             const active = child.href === activeHref;
             return (
-              <SidebarItem
+              <AdminNavLink
                 key={child.href}
                 href={child.href}
-                tooltip={child.title}
-                isCurrent={active}
+                active={active}
                 className={childItemClasses(active)}
+                onNavigateStart={markPending}
               >
-                <SidebarLabel className="col-start-1 truncate pe-0 text-[13px]">
-                  {child.title}
-                </SidebarLabel>
-              </SidebarItem>
+                <span className="min-w-0 flex-1 truncate">{child.title}</span>
+              </AdminNavLink>
             );
           })}
         </div>
