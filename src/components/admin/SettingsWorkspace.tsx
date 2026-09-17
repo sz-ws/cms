@@ -16,8 +16,7 @@ import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
-import { coerceSettingInput } from "@/lib/setting-validation";
-import { settingControlId } from "@/lib/settings-ui";
+import { changedSettingEntries, settingControlId } from "@/lib/settings-ui";
 
 export interface SettingsSection {
   id: string;
@@ -51,18 +50,6 @@ function initialValue(
     return JSON.stringify(raw);
   }
   return String(raw);
-}
-
-function parseTextareaValue(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
 }
 
 function buildInitialState(
@@ -160,6 +147,14 @@ function visibleSections(
   return [];
 }
 
+// 伺服器回的欄位錯誤碼(lib/setting-validation.ts)→ 欄位下方那一行字。
+function fieldErrorText(code: string, t: ReturnType<typeof useT>): string {
+  if (code === "required") return t("settingsWorkspace.fieldRequired");
+  if (code === "invalid_option") return t("settingsWorkspace.fieldInvalidOption");
+  if (code === "expected_number") return t("settingsWorkspace.fieldExpectedNumber");
+  return t("settingsWorkspace.fieldInvalid");
+}
+
 function statusLine(
   pending: boolean,
   saved: boolean,
@@ -193,6 +188,8 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
   // admin 有 I18nProvider,故直接 useLocale() resolve(核心 settings 為純字串,原樣透傳)。
   const locale = useLocale();
   const coreAddonNode = coreAddon ?? null;
+  // fullKey → 伺服器回的錯誤碼;改動該欄位就清掉那一格的錯誤。
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Registry manager + API tokens:core tab 最後一張獨立卡(不塞進任何分組卡)。
   function renderCoreAddonSection() {
@@ -237,6 +234,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
               {field.type === "textarea" ? (
                 <Textarea
                   id={controlId}
+                  aria-invalid={fieldErrors[fullKey] ? true : undefined}
                   className="min-h-[120px] rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
@@ -255,9 +253,16 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                 <Select
                   value={String(state[fullKey] ?? "")}
                   onValueChange={(next) => update(fullKey, String(next))}
+                  // 沒給 items 時 Base UI 的 <Select.Value> 顯示的是原始值(「field」),
+                  // 不是選項文字。
+                  items={field.options.map((o) => ({
+                    value: o.value,
+                    label: resolveLocalizedString(o.label, locale),
+                  }))}
                 >
                   <SelectTrigger
                     id={controlId}
+                    aria-invalid={fieldErrors[fullKey] ? true : undefined}
                     aria-required={field.required || undefined}
                     className="w-full rounded-[10px] border-black/10 bg-white text-[14px] text-black/85"
                   >
@@ -274,6 +279,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
               ) : (
                 <Input
                   id={controlId}
+                  aria-invalid={fieldErrors[fullKey] ? true : undefined}
                   className="rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
                   type={field.type === "number" ? "number" : "text"}
                   value={String(state[fullKey] ?? "")}
@@ -281,6 +287,11 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   onChange={(e) => update(fullKey, e.target.value)}
                   placeholder={field.secret ? t("settings.secretSet") : undefined}
                 />
+              )}
+              {fieldErrors[fullKey] && (
+                <p role="alert" className="text-[12px] text-red-600">
+                  {fieldErrorText(fieldErrors[fullKey], t)}
+                </p>
               )}
               {fullKey === "core.emailFrom" && (
                 <EmailDomainChips
@@ -424,6 +435,11 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
   }, [navTargets]);
 
   function update(fullKey: string, value: string | boolean) {
+    if (fieldErrors[fullKey]) {
+      setFieldErrors((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== fullKey)),
+      );
+    }
     setState((prev) => {
       const next = { ...prev, [fullKey]: value };
       setDirty(!sameState(next, initialStateRef.current));
@@ -432,27 +448,21 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
     if (saved) setSaved(false);
   }
 
+  function findField(fullKey: string) {
+    const section = sections.find((s) =>
+      s.fields.some((field) => `${s.keyPrefix}${field.key}` === fullKey),
+    );
+    const field = section?.fields.find((f) => `${section.keyPrefix}${f.key}` === fullKey);
+    return section && field ? { section, field } : null;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSaved(false);
     setPending(true);
 
-    const entries: Record<string, unknown> = {};
-    for (const section of sections) {
-      for (const field of section.fields) {
-        const fullKey = `${section.keyPrefix}${field.key}`;
-        const val = state[fullKey];
-        if (field.secret && (val === "" || val === "•••")) continue;
-        if (field.type === "number") {
-          entries[fullKey] = coerceSettingInput(field, val);
-        } else if (field.type === "textarea" && typeof val === "string") {
-          entries[fullKey] = parseTextareaValue(val);
-        } else {
-          entries[fullKey] = val;
-        }
-      }
-    }
+    const entries = changedSettingEntries(sections, state, initialStateRef.current);
 
     try {
       const res = await fetch("/api/settings", {
@@ -461,7 +471,20 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
         body: JSON.stringify({ entries }),
       });
       if (res.ok) {
-        initialStateRef.current = state;
+        // 密鑰欄位存完就清空:明文不該留在畫面上,下次儲存也不會重送。
+        const secretKeys = new Set(
+          sections.flatMap((section) =>
+            section.fields
+              .filter((field) => field.secret)
+              .map((field) => `${section.keyPrefix}${field.key}`),
+          ),
+        );
+        const settled: SettingsState = Object.fromEntries(
+          Object.entries(state).map(([key, value]) => [key, secretKeys.has(key) ? "" : value]),
+        );
+        setState(settled);
+        initialStateRef.current = settled;
+        setFieldErrors({});
         setDirty(false);
         setSaved(true);
         router.refresh();
@@ -469,12 +492,27 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
       } else if (res.status === 400) {
         const body = (await res.json().catch(() => null)) as {
           error?: string;
+          fields?: { key: string; code: string }[];
         } | null;
-        setError(
-          body?.error === "invalid_values"
-            ? t("settingsWorkspace.invalidValues")
-            : t("settingsWorkspace.invalidKey"),
-        );
+        if (body?.error === "invalid_values" && body.fields?.length) {
+          setFieldErrors(
+            Object.fromEntries(body.fields.map((f) => [f.key, f.code])),
+          );
+          const names = body.fields.map((f) => {
+            const hit = findField(f.key);
+            const label = hit
+              ? `${hit.section.title} › ${resolveLocalizedString(hit.field.label, locale)}`
+              : f.key;
+            return `${label}(${fieldErrorText(f.code, t)})`;
+          });
+          setError(t("settingsWorkspace.fixFields", { fields: names.join("、") }));
+        } else {
+          setError(
+            body?.error === "invalid_values"
+              ? t("settingsWorkspace.invalidValues")
+              : t("settingsWorkspace.invalidKey"),
+          );
+        }
       } else if (res.status === 403) {
         setError(t("settingsWorkspace.notAllowed"));
       } else {

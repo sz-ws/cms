@@ -82,6 +82,11 @@ function SelectFilter({ def }: { def: SelectFilterDef }) {
         onValueChange={(next) =>
           setParam(`f_${def.key}`, next === ANY_VALUE ? null : String(next))
         }
+        // 沒給 items,<SelectValue> 會顯示原始值(「不限」會變成 ANY_VALUE 常數)。
+        items={[
+          { value: ANY_VALUE, label: t("collection.filter.any") },
+          ...def.options.map((o) => ({ value: o, label: o })),
+        ]}
       >
         <SelectTrigger size="sm">
           <SelectValue />

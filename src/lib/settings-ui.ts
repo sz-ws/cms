@@ -1,3 +1,6 @@
+import { coerceSettingInput } from "./setting-validation";
+import type { SettingField } from "./settings";
+
 export function settingControlId(fullKey: string): string {
   return `setting-${fullKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
@@ -143,4 +146,54 @@ export function groupSettingFields<F extends { group?: string }>(
         messages?.[settingGroupDescriptionKey(meta.id)] ?? meta.description,
       fields: groupFields,
     }));
+}
+
+/** textarea 的輸入:看起來像 JSON 陣列/物件就 parse,parse 不了就原字串送出。 */
+export function parseTextareaValue(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+export interface SettingsEntrySection {
+  keyPrefix: string;
+  fields: readonly SettingField[];
+}
+
+/**
+ * 設定頁要送出的欄位:只有改過的那些。
+ *
+ * 以前整頁一起送,伺服器對每一個欄位驗證 —— 任何一個區塊有必填還沒填(例如尚未
+ * 設定的付款方式),其他區塊的修改也存不進去。密鑰欄位的畫面值永遠從空白開始,
+ * 所以「有填」就是改過;沒填或是遮罩字元就跳過(不覆寫已存的密鑰)。
+ */
+export function changedSettingEntries(
+  sections: readonly SettingsEntrySection[],
+  state: Readonly<Record<string, string | boolean>>,
+  initial: Readonly<Record<string, string | boolean>>,
+): Record<string, unknown> {
+  const entries: Record<string, unknown> = {};
+  for (const section of sections) {
+    for (const field of section.fields) {
+      const fullKey = `${section.keyPrefix}${field.key}`;
+      const val = state[fullKey];
+      if (val === undefined) continue;
+      if (field.secret && (val === "" || val === "•••")) continue;
+      if (!field.secret && val === initial[fullKey]) continue;
+      if (field.type === "number") {
+        entries[fullKey] = coerceSettingInput(field, val);
+      } else if (field.type === "textarea" && typeof val === "string") {
+        entries[fullKey] = parseTextareaValue(val);
+      } else {
+        entries[fullKey] = val;
+      }
+    }
+  }
+  return entries;
 }

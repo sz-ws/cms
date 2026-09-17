@@ -165,6 +165,8 @@ function EditRow({
         <Select
           value={entry.preset ?? allowedPresets[0]}
           onValueChange={(next) => onPresetChange(entry.id, next as WidgetPresetId)}
+          // 沒給 items,<SelectValue> 會顯示原始值而不是選項文字。
+          items={allowedPresets.map((p) => ({ value: p, label: labels.preset[p] }))}
         >
           <SelectTrigger size="sm" className="w-36">
             <SelectValue />

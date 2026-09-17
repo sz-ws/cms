@@ -120,6 +120,11 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
           <Select
             value={type}
             onValueChange={(next) => setType(next ?? ALL)}
+            // 沒給 items,<SelectValue> 會顯示原始值而不是選項文字。
+            items={[
+              { value: ALL, label: t("export.scopeAll") },
+              ...types.map((ct) => ({ value: ct.type, label: ct.label })),
+            ]}
           >
             <SelectTrigger
               id="export-scope"

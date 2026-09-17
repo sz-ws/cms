@@ -73,7 +73,6 @@ export default async function SettingsPage() {
       id: ext.id,
       // §1 #1:extension section 標題可 localize(ext.name = LocalizedString)。
       title: resolveLocalizedString(ext.name, locale) ?? ext.id,
-      description: m["settings.extensionsDesc"],
       fields: ext.settings ?? [],
       keyPrefix: `ext.${ext.id}.`,
     })),
