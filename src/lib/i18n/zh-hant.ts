@@ -117,6 +117,8 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "search.clear": "清除",
   "search.noResults": "找不到「{q}」的結果。",
   "search.hint": "輸入即可搜尋所有內容類型。",
+  "status.describe": "{status}的說明",
+  "status.recordNote": "這一筆",
   "search.kbdOpen": "開啟",
   "search.kbdClose": "關閉",
   "search.kbdNavigate": "導覽",

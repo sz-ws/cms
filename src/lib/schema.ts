@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 import { eq, isNotNull } from "drizzle-orm";
 
 export const users = sqliteTable("users", {
@@ -387,3 +387,21 @@ export const aiUsage = sqliteTable(
   (t) => [index("ai_usage_user_at").on(t.userId, t.at)],
 );
 
+
+// migrations/0019_record_status_notes.sql:每一筆紀錄的狀態描述(後台才看得到)。
+// 鍵 = 狀態組 `<extId>:<setId>`(src/ext/record-status.ts)+ 紀錄 id + 狀態。描述不參與任何
+// 轉移,只給人看;不存歷史,updated_by / updated_at 記最後一次誰改的。執行期契約見
+// src/lib/record-status-notes.ts。
+export const recordStatusNotes = sqliteTable(
+  "record_status_notes",
+  {
+    statusSet: text("status_set").notNull(),
+    recordId: text("record_id").notNull(),
+    status: text("status").notNull(),
+    note: text("note").notNull(),
+    // 無 .references():刪掉一個管理員不該抹掉他留過的描述(同 ai_usage 的先例)。
+    updatedBy: text("updated_by"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.statusSet, t.recordId, t.status] })],
+);

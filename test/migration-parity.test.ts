@@ -225,6 +225,12 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
         }>()
       ).results;
       const byName = new Map(info.map((c) => [c.name, c]));
+      // 複合主鍵(表層的 primaryKey({ columns }),如 0019 record_status_notes)不會
+      // 反映在欄位的 col.primary 上;PRAGMA 則把每個成員都標 pk > 0。兩者合起來才是
+      // 「這欄是不是主鍵的一部分」。
+      const compositePk = new Set(
+        cfg.primaryKeys.flatMap((pk) => pk.columns.map((c) => c.name)),
+      );
 
       expect(info.map((c) => c.name).sort()).toEqual(
         cfg.columns.map((c) => c.name).sort(),
@@ -236,7 +242,7 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
         expect(actual.type.toUpperCase(), `${label} 型別`).toBe(
           col.getSQLType().toUpperCase(),
         );
-        expect(actual.pk > 0, `${label} PK`).toBe(col.primary);
+        expect(actual.pk > 0, `${label} PK`).toBe(col.primary || compositePk.has(col.name));
         // PK 欄跳過 NOT NULL 比對:drizzle 生成的 DDL 會補 NOT NULL,手寫檔
         // 慣用裸 `TEXT PRIMARY KEY`(SQLite 的 TEXT PK 理論上可 NULL —— 應用層
         // 一律給 id,歷史 migration 是 append-only,不回頭改)。

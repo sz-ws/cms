@@ -4,11 +4,13 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/intent/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { AdminTitlesProvider } from "@/components/admin/admin-titles";
+import { StatusSetsProvider } from "@/components/admin/StatusBadge";
 import { SearchPalette } from "@/components/admin/SearchPalette";
 import { buildAdminNavGroups } from "@/components/admin/nav-groups";
 import type { PageSearchConfig } from "@/components/admin/PageSearch";
 import { ExtensionLayoutLoader } from "@/ext/dx/extension-layouts";
 import type { AdminMenuItem, AdminNavSection } from "@/ext/admin-menu";
+import type { ResolvedStatusSets } from "@/ext/record-status";
 
 // 05 §1: fixed CMS shell = left sidebar + top nav + content. Built on Intent
 // UI's sidebar-01 block (react-aria). Server component: receives the dynamic
@@ -29,6 +31,8 @@ interface AdminShellProps {
   sections: AdminNavSection[];
   /** 1.40.0:宣告了搜尋的插件頁(href → 頂欄搜尋框設定)。 */
   pageSearch?: Record<string, PageSearchConfig>;
+  /** 1.40.0:解析好的狀態組(含站台補的描述),給 <StatusBadge>。 */
+  statusSets?: ResolvedStatusSets;
   /** 擴充功能管理在側欄的兩個入口。 */
   shopLabels: { browse: string; installed: string };
   /** Breadcrumb titles for core sub-pages that are not sidebar items (href → title). */
@@ -43,6 +47,7 @@ export function AdminShell({
   children,
   sections,
   pageSearch = {},
+  statusSets = {},
   shopLabels,
   crumbTitles,
 }: AdminShellProps) {
@@ -90,7 +95,9 @@ export function AdminShell({
         <AdminNav menuTitles={menuTitles} pageSearch={pageSearch} />
         <main className="flex-1 p-4 lg:p-6">
           {/* 頁面標題跟側欄同名(站台改名後也一致),見 admin-titles.tsx。 */}
-          <AdminTitlesProvider titles={menuTitles}>{children}</AdminTitlesProvider>
+          <AdminTitlesProvider titles={menuTitles}>
+            <StatusSetsProvider sets={statusSets}>{children}</StatusSetsProvider>
+          </AdminTitlesProvider>
         </main>
       </SidebarInset>
     </SidebarProvider>

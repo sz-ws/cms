@@ -117,6 +117,8 @@ export const en = {
   "search.clear": "Clear",
   "search.noResults": "Nothing matches “{q}”.",
   "search.hint": "Type to search every content type.",
+  "status.describe": "About {status}",
+  "status.recordNote": "This record",
   "search.kbdOpen": "open",
   "search.kbdClose": "close",
   "search.kbdNavigate": "navigate",

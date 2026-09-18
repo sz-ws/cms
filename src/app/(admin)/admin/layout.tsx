@@ -4,6 +4,11 @@ import type { ReactNode } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 import { ADMIN_ACCENT_BOOT_SCRIPT } from "@/lib/admin-accent";
+import {
+  normalizeStatusSets,
+  resolveStatusSets,
+  type ResolvedStatusSets,
+} from "@/ext/record-status";
 import { AdminAccentSync } from "@/components/admin/AdminAccent";
 import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
@@ -87,6 +92,15 @@ export default async function AdminLayout({
     }
   }
 
+  // 1.40.0:狀態組(record-status.ts),過站台的 slot(filter:statusSets)再給後台畫。
+  const baseStatusSets = resolveStatusSets(rt.enabled, (value) =>
+    resolveLocalizedString(value, locale),
+  );
+  const statusSets = normalizeStatusSets(
+    await rt.hooks.applyFilters<ResolvedStatusSets>("filter:statusSets", baseStatusSets),
+    baseStatusSets,
+  );
+
   // 1.39.0:AI 沒設定好時不給入口 —— 點進去只會看到每一句都回「尚未設定」的面板。
   const showAgent = user.role === "admin" && (await isAgentAvailable());
 
@@ -147,6 +161,7 @@ export default async function AdminLayout({
         brandLogo={brandLogo}
         sections={sections}
         pageSearch={pageSearch}
+        statusSets={statusSets}
         shopLabels={{
           browse: messages["nav.browse"],
           installed: messages["nav.installed"],

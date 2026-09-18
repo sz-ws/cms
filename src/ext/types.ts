@@ -11,6 +11,12 @@ import type {
 } from "./dx/manifest";
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { isSqlIdentifier, type AdminPageSearch } from "./record-search";
+import {
+  STATUS_KEY_RE,
+  STATUS_SET_ID_RE,
+  STATUS_TONES,
+  type StatusSetDecl,
+} from "./record-status";
 import { validateSettingValue } from "../lib/setting-validation";
 import { normalizeHex } from "../lib/color";
 import { rangeStartsAtOrAfter } from "./semver";
@@ -176,6 +182,11 @@ export interface Extension {
    * 必須標 write,否則它會在 agent loop 內被直接執行而不經人工確認。
    */
   agentTools?: AgentTool[];
+  /**
+   * 1.40.0:紀錄的狀態組(名稱與色調),全站識別 `<extId>:<id>`。後台用 <StatusBadge>
+   * 畫;站台用 filter:statusSets 改名或補描述;每一筆可另掛描述(record-status.ts)。
+   */
+  statusSets?: StatusSetDecl[];
   uninstall?: ExtMigration[]; // 解除安裝時執行(如 DROP TABLE)
 }
 
@@ -291,6 +302,19 @@ const adminPageSearchSchema = z
       })
       .strict()
       .optional(),
+  })
+  .strict();
+
+// 1.40.0:狀態組(record-status.ts)。狀態值是插件寫進資料的字串,只收識別字。
+const statusSetSchema = z
+  .object({
+    id: z.string().regex(STATUS_SET_ID_RE, "invalid status set id"),
+    statuses: z
+      .record(
+        z.string().regex(STATUS_KEY_RE, "invalid status key"),
+        z.object({ label: localizedStringSchema, tone: z.enum(STATUS_TONES).optional() }).strict(),
+      )
+      .refine((statuses) => Object.keys(statuses).length > 0, "status set needs at least one status"),
   })
   .strict();
 
@@ -477,6 +501,7 @@ const manifestSchema = z
       .optional(),
     jobs: jobsSchema,
     agentTools: z.array(agentToolSchema).optional(),
+    statusSets: z.array(statusSetSchema).max(10).optional(),
   })
   // 其餘欄位(migrations/settings/adminPages/publicRoutes/hooks/uninstall)含 React
   // 型別與 function,不在 zod 深驗範圍,passthrough 保留。
@@ -511,6 +536,8 @@ const manifestSchema = z
     duplicate((ext.migrations ?? []).map((item) => item.id), "migrations", "migration id");
     duplicate((ext.uninstall ?? []).map((item) => item.id), "uninstall", "uninstall migration id");
     duplicate((ext.adminPages ?? []).map((item) => item.slug), "adminPages", "admin page slug");
+    duplicate((ext.statusSets ?? []).map((set) => set.id), "statusSets", "status set id");
+    if (ext.statusSets?.length && !rangeStartsAtOrAfter(ext.coreApi, "1.40.0")) ctx.addIssue({ code: "custom", message: "statusSets require coreApi >= 1.40.0", path: ["coreApi"] });
     const searchPages = (ext.adminPages ?? []).filter((page) => page.search);
     duplicate(searchPages.flatMap((page) => (page.search?.global ? [page.search.global.id] : [])), "adminPages", "global search id");
     if (searchPages.length && !rangeStartsAtOrAfter(ext.coreApi, "1.40.0")) ctx.addIssue({ code: "custom", message: "admin page search requires coreApi >= 1.40.0", path: ["coreApi"] });
@@ -593,6 +620,10 @@ export type HookName =
   // commerce、shop、system;站台改名、加區、排序,項目再用 filter:adminMenu 的
   // `section` 指過去。輸出經 normalizeAdminSections 收斂(ext/admin-menu.ts)。
   | "filter:adminSections" // (sections: AdminNavSection[]) => AdminNavSection[]
+  // 1.40.0:狀態組的 slot —— 站台改名(label)或補描述(addon),只影響後台顯示。
+  // 值是 ResolvedStatusSets(`<extId>:<setId>` → 狀態 → { label, tone, addon });
+  // 輸出經 normalizeStatusSets 收斂(ext/record-status.ts),不能憑空加狀態。
+  | "filter:statusSets" // (sets: ResolvedStatusSets) => ResolvedStatusSets
   | "filter:publicHome" // (component: ComponentType | null) => ComponentType | null
   // 1.19.0:公開站外框。由 src/app/(public)/layout.tsx 消費,套在所有公開路由外層
   // (含首頁與 [...slug])。預設 null = 不渲染,新站就是「只有內容、沒有外框」。

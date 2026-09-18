@@ -37,6 +37,14 @@ export function useT(): (key: MessageKey, params?: Record<string, string | numbe
   return ctx.t;
 }
 
+/**
+ * 1.40.0:後台與前台都會出現的元件用(如 <StatusBadge>):不在 I18nProvider 裡時回 null,
+ * 呼叫端自己決定退路,不像 useT 直接丟錯。
+ */
+export function useOptionalT(): I18nContextValue["t"] | null {
+  return useContext(I18nContext)?.t ?? null;
+}
+
 /** 給非字典的 locale-aware 格式化(相對時間、日期)用。 */
 export function useLocale(): Locale {
   const ctx = useContext(I18nContext);

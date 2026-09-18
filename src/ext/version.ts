@@ -635,5 +635,13 @@
 // - <LoadingState> centres a "loading" message under an accent-coloured spinner
 //   (<AccentSpinner>, components/admin/LoadingState.tsx); it takes its label as a
 //   prop so extension workspaces rendered on public pages can use it too.
+// - `statusSets` declares a plugin's record states (label, tone); <StatusBadge>
+//   draws them. `filter:statusSets` is the site's slot to rename a state or add a
+//   description (admin only; states cannot be invented). Each record can also carry
+//   a description per state (record + state, so a note written at one stage is not
+//   shown once the record moves on): core table record_status_notes (migration
+//   0019), lib/record-status-notes.ts for plugins, GET/PUT /api/record-status/notes
+//   { set, id, status, note } for admin pages. A described badge shows a small
+//   icon; hovering or focusing it shows the text (ext/record-status.ts).
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";
