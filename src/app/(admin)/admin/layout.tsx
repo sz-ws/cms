@@ -6,7 +6,13 @@ import { getSetting } from "@/lib/settings";
 import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { buildExtensionMenu, type AdminMenuItem } from "@/ext/admin-menu";
+import {
+  buildExtensionMenu,
+  defaultAdminSections,
+  normalizeAdminSections,
+  type AdminMenuItem,
+  type AdminNavSection,
+} from "@/ext/admin-menu";
 import { isAgentAvailable } from "@/lib/ai";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
@@ -96,15 +102,22 @@ export default async function AdminLayout({
     menu = menu.filter((item) => item.href === "/admin/account");
   }
 
-  const navLabels = {
+  // 1.40.0:側欄分區也過 filter —— 站台可以改名、加區、排序、改收合方式,
+  // 不必改 core 檔(規則與收斂在 ext/admin-menu.ts)。
+  const builtinSections = defaultAdminSections({
     workspace: messages["nav.group.workspace"],
     content: messages["nav.group.content"],
     commerce: messages["nav.group.commerce"],
     shop: messages["nav.group.shop"],
-    browse: messages["nav.browse"],
-    installed: messages["nav.installed"],
     system: messages["nav.group.system"],
-  };
+  });
+  const sections = normalizeAdminSections(
+    await rt.hooks.applyFilters<AdminNavSection[]>(
+      "filter:adminSections",
+      builtinSections,
+    ),
+    builtinSections,
+  );
 
   return (
     <I18nProvider locale={locale} messages={messages}>
@@ -113,7 +126,11 @@ export default async function AdminLayout({
         menu={menu}
         siteTitle={siteTitle}
         brandLogo={brandLogo}
-        navLabels={navLabels}
+        sections={sections}
+        shopLabels={{
+          browse: messages["nav.browse"],
+          installed: messages["nav.installed"],
+        }}
         // 不在 sidebar、但有自己標題的 core 子頁。少了這裡,麵包屑會退回把路徑段
         // 首字大寫(「Audit」),與整個後台的本地化脫節。
         crumbTitles={{ "/admin/agent/audit": messages["agent.audit.title"] }}

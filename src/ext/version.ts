@@ -605,4 +605,14 @@
 // isConfigured(); the Assistant nav entry is hidden until AI is configured.
 // All additive: older extensions render exactly as before, except multi-page ones
 // now appear as a folder.
-export const CORE_API_VERSION = "1.39.0";
+// 1.40.0: admin sidebar sections are data.
+// - The five built-in sections (workspace, content, commerce, shop, system) pass
+//   through `filter:adminSections`, so a site can rename, add, reorder them, or set
+//   `collapse: "active"` (only the section holding the current page starts open).
+//   Items from `filter:adminMenu` may point `section` at any section id, core items
+//   included; an unknown id lands in content. Manifest `menu.section` still accepts
+//   only content/commerce/system.
+// - `useAdminPageTitle()` / `<AdminPageTitle>` give a page its sidebar title, so a
+//   renamed item and the page heading agree. Breadcrumbs skip the bare /admin/ext.
+// Additive: without the new declarations everything renders as in 1.39.0.
+export const CORE_API_VERSION = "1.40.0";

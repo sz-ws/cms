@@ -528,6 +528,10 @@ export type HookName =
   | "extraction:completed" // (payload: { providerId; event: unknown })
   // filters(第一個參數是值,回傳修改後的值)
   | "filter:adminMenu" // (items: AdminMenuItem[]) => AdminMenuItem[]
+  // 1.40.0:側欄分區(id / label / order / collapse)。預設五區:workspace、content、
+  // commerce、shop、system;站台改名、加區、排序,項目再用 filter:adminMenu 的
+  // `section` 指過去。輸出經 normalizeAdminSections 收斂(ext/admin-menu.ts)。
+  | "filter:adminSections" // (sections: AdminNavSection[]) => AdminNavSection[]
   | "filter:publicHome" // (component: ComponentType | null) => ComponentType | null
   // 1.19.0:公開站外框。由 src/app/(public)/layout.tsx 消費,套在所有公開路由外層
   // (含首頁與 [...slug])。預設 null = 不渲染,新站就是「只有內容、沒有外框」。

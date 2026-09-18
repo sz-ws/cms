@@ -33,10 +33,13 @@ export function AdminNav({ menuTitles }: AdminNavProps) {
   const t = useT();
   const segments = pathname.split("/").filter(Boolean); // ["admin", ...]
 
-  const crumbs = segments.map((seg, i) => {
-    const href = "/" + segments.slice(0, i + 1).join("/");
-    return { href, label: labelFor(seg, href, menuTitles) };
-  });
+  // /admin/ext 只是 extension 頁的路由前綴,不是一頁:不給它一格「Ext」麵包屑。
+  const crumbs = segments
+    .map((seg, i) => {
+      const href = "/" + segments.slice(0, i + 1).join("/");
+      return { href, label: labelFor(seg, href, menuTitles) };
+    })
+    .filter((crumb) => crumb.href !== "/admin/ext");
 
   return (
     <SidebarNav className="h-14 border-b border-black/[0.07] bg-[#fbfaf9]/80 backdrop-blur-md">

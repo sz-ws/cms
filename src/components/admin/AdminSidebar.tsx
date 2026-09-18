@@ -33,35 +33,18 @@ import { AdminNavGroup } from "./AdminNavGroup";
 import { AdminNavLink } from "./AdminNavLink";
 import { NavIcon } from "./adminNavIcons";
 import { pickActiveHref } from "./nav-active";
+import type { AdminNavGroupData, AdminNavItem, AdminNavKind } from "./nav-groups";
 
 // Admin sidebar. Structure/behavior (a11y, mobile drawer, keyboard toggle) come
 // from Intent UI's sidebar-01 block (react-aria); the visual language is
 // "Paper & Ink" (see docs/admin-design-language.md) and the layout matches the
-// signed-off dashboard mock: three collapsible folder groups (Admin / Content /
-// Shop), real SVG line icons, and a user chip at the bottom. Groupings are
-// derived in AdminShell from the dynamic menu (core vs extension pages), never
-// hardcoded per extension.
+// signed-off dashboard mock: collapsible folder groups, real SVG line icons, and
+// a user chip at the bottom. Groups are the sidebar sections (1.40.0: sites can
+// rename, add and fold them via filter:adminSections); AdminShell splits the
+// dynamic menu into them (nav-groups.ts), never hardcoded per extension.
 
-/** kind: core admin item · extension adminPage (Content) · Shop link. */
-export type AdminNavKind = "core" | "extension" | "shop";
-
-export interface AdminNavItem {
-  href: string;
-  title: string;
-  kind: AdminNavKind;
-  /** Icon token or inline `<svg>` (already svg-guarded by AdminShell). */
-  icon?: string;
-  /** 1.39.0: one level of nesting. A folder's href is its first child's. */
-  children?: AdminNavItem[];
-}
-
-export interface AdminNavGroupData {
-  id: string;
-  label: string;
-  items: AdminNavItem[];
-}
-
-// Alias kept for the shell import name.
+// 型別住在 nav-groups.ts(server 端切群組的規則在那裡);這裡保留舊的匯入名。
+export type { AdminNavKind, AdminNavItem, AdminNavGroupData };
 export type { AdminNavGroupData as AdminNavGroup };
 
 interface AdminSidebarProps {
@@ -142,6 +125,12 @@ export function AdminSidebar({
   // Folders open when they hold the current page; a click overrides that until
   // the next full load. Keyed by folder href (its first child, stable per menu).
   const [folderOverrides, setFolderOverrides] = useState<Record<string, boolean>>({});
+  // 1.40.0:分區同一套規則。"open" 的分區預設展開;"active" 的只有目前頁面所在
+  // 那一區展開。點分區標題的覆寫記在這裡,以分區 id 為 key。
+  const [groupOverrides, setGroupOverrides] = useState<Record<string, boolean>>({});
+  // 有任何一區平常收合,分區標題就是主要導覽層 —— 全部用同一種標題樣式,不然常駐
+  // 展開的那一區會比其他區小一號。
+  const accordion = groups.some((group) => group.collapse === "active");
 
   // One active leaf for the whole sidebar — the longest matching path — so an
   // extension's main page (/admin/ext/shop) does not light up alongside its
@@ -304,11 +293,31 @@ export function AdminSidebar({
 
       <SidebarContent className="px-1.5">
         <SidebarSectionGroup className="gap-y-0">
-          {groups.map((group) => (
-            <AdminNavGroup key={group.id} label={group.label}>
-              {group.items.map(renderItem)}
-            </AdminNavGroup>
-          ))}
+          {groups.map((group) => {
+            const holdsActive = group.items.some(
+              (item) =>
+                item.href === activeHref ||
+                (item.children ?? []).some((child) => child.href === activeHref),
+            );
+            const open =
+              groupOverrides[group.id] ??
+              (group.collapse === "active" ? holdsActive : true);
+            return (
+              <AdminNavGroup
+                key={group.id}
+                label={group.label}
+                // Icon rail has no group headers to click, so every group shows.
+                open={docked || open}
+                onToggle={() =>
+                  setGroupOverrides((prev) => ({ ...prev, [group.id]: !open }))
+                }
+                prominent={accordion}
+                holdsActive={holdsActive}
+              >
+                {group.items.map(renderItem)}
+              </AdminNavGroup>
+            );
+          })}
         </SidebarSectionGroup>
       </SidebarContent>
 

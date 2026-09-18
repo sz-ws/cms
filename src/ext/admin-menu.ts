@@ -40,13 +40,100 @@ export interface AdminMenuItem {
   order?: number;
   /** 圖示代號(見 adminNavIcons.tsx)或內嵌 `<svg>`(1.39.0,須過 svg-guard)。 */
   icon?: string;
-  /** 1.39.0:側欄分區。缺省依路由判斷(/admin/ext/* → content)。 */
-  section?: AdminMenuSection;
+  /**
+   * 1.39.0:側欄分區。缺省依路由判斷(/admin/ext/* → content)。
+   * 1.40.0:filter:adminMenu 可指定任何分區 id(含站台用 filter:adminSections 加的);
+   * 不存在的分區退回「內容」。manifest 的 `menu.section` 仍只收三個內建值。
+   */
+  section?: AdminMenuSection | AdminNavSectionId;
   /** 1.39.0:子項。有子項的項目渲染成可折疊資料夾,href 指向第一個子項。 */
   children?: AdminMenuItem[];
 }
 
 export { isInlineSvgIcon };
+
+// 1.40.0:側欄分區本身也交給站台。
+//
+// 1.39.0 的五區(工作區 / 內容 / 商務 / 市集 / 系統)名稱與順序寫死在 AdminShell;
+// 客戶要「商務」叫別的名字、多一區、或分區多到要收合,只能改 core 檔。現在分區是
+// 一份資料:core 給預設,filter:adminSections 讓站台改名、加區、排序、決定收合方式;
+// 項目用 `section` 指到分區 id(filter:adminMenu 可改任何項目的歸屬)。
+
+export type AdminNavSectionId = string;
+
+export const BUILTIN_NAV_SECTIONS = [
+  "workspace",
+  "content",
+  "commerce",
+  "shop",
+  "system",
+] as const;
+export type BuiltinNavSection = (typeof BUILTIN_NAV_SECTIONS)[number];
+
+export interface AdminNavSection {
+  id: AdminNavSectionId;
+  label: string;
+  /** 小的在前。內建:workspace 0、content 20、commerce 40、shop 60、system 80。 */
+  order: number;
+  /**
+   * "open"(缺省):展開,可手動收合。
+   * "active":只有目前頁面所在的那一區展開,其餘收合 —— 分區一多,側欄才看得完。
+   */
+  collapse?: "open" | "active";
+}
+
+const BUILTIN_SECTION_ORDER: Record<BuiltinNavSection, number> = {
+  workspace: 0,
+  content: 20,
+  commerce: 40,
+  shop: 60,
+  system: 80,
+};
+
+export function defaultAdminSections(
+  labels: Record<BuiltinNavSection, string>,
+): AdminNavSection[] {
+  return BUILTIN_NAV_SECTIONS.map((id) => ({
+    id,
+    label: labels[id],
+    order: BUILTIN_SECTION_ORDER[id],
+  }));
+}
+
+const SECTION_ID_RE = /^[a-z][a-z0-9-]{0,39}$/;
+
+/**
+ * filter:adminSections 的輸出是 extension 給的,渲染前在這裡收斂:丟掉形狀不對的、
+ * 同 id 留第一個、依 order 排(同值維持原順序)。整份不是陣列或全被丟光就回預設 ——
+ * 一個寫壞的 filter 不能讓側欄整個消失。
+ */
+export function normalizeAdminSections(
+  value: unknown,
+  fallback: AdminNavSection[],
+): AdminNavSection[] {
+  if (!Array.isArray(value)) return fallback;
+  const seen = new Set<string>();
+  const sections: AdminNavSection[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const { id, label, order, collapse } = raw as Record<string, unknown>;
+    if (typeof id !== "string" || !SECTION_ID_RE.test(id) || seen.has(id)) continue;
+    if (typeof label !== "string" || label.trim() === "") continue;
+    if (typeof order !== "number" || !Number.isFinite(order)) continue;
+    seen.add(id);
+    sections.push({
+      id,
+      label,
+      order,
+      ...(collapse === "active" || collapse === "open" ? { collapse } : {}),
+    });
+  }
+  if (sections.length === 0) return fallback;
+  return sections
+    .map((section, index) => ({ section, index }))
+    .sort((a, b) => a.section.order - b.section.order || a.index - b.index)
+    .map(({ section }) => section);
+}
 
 const EXT_ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const DEFAULT_ORDER = 100;
