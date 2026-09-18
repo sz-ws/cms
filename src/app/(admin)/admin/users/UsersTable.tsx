@@ -1,6 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import {
+  startTransition,
+  useOptimistic,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import {
@@ -31,8 +36,10 @@ import {
 } from "@/components/ui/popover";
 import { FaceIdIcon } from "@/components/ui/face-id-icon";
 import { cn } from "@/lib/utils";
+import { stableReducer } from "@/lib/optimistic";
 import { relativeTimeWords } from "@/lib/relative-time";
 import { UserSheet, type SheetMode } from "./UserSheet";
+import { applyUsersAction, type UsersAction } from "./users-optimistic";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import type { MessageKey, Locale } from "@/lib/i18n";
 
@@ -57,7 +64,10 @@ export interface UserRecord {
 interface ColumnCtx {
   selfId: string;
   now: number;
-  /** cell 內的就地變更(如 role 切換)回寫父層列表 —— 單一資料真相在 UsersTable。 */
+  /**
+   * cell 內的就地變更(如 role 切換)樂觀地畫到父層列表 —— 單一資料真相在 UsersTable。
+   * 是 useOptimistic 的 setter,必須在 transition 裡呼叫。
+   */
   onUserChanged: (u: UserRecord) => void;
   /** COLUMNS 是 module 常數,cell 不是元件不能自己 useT —— t/locale 由表格層注入。 */
   t: ReturnType<typeof useT>;
@@ -364,21 +374,21 @@ function RoleCell({
     );
   }
 
-  async function switchRole(next: "admin" | "editor" | "guest") {
+  function switchRole(next: "admin" | "editor" | "guest") {
     if (next === role) return;
     setFailed(false);
-    onChanged({ ...user, role: next }); // 樂觀
-    const res = await fetch(`/api/users/${user.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: next }),
-    }).catch(() => null);
-    if (!res || !res.ok) {
-      onChanged(user); // 回滾
-      setFailed(true);
-    } else {
-      router.refresh();
-    }
+    startTransition(async () => {
+      onChanged({ ...user, role: next }); // 樂觀:server 回來之前列表先顯示新 role
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: next }),
+      }).catch(() => null);
+      // 成功:同一個 transition 裡刷新,新資料到之前維持樂觀的樣子。
+      // 失敗:transition 結束時列表自己退回原本的 role,不必手動回滾。
+      if (res?.ok) router.refresh();
+      else setFailed(true);
+    });
   }
 
   return (
@@ -394,7 +404,7 @@ function RoleCell({
         <DropdownMenuContent align="start" className="min-w-[9rem]">
           <DropdownMenuRadioGroup
             value={role}
-            onValueChange={(v) => void switchRole(v as "admin" | "editor" | "guest")}
+            onValueChange={(v) => switchRole(v as "admin" | "editor" | "guest")}
           >
             <DropdownMenuRadioItem value="admin">{t("usersTable.roleAdmin")}</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="editor">{t("usersTable.roleEditor")}</DropdownMenuRadioItem>
@@ -409,6 +419,10 @@ function RoleCell({
 
 // ---- 主表格 ----
 
+// 變更先畫到列表上(見 ./users-optimistic.ts)。stableReducer:transition 期間每次 render
+// 同一列都是同一個物件,列上的 sheet / rowActive 比對才不會每次都以為「變了」。
+const reduceUsers = stableReducer<UserRecord[], UsersAction>(applyUsersAction);
+
 export function UsersTable({
   initialUsers,
   selfId,
@@ -421,14 +435,12 @@ export function UsersTable({
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
-  const [users, setUsers] = useState(initialUsers);
-  // router.refresh() 帶回的新 server 資料要蓋掉樂觀 state(官方「adjust state when
-  // props change」render-time 模式)—— 不然刷新後列表永遠停在第一次的快照。
-  const [prevInitial, setPrevInitial] = useState(initialUsers);
-  if (initialUsers !== prevInitial) {
-    setPrevInitial(initialUsers);
-    setUsers(initialUsers);
-  }
+  // 真相是 server 給的 initialUsers;樂觀變更只活在 transition 裡,router.refresh()
+  // 帶回新資料的同一次 commit 換成真實結果,失敗則自動退回。
+  const [users, applyOptimistic] = useOptimistic<UserRecord[], UsersAction>(
+    initialUsers,
+    reduceUsers,
+  );
   const [sheet, setSheet] = useState<SheetMode | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -441,8 +453,7 @@ export function UsersTable({
     now,
     t,
     locale,
-    onUserChanged: (u) =>
-      setUsers((list) => list.map((x) => (x.id === u.id ? u : x))),
+    onUserChanged: (u) => applyOptimistic({ kind: "upsert", user: u }),
   };
 
   // COLUMNS(module 常數,含 optional 資訊供 ColumnPicker)→ CoreTable 欄位:
@@ -457,20 +468,17 @@ export function UsersTable({
     render: (u) => c.render(u, ctx),
   }));
 
-  async function deleteUser(id: string) {
+  function deleteUser(id: string) {
     setError(null);
-    const prev = users;
-    setUsers((u) => u.filter((x) => x.id !== id));
     setConfirmDelete(null);
-    const res = await fetch(`/api/users/${id}`, { method: "DELETE" }).catch(
-      () => null,
-    );
-    if (!res || !res.ok) {
-      setUsers(prev);
-      setError(t("usersTable.removeFailed"));
-    } else {
-      router.refresh();
-    }
+    startTransition(async () => {
+      applyOptimistic({ kind: "remove", id });
+      const res = await fetch(`/api/users/${id}`, { method: "DELETE" }).catch(
+        () => null,
+      );
+      if (res?.ok) router.refresh();
+      else setError(t("usersTable.removeFailed")); // 列會在 transition 結束時回來
+    });
   }
 
   const memberCount =
@@ -530,7 +538,7 @@ export function UsersTable({
               </button>
               <button
                 type="button"
-                onClick={() => void deleteUser(u.id)}
+                onClick={() => deleteUser(u.id)}
                 className="rounded-[6px] bg-red-600 px-2 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
               >
                 {t("usersTable.remove")}
@@ -563,20 +571,19 @@ export function UsersTable({
         mode={sheet}
         selfId={selfId}
         onClose={() => setSheet(null)}
-        onSaved={(u) => {
-          setUsers((list) => {
-            const i = list.findIndex((x) => x.id === u.id);
-            if (i === -1) return [...list, u];
-            const next = [...list];
-            next[i] = u;
-            return next;
-          });
-          router.refresh();
-        }}
-        onDeleted={(id) => {
-          setUsers((list) => list.filter((x) => x.id !== id));
-          router.refresh();
-        }}
+        // sheet 已經自己打完 API;這裡只負責讓列表在 refresh 回來之前就是新的樣子。
+        onSaved={(u) =>
+          startTransition(() => {
+            applyOptimistic({ kind: "upsert", user: u });
+            router.refresh();
+          })
+        }
+        onDeleted={(id) =>
+          startTransition(() => {
+            applyOptimistic({ kind: "remove", id });
+            router.refresh();
+          })
+        }
       />
     </div>
   );

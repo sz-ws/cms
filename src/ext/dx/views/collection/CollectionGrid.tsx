@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useOptimistic, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { stableReducer } from "@/lib/optimistic";
 import { StatusBadge } from "../StatusBadge";
 import { BulkActionBar } from "./BulkActionBar";
+import { applyBulkAction, type BulkAction } from "./optimistic";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { MediaImage } from "@/components/ui/media-image";
 
@@ -23,7 +25,12 @@ export interface GridCard {
   coverKey: string | null;
   /** meta 行文字(select 值或日期);空字串則不顯示。 */
   meta: string;
+  /** 批次動作樂觀套上、server 還沒確認(見 ./optimistic.ts)。 */
+  pending?: boolean;
 }
+
+// 同 CollectionTable:批次動作先畫到卡片上,server 資料回來就被取代。
+const reduceCards = stableReducer<GridCard[], BulkAction>(applyBulkAction);
 
 interface CollectionGridProps {
   extId: string;
@@ -116,9 +123,13 @@ function CardCover({ coverKey, title }: { coverKey: string | null; title: string
 
 export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [shownCards, applyOptimistic] = useOptimistic<GridCard[], BulkAction>(
+    cards,
+    reduceCards,
+  );
   const t = useT();
-  const allIds = useMemo(() => cards.map((c) => c.id), [cards]);
-  const allSelected = selected.size > 0 && selected.size === cards.length;
+  const allIds = useMemo(() => shownCards.map((c) => c.id), [shownCards]);
+  const allSelected = selected.size > 0 && selected.size === shownCards.length;
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -131,7 +142,7 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
 
   function toggleAll() {
     setSelected((prev) =>
-      prev.size === cards.length ? new Set() : new Set(allIds),
+      prev.size === shownCards.length ? new Set() : new Set(allIds),
     );
   }
 
@@ -154,10 +165,17 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
       </div>
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {cards.map((card) => {
+        {shownCards.map((card) => {
           const isSel = selected.has(card.id);
           return (
-            <li key={card.id} className="group relative">
+            <li
+              key={card.id}
+              aria-busy={card.pending || undefined}
+              className={cn(
+                "group relative transition-opacity",
+                card.pending && "opacity-60",
+              )}
+            >
               <CornerCheckbox
                 checked={isSel}
                 onChange={() => toggle(card.id)}
@@ -198,6 +216,7 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
         typeName={typeName}
         ids={[...selected]}
         onDone={clearSelection}
+        onOptimistic={applyOptimistic}
       />
     </div>
   );

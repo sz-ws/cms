@@ -566,6 +566,7 @@ export const en = {
   "collection.bulk.updateFailed": "Some updates failed.",
   "collection.bulk.deleteFailed": "Some deletes failed.",
   "collection.bulk.networkError": "Network error.",
+  "collection.bulk.dismiss": "Dismiss",
 
   // Declarative FormView (src/ext/dx/views/FormView.tsx). `extForm.public.*` is
   // visitor-facing (public routes have NO I18nProvider — FormView resolves these
@@ -624,6 +625,7 @@ export const en = {
   "inbox.unarchive": "Move to inbox",
   "inbox.markUnread": "Mark unread",
   "inbox.delete": "Delete",
+  "inbox.actionFailed": "That change wasn't saved. Try again.",
   "inbox.prev": "Newer",
   "inbox.next": "Older",
   "inbox.pageOf": "Page {page} of {last}",

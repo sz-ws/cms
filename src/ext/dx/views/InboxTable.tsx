@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useOptimistic, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, CornerUpLeft, Inbox, MailOpen, Trash2 } from "lucide-react";
@@ -20,7 +20,9 @@ import {
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { relativeTimeWords } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
+import { stableReducer } from "@/lib/optimistic";
 import type { SubmissionState } from "../submission";
+import { applyInboxAction, type InboxAction } from "./inbox-optimistic";
 
 // 收件匣的互動層。體例照 RevisionHistory / UsersTable:CoreTable 列表 + 右側 detail
 // sheet,不另發明視覺語言。未讀以左緣一條實心色條 + 較深的字重表示 —— 靜態,沒有
@@ -64,6 +66,11 @@ export interface InboxTableProps {
   now: number;
 }
 
+// 狀態變更與刪除先畫到列上(見 ./inbox-optimistic.ts);server 資料回來就被取代。
+const reduceRows = stableReducer<InboxRowDTO[], InboxAction>(
+  applyInboxAction,
+);
+
 export function InboxTable({
   extId,
   typeName,
@@ -81,33 +88,67 @@ export function InboxTable({
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
-  const [open, setOpen] = useState<InboxRowDTO | null>(null);
+  const [shownRows, applyOptimistic] = useOptimistic<
+    InboxRowDTO[],
+    InboxAction
+  >(rows, reduceRows);
+  // sheet 以 id 尋址,內容永遠取自 shownRows:樂觀變更馬上反映在 sheet 上。
+  // InboxSheet 用 `row !== held` 留住最後一筆,靠的是 stableReducer 讓同一列在
+  // transition 期間的每次 render 都是同一個物件(見 src/lib/optimistic.ts)。
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = openId
+    ? (shownRows.find((r) => r.id === openId) ?? null)
+    : null;
+  const [error, setError] = useState<string | null>(null);
 
   const endpoint = (id: string) =>
     `/api/ext/${extId}/${typeName}/${encodeURIComponent(id)}/inbox`;
 
-  /** 收件狀態變更。成功後 router.refresh(),由 server 重查列表與各狀態筆數。 */
-  const patch = async (
+  /**
+   * 先把 action 畫上去,API 在 transition 裡背景跑。成功後 router.refresh() 由 server
+   * 重查列表與各狀態筆數 —— 同一個 transition,新資料到之前畫面維持樂觀的樣子,
+   * 不會先閃回舊狀態。失敗:transition 結束時列表自己退回原狀,並顯示錯誤。
+   * 回傳的 promise 在 server 回應後才 settle,sheet 的按鈕靠它顯示成功 / 失敗。
+   */
+  const mutate = (
+    action: InboxAction,
+    request: () => Promise<Response>,
+  ): Promise<void> =>
+    new Promise((resolve, reject) => {
+      setError(null);
+      startTransition(async () => {
+        applyOptimistic(action);
+        try {
+          const res = await request();
+          if (!res.ok) throw new Error(String(res.status));
+          router.refresh();
+          resolve();
+        } catch (e) {
+          setError(t("inbox.actionFailed"));
+          reject(e);
+        }
+      });
+    });
+
+  /** 收件狀態變更(樂觀,見 mutate)。 */
+  const patch = (
     id: string,
     body: { state?: SubmissionState; replied?: boolean },
-  ): Promise<void> => {
-    const res = await fetch(endpoint(id), {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(String(res.status));
-    router.refresh();
-  };
-
-  const remove = async (id: string): Promise<void> => {
-    const res = await fetch(
-      `/api/ext/${extId}/${typeName}/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
+  ): Promise<void> =>
+    mutate({ kind: "patch", id, ...body, at: Date.now() }, () =>
+      fetch(endpoint(id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
     );
-    if (!res.ok) throw new Error(String(res.status));
-    router.refresh();
-  };
+
+  const remove = (id: string): Promise<void> =>
+    mutate({ kind: "delete", id }, () =>
+      fetch(`/api/ext/${extId}/${typeName}/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    );
 
   const columns: CoreColumn<InboxRowDTO>[] = [
     ...listFields.map((f, i) => ({
@@ -179,19 +220,31 @@ export function InboxTable({
         })}
       </nav>
 
-      {rows.length === 0 ? (
+      {error && (
+        <p
+          role="alert"
+          className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+        >
+          {error}
+        </p>
+      )}
+
+      {shownRows.length === 0 ? (
         <p className="rounded-[12px] bg-black/[0.02] px-4 py-8 text-center text-[13px] text-black/35">
           {t("inbox.empty")}
         </p>
       ) : (
         <CoreTable
           columns={columns}
-          rows={rows}
+          rows={shownRows}
           rowKey={(r) => r.id}
           onRowClick={(r) => {
-            setOpen(r);
+            setOpenId(r.id);
             // 開啟即視為已讀 —— 這是收件匣唯一該自動發生的狀態轉換。
-            if (r.state === "unread") void patch(r.id, { state: "read" });
+            // 失敗只顯示錯誤(mutate 已處理),這裡不必再接。
+            if (r.state === "unread") {
+              patch(r.id, { state: "read" }).catch(() => {});
+            }
           }}
           rowActive={(r) => open?.id === r.id}
           trailingLabel={t("inbox.open")}
@@ -207,11 +260,13 @@ export function InboxTable({
         row={open}
         fields={detailFields}
         now={now}
-        onClose={() => setOpen(null)}
+        error={error}
+        onClose={() => setOpenId(null)}
         onPatch={patch}
-        onRemove={async (id) => {
-          await remove(id);
-          setOpen(null);
+        onRemove={(id) => {
+          // 先關 sheet:列已經從列表拿掉了。失敗時列會回來,錯誤顯示在列表上方。
+          setOpenId(null);
+          return remove(id);
         }}
       />
     </section>
@@ -263,10 +318,15 @@ function Pagination({
   );
 }
 
+/** 成功的打勾停留多久後歸位(StatusButton 在 success 狀態是 disabled)。 */
+const ACTION_SUCCESS_MS = 1200;
+
 /**
  * sheet footer 的單一動作鈕。自己持有 StatusButton 的 idle/loading/success/error
  * 狀態 —— 每顆鈕各自獨立,才不會按了「封存」卻讓「刪除」也跟著轉圈。
  * 成功狀態短暫顯示後歸位;失敗停在 error,操作者看得見而不是靜靜地什麼都沒發生。
+ * 歸位是必要的:樂觀更新讓「標記已回覆」當場變成「取消已回覆」,同一顆鈕若停在
+ * success(disabled),就沒辦法立刻反悔。
  */
 function ActionButton({
   label,
@@ -289,7 +349,10 @@ function ActionButton({
         if (status === "loading") return;
         setStatus("loading");
         void run().then(
-          () => setStatus("success"),
+          () => {
+            setStatus("success");
+            setTimeout(() => setStatus("idle"), ACTION_SUCCESS_MS);
+          },
           () => setStatus("error"),
         );
       }}
@@ -304,6 +367,7 @@ function InboxSheet({
   row,
   fields,
   now,
+  error,
   onClose,
   onPatch,
   onRemove,
@@ -311,6 +375,8 @@ function InboxSheet({
   row: InboxRowDTO | null;
   fields: InboxFieldMeta[];
   now: number;
+  /** 上一個動作的錯誤。按下去的那顆鈕可能已因樂觀更新換成另一顆,所以另外顯示。 */
+  error: string | null;
   onClose: () => void;
   onPatch: (
     id: string,
@@ -361,6 +427,11 @@ function InboxSheet({
         </dl>
 
         <SheetFooter>
+          {error && row !== null && (
+            <p role="alert" className="text-[12.5px] text-red-700">
+              {error}
+            </p>
+          )}
           {shown && (
             <div className="flex flex-wrap gap-2">
               <ActionButton

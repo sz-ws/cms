@@ -556,6 +556,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "collection.bulk.updateFailed": "部分項目更新失敗。",
   "collection.bulk.deleteFailed": "部分項目刪除失敗。",
   "collection.bulk.networkError": "網路連線錯誤。",
+  "collection.bulk.dismiss": "關閉",
 
   // Declarative FormView(src/ext/dx/views/FormView.tsx)。extForm.public.* 是訪客
   // 可見文案(public route 沒有 I18nProvider,FormView 以 locale prop + getMessages
@@ -613,6 +614,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "inbox.unarchive": "移回收件匣",
   "inbox.markUnread": "標記未讀",
   "inbox.delete": "刪除",
+  "inbox.actionFailed": "這個變更沒有存到，請再試一次。",
   "inbox.prev": "較新",
   "inbox.next": "較舊",
   "inbox.pageOf": "第 {page} / {last} 頁",

@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useOptimistic, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { stableReducer } from "@/lib/optimistic";
 import { StatusBadge } from "../StatusBadge";
 import { SortableHeader } from "./SortableHeader";
 import { BulkActionBar } from "./BulkActionBar";
+import { applyBulkAction, type BulkAction } from "./optimistic";
 import { useT } from "@/lib/i18n/I18nProvider";
 
 // 表格(client):擁有 row selection state,渲染 server 傳入的 cell ReactNode。
@@ -24,7 +26,12 @@ export interface RowData {
   status: string;
   editHref: string;
   cells: ReactNode[]; // 對應 columns 順序
+  /** 批次動作樂觀套上、server 還沒確認(見 ./optimistic.ts)。 */
+  pending?: boolean;
 }
+
+// 批次動作先畫到列上(BulkActionBar 在 transition 裡呼叫);server 資料回來就被取代。
+const reduceRows = stableReducer<RowData[], BulkAction>(applyBulkAction);
 
 interface CollectionTableProps {
   extId: string;
@@ -81,10 +88,14 @@ export function CollectionTable({
   activeSort,
 }: CollectionTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [shownRows, applyOptimistic] = useOptimistic<RowData[], BulkAction>(
+    rows,
+    reduceRows,
+  );
   const t = useT();
 
-  const allIds = useMemo(() => rows.map((r) => r.id), [rows]);
-  const allSelected = selected.size > 0 && selected.size === rows.length;
+  const allIds = useMemo(() => shownRows.map((r) => r.id), [shownRows]);
+  const allSelected = selected.size > 0 && selected.size === shownRows.length;
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -97,7 +108,7 @@ export function CollectionTable({
 
   function toggleAll() {
     setSelected((prev) =>
-      prev.size === rows.length ? new Set() : new Set(allIds),
+      prev.size === shownRows.length ? new Set() : new Set(allIds),
     );
   }
 
@@ -149,14 +160,16 @@ export function CollectionTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/[0.05]">
-            {rows.map((row) => {
+            {shownRows.map((row) => {
               const isSel = selected.has(row.id);
               return (
                 <tr
                   key={row.id}
+                  aria-busy={row.pending || undefined}
                   className={cn(
-                    "transition-colors",
+                    "transition-[background-color,opacity]",
                     isSel ? "bg-(--admin-accent)/[0.04]" : "hover:bg-black/[0.02]",
+                    row.pending && "opacity-60",
                   )}
                 >
                   <td className="px-3 py-2.5 align-middle">
@@ -201,6 +214,7 @@ export function CollectionTable({
         typeName={typeName}
         ids={[...selected]}
         onDone={clearSelection}
+        onOptimistic={applyOptimistic}
       />
     </div>
   );

@@ -28,7 +28,8 @@ import { EmptyState } from "./collection/EmptyState";
 
 // core-v2 §3.3:generic admin collection view。分頁·排序·filter 全部住在 URL
 // searchParams;此 server component 讀取後餵給 provider.query(),互動控制件(toolbar /
-// header sort / pagination / bulk bar)只改 searchParams 或呼叫 CRUD API 後 router.refresh()。
+// header sort / pagination / bulk bar)只改 searchParams 或呼叫 CRUD API —— 批次動作先樂觀地
+// 畫到列上,router.refresh() 在背景拿回這裡重查的結果(見 collection/optimistic.ts)。
 
 export interface CollectionViewProps {
   extId: string;

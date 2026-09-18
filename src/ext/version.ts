@@ -650,5 +650,8 @@
 //   src/instrumentation.ts (the root file never ran) and keeps only onRequestError;
 //   register() and sentry.*.config.ts are gone; withSentryConfig's automatic
 //   wrappers are off (lib/observe/bridge.ts).
+// - Admin lists (content collections, inbox, users, extensions) update
+//   optimistically; lib/optimistic.ts stableReducer keeps row identity stable while
+//   a transition is pending.
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

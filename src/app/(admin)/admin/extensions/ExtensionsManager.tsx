@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useOptimistic, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import NumberFlow from "@number-flow/react";
 import { TextMorph } from "torph/react";
@@ -10,8 +10,13 @@ import { RegistryBrowser } from "./RegistryBrowser";
 import { DevInstallTrigger } from "./DevInstallDialog";
 import { ExtensionSheet } from "./ExtensionSheet";
 import { cn } from "@/lib/utils";
+import { stableReducer } from "@/lib/optimistic";
 import { useT } from "@/lib/i18n/I18nProvider";
 import type { ExtensionRuntimeIssue } from "@/ext/loader";
+import {
+  applyExtensionsAction,
+  type ExtensionsAction,
+} from "./extensions-optimistic";
 
 export interface ExtensionRow {
   id: string;
@@ -96,13 +101,24 @@ export function KindBadge({ kind }: { kind: ExtensionRow["kind"] }) {
   );
 }
 
+// 啟停 / 移除先畫到列表上(見 ./extensions-optimistic.ts)。stableReducer 讓同一列在
+// transition 期間的每次 render 都是同一個物件 —— ExtensionSheet 以 `request.ext !==
+// held.ext` 判斷要不要換內容,參照每次都變就會無限 re-render(見 src/lib/optimistic.ts)。
+const reduceExtensions = stableReducer<ExtensionRow[], ExtensionsAction>(
+  applyExtensionsAction,
+);
+
 function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
   const t = useT();
   const router = useRouter();
+  const [rows, applyOptimistic] = useOptimistic<
+    ExtensionRow[],
+    ExtensionsAction
+  >(extensions, reduceExtensions);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // sheet 以 id 尋址,資料永遠取自最新的 extensions prop(router.refresh() 後
-  // enable 狀態就地更新;uninstall 後找不到該列 → request 變 null → sheet 退場)。
+  // sheet 以 id 尋址,資料永遠取自 rows(樂觀變更與 router.refresh() 後的新資料都就地
+  // 反映;uninstall 後找不到該列 → request 變 null → sheet 退場)。
   // seq 每次「打開」遞增,當 sheet body 的 key —— 確認面板等內部狀態全新。
   const [open, setOpen] = useState<{
     id: string;
@@ -114,11 +130,13 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
     setOpen((prev) => ({ id, confirm, seq: (prev?.seq ?? 0) + 1 }));
   }
 
-  const openExt = open
-    ? (extensions.find((e) => e.id === open.id) ?? null)
-    : null;
+  const openExt = open ? (rows.find((e) => e.id === open.id) ?? null) : null;
 
-  async function run(
+  // 狀態先換(樂觀),API 在 transition 裡背景跑。成功:同一個 transition 裡
+  // router.refresh() —— 啟停會改側欄選單,layout 非重畫不可,但新資料到之前畫面維持
+  // 樂觀的樣子。失敗:transition 結束時列表自己退回原狀,並顯示原因。
+  // pending 只擋重複送出與顯示「…」,在 server 回應時就放開,不等 refresh。
+  function run(
     extId: string,
     action: Action,
     kind: ExtensionRow["kind"],
@@ -126,31 +144,34 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
   ) {
     setError(null);
     setPending(`${extId}:${action}`);
-    try {
-      const res = await fetch(`/api/extensions/${extId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, kind, purgeContent }),
-      });
-      if (res.ok) {
-        router.refresh();
-      } else if (res.status === 403) {
-        setError(t("extensions.notAllowed"));
-      } else if (res.status === 500 && action === "enable") {
-        setError(t("extensions.enableIncomplete"));
-      } else if (res.status === 409) {
-        // 相依或 canDisable 守門(src/ext/code-lifecycle.ts)回的是給人看的原因,
-        // 例如「請先啟用必要插件:wallet, inventory」—— 直接顯示,不要縮成「操作失敗」。
-        const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
-        setError(typeof body?.error === "string" && body.error ? body.error : t("extensions.actionFailed"));
-      } else {
-        setError(t("extensions.actionFailed"));
+    startTransition(async () => {
+      applyOptimistic({ id: extId, action });
+      try {
+        const res = await fetch(`/api/extensions/${extId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, kind, purgeContent }),
+        });
+        if (res.ok) {
+          router.refresh();
+        } else if (res.status === 403) {
+          setError(t("extensions.notAllowed"));
+        } else if (res.status === 500 && action === "enable") {
+          setError(t("extensions.enableIncomplete"));
+        } else if (res.status === 409) {
+          // 相依或 canDisable 守門(src/ext/code-lifecycle.ts)回的是給人看的原因,
+          // 例如「請先啟用必要插件:wallet, inventory」—— 直接顯示,不要縮成「操作失敗」。
+          const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+          setError(typeof body?.error === "string" && body.error ? body.error : t("extensions.actionFailed"));
+        } else {
+          setError(t("extensions.actionFailed"));
+        }
+      } catch {
+        setError(t("extensions.networkError"));
+      } finally {
+        setPending(null);
       }
-    } catch {
-      setError(t("extensions.networkError"));
-    } finally {
-      setPending(null);
-    }
+    });
   }
 
   const columns: CoreColumn<ExtensionRow>[] = [
@@ -194,7 +215,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
     },
   ];
 
-  if (extensions.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="rounded-[14px] border border-dashed border-black/20 p-8 text-center">
         <p className="text-[13px] text-black/45">
@@ -217,7 +238,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
 
       <CoreTable
         columns={columns}
-        rows={extensions}
+        rows={rows}
         rowKey={(e) => e.id}
         onRowClick={(e) => openSheet(e.id, false)}
         rowActive={(e) => open?.id === e.id && openExt !== null}
@@ -226,10 +247,10 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
           <>
             <RowIconButton
               label={e.enabled ? t("extensions.disable") : t("extensions.enable")}
-              onClick={() =>
-                pending === null &&
-                void run(e.id, e.enabled ? "disable" : "enable", e.kind)
-              }
+              onClick={() => {
+                if (pending === null)
+                  run(e.id, e.enabled ? "disable" : "enable", e.kind);
+              }}
             >
               {pending === `${e.id}:enable` || pending === `${e.id}:disable` ? (
                 <span className="text-[12px]">…</span>
@@ -260,7 +281,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
         pending={pending}
         onClose={() => setOpen(null)}
         onAction={(id, action, kind, purgeContent) =>
-          void run(id, action, kind, purgeContent)
+          run(id, action, kind, purgeContent)
         }
       />
     </div>
