@@ -614,5 +614,6 @@
 //   only content/commerce/system.
 // - `useAdminPageTitle()` / `<AdminPageTitle>` give a page its sidebar title, so a
 //   renamed item and the page heading agree. Breadcrumbs skip the bare /admin/ext.
+// - <Timeline> renders a record's history (components/admin/Timeline.tsx).
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";
