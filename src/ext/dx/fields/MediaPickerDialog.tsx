@@ -207,7 +207,7 @@ function LibraryGrid({
               type="button"
               onClick={() => onSelect(file.key)}
               title={file.key}
-              className="group relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] outline-none transition-[box-shadow] focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_2px_6px_-2px_rgba(0,0,0,0.12)] active:scale-[0.96] motion-reduce:active:scale-100"
+              className="group relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] outline-none transition-[box-shadow] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_2px_6px_-2px_rgba(0,0,0,0.12)] active:scale-[0.96] motion-reduce:active:scale-100"
             >
               {isImage(file) ? (
                 // Storage-key preview through the shared variant helper: the
@@ -305,9 +305,9 @@ function UploadPane({ onUploaded }: { onUploaded: (key: string) => void }) {
         className={cn(
           "flex min-h-40 flex-col items-center justify-center gap-2 rounded-[14px] bg-white px-6 py-8 text-center outline-none transition-[box-shadow,background-color]",
           "shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)]",
-          "focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)]",
+          "focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
           dragging
-            ? "bg-[rgba(86,114,228,0.04)] shadow-[0_0_0_2px_rgba(86,114,228,0.5)]"
+            ? "bg-(--admin-accent)/[0.04] shadow-[0_0_0_2px_color-mix(in_srgb,var(--admin-accent)_50%,transparent)]"
             : "hover:bg-black/[0.02]",
           uploading && "opacity-70",
         )}

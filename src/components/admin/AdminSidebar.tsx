@@ -95,7 +95,7 @@ function navItemClasses(active: boolean): string {
 // idle = the label's 55%, lifting with the row on hover.
 function iconClasses(active: boolean): string {
   return active
-    ? "text-[rgb(86,114,228)]"
+    ? "text-(--admin-accent)"
     : "text-black/55 transition-colors duration-150 group-hover/nav:text-black/90";
 }
 
@@ -347,7 +347,7 @@ export function AdminSidebar({
                 <span
                   aria-hidden
                   style={{
-                    backgroundImage: "linear-gradient(135deg,#5672e4,#8a6fe0)",
+                    backgroundImage: "linear-gradient(135deg,var(--admin-accent),color-mix(in srgb,var(--admin-accent) 60%,white))",
                   }}
                   className="flex size-7 shrink-0 items-center justify-center rounded-[8px] text-[12px] font-semibold text-white"
                 >

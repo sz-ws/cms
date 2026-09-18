@@ -57,7 +57,7 @@ function GridItem({
         "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]",
         "transition-[box-shadow] duration-150 ease-out",
         selected
-          ? "shadow-[0_0_0_2px_rgb(86,114,228),0_2px_4px_0_rgba(0,0,0,0.04)]"
+          ? "shadow-[0_0_0_2px_var(--admin-accent),0_2px_4px_0_rgba(0,0,0,0.04)]"
           : "hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_2px_6px_-2px_rgba(0,0,0,0.12)]",
       )}
     >
@@ -69,7 +69,7 @@ function GridItem({
         className={cn(
           "group flex min-w-0 flex-col rounded-t-[14px] text-left outline-none",
           "transition-transform duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100",
-          "focus-visible:shadow-[inset_0_0_0_3px_rgba(86,114,228,0.35)]",
+          "focus-visible:shadow-[inset_0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
         )}
       >
         <span className="relative block aspect-square w-full shrink-0 overflow-hidden rounded-t-[14px] bg-black/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
@@ -94,7 +94,7 @@ function GridItem({
           {selected && (
             <span
               aria-hidden
-              className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-[rgb(86,114,228)] text-white shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
+              className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-(--admin-accent) text-(--admin-accent-fg) shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
             >
               <svg viewBox="0 0 16 16" className="size-3" fill="none">
                 <path

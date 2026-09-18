@@ -54,7 +54,7 @@ function inputClasses(invalid: boolean): string {
     "transition-shadow duration-150 ease-out",
     invalid
       ? "shadow-[0_0_0_1px_rgba(220,38,38,0.35)]"
-      : "shadow-[0_0_0_1px_rgba(20,18,22,0.08)] focus:shadow-[0_0_0_1px_rgba(20,18,22,0.12),0_0_0_3px_rgba(86,114,228,0.08)]",
+      : "shadow-[0_0_0_1px_rgba(20,18,22,0.08)] focus:shadow-[0_0_0_1px_rgba(20,18,22,0.12),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_8%,transparent)]",
   );
 }
 

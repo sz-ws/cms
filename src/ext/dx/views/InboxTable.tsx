@@ -168,7 +168,7 @@ export function InboxTable({
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] transition-colors",
                 active
-                  ? "bg-[rgb(86,114,228)]/10 font-medium text-[rgb(86,114,228)]"
+                  ? "bg-(--admin-accent)/10 font-medium text-(--admin-accent)"
                   : "text-black/55 hover:bg-black/[0.04] hover:text-black/80",
               )}
             >

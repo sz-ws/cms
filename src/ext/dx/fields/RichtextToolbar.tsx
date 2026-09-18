@@ -47,9 +47,9 @@ function ToolButton({ onClick, active, disabled, label, children }: ToolButtonPr
       title={label}
       className={cn(
         "grid size-10 place-items-center rounded-[8px] outline-none transition-[background-color,color,box-shadow] active:scale-[0.96] disabled:opacity-40 motion-reduce:active:scale-100",
-        "focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)]",
+        "focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
         active
-          ? "bg-[rgba(86,114,228,0.1)] text-[rgb(86,114,228)] shadow-[0_0_0_1px_rgba(86,114,228,0.25)]"
+          ? "bg-(--admin-accent)/[0.1] text-(--admin-accent) shadow-[0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_25%,transparent)]"
           : "text-black/55 hover:bg-black/[0.04] hover:text-black/85",
       )}
     >

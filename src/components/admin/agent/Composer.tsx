@@ -143,7 +143,7 @@ export function Composer({
           "flex items-end gap-2 rounded-[14px] bg-white p-1.5 pl-3",
           "shadow-[0_0_0_1px_rgba(20,18,22,0.06),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08)]",
           "transition-shadow duration-150 ease-out",
-          "focus-within:shadow-[0_0_0_1px_rgba(20,18,22,0.10),0_0_0_3px_rgba(86,114,228,0.08),0_3px_10px_-4px_rgba(30,20,50,0.10)]",
+          "focus-within:shadow-[0_0_0_1px_rgba(20,18,22,0.10),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_8%,transparent),0_3px_10px_-4px_rgba(30,20,50,0.10)]",
           disabled && "opacity-60",
         )}
       >

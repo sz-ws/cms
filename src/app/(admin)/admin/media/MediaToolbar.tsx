@@ -41,7 +41,7 @@ function CopyButton({ label, value }: { label: string; value: string }) {
       className="inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-white px-3 text-[13px] font-medium text-black/70 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[box-shadow,transform] active:scale-[0.96] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
     >
       {copied ? (
-        <CheckIcon className="size-3.5 text-[rgb(86,114,228)]" />
+        <CheckIcon className="size-3.5 text-(--admin-accent)" />
       ) : (
         <CopyIcon className="size-3.5 text-black/35" />
       )}
@@ -100,8 +100,8 @@ export function MediaToolbar({
         {count > 0 && (
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 text-[13px] text-black/55">
-              <span className="inline-flex size-3 items-center justify-center rounded-full ring-1 ring-[rgb(86,114,228)]">
-                <span className="size-1 rounded-full bg-[rgb(86,114,228)]" />
+              <span className="inline-flex size-3 items-center justify-center rounded-full ring-1 ring-(--admin-accent)">
+                <span className="size-1 rounded-full bg-(--admin-accent)" />
               </span>
               <NumberFlow value={count} className="tabular-nums font-medium text-black/90" />
               <span>{t("mediaToolbar.selected")}</span>

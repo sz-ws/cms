@@ -51,7 +51,7 @@ export function EmailDomainChips({ value, onPick }: EmailDomainChipsProps) {
             onClick={() => onPick(applyEmailDomain(value, d.name))}
             title={t("settings.emailDomains.hint")}
             className={
-              "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)] " +
+              "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] " +
               (d.verified
                 ? "text-[rgb(18,124,88)] hover:bg-[rgba(16,145,90,0.16)]"
                 : "text-black/45 hover:bg-black/[0.06]")

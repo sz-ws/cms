@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
+import { ADMIN_ACCENT_BOOT_SCRIPT } from "@/lib/admin-accent";
+import { AdminAccentSync } from "@/components/admin/AdminAccent";
 import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
 import { AdminShell } from "@/components/admin/AdminShell";
@@ -134,6 +136,10 @@ export default async function AdminLayout({
 
   return (
     <I18nProvider locale={locale} messages={messages}>
+      {/* 1.40.0:後台主色是這台瀏覽器的偏好(localStorage),畫面出來前套上,
+          不讀 DB。規則見 lib/admin-accent.ts。 */}
+      <script dangerouslySetInnerHTML={{ __html: ADMIN_ACCENT_BOOT_SCRIPT }} />
+      <AdminAccentSync />
       <AdminShell
         user={user}
         menu={menu}

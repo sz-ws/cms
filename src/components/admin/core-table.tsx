@@ -152,7 +152,7 @@ export function CoreTable<T>({
                       "border-b border-black/[0.05] px-4 py-2.5 transition-colors duration-150",
                       onRowClick &&
                         "group-hover/row:bg-black/[0.02] group-focus-visible/row:bg-black/[0.02]",
-                      active && "bg-[rgb(86,114,228)]/[0.045]",
+                      active && "bg-(--admin-accent)/[0.045]",
                       col.tdClass,
                     )}
                   >
@@ -165,7 +165,7 @@ export function CoreTable<T>({
                       "border-b border-black/[0.05] py-2.5 pr-4 pl-2 text-right whitespace-nowrap transition-colors duration-150",
                       onRowClick &&
                         "group-hover/row:bg-black/[0.02] group-focus-visible/row:bg-black/[0.02]",
-                      active && "bg-[rgb(86,114,228)]/[0.045]",
+                      active && "bg-(--admin-accent)/[0.045]",
                     )}
                   >
                     <span

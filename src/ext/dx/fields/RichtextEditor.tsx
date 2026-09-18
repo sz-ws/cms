@@ -94,7 +94,7 @@ export default function RichtextEditor({
 
   return (
     <div
-      className="overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] focus-within:shadow-[0_0_0_1px_rgba(0,0,0,0.14),0_0_0_3px_rgba(86,114,228,0.15)]"
+      className="overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] focus-within:shadow-[0_0_0_1px_rgba(0,0,0,0.14),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_15%,transparent)]"
       data-invalid={invalid ? "true" : undefined}
     >
       <RichtextToolbar

@@ -78,7 +78,7 @@ export function InstanceCard({
           {index + 1}
         </span>
         {tag && (
-          <span className="inline-flex items-center rounded-[6px] bg-[rgb(86,114,228)]/[0.1] px-1.5 py-0.5 text-[11px] font-medium text-[rgb(86,114,228)]">
+          <span className="inline-flex items-center rounded-[6px] bg-(--admin-accent)/[0.1] px-1.5 py-0.5 text-[11px] font-medium text-(--admin-accent)">
             {tag}
           </span>
         )}
@@ -128,7 +128,7 @@ export function AddButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-10 w-fit items-center gap-1.5 rounded-[10px] bg-white px-3.5 text-[13px] font-medium text-black/75 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] transition-[background-color] outline-none hover:bg-black/[0.03] focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 motion-reduce:active:scale-100"
+      className="inline-flex h-10 w-fit items-center gap-1.5 rounded-[10px] bg-white px-3.5 text-[13px] font-medium text-black/75 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] transition-[background-color] outline-none hover:bg-black/[0.03] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 motion-reduce:active:scale-100"
     >
       {label}
     </button>

@@ -100,7 +100,7 @@ export function MediaAltField({ alt, onSave }: MediaAltFieldProps) {
                 type="button"
                 onClick={() => void save()}
                 aria-label="Save alt text"
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-[8px] text-black/45 transition-[background-color,color,transform] duration-150 ease-out hover:bg-black/[0.03] hover:text-[rgb(86,114,228)] active:scale-[0.94]"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-[8px] text-black/45 transition-[background-color,color,transform] duration-150 ease-out hover:bg-black/[0.03] hover:text-(--admin-accent) active:scale-[0.94]"
               >
                 <CheckIcon className="size-3.5" />
               </button>

@@ -472,9 +472,9 @@ function MediaCoverPicker({
                 <button
                   type="button"
                   onClick={() => onPick(f.key)}
-                  className={`relative aspect-[16/9] w-full overflow-hidden rounded-[8px] transition-shadow hover:shadow-[0_0_0_2px_rgb(86,114,228)] ${
+                  className={`relative aspect-[16/9] w-full overflow-hidden rounded-[8px] transition-shadow hover:shadow-[0_0_0_2px_var(--admin-accent)] ${
                     current === f.key
-                      ? "shadow-[0_0_0_2px_rgb(86,114,228)]"
+                      ? "shadow-[0_0_0_2px_var(--admin-accent)]"
                       : "shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
                   }`}
                 >

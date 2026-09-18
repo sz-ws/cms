@@ -53,7 +53,7 @@ export function SortableHeader({
         className={cn(
           "text-[10px] leading-none transition-opacity",
           active
-            ? "text-[rgb(86,114,228)] opacity-100"
+            ? "text-(--admin-accent) opacity-100"
             : "text-black/30 opacity-0 group-hover:opacity-100",
         )}
         aria-hidden

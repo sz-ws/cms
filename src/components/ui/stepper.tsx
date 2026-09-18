@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 //      add a dep for an optional `asChild` escape hatch, a compact local Slot is
 //      inlined below — same clone/merge behaviour, zero new packages.
 //   2. Re-skinned to Paper & Ink: active/completed indicators + the progress
-//      separator use the dither-blue accent (rgb(86,114,228)) instead of the black
+//      separator use the admin accent (var(--admin-accent)) instead of the black
 //      `primary` token; radii moved to the house 10/14px scale; nav buttons are
 //      pill-shaped, not square. Structure, data-attributes and the CSS-driven
 //      separator/indicator transitions (the interaction character) are unchanged.
@@ -1168,8 +1168,8 @@ function StepperIndicator({
           "flex size-(--stepper-indicator-size) shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold text-muted-foreground shadow-sm",
           "transition-[color,background-color,border-color,box-shadow,transform]",
           "group-hover:border-foreground/30",
-          "group-data-[state=active]:border-[rgb(86,114,228)] group-data-[state=active]:bg-[rgb(86,114,228)] group-data-[state=active]:text-white group-data-[state=active]:shadow-md",
-          "group-data-[state=completed]:border-[rgb(86,114,228)] group-data-[state=completed]:bg-[rgb(86,114,228)] group-data-[state=completed]:text-white",
+          "group-data-[state=active]:border-(--admin-accent) group-data-[state=active]:bg-(--admin-accent) group-data-[state=active]:text-(--admin-accent-fg) group-data-[state=active]:shadow-md",
+          "group-data-[state=completed]:border-(--admin-accent) group-data-[state=completed]:bg-(--admin-accent) group-data-[state=completed]:text-(--admin-accent-fg)",
           "group-data-[state=error]:border-destructive group-data-[state=error]:bg-destructive group-data-[state=error]:text-destructive-foreground",
           "group-data-[position=previous]:text-foreground",
           "[transition-delay:var(--stepper-separator-delay)] motion-reduce:[transition-delay:0ms]",
@@ -1224,7 +1224,7 @@ function StepperSeparator({ className, ...props }: StepperSeparatorProps) {
       aria-hidden="true"
       data-slot="stepper-separator"
       className={cn(
-        "overflow-hidden bg-muted-foreground/25 after:absolute after:inset-0 after:bg-[rgb(86,114,228)] after:content-['']",
+        "overflow-hidden bg-muted-foreground/25 after:absolute after:inset-0 after:bg-(--admin-accent) after:content-['']",
         "after:transition-transform after:duration-[220ms] after:ease-out after:[transition-delay:var(--stepper-separator-delay)] motion-reduce:after:transition-none motion-reduce:after:[transition-delay:0ms]",
         orientation === "horizontal" &&
           "absolute left-[calc(50%_+_var(--stepper-separator-offset))] right-[calc(-50%_+_var(--stepper-separator-offset))] top-(--stepper-separator-y) h-px after:origin-left after:scale-x-0 group-data-[completed]/stepper-item:after:scale-x-100 group-data-[position=previous]/stepper-item:after:scale-x-100 group-data-[state=completed]/stepper-item:after:scale-x-100",

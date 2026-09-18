@@ -53,12 +53,12 @@ function RingCheckbox({
       className={cn(
         "inline-flex size-5 items-center justify-center rounded-[6px] transition-[background,box-shadow] active:scale-[0.9]",
         checked
-          ? "bg-[rgb(86,114,228)] shadow-[0_0_0_1px_rgb(86,114,228)]"
+          ? "bg-(--admin-accent) shadow-[0_0_0_1px_var(--admin-accent)]"
           : "bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.15)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.3)]",
       )}
     >
       {checked && (
-        <svg viewBox="0 0 12 12" className="size-3 text-white" aria-hidden>
+        <svg viewBox="0 0 12 12" className="size-3 text-(--admin-accent-fg)" aria-hidden>
           <path
             d="M2.5 6.2l2 2 5-5.4"
             fill="none"
@@ -156,7 +156,7 @@ export function CollectionTable({
                   key={row.id}
                   className={cn(
                     "transition-colors",
-                    isSel ? "bg-[rgb(86,114,228)]/[0.04]" : "hover:bg-black/[0.02]",
+                    isSel ? "bg-(--admin-accent)/[0.04]" : "hover:bg-black/[0.02]",
                   )}
                 >
                   <td className="px-3 py-2.5 align-middle">
@@ -177,7 +177,7 @@ export function CollectionTable({
                       {i === 0 ? (
                         <Link
                           href={row.editHref}
-                          className="inline-block rounded-[4px] outline-none transition-colors hover:text-[rgb(86,114,228)] focus-visible:text-[rgb(86,114,228)]"
+                          className="inline-block rounded-[4px] outline-none transition-colors hover:text-(--admin-accent) focus-visible:text-(--admin-accent)"
                         >
                           {cell}
                         </Link>

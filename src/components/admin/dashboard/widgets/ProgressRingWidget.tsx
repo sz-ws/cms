@@ -43,7 +43,7 @@ export function ProgressRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={ACCENT}
+          style={{ stroke: ACCENT }}
           strokeWidth={STROKE}
           strokeLinecap="round"
           strokeDasharray={circ}

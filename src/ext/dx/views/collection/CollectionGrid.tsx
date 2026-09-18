@@ -69,12 +69,12 @@ function CornerCheckbox({
         className={cn(
           "inline-flex size-5 items-center justify-center rounded-[6px] transition-[background,box-shadow] active:scale-[0.9]",
           checked
-            ? "bg-[rgb(86,114,228)] shadow-[0_0_0_1px_rgb(86,114,228)]"
+            ? "bg-(--admin-accent) shadow-[0_0_0_1px_var(--admin-accent)]"
             : "bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.15)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.3)]",
         )}
       >
         {checked && (
-          <svg viewBox="0 0 12 12" className="size-3 text-white" aria-hidden>
+          <svg viewBox="0 0 12 12" className="size-3 text-(--admin-accent-fg)" aria-hidden>
             <path
               d="M2.5 6.2l2 2 5-5.4"
               fill="none"
@@ -169,7 +169,7 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
                   "flex flex-col gap-3 rounded-[14px] bg-white p-1.5 outline-none transition-[transform,box-shadow] duration-150 ease-out",
                   "will-change-transform hover:-translate-y-0.5",
                   isSel
-                    ? "shadow-[0_0_0_1px_rgb(86,114,228),0_8px_24px_-8px_rgba(86,114,228,0.35)]"
+                    ? "shadow-[0_0_0_1px_var(--admin-accent),0_8px_24px_-8px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
                     : "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_28px_-10px_rgba(30,20,50,0.18)]",
                 )}
               >

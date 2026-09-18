@@ -18,11 +18,19 @@
 :root {
     /* --- "Paper & Ink" design language (docs/admin-design-language.md) ---
        Ground = paper #fbfaf9; surfaces = white; ink = black at opacity steps;
-       accent = dither blue rgb(86,114,228). Remapped from shadcn defaults so
-       existing bg-primary / text-muted-foreground etc. inherit the language. */
+       accent = --admin-accent (default dither blue #5672e4; sites pick their own
+       in Settings → core.adminAccent, injected by admin/layout.tsx). Tints and
+       shades are color-mix() of it, never a second hard-coded colour. Remapped
+       from shadcn defaults so existing bg-primary / text-muted-foreground etc.
+       inherit the language. */
     --paper: #fbfaf9;
     --ink: oklch(0 0 0);
-    --accent-blue: oklch(0.588 0.196 268.5); /* rgb(86,114,228) */
+    --admin-accent: #5672e4;
+    /* Text/icons drawn ON the accent (checkmarks, badges): white, or black for a
+       light accent — computed from the chosen colour (lib/color.ts readableOn). */
+    --admin-accent-fg: #ffffff;
+    /* Legacy name kept for extensions that already reference it. */
+    --accent-blue: var(--admin-accent);
 
     --card: #ffffff;
     --card-foreground: oklch(0 0 0 / 0.9);
@@ -41,8 +49,8 @@
     /* Depth is shadows, not borders: keep borders barely-there black. */
     --border: oklch(0 0 0 / 0.08);
     --input: oklch(0 0 0 / 0.1);
-    --ring: oklch(0.588 0.196 268.5); /* dither blue focus ring */
-    --chart-1: oklch(0.588 0.196 268.5);
+    --ring: var(--admin-accent); /* accent focus ring */
+    --chart-1: var(--admin-accent);
     --chart-2: oklch(0.596 0.145 163); /* muted green for published */
     --chart-3: oklch(0.6 0.118 184.704);
     --chart-4: oklch(0.511 0.096 186.391);
@@ -50,12 +58,12 @@
     --radius: 0.5rem; /* 8px control base; nested surfaces override to 14/20px */
     --sidebar: #fbfaf9;
     --sidebar-foreground: oklch(0 0 0 / 0.55);
-    --sidebar-primary: oklch(0.588 0.196 268.5);
-    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-primary: var(--admin-accent);
+    --sidebar-primary-foreground: var(--admin-accent-fg);
     --sidebar-accent: oklch(0 0 0 / 0.03);
     --sidebar-accent-foreground: oklch(0 0 0 / 0.9);
     --sidebar-border: oklch(0 0 0 / 0.08);
-    --sidebar-ring: oklch(0.588 0.196 268.5);
+    --sidebar-ring: var(--admin-accent);
     --background: #fbfaf9;
     --foreground: oklch(0 0 0 / 0.9);
 

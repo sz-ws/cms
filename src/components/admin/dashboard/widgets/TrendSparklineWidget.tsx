@@ -53,15 +53,15 @@ export function TrendSparklineWidget({ data }: { data: TrendWidgetData }) {
           >
             <defs>
               <linearGradient id="sparkline-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.18} />
-                <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+                <stop offset="0%" style={{ stopColor: ACCENT, stopOpacity: 0.18 }} />
+                <stop offset="100%" style={{ stopColor: ACCENT, stopOpacity: 0 }} />
               </linearGradient>
             </defs>
             <path d={area} fill="url(#sparkline-fill)" stroke="none" />
             <path
               d={line}
               fill="none"
-              stroke={ACCENT}
+              style={{ stroke: ACCENT }}
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"

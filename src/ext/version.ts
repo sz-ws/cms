@@ -624,5 +624,13 @@
 // - <Timeline> renders a record's history (components/admin/Timeline.tsx).
 // - Settings gain type "color" (#rrggbb, optional `swatches`): a row of swatches
 //   plus a custom picker (components/admin/ColorSwatchPicker.tsx, lib/color.ts).
+// - `core.adminAccent` (Settings → General) is the admin accent. Browsers cache it
+//   in localStorage and do not ask the server again while the cache exists: an
+//   inline boot script in the admin layout sets --admin-accent / --admin-accent-fg
+//   before paint, GET /api/admin-accent fills an empty cache, and the settings page
+//   (which loads the value anyway) refreshes the cache when it differs
+//   (lib/admin-accent.ts). Every accent in core now reads the token, tints via
+//   color-mix(). Extensions should use var(--admin-accent) instead of
+//   rgb(86,114,228); --accent-blue stays as an alias.
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

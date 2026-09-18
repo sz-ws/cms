@@ -90,7 +90,7 @@ export function AvatarManager({ name, avatarKey }: AvatarManagerProps) {
         ) : (
           <div
             style={{
-              backgroundImage: "linear-gradient(135deg,#5672e4,#8a6fe0)",
+              backgroundImage: "linear-gradient(135deg,var(--admin-accent),color-mix(in srgb,var(--admin-accent) 60%,white))",
             }}
             className="flex size-full items-center justify-center text-[20px] font-semibold text-white"
           >

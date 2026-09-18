@@ -101,9 +101,9 @@ export function PublishScheduleControl({
                 type="button"
                 disabled={disabled}
                 className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)] disabled:opacity-50",
+                  "inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] disabled:opacity-50",
                   scheduled
-                    ? "bg-[rgba(86,114,228,0.10)] text-[rgb(76,102,210)] shadow-[inset_0_0_0_1px_rgba(86,114,228,0.16)]"
+                    ? "bg-(--admin-accent)/[0.10] text-[color-mix(in_srgb,var(--admin-accent)_88%,black)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_16%,transparent)]"
                     : "text-black/45 hover:bg-black/[0.04] hover:text-black/70",
                 )}
               >
@@ -128,7 +128,7 @@ export function PublishScheduleControl({
                 aria-label="Publish time"
                 value={draftTime}
                 onChange={(e) => setDraftTime(e.target.value)}
-                className="h-8 rounded-[8px] bg-black/[0.04] px-2 text-[13px] tabular-nums text-black/80 outline-none focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)]"
+                className="h-8 rounded-[8px] bg-black/[0.04] px-2 text-[13px] tabular-nums text-black/80 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
               />
               <button
                 type="button"

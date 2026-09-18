@@ -89,7 +89,7 @@ export function SlashCommandDropdown({
                 className={cn(
                   "mt-px shrink-0 rounded-[5px] px-1.5 py-px text-[10.5px]",
                   tool.kind === "write"
-                    ? "bg-[rgba(86,114,228,0.10)] text-[rgb(63,88,192)]"
+                    ? "bg-(--admin-accent)/[0.10] text-[color-mix(in_srgb,var(--admin-accent)_78%,black)]"
                     : "bg-black/[0.04] text-black/40",
                 )}
               >

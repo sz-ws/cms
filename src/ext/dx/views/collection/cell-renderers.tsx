@@ -27,13 +27,13 @@ function RingDot({ on }: { on: boolean }) {
     <span
       className={
         "relative inline-flex size-3 items-center justify-center rounded-full " +
-        (on ? "ring-1 ring-[rgb(86,114,228)]" : "ring-1 ring-black/20")
+        (on ? "ring-1 ring-(--admin-accent)" : "ring-1 ring-black/20")
       }
       aria-hidden
     >
       <span
         className={
-          "size-1 rounded-full " + (on ? "bg-[rgb(86,114,228)]" : "bg-black/25")
+          "size-1 rounded-full " + (on ? "bg-(--admin-accent)" : "bg-black/25")
         }
       />
     </span>

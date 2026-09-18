@@ -85,10 +85,10 @@ export function KindBadge({ kind }: { kind: ExtensionRow["kind"] }) {
   if (kind !== "declarative") return null;
   return (
     <span
-      className="inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-medium text-[rgb(76,102,210)]"
+      className="inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-medium text-[color-mix(in_srgb,var(--admin-accent)_88%,black)]"
       style={{
-        backgroundColor: "rgba(86,114,228,0.10)",
-        boxShadow: "inset 0 0 0 1px rgba(86,114,228,0.16)",
+        backgroundColor: "color-mix(in srgb,var(--admin-accent) 10%,transparent)",
+        boxShadow: "inset 0 0 0 1px color-mix(in srgb,var(--admin-accent) 16%,transparent)",
       }}
     >
       {t("extensions.declarative")}

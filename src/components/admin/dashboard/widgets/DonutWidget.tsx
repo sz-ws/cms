@@ -36,7 +36,7 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
               isAnimationActive={false}
             >
               {data.segments.map((s, i) => (
-                <Cell key={s.id} fill={segmentColor(i)} />
+                <Cell key={s.id} style={{ fill: segmentColor(i) }} />
               ))}
             </Pie>
             <Tooltip

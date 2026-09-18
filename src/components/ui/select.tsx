@@ -132,7 +132,7 @@ function SelectItem({
       >
         <CheckIcon
           className="pointer-events-none"
-          style={{ color: "var(--accent-blue)" }}
+          style={{ color: "var(--admin-accent)" }}
         />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>

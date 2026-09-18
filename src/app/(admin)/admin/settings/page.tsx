@@ -14,6 +14,7 @@ import {
   SettingsWorkspace,
   type SettingsSection,
 } from "@/components/admin/SettingsWorkspace";
+import { AdminAccentCacheSync } from "@/components/admin/AdminAccent";
 import { RegistrySourcesManager, type RegistrySource } from "@/components/admin/RegistrySourcesManager";
 import { ApiTokensManager } from "@/components/admin/ApiTokensManager";
 import {
@@ -138,6 +139,8 @@ export default async function SettingsPage() {
         </p>
       </div>
 
+      {/* 1.40.0:後台主色的瀏覽器快取跟 DB 對齊(lib/admin-accent.ts)。 */}
+      <AdminAccentCacheSync accent={values["core.adminAccent"]} />
       <SettingsWorkspace
         sections={sections}
         values={values}

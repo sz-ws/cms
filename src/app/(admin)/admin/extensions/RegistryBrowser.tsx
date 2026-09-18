@@ -96,7 +96,7 @@ const DEPLOYMENT_BADGE_CLASS: Record<
   string
 > = {
   instant: "bg-green-600/10 text-green-700",
-  progressive: "bg-[rgb(86,114,228)]/10 text-[rgb(86,114,228)]",
+  progressive: "bg-(--admin-accent)/10 text-(--admin-accent)",
   "code-only": "bg-amber-500/15 text-amber-700",
 };
 
@@ -349,7 +349,7 @@ function FeaturedCard({
   return (
     <div
       onClick={onClick}
-      className={`relative cursor-pointer overflow-hidden rounded-[20px] bg-white p-1.5 transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_rgba(86,114,228,0.2),0_16px_48px_-12px_rgba(30,20,50,0.22)] ${HALO}`}
+      className={`relative cursor-pointer overflow-hidden rounded-[20px] bg-white p-1.5 transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_20%,transparent),0_16px_48px_-12px_rgba(30,20,50,0.22)] ${HALO}`}
     >
       {/* 長圖主視覺 + 同心 nest:外殼 20px、p-1.5(6px)→ 內框 14px(concentric)。
           banner 有真圖用真圖;沒有就用「字記 image」—— id 雜湊出穩定色調,
@@ -403,7 +403,7 @@ function FeaturedCard({
             <span className="flex items-center gap-2 text-[11px] text-black/45">
               v{entry.version} · {kindLabel(t, entry.kind)}
               {entry.installed && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[rgb(86,114,228)]/10 px-2 py-0.5 font-medium text-[rgb(86,114,228)]">
+                <span className="inline-flex items-center gap-1 rounded-full bg-(--admin-accent)/10 px-2 py-0.5 font-medium text-(--admin-accent)">
                   <Check className="size-3" />
                   {t("registryBrowser.install.installed")}
                 </span>
@@ -876,7 +876,7 @@ export function RegistryBrowser() {
           <FeaturedShelf
             header={
               <>
-                <Sparkles className="size-4 text-[rgb(86,114,228)]" />
+                <Sparkles className="size-4 text-(--admin-accent)" />
                 <span className="text-[14px] font-semibold tracking-[-0.01em] text-black/85">
                   {t("registryBrowser.featured")}
                 </span>
@@ -1211,7 +1211,7 @@ function ExtensionDetail({
                 href={entry.repository}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="truncate text-[rgb(86,114,228)] hover:underline"
+                className="truncate text-(--admin-accent) hover:underline"
               >
                 {entry.repository.replace(/^https?:\/\//, "")}
               </a>
@@ -1338,7 +1338,7 @@ function ExtensionDetail({
                 href={entry.homepage}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="max-w-[60%] truncate text-[rgb(86,114,228)] hover:underline"
+                className="max-w-[60%] truncate text-(--admin-accent) hover:underline"
               >
                 {entry.homepage.replace(/^https:\/\//, "")}
               </a>
@@ -1353,7 +1353,7 @@ function ExtensionDetail({
                 href={entry.repository}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="max-w-[60%] truncate text-[rgb(86,114,228)] hover:underline"
+                className="max-w-[60%] truncate text-(--admin-accent) hover:underline"
               >
                 {entry.repository.replace(/^https:\/\//, "")}
               </a>
@@ -1368,7 +1368,7 @@ function ExtensionDetail({
                 href={entry.supportUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="max-w-[60%] truncate text-[rgb(86,114,228)] hover:underline"
+                className="max-w-[60%] truncate text-(--admin-accent) hover:underline"
               >
                 {entry.supportUrl.replace(/^https:\/\//, "")}
               </a>

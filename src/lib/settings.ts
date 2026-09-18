@@ -8,6 +8,7 @@ import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
 
 import type { LocalizedString } from "./i18n/localized";
 import type { BatchItem } from "drizzle-orm/batch";
+import { ADMIN_ACCENT_SWATCHES, DEFAULT_ADMIN_ACCENT } from "./admin-accent";
 
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
@@ -116,6 +117,21 @@ export const CORE_SETTINGS: SettingField[] = [
       "Shown top-left in the admin sidebar. Upload an image to the Media Library and paste its file URL here; empty falls back to the default mark.",
     type: "text",
     default: "",
+  },
+  {
+    // 1.40.0:後台主色。選中的項目、連結、勾選、焦點框都用它;淡色與深色由 CSS 的
+    // color-mix() 從這一色推(globals.css 的 --admin-accent)。只收 #rrggbb。
+    // 瀏覽器把它快取在 localStorage,有快取就不再讀這裡(lib/admin-accent.ts)。
+    key: "core.adminAccent",
+    group: "general",
+    label: { en: "Admin accent colour", "zh-Hant": "後台主色" },
+    description: {
+      en: "Used for the selected item, links, checkmarks and focus rings across the admin.",
+      "zh-Hant": "後台選中的項目、連結、勾選與焦點框都用這個顏色。",
+    },
+    type: "color",
+    default: DEFAULT_ADMIN_ACCENT,
+    swatches: ADMIN_ACCENT_SWATCHES,
   },
   {
     key: "core.siteUrl",

@@ -134,18 +134,18 @@ export function RolePill({
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold tracking-[0.04em] uppercase",
-        admin ? "text-[rgb(76,102,210)]" : guest ? "text-black/35" : "text-black/50",
+        admin ? "text-[color-mix(in_srgb,var(--admin-accent)_88%,black)]" : guest ? "text-black/35" : "text-black/50",
       )}
       style={{
         backgroundImage:
           "linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0) 58%)",
         backgroundColor: admin
-          ? "rgba(86,114,228,0.13)"
+          ? "color-mix(in srgb,var(--admin-accent) 13%,transparent)"
           : guest
             ? "rgba(0,0,0,0.03)"
             : "rgba(0,0,0,0.05)",
         boxShadow: admin
-          ? "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 0 0 1px rgba(86,114,228,0.18), 0 1px 1.5px rgba(40,55,130,0.08)"
+          ? "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 0 0 1px color-mix(in srgb,var(--admin-accent) 18%,transparent), 0 1px 1.5px color-mix(in srgb,var(--admin-accent) 10%,transparent)"
           : "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 0 0 1px rgba(0,0,0,0.06), 0 1px 1.5px rgba(0,0,0,0.04)",
       }}
     >

@@ -85,8 +85,8 @@ export function BulkActionBar({
   return (
     <div className="sticky bottom-4 z-10 mx-auto flex w-fit items-center gap-3 rounded-[14px] bg-white px-3 py-2 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_16px_48px_-12px_rgba(30,20,50,0.18)]">
       <span className="inline-flex items-center gap-1.5 pl-1 text-[13px] text-black/70">
-        <span className="inline-flex size-3 items-center justify-center rounded-full ring-1 ring-[rgb(86,114,228)]">
-          <span className="size-1 rounded-full bg-[rgb(86,114,228)]" />
+        <span className="inline-flex size-3 items-center justify-center rounded-full ring-1 ring-(--admin-accent)">
+          <span className="size-1 rounded-full bg-(--admin-accent)" />
         </span>
         <NumberFlow
           value={count}

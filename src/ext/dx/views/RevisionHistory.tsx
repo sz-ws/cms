@@ -110,7 +110,7 @@ export function RevisionHistory({
             {relativeTimeWords(r.createdAt, now, locale)}
           </span>
           {r.id === currentId && (
-            <span className="rounded-full bg-[rgb(86,114,228)]/10 px-2 py-0.5 text-[11px] font-medium text-[rgb(86,114,228)]">
+            <span className="rounded-full bg-(--admin-accent)/10 px-2 py-0.5 text-[11px] font-medium text-(--admin-accent)">
               {t("revisions.current")}
             </span>
           )}

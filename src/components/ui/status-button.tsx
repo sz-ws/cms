@@ -67,7 +67,7 @@ export function StatusButton({
         "disabled:cursor-default",
         sz.btn,
         isDone
-          ? "bg-[rgb(86,114,228)]/10 text-[rgb(86,114,228)]"
+          ? "bg-(--admin-accent)/10 text-(--admin-accent)"
           : variant === "soft"
             ? "bg-black/[0.06] text-black/70 hover:bg-black/[0.1]"
             : "bg-black text-white hover:bg-black/85",

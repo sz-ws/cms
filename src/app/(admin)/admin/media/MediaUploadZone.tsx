@@ -93,9 +93,9 @@ export function MediaUploadZone({ onUploaded }: MediaUploadZoneProps) {
         className={cn(
           "flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-[14px] bg-white px-6 py-7 text-center outline-none transition-[box-shadow,background-color] duration-150 ease-out",
           "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]",
-          "focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)]",
+          "focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
           dragging
-            ? "bg-[rgba(86,114,228,0.04)] shadow-[0_0_0_2px_rgb(86,114,228)]"
+            ? "bg-(--admin-accent)/[0.04] shadow-[0_0_0_2px_var(--admin-accent)]"
             : "hover:bg-black/[0.02]",
           uploading && "opacity-70",
         )}

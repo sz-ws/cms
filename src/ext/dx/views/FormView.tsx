@@ -209,7 +209,7 @@ function StatusToggle({
             className={
               "inline-flex h-8 items-center rounded-[8px] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none " +
               (active
-                ? "bg-white text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] focus-visible:shadow-[0_0_0_3px_rgba(86,114,228,0.35)]"
+                ? "bg-white text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
                 : "text-black/55 hover:text-black/85 focus-visible:text-black/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]")
             }
           >

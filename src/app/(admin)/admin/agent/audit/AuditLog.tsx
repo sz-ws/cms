@@ -81,7 +81,7 @@ export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
                 className={cn(
                   "hidden shrink-0 rounded-[5px] px-1.5 py-px text-[10.5px] sm:inline",
                   row.kind === "write"
-                    ? "bg-[rgb(86,114,228)]/[0.08] text-[rgb(86,114,228)]"
+                    ? "bg-(--admin-accent)/[0.08] text-(--admin-accent)"
                     : "bg-black/[0.045] text-black/45",
                 )}
               >
@@ -121,7 +121,7 @@ export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
                     className={cn(
                       "rounded-[5px] px-1.5 py-px text-[10.5px]",
                       row.source === "execute"
-                        ? "bg-[rgb(86,114,228)]/[0.08] text-[rgb(86,114,228)]"
+                        ? "bg-(--admin-accent)/[0.08] text-(--admin-accent)"
                         : "bg-black/[0.045] text-black/45",
                     )}
                   >
