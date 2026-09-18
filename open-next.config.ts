@@ -8,7 +8,7 @@
 //           File server/instrumentation.js does not exist
 //
 // (訊息完全指不到真因 —— 它講的是 pages router 的 404/500,而我們用 app router。)
-// 這個專案有 instrumentation.ts(Sentry 的 onRequestError,見 src/lib/observe/),
+// 這個專案有 src/instrumentation.ts(Sentry 的 onRequestError,見 src/lib/observe/),
 // 所以一定會走到那條路徑。@opennextjs/aws 4.0.2 + Next 16.2.10 實測會炸,
 // 換成 --webpack 就過。哪天 OpenNext 支援 Turbopack 產出了再回頭拿掉這個旗標。
 

@@ -1,3 +1,6 @@
+import type { Instrumentation } from "next";
+
+import { setRequestErrorForwarder } from "./bridge";
 import {
   layerOf,
   resolveDsn,
@@ -10,7 +13,7 @@ import {
 //
 // ## 為什麼需要「主動」回報
 //
-// instrumentation.ts 的 onRequestError 只接得到**丟到框架邊界**的例外。任何被
+// src/instrumentation.ts 的 onRequestError 只接得到**丟到框架邊界**的例外。任何被
 // try/catch 接住的東西它都看不到 —— 而這個 repo 裡最貴的幾個故障正好都是那個形狀:
 //
 //   - src/ext/hooks.ts 的 doAction/applyFilters:每一個 extension 的 hook 失敗都只
@@ -24,13 +27,14 @@ import {
 //
 // ## DSN 的兩個來源,以及為什麼是兩個
 //
-// 1. **環境變數 `CMS_ERROR_DSN`(wrangler var)** —— 完整的那一條。SDK 在 module load
-//    就綁好,所以連「還沒進到我們任何一行程式碼就炸掉」的請求都收得到。正式站應該
-//    設這個。
+// 1. **環境變數 `CMS_ERROR_DSN`(wrangler var)** —— 要重新部署才換得掉的那一條。
+//    讀設定失敗(D1 出事)時它仍然有效,所以正式站應該設這個。
 // 2. **設定 `ext.sentry.dsn`(sentry extension)** —— 免重新部署的那一條。填完存檔就
-//    生效,但它要等到這個 isolate 第一次「有人要回報東西」時才綁得起來(D1 只有在
-//    request 裡讀得到)。所以它涵蓋所有明確呼叫 reportError 的地方與 onRequestError,
-//    但涵蓋不到「綁定之前」的那一瞬間。
+//    生效。
+//
+// 兩條都在這個 isolate 第一次「有人要回報東西」時才綁上(ensureReporting),啟動時
+// 不先 init —— 那會讓沒設 DSN 的站也在每次冷啟動載入整包 SDK(見 src/instrumentation.ts)。
+// 涵蓋範圍因此是所有明確呼叫 reportError 的地方與 onRequestError。
 //
 // 兩者同時存在時**設定優先**:設定是站台管理者剛剛在後台按下去的,環境變數是上一次
 // 部署留下的。人剛做的動作應該贏。
@@ -137,7 +141,12 @@ export async function resolveReporting(): Promise<
 type SentrySdk = typeof import("@sentry/nextjs");
 
 function loadSdk(): Promise<SentrySdk> {
-  return import("@sentry/nextjs");
+  // webpackExports:只收用得到的五個函式,其餘匯出讓打包剪掉(對整個套件做動態 import,
+  // 預設會把每個匯出都留下)。新增用到的 SDK 函式時要一併加進這張清單。
+  return import(
+    /* webpackExports: ["captureException", "captureRequestError", "flush", "getClient", "init"] */
+    "@sentry/nextjs"
+  );
 }
 
 /**
@@ -260,6 +269,28 @@ export async function reportAndFlush(
   }
   return eventId;
 }
+
+/**
+ * Next 的 onRequestError 轉到這裡(src/instrumentation.ts 經 ./bridge.ts)。
+ *
+ * 和 reportError 一樣:先確認會送才載入 SDK,整支絕不 throw。用 SDK 的
+ * captureRequestError 而不是 captureException,事件上才會帶路由與 render 來源。
+ */
+export async function captureRequestError(
+  ...args: Parameters<Instrumentation.onRequestError>
+): Promise<void> {
+  try {
+    const status = await ensureReporting();
+    if (!status.sending) return;
+    const Sentry = await loadSdk();
+    Sentry.captureRequestError(...args);
+  } catch (e) {
+    console.error("[observe] failed to report a request error", e);
+  }
+}
+
+// 模組載入時就掛上橋:instrumentation 那一層不 import 本檔(見 ./bridge.ts 的理由)。
+setRequestErrorForwarder(captureRequestError);
 
 /**
  * 跑一段「失敗必須被看見、而且失敗要繼續往上丟」的程式碼。

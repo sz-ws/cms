@@ -5,9 +5,8 @@
   "entry": [
     "src/app/**/{page,layout,route,default,not-found,error,loading,template,sitemap,robots}.{ts,tsx}",
     "src/app/**/opengraph-image.tsx",
-    "instrumentation.ts",
+    "src/instrumentation.ts",
     "instrumentation-client.ts",
-    "sentry.*.config.ts",
     "custom-worker.ts",
     "open-next.config.ts",
     "next.config.ts",

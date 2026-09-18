@@ -1,5 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
-
 import { decryptSecretWithKey } from "../../src/lib/secret-envelope";
 import { resolveDsn, sentryOptions } from "../../src/lib/observe/sentry-options";
 
@@ -8,7 +6,7 @@ import { resolveDsn, sentryOptions } from "../../src/lib/observe/sentry-options"
 // ## 為什麼這裡要自己 init 一次
 //
 // `scheduled` 完全不經過 Next.js —— 它是 wrangler 的 `main`(custom-worker.ts)直接
-// 掛的 handler。所以 instrumentation.ts 的 register() 對這條路**一次都不會觸發**,
+// 掛的 handler。所以 Next 那一側的回報(src/instrumentation.ts、report.ts)對這條路**一次都不會經過**,
 // Next 版 SDK 在這裡是完全沒有初始化的。不自己 init,cron 就是整條線上唯一一段
 // 收不到任何錯誤的路徑 —— 而它偏偏又是最需要被監看的那一段:沒有人在瀏覽,壞了
 // 也沒有畫面會變醜,runCronTick 的合約還是「絕不 throw」。
@@ -17,9 +15,16 @@ import { resolveDsn, sentryOptions } from "../../src/lib/observe/sentry-options"
 // `workerd` 條件,在 Worker 入口這條路會解析到 edge build(fetch 傳輸、無 Node API),
 // 正好是這裡需要的形狀。
 //
+// ## SDK 為什麼是動態載入
+//
+// custom-worker.ts 是整支 Worker 的入口,這裡的靜態 import 會在**每一個** isolate 啟動
+// 時執行 —— 包括只服務一般網頁請求、從來不跑 cron 的那些。所以 SDK 只在確定有 DSN
+// 要綁的時候才載入(bindScheduledReporting 內);沒設 DSN 的站從頭到尾不碰它。
+// 載入的是 ./scheduled-sdk(只轉出用得到的三個函式),理由見該檔。
+//
 // ## import 硬規則(和 extensions/cron/scheduled.ts 同一條)
 //
-// 本檔只能 import:@sentry/nextjs、../../src/lib/secret-envelope(純 Web Crypto)、
+// 本檔只能 import:./scheduled-sdk(動態,裡面只有 @sentry/nextjs)、../../src/lib/secret-envelope(純 Web Crypto)、
 // ../../src/lib/observe/sentry-options(型別 + 純函式,沒有 runtime 相依)。
 // 任何 `@/` 別名 / next/* / drizzle / lib/db 都會把整個 Next module graph 拖進 worker
 // 入口的 bundle —— 那是這條路線唯一會致命的失誤。D1 一律用原生 prepare/bind。
@@ -64,6 +69,8 @@ function parseJsonString(raw: string | null): string | null {
   }
 }
 
+type SentrySdk = typeof import("./scheduled-sdk");
+
 /**
  * isolate 級的「已經綁過了」旗標。
  *
@@ -72,12 +79,14 @@ function parseJsonString(raw: string | null): string | null {
  *
  * `false` 同時涵蓋「沒設定」與「設定過但判定不送」——兩者對呼叫端來說行為一樣,
  * 差別只在後台狀態頁怎麼解釋,而那是另一條路(有 request context)的事。
+ *
+ * 綁成功時一併留住載入的 SDK,之後的 capture / flush 都用這一份。
  */
-let bound: boolean | null = null;
+let bound: SentrySdk | false | null = null;
 
 async function bindScheduledReporting(
   env: ScheduledObserveEnv,
-): Promise<boolean> {
+): Promise<SentrySdk | false> {
   if (bound !== null) return bound;
   bound = false; // 先寫死 false:下面任何一步炸掉都不該讓每分鐘的 tick 一直重試。
 
@@ -109,11 +118,13 @@ async function bindScheduledReporting(
     debug: env.CMS_ERROR_DEBUG === "1",
     release: env.CMS_ERROR_RELEASE || undefined,
   };
-  if (!resolveDsn(ctx)) return bound; // 沒 DSN 或判定成本機 → 安靜關閉。
+  // 沒 DSN 或判定成本機 → 安靜關閉,SDK 連載入都不發生。
+  if (!resolveDsn(ctx)) return bound;
 
   try {
+    const Sentry = await import("./scheduled-sdk");
     Sentry.init(sentryOptions(ctx));
-    bound = true;
+    bound = Sentry;
   } catch (e) {
     console.error("[observe] scheduled: Sentry.init failed", e);
   }
@@ -140,17 +151,17 @@ export async function withScheduledReporting(
   env: ScheduledObserveEnv,
   run: (report: ScheduledErrorSink) => Promise<void>,
 ): Promise<void> {
-  let sending = false;
+  let sdk: SentrySdk | false = false;
   try {
-    sending = await bindScheduledReporting(env);
+    sdk = await bindScheduledReporting(env);
   } catch (e) {
     console.error("[observe] scheduled: bootstrap failed", e);
   }
 
   const report: ScheduledErrorSink = (error, stage) => {
-    if (!sending) return;
+    if (!sdk) return;
     try {
-      Sentry.captureException(error, { tags: { path: "scheduled", stage } });
+      sdk.captureException(error, { tags: { path: "scheduled", stage } });
     } catch (e) {
       console.error("[observe] scheduled: capture failed", e);
     }
@@ -163,11 +174,11 @@ export async function withScheduledReporting(
     report(e, "unhandled");
   }
 
-  if (!sending) return;
+  if (!sdk) return;
   try {
     // 2 秒:比一次 GlitchTip 往返寬裕,又遠低於 scheduled 的時間預算。等不到就放棄,
     // 不要為了一筆錯誤報告把 tick 卡住。
-    await Sentry.flush(2000);
+    await sdk.flush(2000);
   } catch (e) {
     console.error("[observe] scheduled: flush failed", e);
   }

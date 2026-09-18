@@ -646,5 +646,9 @@
 // - Scheduler heartbeats (cron tick, lazy sweep, core job lastRun) live in the
 //   `heartbeats` table (migration 0018, lib/heartbeats.ts) instead of settings, so
 //   they no longer move the settings stamp or fire settings:saved every minute.
+// - Sentry loads only when a DSN is set: instrumentation moved to
+//   src/instrumentation.ts (the root file never ran) and keeps only onRequestError;
+//   register() and sentry.*.config.ts are gone; withSentryConfig's automatic
+//   wrappers are off (lib/observe/bridge.ts).
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

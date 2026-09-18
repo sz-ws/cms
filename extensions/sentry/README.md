@@ -38,11 +38,11 @@ cron tick。core 不可能等某個 extension 的程式碼先跑過一次才開�
 | 來源 | 何時生效 | 涵蓋範圍 |
 | --- | --- | --- |
 | 設定 `ext.sentry.dsn`(這個 extension) | 存檔即生效 | 伺服器端 + cron。優先於環境變數 |
-| 環境變數 `CMS_ERROR_DSN`(wrangler var) | 重新部署後 | 同上,而且在 module load 就綁好,連「還沒進到我們任何一行程式碼」的請求都收得到 |
+| 環境變數 `CMS_ERROR_DSN`(wrangler var) | 重新部署後 | 同上。讀不到設定(D1 出事)時仍然有效,前提是也設了 `CMS_ERROR_ORIGIN` |
 | 環境變數 `NEXT_PUBLIC_CMS_ERROR_DSN` | 重新 **build** 後 | **只有**瀏覽器端。設定頁那顆對它無效 —— 瀏覽器讀不到 D1 |
 
-正式站建議兩邊都設(同一顆 DSN):設定那條讓人隨時改得動,環境變數那條讓最早期
-的錯誤也收得到。
+正式站建議兩邊都設(同一顆 DSN),再加上 `CMS_ERROR_ORIGIN`:設定那條讓人隨時改得動,
+環境變數那兩條讓 D1 出事時錯誤仍然送得出去。
 
 ## 環境變數一覽
 
@@ -50,7 +50,7 @@ cron tick。core 不可能等某個 extension 的程式碼先跑過一次才開�
 | --- | --- |
 | `CMS_ERROR_DSN` | 伺服器端 / cron 的 DSN |
 | `NEXT_PUBLIC_CMS_ERROR_DSN` | 瀏覽器端的 DSN(建置期決定) |
-| `CMS_ERROR_ORIGIN` | module load 那一刻的站台 origin 替身(讀不到 D1 時用)。可不設 |
+| `CMS_ERROR_ORIGIN` | 讀不到 D1 時的站台 origin 替身。可不設 |
 | `CMS_ERROR_ALLOW_LOCAL=1` | 本機也送。預設本機不送,理由見下 |
 | `CMS_ERROR_DEBUG=1` | 印出 SDK 每一次傳輸的結果 |
 | `CMS_ERROR_RELEASE` | 覆寫事件上的版本標記 |

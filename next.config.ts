@@ -204,6 +204,25 @@ export default withSentryConfig(nextConfig, {
   // 的事。要讓警告消失只能連那個名稱一起關掉(或整包 silent),兩個都比一行警告貴。
   // runtime 端若另外設了 CMS_ERROR_RELEASE 會覆蓋它(見 sentry-options.ts)。
   release: { create: false },
+  // 關掉三種自動包裝(server component / route handler / middleware)。
+  //
+  // 包裝 loader 會在**每一個** page、layout、route.ts 與 middleware 的最上面靜態
+  // import `@sentry/nextjs` —— 於是不管有沒有設 DSN,每個 isolate 的第一個 request
+  // 都要先把整包 SDK(server bundle 裡最大的一塊,約 1.6MB,含 OpenTelemetry)載入並
+  // 執行一次,冷啟動有一大段時間花在這裡。
+  //
+  // 包裝換到的東西在這個專案裡是零:tracesSampleRate 是 0(見 sentry-options.ts),
+  // 剩下的唯一功能是「丟到框架邊界的例外」—— 那正是 src/instrumentation.ts 的
+  // onRequestError 在接的,而且它會先綁好後台設定的 DSN,包裝不會。
+  webpack: {
+    autoInstrumentServerFunctions: false,
+    autoInstrumentMiddleware: false,
+    autoInstrumentAppDirectory: false,
+  },
+  // instrumentation-client.ts 刻意不匯出 onRouterTransitionStart(tracesSampleRate 是 0,
+  // 它什麼都不做,匯出它就得在每一頁的進入點靜態載入 SDK)。少了它 plugin 每次建置都印
+  // 一行「ACTION REQUIRED」,而那行字會讓人以為有東西壞了。
+  suppressOnRouterTransitionStartWarning: true,
 });
 
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";

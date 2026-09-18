@@ -2,8 +2,8 @@ import type { ErrorEvent, init } from "@sentry/nextjs";
 
 // [core] 不要在客戶站改這個檔 —— 錯誤回報的共用設定。
 //
-// 有四個地方會初始化 SDK(server / edge / browser / cron 的 scheduled),但真正的
-// 決定全部集中在這裡,那四個檔案只負責「把 DSN 與 origin 交進來」。分散的話,遲早
+// 有三個地方會初始化 SDK(server 端的 report.ts / browser / cron 的 scheduled),但真正的
+// 決定全部集中在這裡,那三個地方只負責「把 DSN 與 origin 交進來」。分散的話,遲早
 // 會出現「前端有清理、後端沒有」這種只在事後才發現的不一致。
 //
 // ## 為什麼設定得這麼保守
@@ -209,17 +209,17 @@ export function resolveDsn(ctx: ObserveContext): string | undefined {
 }
 
 /**
- * 伺服器端(server / edge)在 module load 那一刻讀得到的東西。集中一處,免得四個
- * init 檔各拼各的環境變數字串 —— 拼錯一個字不會有任何錯誤訊息,只會安靜地不送。
+ * 伺服器端不經 D1 就讀得到的東西(環境變數)。集中一處,免得各個 init 路徑各拼各的
+ * 環境變數字串 —— 拼錯一個字不會有任何錯誤訊息,只會安靜地不送。
  *
  * ⚠️ 名字一律避開 `SENTRY_DSN`,理由見上方 ObserveContext.dsn。
  */
 export function serverObserveEnv(): ObserveContext {
   return {
     dsn: process.env.CMS_ERROR_DSN,
-    // module load 的那一刻讀不到 D1,所以站台設定裡的 core.siteUrl 還不存在。這個
-    // 變數是那一刻的替身:沒設也沒關係 —— 第一個真的要回報東西的 request 會用
-    // core.siteUrl 重新校正(見 report.ts 的 resolveReporting)。
+    // 讀不到 D1 時站台設定裡的 core.siteUrl 就不存在,這個變數是那時候的替身。
+    // 沒設也沒關係 —— 讀得到設定時一律以 core.siteUrl 為準(見 report.ts 的
+    // resolveReporting)。
     origin: process.env.CMS_ERROR_ORIGIN,
     allowLocal: process.env.CMS_ERROR_ALLOW_LOCAL === "1",
     debug: process.env.CMS_ERROR_DEBUG === "1",
