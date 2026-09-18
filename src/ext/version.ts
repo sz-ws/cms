@@ -632,5 +632,8 @@
 //   (lib/admin-accent.ts). Every accent in core now reads the token, tints via
 //   color-mix(). Extensions should use var(--admin-accent) instead of
 //   rgb(86,114,228); --accent-blue stays as an alias.
+// - <LoadingState> centres a "loading" message under an accent-coloured spinner
+//   (<AccentSpinner>, components/admin/LoadingState.tsx); it takes its label as a
+//   prop so extension workspaces rendered on public pages can use it too.
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

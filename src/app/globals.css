@@ -319,3 +319,14 @@
     background-image: none;
   }
 }
+
+/* 1.40.0:LoadingState 晚一點淡入(components/admin/LoadingState.tsx)—— 快的請求
+   不會先閃一下 spinner。 */
+@keyframes cms-loading-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

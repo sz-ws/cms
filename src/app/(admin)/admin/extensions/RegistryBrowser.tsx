@@ -14,7 +14,6 @@ import {
   Check,
   Download,
   AlertCircle,
-  Loader2,
   Sparkles,
   ChevronLeft,
   ChevronRight,
@@ -35,6 +34,7 @@ import {
   type StatusButtonStatus,
 } from "@/components/ui/status-button";
 import { cn } from "@/lib/utils";
+import { LoadingState } from "@/components/admin/LoadingState";
 import { missingCapabilities } from "@/ext/features";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useInstallFlow, type InstallState } from "./useInstallFlow";
@@ -819,16 +819,7 @@ export function RegistryBrowser() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="size-6 animate-spin text-black/30" />
-          <span className="text-[13px] text-black/35">
-            {t("registryBrowser.loading")}
-          </span>
-        </div>
-      </div>
-    );
+    return <LoadingState label={t("registryBrowser.loading")} />;
   }
 
   if (loadError) {
