@@ -10,6 +10,7 @@ import type {
   DeclarativeDashboardCard,
 } from "./dx/manifest";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import { isSqlIdentifier, type AdminPageSearch } from "./record-search";
 import { validateSettingValue } from "../lib/setting-validation";
 import { rangeStartsAtOrAfter } from "./semver";
 import {
@@ -55,6 +56,11 @@ export interface AdminPage {
   // 於 admin layout 每 request 以 getLocale() resolve。
   title: LocalizedString; // 顯示在 sidebar
   showInMenu?: boolean; // default true
+  /**
+   * 1.40.0:這一頁的搜尋宣告 —— core 在頂欄畫搜尋框、條件放網址,頁面用
+   * parseRecordSearch / useRecordSearch 取用;加 `global` 同時進 ⌘K(record-search.ts)。
+   */
+  search?: AdminPageSearch;
   component: ComponentType<{
     params: Record<string, string>; // 至少含 { extId }
     searchParams: Record<string, string>; // URL query(如 ?id=xxx)
@@ -255,6 +261,36 @@ const localizedStringSchema = z.union([
     }),
 ]);
 
+// 1.40.0:後台頁的搜尋宣告(record-search.ts 的 AdminPageSearch)。欄位名會拼進
+// SQL,只收小寫識別字;⌘K 來源只開放 ext_ 開頭的表 —— core 的表(users、sessions…)
+// 不給翻。
+const sqlIdent = z.string().refine(isSqlIdentifier, "invalid SQL identifier");
+const adminPageSearchSchema = z
+  .object({
+    placeholder: localizedStringSchema,
+    fields: z
+      .object({
+        text: z.array(sqlIdent).max(10),
+        phone: z.array(sqlIdent).max(5).optional(),
+        date: sqlIdent.optional(),
+      })
+      .strict()
+      .refine((fields) => fields.text.length + (fields.phone?.length ?? 0) > 0, "search needs a text or phone field"),
+    global: z
+      .object({
+        id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, "invalid search source id"),
+        label: localizedStringSchema,
+        table: sqlIdent.refine((table) => table.startsWith("ext_"), "global search table must start with ext_"),
+        key: sqlIdent,
+        title: sqlIdent,
+        subtitle: z.array(sqlIdent).max(3).optional(),
+        replaces: z.string().regex(/^[a-z][a-z0-9-]{1,30}:[a-z][a-z0-9-]{0,39}$/, "replaces must be <extId>:<sourceId>").optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 // name 是 admin 列表、settings 分頁標題、dashboard 卡署名唯一的人類可讀識別;
 // 空字串等於沒有名字(消費端只剩 `?? ext.id` 的機器 key 可退)。string 分支已由
 // localizedStringSchema 的 .min(1) 擋住 "",物件分支則只被 refine 過「至少一鍵」——
@@ -334,6 +370,7 @@ const adminPageSchema = z.object({
   slug: z.string(),
   title: localizedStringSchema,
   showInMenu: z.boolean().optional(),
+  search: adminPageSearchSchema.optional(),
   component: fn,
 });
 
@@ -453,6 +490,9 @@ const manifestSchema = z
     duplicate((ext.migrations ?? []).map((item) => item.id), "migrations", "migration id");
     duplicate((ext.uninstall ?? []).map((item) => item.id), "uninstall", "uninstall migration id");
     duplicate((ext.adminPages ?? []).map((item) => item.slug), "adminPages", "admin page slug");
+    const searchPages = (ext.adminPages ?? []).filter((page) => page.search);
+    duplicate(searchPages.flatMap((page) => (page.search?.global ? [page.search.global.id] : [])), "adminPages", "global search id");
+    if (searchPages.length && !rangeStartsAtOrAfter(ext.coreApi, "1.40.0")) ctx.addIssue({ code: "custom", message: "admin page search requires coreApi >= 1.40.0", path: ["coreApi"] });
     duplicate(
       (ext.apiRoutes ?? []).map((item) => `${item.method} ${item.path}`),
       "apiRoutes",

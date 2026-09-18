@@ -17,6 +17,7 @@ import { isAgentAvailable } from "@/lib/ai";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
+import type { PageSearchConfig } from "@/components/admin/PageSearch";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +72,18 @@ export default async function AdminLayout({
     (value) => resolveLocalizedString(value, locale),
     messages["nav.overview"],
   );
+
+  // 1.40.0:宣告了 search 的插件頁 → 頂欄搜尋框(components/admin/PageSearch.tsx)。
+  const pageSearch: Record<string, PageSearchConfig> = {};
+  for (const ext of rt.enabled) {
+    for (const page of ext.adminPages ?? []) {
+      if (!page.search) continue;
+      pageSearch[`/admin/ext/${ext.id}${page.slug ? `/${page.slug}` : ""}`] = {
+        placeholder: resolveLocalizedString(page.search.placeholder, locale) ?? "",
+        dates: Boolean(page.search.fields.date),
+      };
+    }
+  }
 
   // 1.39.0:AI 沒設定好時不給入口 —— 點進去只會看到每一句都回「尚未設定」的面板。
   const showAgent = user.role === "admin" && (await isAgentAvailable());
@@ -127,6 +140,7 @@ export default async function AdminLayout({
         siteTitle={siteTitle}
         brandLogo={brandLogo}
         sections={sections}
+        pageSearch={pageSearch}
         shopLabels={{
           browse: messages["nav.browse"],
           installed: messages["nav.installed"],

@@ -21,7 +21,9 @@ interface SearchHit {
   typeLabel: string;
   title: string;
   snippet: string;
-  status: "draft" | "published";
+  /** 1.40.0:extension 資料表的結果(訂單等)沒有發布狀態。 */
+  kind?: "record";
+  status?: "draft" | "published";
   editHref: string | null;
 }
 
@@ -297,9 +299,14 @@ export function SearchPalette() {
                       !hit.editHref && "cursor-default opacity-60",
                     )}
                   >
-                    <StatusDot
-                      tone={hit.status === "published" ? "good" : "draft"}
-                    />
+                    {hit.kind === "record" ? (
+                      // 資料表結果沒有草稿/發布之分:留同寬的空位,標題仍對齊。
+                      <span aria-hidden className="size-[11px] shrink-0" />
+                    ) : (
+                      <StatusDot
+                        tone={hit.status === "published" ? "good" : "draft"}
+                      />
+                    )}
                     <span className="flex min-w-0 flex-1 flex-col gap-px">
                       <span className="truncate text-[13.5px] font-medium text-black/85">
                         {hit.title || hit.snippet}

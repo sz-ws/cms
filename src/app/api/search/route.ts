@@ -4,9 +4,17 @@ import {
   searchContent,
   DEFAULT_SEARCH_LIMIT,
   MAX_SEARCH_LIMIT,
+  MIN_QUERY_LENGTH,
 } from "@/lib/search";
 import { listDeclarativeTypes } from "@/ext/dx/type-directory";
 import { getLocale } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
+import { getDB } from "@/lib/cf";
+import {
+  activeSearchSources,
+  searchRecordSources,
+  type RecordSearchHit,
+} from "@/ext/search-sources";
 
 // Admin full-text search:GET /api/search?q=...&limit=...
 // 任何已登入角色皆可用(NOT admin-only)。GET 無狀態變更,故不需 assertSameOrigin。
@@ -44,12 +52,19 @@ export async function GET(req: Request): Promise<Response> {
     ? Math.min(Math.max(1, rawLimit), MAX_SEARCH_LIMIT)
     : DEFAULT_SEARCH_LIMIT;
 
-  const results = await searchContent(q, limit);
+  const locale = await getLocale();
+  // 1.40.0:extension 宣告的資料表來源(訂單、客戶…)只給 admin,與全文索引並行查。
+  const [results, records] = await Promise.all([
+    searchContent(q, limit),
+    user.role === "admin" && q.length >= MIN_QUERY_LENGTH
+      ? searchRecords(q, locale)
+      : Promise.resolve([]),
+  ]);
 
   // 補 editHref / typeLabel:manifest 的 admin slug 只有 server 知道(同 dashboard
   // aggregate 的 discovery)。查無對應 type(如 extension 已停用)→ editHref null,
   // 前端呈現為不可點的列。
-  const types = await listDeclarativeTypes(await getLocale());
+  const types = await listDeclarativeTypes(locale);
   const byKey = new Map(types.map((t) => [t.typeKey, t]));
   const enriched = results.map((r) => {
     const t = byKey.get(r.typeKey);
@@ -61,5 +76,28 @@ export async function GET(req: Request): Promise<Response> {
         : null,
     };
   });
-  return Response.json({ results: enriched });
+  return Response.json({ results: [...records, ...enriched] });
+}
+
+/**
+ * extension 來源的搜尋。loader 用到才載入(它會帶進整個 extension registry,
+ * 非 admin 與短查詢不必付這個成本);任何失敗都只讓這一段變空,內容搜尋照常回。
+ */
+async function searchRecords(
+  q: string,
+  locale: Awaited<ReturnType<typeof getLocale>>,
+): Promise<RecordSearchHit[]> {
+  try {
+    const { getExtRuntime } = await import("@/ext/loader");
+    const rt = await getExtRuntime();
+    return await searchRecordSources(
+      getDB(),
+      activeSearchSources(rt.enabled),
+      q,
+      (value) => resolveLocalizedString(value, locale) ?? "",
+    );
+  } catch (error) {
+    console.error("[search] extension sources failed", error);
+    return [];
+  }
 }

@@ -605,7 +605,8 @@
 // isConfigured(); the Assistant nav entry is hidden until AI is configured.
 // All additive: older extensions render exactly as before, except multi-page ones
 // now appear as a folder.
-// 1.40.0: admin sidebar sections are data.
+// 1.40.0: admin sidebar sections are data, and extension admin pages can declare
+// search.
 // - The five built-in sections (workspace, content, commerce, shop, system) pass
 //   through `filter:adminSections`, so a site can rename, add, reorder them, or set
 //   `collapse: "active"` (only the section holding the current page starts open).
@@ -614,6 +615,12 @@
 //   only content/commerce/system.
 // - `useAdminPageTitle()` / `<AdminPageTitle>` give a page its sidebar title, so a
 //   renamed item and the page heading agree. Breadcrumbs skip the bare /admin/ext.
+// - `adminPages[].search` declares searchable columns (text, phone, date); core
+//   draws the search box in the top bar and keeps ?q=&from=&to= in the URL. Pages
+//   read it with parseRecordSearch / useRecordSearch and build SQL with
+//   recordSearchClauses (ext/record-search.ts). An optional `global` block adds the
+//   table to ⌘K (admins only); results open the page with ?open=<key>.
+// - commerce-kit exports ORDER_SEARCH_FIELDS and listOrders accepts `search`.
 // - <Timeline> renders a record's history (components/admin/Timeline.tsx).
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

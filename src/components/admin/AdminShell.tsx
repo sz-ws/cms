@@ -6,6 +6,7 @@ import { AdminNav } from "@/components/admin/AdminNav";
 import { AdminTitlesProvider } from "@/components/admin/admin-titles";
 import { SearchPalette } from "@/components/admin/SearchPalette";
 import { buildAdminNavGroups } from "@/components/admin/nav-groups";
+import type { PageSearchConfig } from "@/components/admin/PageSearch";
 import { ExtensionLayoutLoader } from "@/ext/dx/extension-layouts";
 import type { AdminMenuItem, AdminNavSection } from "@/ext/admin-menu";
 
@@ -26,6 +27,8 @@ interface AdminShellProps {
   children: ReactNode;
   /** 1.40.0:側欄分區(預設五區,經 filter:adminSections),已排序。 */
   sections: AdminNavSection[];
+  /** 1.40.0:宣告了搜尋的插件頁(href → 頂欄搜尋框設定)。 */
+  pageSearch?: Record<string, PageSearchConfig>;
   /** 擴充功能管理在側欄的兩個入口。 */
   shopLabels: { browse: string; installed: string };
   /** Breadcrumb titles for core sub-pages that are not sidebar items (href → title). */
@@ -39,6 +42,7 @@ export function AdminShell({
   brandLogo,
   children,
   sections,
+  pageSearch = {},
   shopLabels,
   crumbTitles,
 }: AdminShellProps) {
@@ -83,7 +87,7 @@ export function AdminShell({
         groups={groups}
       />
       <SidebarInset>
-        <AdminNav menuTitles={menuTitles} />
+        <AdminNav menuTitles={menuTitles} pageSearch={pageSearch} />
         <main className="flex-1 p-4 lg:p-6">
           {/* 頁面標題跟側欄同名(站台改名後也一致),見 admin-titles.tsx。 */}
           <AdminTitlesProvider titles={menuTitles}>{children}</AdminTitlesProvider>

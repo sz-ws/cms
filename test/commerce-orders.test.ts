@@ -150,6 +150,64 @@ describe("markOrderPaid(payment:succeeded 監聽器)", () => {
   });
 });
 
+describe("listOrders 搜尋(1.40.0)", () => {
+  async function seedCustomer(
+    orderNo: string,
+    name: string,
+    phone: string | null,
+    createdAt: number,
+    status = "pending_payment",
+  ) {
+    await createOrder(deps(), TABLE, {
+      orderNo,
+      lines: LINES,
+      amounts: AMOUNTS,
+      paymentProvider: "banktransfer",
+      customerName: name,
+      customerEmail: `${orderNo.toLowerCase()}@example.com`,
+      customerPhone: phone,
+    });
+    await d1()
+      .prepare(`UPDATE ${TABLE} SET created_at = ?, status = ? WHERE order_no = ?`)
+      .bind(createdAt, status, orderNo)
+      .run();
+  }
+
+  const DAY = 86_400_000;
+  const T0 = Date.UTC(2026, 8, 1);
+
+  beforeEach(async () => {
+    await seedCustomer("SA1001", "王小明", "0912-345-678", T0);
+    await seedCustomer("SA1002", "陳美玲", "0922 111 222", T0 + DAY, "paid");
+    await seedCustomer("SB2001", "王大華", null, T0 + 2 * DAY);
+  });
+
+  const nos = (orders: { orderNo: string }[]) => orders.map((o) => o.orderNo).sort();
+
+  it("名字、訂單編號、Email 部分比對", async () => {
+    expect(nos(await listOrders(deps(), TABLE, { search: { q: "王" } }))).toEqual(["SA1001", "SB2001"]);
+    expect(nos(await listOrders(deps(), TABLE, { search: { q: "sa100" } }))).toEqual(["SA1001", "SA1002"]);
+    expect(nos(await listOrders(deps(), TABLE, { search: { q: "sb2001@" } }))).toEqual(["SB2001"]);
+  });
+
+  it("電話忽略空白與連字號", async () => {
+    expect(nos(await listOrders(deps(), TABLE, { search: { q: "0912345" } }))).toEqual(["SA1001"]);
+    expect(nos(await listOrders(deps(), TABLE, { search: { q: "0922-111" } }))).toEqual(["SA1002"]);
+  });
+
+  it("期間:from 含、to 不含;可與狀態同時篩選", async () => {
+    const range = { from: T0 + DAY, to: T0 + 3 * DAY };
+    expect(nos(await listOrders(deps(), TABLE, { search: range }))).toEqual(["SA1002", "SB2001"]);
+    expect(nos(await listOrders(deps(), TABLE, { status: "paid", search: range }))).toEqual(["SA1002"]);
+    expect(nos(await listOrders(deps(), TABLE, { search: { to: T0 + DAY } }))).toEqual(["SA1001"]);
+  });
+
+  it("LIKE 萬用字元當一般字元", async () => {
+    expect(await listOrders(deps(), TABLE, { search: { q: "%" } })).toEqual([]);
+    expect(await listOrders(deps(), TABLE, { search: { q: "_" } })).toEqual([]);
+  });
+});
+
 describe("listOrders / countByStatus", () => {
   it("狀態 filter 與計數", async () => {
     await seed("CO9");

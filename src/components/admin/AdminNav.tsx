@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { SidebarNav, SidebarTrigger } from "@/components/ui/intent/sidebar";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { PageSearch, type PageSearchConfig } from "@/components/admin/PageSearch";
 
 // Top nav bar for the admin inset: sidebar toggle + breadcrumbs derived from
 // the current pathname. Kept dependency-light; no hardcoded page list.
@@ -14,6 +15,8 @@ import { useT } from "@/lib/i18n/I18nProvider";
 
 interface AdminNavProps {
   menuTitles: Record<string, string>;
+  /** 1.40.0:宣告了搜尋的插件頁 → 頂欄右側的搜尋框。 */
+  pageSearch?: Record<string, PageSearchConfig>;
 }
 
 function labelFor(
@@ -28,7 +31,7 @@ function labelFor(
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function AdminNav({ menuTitles }: AdminNavProps) {
+export function AdminNav({ menuTitles, pageSearch = {} }: AdminNavProps) {
   const pathname = usePathname();
   const t = useT();
   const segments = pathname.split("/").filter(Boolean); // ["admin", ...]
@@ -74,6 +77,11 @@ export function AdminNav({ menuTitles }: AdminNavProps) {
           })}
         </nav>
       </span>
+      {pageSearch[pathname] ? (
+        <span className="ml-auto flex items-center">
+          <PageSearch {...pageSearch[pathname]} />
+        </span>
+      ) : null}
     </SidebarNav>
   );
 }

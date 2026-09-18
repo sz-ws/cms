@@ -9,6 +9,7 @@ import {
 } from "../payment-kit/admin";
 import { countByStatus, listOrders } from "./orders";
 import type { CommerceOrder, OrderStatus } from "./types";
+import type { RecordSearch } from "../record-search";
 import { OrderActions } from "./OrderActions";
 
 // commerce-kit:商店 extension adminPage 的共用積木(server 端)。
@@ -22,7 +23,7 @@ export { CARD, PILL, PILL_AMBER, PILL_GREEN, PILL_NEUTRAL, PILL_RED };
 /** admin 頁的訂單載入(@/lib/db 直取,不經 services)。表未建好 → 空陣列。 */
 export async function loadOrders(
   table: string,
-  opts: { status?: OrderStatus; limit?: number } = {},
+  opts: { status?: OrderStatus; limit?: number; search?: RecordSearch } = {},
 ): Promise<CommerceOrder[]> {
   try {
     return await listOrders({ db: db() }, table, opts);

@@ -26,6 +26,7 @@ export {
   markOrderPaid,
 } from "./orders";
 export type { CommerceDb, CreateOrderInput, TransitionExtras } from "./orders";
+export { ORDER_SEARCH_FIELDS } from "./orders";
 export { createCommerceCheckoutHandler } from "./checkout";
 export type {
   CommerceCheckoutOptions,

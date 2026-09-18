@@ -1,6 +1,7 @@
 import { resolveManagedOrder } from "./managed";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { CoreServices } from "../services";
+import { recordSearchClauses, type RecordSearch, type RecordSearchFields } from "../record-search";
 import {
   isOrderStatus,
   transitionSources,
@@ -158,23 +159,47 @@ export async function getOrder(
   return row ? rowToOrder(row) : null;
 }
 
+/**
+ * 1.40.0:訂單表的可搜欄位(core 的 record-search 組 SQL)。客人報得出來的線索:
+ * 名字、Email、電話、訂單編號,加上下單期間。插件接管同一張表時(shop-operations)
+ * 用同一份,搜尋規則不會分岔。
+ */
+export const ORDER_SEARCH_FIELDS: RecordSearchFields = {
+  text: ["order_no", "customer_name", "customer_email"],
+  phone: ["customer_phone"],
+  date: "created_at",
+};
+
+/** `?` 佔位的 SQL 片段 → drizzle SQL(片段是常數與宣告過的欄位名,值走參數)。 */
+function bindPlaceholders(fragment: string, args: readonly (string | number)[]): SQL {
+  const parts = fragment.split("?");
+  const chunks: SQL[] = [];
+  parts.forEach((part, i) => {
+    chunks.push(sql.raw(part));
+    if (i < parts.length - 1) chunks.push(sql`${args[i]}`);
+  });
+  return sql.join(chunks, sql.raw(""));
+}
+
 export async function listOrders(
   deps: CommerceDb,
   table: string,
-  opts: { status?: OrderStatus; limit?: number } = {},
+  opts: { status?: OrderStatus; limit?: number; search?: RecordSearch } = {},
 ): Promise<CommerceOrder[]> {
   assertTable(table);
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
-  const rows = opts.status
-    ? await deps.db.all<OrderRow>(sql`
-        SELECT ${ROW_COLUMNS} FROM ${sql.raw(table)}
-        WHERE status = ${opts.status}
-        ORDER BY created_at DESC LIMIT ${limit}
-      `)
-    : await deps.db.all<OrderRow>(sql`
-        SELECT ${ROW_COLUMNS} FROM ${sql.raw(table)}
-        ORDER BY created_at DESC LIMIT ${limit}
-      `);
+  // 1.40.0:加上搜尋(名字/電話/Email/訂單編號 + 期間,規則在 ext/record-search.ts)。
+  const search = recordSearchClauses(ORDER_SEARCH_FIELDS, opts.search ?? {});
+  const clauses = [...(opts.status ? ["status = ?"] : []), ...search.clauses];
+  const args = [...(opts.status ? [opts.status] : []), ...search.args];
+  const where = clauses.length
+    ? sql`WHERE ${bindPlaceholders(clauses.join(" AND "), args)}`
+    : sql.raw("");
+  const rows = await deps.db.all<OrderRow>(sql`
+    SELECT ${ROW_COLUMNS} FROM ${sql.raw(table)}
+    ${where}
+    ORDER BY created_at DESC LIMIT ${limit}
+  `);
   return rows.map(rowToOrder);
 }
 
