@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
@@ -130,12 +130,12 @@ export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
                   <span className="truncate md:hidden">{row.userEmail}</span>
                   <span className="tabular-nums">{absoluteTime(row.at, dates)}</span>
                   {tool !== row.tool && (
-                    <Link
+                    <AdminLink
                       href={auditHref({ view, tool: row.tool })}
                       className="ml-auto text-[11px] text-black/40 underline-offset-2 transition-colors duration-150 hover:text-black/75 hover:underline"
                     >
                       {t("agent.audit.showTool")}
-                    </Link>
+                    </AdminLink>
                   )}
                 </div>
                 <Block label={t("agent.audit.args")} body={pretty(row.args)} />

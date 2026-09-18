@@ -679,4 +679,13 @@
 //   the same one extension workspaces show, instead of a top-left skeleton.
 // Additive: callers that pass no time zone behave as before, except fmtDate and
 // displayValue, which now default to the site default (Asia/Taipei) instead of UTC.
-export const CORE_API_VERSION = "1.41.0";
+// 1.42.0: switching back to an admin page is instant.
+// - next.config staleTimes.dynamic = 30: a page visited in the last 30 seconds is
+//   shown from the browser's router cache without a request. Saving anything calls
+//   router.refresh(), which clears that cache, so an admin never sees their own
+//   change missing; changes made elsewhere show up within 30 seconds.
+// - <AdminLink> (components/admin/AdminLink.tsx): next/link that prefetches on
+//   hover or focus only. Admin tables, cards, pagination and filters use it; the
+//   default prefetched every visible row link again after each refresh, and each
+//   prefetch ran the admin layout on the server.
+export const CORE_API_VERSION = "1.42.0";

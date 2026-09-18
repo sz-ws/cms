@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { StatNumber } from "@/components/admin/StatNumber";
 import { cn } from "@/lib/utils";
 import type { DashboardTypeStats } from "./aggregate";
@@ -81,7 +81,7 @@ function CardActions({
 }) {
   return (
     <div className="mt-0.5 flex justify-end gap-2">
-      <Link
+      <AdminLink
         href={stats.newHref}
         className={cn(
           "inline-flex h-8 items-center rounded-[8px] bg-white px-3 text-[12.5px] font-semibold text-black/70",
@@ -91,8 +91,8 @@ function CardActions({
         )}
       >
         {labels.new}
-      </Link>
-      <Link
+      </AdminLink>
+      <AdminLink
         href={stats.collectionHref}
         className={cn(
           "inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-black px-3 text-[12.5px] font-semibold text-white",
@@ -102,7 +102,7 @@ function CardActions({
       >
         {labels.viewAll}
         <span className="text-white/60">→</span>
-      </Link>
+      </AdminLink>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useOptimistic, useState } from "react";
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { useRouter } from "next/navigation";
 import { Archive, CornerUpLeft, Inbox, MailOpen, Trash2 } from "lucide-react";
 import { CoreTable, type CoreColumn } from "@/components/admin/core-table";
@@ -204,7 +204,7 @@ export function InboxTable({
           const href = tab.value ? `${base}?state=${tab.value}` : base;
           const active = tab.value === activeTab;
           return (
-            <Link
+            <AdminLink
               key={tab.value || "all"}
               href={href}
               aria-current={active ? "page" : undefined}
@@ -217,7 +217,7 @@ export function InboxTable({
             >
               {tab.label}
               <span className="tabular-nums text-black/35">{tab.count}</span>
-            </Link>
+            </AdminLink>
           );
         })}
       </nav>
@@ -306,14 +306,14 @@ function Pagination({
       </span>
       <span className="flex gap-2">
         {page > 1 && (
-          <Link href={href(page - 1)} className="hover:text-black/80">
+          <AdminLink href={href(page - 1)} className="hover:text-black/80">
             {t("inbox.prev")}
-          </Link>
+          </AdminLink>
         )}
         {page < last && (
-          <Link href={href(page + 1)} className="hover:text-black/80">
+          <AdminLink href={href(page + 1)} className="hover:text-black/80">
             {t("inbox.next")}
-          </Link>
+          </AdminLink>
         )}
       </span>
     </nav>

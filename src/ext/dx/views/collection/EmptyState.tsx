@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { getMessages } from "@/lib/i18n/index";
 import { format } from "@/lib/i18n/index";
 import type { Locale } from "@/lib/i18n/index";
@@ -40,25 +40,25 @@ export function EmptyState({
           <p className="max-w-sm text-[14px] text-black/55">
             {format(m["collection.empty.noMatch"], { type })}
           </p>
-          <Link
+          <AdminLink
             href={clearHref}
             className="inline-flex h-10 items-center rounded-[8px] bg-white px-4 text-[14px] font-medium text-black/80 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] transition-[box-shadow,transform] active:scale-[0.96] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.22)]"
           >
             {m["collection.empty.clearFilters"]}
-          </Link>
+          </AdminLink>
         </>
       ) : (
         <>
           <p className="max-w-sm text-[14px] text-black/55">
             {format(m["collection.empty.none"], { type })}
           </p>
-          <Link
+          <AdminLink
             href={createHref}
             className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-black px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85"
           >
             {format(m["collection.empty.create"], { type })}
             <span className="text-white/70">→</span>
-          </Link>
+          </AdminLink>
         </>
       )}
     </div>

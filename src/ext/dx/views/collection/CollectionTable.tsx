@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useOptimistic, useState, type ReactNode } from "react";
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
 import { stableReducer } from "@/lib/optimistic";
 import { StatusBadge } from "../StatusBadge";
@@ -188,12 +188,12 @@ export function CollectionTable({
                       )}
                     >
                       {i === 0 ? (
-                        <Link
+                        <AdminLink
                           href={row.editHref}
                           className="inline-block rounded-[4px] outline-none transition-colors hover:text-(--admin-accent) focus-visible:text-(--admin-accent)"
                         >
                           {cell}
-                        </Link>
+                        </AdminLink>
                       ) : (
                         cell
                       )}

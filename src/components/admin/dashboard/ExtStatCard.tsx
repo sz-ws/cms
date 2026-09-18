@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { StatNumber } from "@/components/admin/StatNumber";
 import { cn } from "@/lib/utils";
 import type { ResolvedDashboardCard } from "@/ext/dx/dashboard-cards";
@@ -16,7 +16,7 @@ interface ExtStatCardProps {
 
 export function ExtStatCard({ card }: ExtStatCardProps) {
   return (
-    <Link
+    <AdminLink
       href={card.adminHref}
       className={cn(
         "group flex flex-col gap-3.5 rounded-[16px] bg-white px-[18px] pt-[18px] pb-4",
@@ -48,6 +48,6 @@ export function ExtStatCard({ card }: ExtStatCardProps) {
           →
         </span>
       </div>
-    </Link>
+    </AdminLink>
   );
 }

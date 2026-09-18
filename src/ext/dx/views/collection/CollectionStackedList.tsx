@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { StatusBadge } from "../StatusBadge";
 import { StackedList, StackedListItem } from "@/components/ui/stacked-list";
 import type { ColumnMeta, RowData } from "./CollectionTable";
@@ -21,7 +21,7 @@ export function CollectionStackedList({ columns, rows }: CollectionStackedListPr
       <StackedList className="divide-y divide-black/[0.05]">
         {rows.map((row) => (
           <StackedListItem key={row.id}>
-            <Link
+            <AdminLink
               href={row.editHref}
               className="flex items-center gap-4 px-[18px] py-[11px] transition-colors duration-150 ease-out hover:bg-black/[0.02]"
             >
@@ -38,7 +38,7 @@ export function CollectionStackedList({ columns, rows }: CollectionStackedListPr
                 </span>
               )}
               <StatusBadge status={row.status} />
-            </Link>
+            </AdminLink>
           </StackedListItem>
         ))}
       </StackedList>

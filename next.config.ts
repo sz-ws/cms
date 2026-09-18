@@ -112,6 +112,16 @@ const nextConfig: NextConfig = {
   // `X-Powered-By: Next.js` 對使用者零價值,對掃描器是免費的指紋(框架 + 大版號 →
   // 直接對照已知漏洞清單)。關掉它不影響任何功能。
   poweredByHeader: false,
+  // 瀏覽器端的頁面快取:30 秒內切回同一頁直接用上次的畫面,不打伺服器、不出轉圈。
+  // 預設是 0 —— 整站 force-dynamic,每次換頁都重算一次 layout。
+  //
+  // 不會看到自己剛改的舊資料:存檔後會 router.refresh(),它清掉整個頁面快取
+  // (Next 16 的 refresh-reducer 呼叫 invalidateBfCache)。別人改的東西最多晚 30 秒
+  // 才在「切回來」時出現;插件頁的資料是自己 fetch 的,不受這裡影響
+  // (lib/client-cache.ts 先顯示上次的,再重抓)。
+  experimental: {
+    staleTimes: { dynamic: 30 },
+  },
   // Local tunnel used to reach this dev server from another device/browser.
   // Keep this exact rather than allowing every *.okuso.uk subdomain.
   allowedDevOrigins: ["3001.okuso.uk"],

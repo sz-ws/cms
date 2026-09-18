@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
 import { SHADOW_RING } from "./styles";
 import { RingDot } from "./RingDot";
@@ -32,7 +32,7 @@ export function DashboardEmpty({ labels }: DashboardEmptyProps) {
           {labels.desc}
         </p>
       </div>
-      <Link
+      <AdminLink
         href="/admin/extensions"
         className={cn(
           "inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-black px-4 text-[13px] font-medium text-white",
@@ -42,7 +42,7 @@ export function DashboardEmpty({ labels }: DashboardEmptyProps) {
       >
         {labels.browseExtensions}
         <span className="text-white/70">→</span>
-      </Link>
+      </AdminLink>
     </div>
   );
 }

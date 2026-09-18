@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -34,7 +34,7 @@ export function AuditFilters({ view, tool }: AuditFiltersProps) {
         {VIEWS.map((v) => {
           const active = v.view === view;
           return (
-            <Link
+            <AdminLink
               key={v.view}
               href={auditHref({ view: v.view, tool })}
               aria-current={active ? "page" : undefined}
@@ -46,12 +46,12 @@ export function AuditFilters({ view, tool }: AuditFiltersProps) {
               )}
             >
               {t(v.label)}
-            </Link>
+            </AdminLink>
           );
         })}
       </nav>
       {tool && (
-        <Link
+        <AdminLink
           href={auditHref({ view, tool: null })}
           aria-label={t("agent.audit.filter.clearTool")}
           title={t("agent.audit.filter.clearTool")}
@@ -59,7 +59,7 @@ export function AuditFilters({ view, tool }: AuditFiltersProps) {
         >
           {tool}
           <X className="size-3 text-black/40" />
-        </Link>
+        </AdminLink>
       )}
     </div>
   );

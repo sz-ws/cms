@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { StatNumber } from "@/components/admin/StatNumber";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { inlineLabel } from "../field-utils";
@@ -36,13 +36,13 @@ export function CollectionHeader({
           </span>
         </p>
       </div>
-      <Link
+      <AdminLink
         href={createHref}
         className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-black px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85"
       >
         {t("collection.new", { type: inlineLabel(typeLabel, locale) })}
         <span className="text-white/70">→</span>
-      </Link>
+      </AdminLink>
     </div>
   );
 }

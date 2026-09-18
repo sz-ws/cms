@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
 import type { ResolvedDashboardCard } from "@/ext/dx/dashboard-cards";
 import type { Locale } from "@/lib/i18n";
@@ -39,12 +39,12 @@ export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecent
           </h3>
           <p className="text-[12px] text-black/40">{card.extName}</p>
         </div>
-        <Link
+        <AdminLink
           href={card.adminHref}
           className="shrink-0 text-[12px] font-medium text-black/45 transition-colors duration-150 ease-out hover:text-black/75"
         >
           {labels.viewAll}
-        </Link>
+        </AdminLink>
       </header>
 
       {entries.length === 0 ? (
@@ -56,7 +56,7 @@ export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecent
         <StackedList>
           {entries.map((e) => (
             <StackedListItem key={e.id}>
-              <Link
+              <AdminLink
                 href={e.editHref}
                 className={cn(
                   "flex items-center gap-3 border-t border-black/[0.08] px-[18px] py-[10px]",
@@ -73,7 +73,7 @@ export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecent
                 <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-black/35">
                   {relativeTime(e.updatedAt, now, locale, timeZone)}
                 </span>
-              </Link>
+              </AdminLink>
             </StackedListItem>
           ))}
         </StackedList>

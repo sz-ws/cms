@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
 
@@ -78,7 +78,7 @@ export function QuickCreate({ options }: QuickCreateProps) {
           )}
         >
           {options.map((o) => (
-            <Link
+            <AdminLink
               key={o.href}
               href={o.href}
               role="menuitem"
@@ -92,7 +92,7 @@ export function QuickCreate({ options }: QuickCreateProps) {
                 {o.label}
               </span>
               <span className="text-[11px] text-black/35">{o.extName}</span>
-            </Link>
+            </AdminLink>
           ))}
         </div>
       )}

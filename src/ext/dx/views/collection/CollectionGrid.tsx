@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useOptimistic, useState } from "react";
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
 import { stableReducer } from "@/lib/optimistic";
 import { StatusBadge } from "../StatusBadge";
@@ -181,7 +181,7 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
                 onChange={() => toggle(card.id)}
                 label={`Select ${card.title || card.id}`}
               />
-              <Link
+              <AdminLink
                 href={card.editHref}
                 className={cn(
                   "flex flex-col gap-3 rounded-[14px] bg-white p-1.5 outline-none transition-[transform,box-shadow] duration-150 ease-out",
@@ -205,7 +205,7 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
                     </span>
                   )}
                 </div>
-              </Link>
+              </AdminLink>
             </li>
           );
         })}

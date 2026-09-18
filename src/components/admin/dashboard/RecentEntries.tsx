@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
 import type { RecentEntry } from "./aggregate";
 import type { Locale } from "@/lib/i18n";
@@ -50,7 +50,7 @@ export function RecentEntries({ entries, now, locale, timeZone, labels }: Recent
         <StackedList>
           {entries.map((e) => (
             <StackedListItem key={e.id}>
-              <Link
+              <AdminLink
                 href={e.editHref}
                 className={cn(
                   "flex items-center gap-3 border-t border-black/[0.08] px-[18px] py-[11px]",
@@ -70,7 +70,7 @@ export function RecentEntries({ entries, now, locale, timeZone, labels }: Recent
                 <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-black/35">
                   {relativeTime(e.updatedAt, now, locale, timeZone)}
                 </span>
-              </Link>
+              </AdminLink>
             </StackedListItem>
           ))}
         </StackedList>

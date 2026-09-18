@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { ArrowLeft } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { getLocale, getMessages } from "@/lib/i18n/server";
@@ -45,13 +45,13 @@ export default async function AgentAuditPage({ searchParams }: AgentAuditPagePro
   return (
     <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-5 pb-6">
       <div className="flex flex-col gap-1.5">
-        <Link
+        <AdminLink
           href="/admin/agent"
           className="-ml-0.5 inline-flex w-fit items-center gap-1 text-[11.5px] text-black/35 transition-colors duration-150 hover:text-black/70"
         >
           <ArrowLeft className="size-3" />
           {m["agent.audit.back"]}
-        </Link>
+        </AdminLink>
         <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
           {m["agent.audit.title"]}
         </h1>
@@ -72,12 +72,12 @@ export default async function AgentAuditPage({ searchParams }: AgentAuditPagePro
 
       {olderHref && (
         <div className="flex justify-center">
-          <Link
+          <AdminLink
             href={olderHref}
             className="inline-flex h-9 items-center rounded-[8px] bg-white px-3.5 text-[13px] font-medium text-black/70 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] transition-[color,box-shadow] duration-150 hover:text-black/90 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] active:scale-[0.98]"
           >
             {m["agent.audit.older"]}
-          </Link>
+          </AdminLink>
         </div>
       )}
     </div>
