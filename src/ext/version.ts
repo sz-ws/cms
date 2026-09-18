@@ -672,6 +672,11 @@
 //   (fmtDate read it in UTC). Page-search date ranges and publish scheduling use
 //   the site's days and hours. relativeTimeWords / relativeTime / renderCell /
 //   displayValue / dayInputToMs / msToDayInput take an optional time zone.
+// - lib/client-cache.ts: readCached / writeCached / dropCached keep the last
+//   response of an extension workspace in memory (browser only, never on the
+//   server), so switching back to a page shows it at once and refetches behind it.
+// - The admin route loading state is the centred accent spinner (<LoadingState>),
+//   the same one extension workspaces show, instead of a top-left skeleton.
 // Additive: callers that pass no time zone behave as before, except fmtDate and
 // displayValue, which now default to the site default (Asia/Taipei) instead of UTC.
 export const CORE_API_VERSION = "1.41.0";

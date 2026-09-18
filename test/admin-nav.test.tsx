@@ -42,7 +42,7 @@ vi.mock("@/lib/i18n/I18nProvider", () => ({
 }));
 
 import { AdminNavLink } from "@/components/admin/AdminNavLink";
-import { AdminPageSkeleton } from "@/components/admin/AdminPageSkeleton";
+import { AdminPageLoading } from "@/components/admin/AdminPageLoading";
 
 const renderLink = (props: Partial<Parameters<typeof AdminNavLink>[0]> = {}) =>
   renderToStaticMarkup(
@@ -73,11 +73,12 @@ describe("AdminNavLink", () => {
   });
 });
 
-describe("AdminPageSkeleton", () => {
-  it("announces itself as a busy region and paints skeleton bars", () => {
-    const html = renderToStaticMarkup(createElement(AdminPageSkeleton));
+describe("AdminPageLoading", () => {
+  it("announces itself as a busy region with the accent spinner, centred", () => {
+    const html = renderToStaticMarkup(createElement(AdminPageLoading));
     expect(html).toContain('role="status"');
     expect(html).toContain("admin.loading"); // 由 useT 解析,這裡是 mock 的 key
-    expect(html.match(/admin-skeleton/g)?.length ?? 0).toBeGreaterThan(5);
+    expect(html).toContain("items-center justify-center");
+    expect(html).toContain("var(--admin-accent)");
   });
 });
