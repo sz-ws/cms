@@ -14,6 +14,7 @@ import {
   createTransferReportHandler,
   createTransferVerifyHandler,
   markOrderPaid,
+  ORDER_SEARCH_FIELDS,
   parseShippingConfig,
 } from "@/ext/commerce-kit";
 import { ShopShippingPage } from "./admin-shipping";
@@ -64,12 +65,14 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.2.2",
+  version: "0.3.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
   // 實際用到的那一版。
-  coreApi: "^1.31.0",
+  //
+  // ^1.40.0:訂單頁宣告搜尋(頂欄搜尋框、⌘K 找訂單)。
+  coreApi: "^1.40.0",
   description:
     "購物車、結帳與訂單管理:讀取 catalog 商品、透過 payment capability 收款(刷卡/匯款)、匯款人工對帳。",
   icon: "shopping-cart",
@@ -110,7 +113,24 @@ export const shop = defineExtension({
     },
   ],
   adminPages: [
-    { slug: "", title: "訂單", component: ShopOrdersPage },
+    {
+      slug: "",
+      title: "訂單",
+      component: ShopOrdersPage,
+      // 1.40.0:頂欄搜尋框(名字、電話、Email、訂單編號、下單期間),⌘K 也找得到訂單。
+      search: {
+        placeholder: "姓名、電話、Email 或訂單編號",
+        fields: ORDER_SEARCH_FIELDS,
+        global: {
+          id: "orders",
+          label: "訂單",
+          table: ORDERS_TABLE,
+          key: "order_no",
+          title: "customer_name",
+          subtitle: ["order_no", "customer_phone"],
+        },
+      },
+    },
     { slug: "verify", title: "對帳佇列", component: ShopVerifyPage },
     { slug: "shipping", title: "運費", component: ShopShippingPage },
     { slug: "promos", title: "優惠碼", component: ShopPromosPage },
