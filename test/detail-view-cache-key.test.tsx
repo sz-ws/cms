@@ -13,6 +13,7 @@ vi.mock("next/link", () => ({
   default: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("@/lib/i18n/server", () => ({ getLocale: async () => "zh-Hant" }));
+vi.mock("@/lib/datetime-server", () => ({ getSiteTimeZone: async () => "Asia/Taipei" }));
 vi.mock("@/ext/dx/content-cache", () => ({
   cachedPublicGetBySlug: calls.cachedGet,
 }));

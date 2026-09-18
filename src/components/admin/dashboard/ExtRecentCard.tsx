@@ -18,6 +18,8 @@ interface ExtRecentCardProps {
   card: ResolvedDashboardCard;
   now: number; // passed from the page so server render is deterministic
   locale: Locale;
+  /** 站台時區(1.41.0,lib/datetime-server.ts)。 */
+  timeZone?: string;
   labels: {
     viewAll: string;
     empty: string;
@@ -26,7 +28,7 @@ interface ExtRecentCardProps {
   };
 }
 
-export function ExtRecentCard({ card, now, locale, labels }: ExtRecentCardProps) {
+export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecentCardProps) {
   const entries = card.entries ?? [];
   return (
     <section className={cn("flex flex-col rounded-[16px] bg-white", SHADOW_RING)}>
@@ -69,7 +71,7 @@ export function ExtRecentCard({ card, now, locale, labels }: ExtRecentCardProps)
                   {e.status === "published" ? labels.published : labels.draft}
                 </span>
                 <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-black/35">
-                  {relativeTime(e.updatedAt, now, locale)}
+                  {relativeTime(e.updatedAt, now, locale, timeZone)}
                 </span>
               </Link>
             </StackedListItem>

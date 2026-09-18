@@ -1,4 +1,5 @@
 import { getLocale } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { getMessages } from "@/lib/i18n/index";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { LocalizedString } from "@/lib/i18n/localized";
@@ -56,7 +57,7 @@ export async function InboxView({
   contentType,
   searchParams,
 }: InboxViewProps) {
-  const locale = await getLocale();
+  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const t = getMessages(locale);
   const fullType = `${extId}.${contentType.name}`;
   const resolvedTitle =
@@ -96,8 +97,8 @@ export async function InboxView({
     state: entry.state,
     repliedAt: entry.repliedAt,
     createdAt: entry.createdAt,
-    cells: listFields.map((f) => displayValue(f, entry.data[f.key])),
-    detail: contentType.fields.map((f) => displayValue(f, entry.data[f.key])),
+    cells: listFields.map((f) => displayValue(f, entry.data[f.key], timeZone)),
+    detail: contentType.fields.map((f) => displayValue(f, entry.data[f.key], timeZone)),
   }));
 
   const base = `/admin/ext/${extId}${adminSlug ? `/${adminSlug}` : ""}`;

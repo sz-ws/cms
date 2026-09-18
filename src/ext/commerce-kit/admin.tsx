@@ -11,6 +11,7 @@ import { countByStatus, listOrders } from "./orders";
 import type { CommerceOrder, OrderStatus } from "./types";
 import type { RecordSearch } from "../record-search";
 import { OrderActions } from "./OrderActions";
+import { DateTimeText } from "@/components/DateTimeProvider";
 
 // commerce-kit:商店 extension adminPage 的共用積木(server 端)。
 // 樣式常數沿用 payment-kit/admin(同一套 Paper & Ink 慣例)—— commerce 本來就
@@ -133,7 +134,7 @@ export function CommerceOrdersTable({
                 {o.paymentProvider}
               </td>
               <td className="py-2.5 pr-4 tabular-nums text-[12px] text-black/50">
-                {new Date(o.createdAt).toLocaleString("zh-TW", { hour12: false })}
+                <DateTimeText at={o.createdAt} locale="zh-Hant" />
               </td>
               {actionsEndpoint ? (
                 <td className="py-2.5">
@@ -197,12 +198,12 @@ export function TransferVerifyQueue({
               </div>
               <p className="mt-1 truncate text-[12px] text-black/45">
                 {o.customerName} · {o.customerEmail}
-                {o.transferReportedAt
-                  ? ` · 回報於 ${new Date(o.transferReportedAt).toLocaleString(
-                      "zh-TW",
-                      { hour12: false },
-                    )}`
-                  : ""}
+                {o.transferReportedAt ? (
+                  <>
+                    {" · 回報於 "}
+                    <DateTimeText at={o.transferReportedAt} locale="zh-Hant" />
+                  </>
+                ) : null}
               </p>
             </div>
             <OrderActions

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/status-button";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { relativeTimeWords } from "@/lib/relative-time";
+import { useTimeZone } from "@/components/DateTimeProvider";
 import { cn } from "@/lib/utils";
 import { stableReducer } from "@/lib/optimistic";
 import type { SubmissionState } from "../submission";
@@ -87,6 +88,7 @@ export function InboxTable({
 }: InboxTableProps) {
   const t = useT();
   const locale = useLocale();
+  const timeZone = useTimeZone();
   const router = useRouter();
   const [shownRows, applyOptimistic] = useOptimistic<
     InboxRowDTO[],
@@ -176,7 +178,7 @@ export function InboxTable({
       render: (r) => (
         <span className="flex items-center gap-2 whitespace-nowrap">
           <span className="text-[13px] tabular-nums text-black/55">
-            {relativeTimeWords(r.createdAt, now, locale)}
+            {relativeTimeWords(r.createdAt, now, locale, timeZone)}
           </span>
           {r.repliedAt !== null && (
             <span
@@ -386,6 +388,7 @@ function InboxSheet({
 }) {
   const t = useT();
   const locale = useLocale();
+  const timeZone = useTimeZone();
   const [held, setHeld] = useState<InboxRowDTO | null>(row);
   if (row !== null && row !== held) setHeld(row);
   const shown = row ?? held;
@@ -397,7 +400,7 @@ function InboxSheet({
           <SheetTitle>{t("inbox.detailTitle")}</SheetTitle>
           <SheetDescription>
             {shown
-              ? relativeTimeWords(shown.createdAt, now, locale)
+              ? relativeTimeWords(shown.createdAt, now, locale, timeZone)
               : ""}
           </SheetDescription>
         </SheetHeader>
@@ -420,7 +423,7 @@ function InboxSheet({
                 {t("inbox.repliedOn")}
               </dt>
               <dd className="text-[13.5px] text-black/85">
-                {relativeTimeWords(shown.repliedAt as number, now, locale)}
+                {relativeTimeWords(shown.repliedAt as number, now, locale, timeZone)}
               </dd>
             </div>
           )}

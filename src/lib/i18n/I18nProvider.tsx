@@ -45,6 +45,11 @@ export function useOptionalT(): I18nContextValue["t"] | null {
   return useContext(I18nContext)?.t ?? null;
 }
 
+/** 1.41.0:不在 I18nProvider 裡時回 null(日期 formatter 在前台也用得到)。 */
+export function useOptionalLocale(): Locale | null {
+  return useContext(I18nContext)?.locale ?? null;
+}
+
 /** 給非字典的 locale-aware 格式化(相對時間、日期)用。 */
 export function useLocale(): Locale {
   const ctx = useContext(I18nContext);

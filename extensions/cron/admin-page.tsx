@@ -1,6 +1,8 @@
 import { getSetting } from "@/lib/settings";
 import { getHeartbeat } from "@/lib/heartbeats";
 import { relativeTimeWords } from "@/lib/relative-time";
+import { getSiteTimeZone } from "@/lib/datetime-server";
+import { DateTimeText } from "@/components/DateTimeProvider";
 
 // cron extension 的 adminPage —— 補「裝完零引導」缺口(handoff-2026-07-11-cron-gaps #1):
 // tick 觀測(heartbeats 表的 ext.cron.lastTick)+ 驗簽 endpoint + companion worker 三步部署指引。
@@ -43,10 +45,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export async function CronAdminPage() {
-  const [secret, lastTick, siteUrl] = await Promise.all([
+  const [secret, lastTick, siteUrl, timeZone] = await Promise.all([
     getSetting<string>("ext.cron.secret", ""),
     getHeartbeat("ext.cron.lastTick"),
     getSetting<string>("core.siteUrl", ""),
+    getSiteTimeZone(),
   ]);
   const now = requestTimestamp();
   const hasSecret = Boolean(secret);
@@ -94,9 +97,9 @@ export async function CronAdminPage() {
                 <span className={`${PILL} ${stale ? PILL_AMBER : PILL_GREEN}`}>
                   {stale ? "可能停跳" : "運作中"}
                 </span>
-                <span>{relativeTimeWords(lastTick, now, "zh-Hant")}</span>
+                <span>{relativeTimeWords(lastTick, now, "zh-Hant", timeZone)}</span>
                 <span className="text-[12px] tabular-nums text-black/40">
-                  {new Date(lastTick).toLocaleString("zh-TW", { hour12: false })}
+                  <DateTimeText at={lastTick} locale="zh-Hant" />
                 </span>
                 {stale && (
                   <span className="text-black/50">

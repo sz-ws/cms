@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { DateTimeText } from "@/components/DateTimeProvider";
 
 // payment-kit:金流 extension adminPage 的共用積木(server 端)。
 // 樣式常數鏡射 extensions/cron/admin-page.tsx 的 Paper & Ink 慣例 —— 各金流
@@ -125,9 +126,7 @@ export function PaymentOrdersTable({ orders }: { orders: PaymentOrderRow[] }) {
                   {o.trade_no ?? "—"}
                 </td>
                 <td className="py-2.5 tabular-nums text-[12px] text-black/50">
-                  {new Date(o.created_at).toLocaleString("zh-TW", {
-                    hour12: false,
-                  })}
+                  <DateTimeText at={o.created_at} locale="zh-Hant" />
                 </td>
               </tr>
             );

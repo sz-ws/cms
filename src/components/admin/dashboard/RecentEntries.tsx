@@ -18,6 +18,8 @@ interface RecentEntriesProps {
   entries: RecentEntry[];
   now: number; // passed from the page so server render is deterministic
   locale: Locale;
+  /** 站台時區(1.41.0,lib/datetime-server.ts)。 */
+  timeZone?: string;
   labels: {
     title: string;
     subtitle: string;
@@ -27,7 +29,7 @@ interface RecentEntriesProps {
   };
 }
 
-export function RecentEntries({ entries, now, locale, labels }: RecentEntriesProps) {
+export function RecentEntries({ entries, now, locale, timeZone, labels }: RecentEntriesProps) {
   return (
     <section className={cn("flex flex-col rounded-[16px] bg-white", SHADOW_RING)}>
       <header className="flex flex-col gap-px px-[18px] pt-[18px] pb-3">
@@ -66,7 +68,7 @@ export function RecentEntries({ entries, now, locale, labels }: RecentEntriesPro
                   {e.status === "published" ? labels.published : labels.draft}
                 </span>
                 <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-black/35">
-                  {relativeTime(e.updatedAt, now, locale)}
+                  {relativeTime(e.updatedAt, now, locale, timeZone)}
                 </span>
               </Link>
             </StackedListItem>

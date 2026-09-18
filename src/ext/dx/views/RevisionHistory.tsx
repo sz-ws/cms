@@ -15,6 +15,7 @@ import {
 import { StatusButton } from "@/components/ui/status-button";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { relativeTimeWords } from "@/lib/relative-time";
+import { useTimeZone } from "@/components/DateTimeProvider";
 import { StatusBadge } from "./StatusBadge";
 
 // 內容版本紀錄面板(admin 編輯頁下半部)。CoreTable 列表 + 右側 detail sheet 的既有
@@ -85,6 +86,7 @@ export function RevisionHistory({
 }: RevisionHistoryProps) {
   const t = useT();
   const locale = useLocale();
+  const timeZone = useTimeZone();
   const router = useRouter();
   const [open, setOpen] = useState<RevisionRowDTO | null>(null);
 
@@ -107,7 +109,7 @@ export function RevisionHistory({
       render: (r) => (
         <span className="flex items-center gap-2">
           <span className="text-[13px] tabular-nums text-black/85">
-            {relativeTimeWords(r.createdAt, now, locale)}
+            {relativeTimeWords(r.createdAt, now, locale, timeZone)}
           </span>
           {r.id === currentId && (
             <span className="rounded-full bg-(--admin-accent)/10 px-2 py-0.5 text-[11px] font-medium text-(--admin-accent)">
@@ -241,6 +243,7 @@ function RevisionSheetBody({
 }) {
   const t = useT();
   const locale = useLocale();
+  const timeZone = useTimeZone();
   const [detail, setDetail] = useState<RevisionDetailDTO | null>(null);
   const [state, setState] = useState<"idle" | "confirm" | "busy" | "error">(
     "idle",
@@ -297,7 +300,7 @@ function RevisionSheetBody({
   }
 
   const entries = detail ? Object.entries(detail.data) : [];
-  const when = relativeTimeWords(summary.createdAt, now, locale);
+  const when = relativeTimeWords(summary.createdAt, now, locale, timeZone);
 
   return (
     <>

@@ -20,6 +20,7 @@ import { normalizeInsightConfig } from "@/lib/dashboard-insights-config";
 import { getExtRuntime } from "@/ext/loader";
 import { resolveDashboardCards } from "@/ext/dx/dashboard-cards";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { getSetting } from "@/lib/settings";
 import { getSessionUser } from "@/lib/auth";
 
@@ -39,7 +40,7 @@ export const dynamic = "force-dynamic";
 // palette are a later phase and deliberately not built here.
 export default async function DashboardPage() {
   const data = await getDashboardData();
-  const locale = await getLocale();
+  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const m = getMessages(locale);
 
   // Server components 吃不到 context,dashboard 卡片是 server-rendered,
@@ -274,6 +275,7 @@ export default async function DashboardPage() {
             entries={data.recent}
             now={data.now}
             locale={locale}
+            timeZone={timeZone}
             labels={labels.recent}
           />
         </div>
@@ -324,6 +326,7 @@ export default async function DashboardPage() {
                   card={c}
                   now={data.now}
                   locale={locale}
+                  timeZone={timeZone}
                   labels={labels.extRecent}
                 />
               ))}

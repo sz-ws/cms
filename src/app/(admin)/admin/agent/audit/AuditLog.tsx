@@ -6,6 +6,8 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { relativeTimeWords } from "@/lib/relative-time";
+import { useDateFormatter } from "@/components/DateTimeProvider";
+import type { DateFormatter } from "@/lib/datetime";
 import { StatusDot } from "@/components/admin/dashboard/StatusDot";
 import { toolLeaf, toolNamespace } from "@/components/admin/agent/tools";
 import type { AgentAuditRow } from "@/ext/agent-audit";
@@ -37,16 +39,14 @@ function pretty(raw: string): string {
   }
 }
 
-function absoluteTime(epochMs: number, locale: "en" | "zh-Hant"): string {
-  return new Date(epochMs).toLocaleString(locale === "zh-Hant" ? "zh-TW" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  });
+function absoluteTime(epochMs: number, dates: DateFormatter): string {
+  return dates.format(epochMs, { dateStyle: "medium", timeStyle: "medium" });
 }
 
 export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
   const t = useT();
   const locale = useLocale();
+  const dates = useDateFormatter();
   const [openId, setOpenId] = useState<string | null>(null);
 
   if (rows.length === 0) {
@@ -97,10 +97,10 @@ export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
               </span>
               <time
                 dateTime={new Date(row.at).toISOString()}
-                title={absoluteTime(row.at, locale)}
+                title={absoluteTime(row.at, dates)}
                 className="shrink-0 text-[11px] tabular-nums text-black/35"
               >
-                {relativeTimeWords(row.at, now, locale)}
+                {relativeTimeWords(row.at, now, locale, dates.timeZone)}
               </time>
               <ChevronRight
                 aria-hidden
@@ -128,7 +128,7 @@ export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
                     {t(row.source === "execute" ? "agent.audit.source.execute" : "agent.audit.source.chat")}
                   </span>
                   <span className="truncate md:hidden">{row.userEmail}</span>
-                  <span className="tabular-nums">{absoluteTime(row.at, locale)}</span>
+                  <span className="tabular-nums">{absoluteTime(row.at, dates)}</span>
                   {tool !== row.tool && (
                     <Link
                       href={auditHref({ view, tool: row.tool })}

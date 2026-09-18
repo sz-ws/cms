@@ -2,6 +2,7 @@ import type { DeclarativeBlockDef, DeclarativeField } from "../manifest";
 import { richtextToPlainText } from "../fields/richtext-schema";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { Locale } from "@/lib/i18n/index";
+import { DEFAULT_TIME_ZONE, wallClock } from "@/lib/datetime";
 
 // generic views 共用的欄位格式化。純函式,無 I/O。
 
@@ -107,19 +108,28 @@ export function selectColumns(
   return [titleField, ...rest].slice(0, max);
 }
 
-/** 日期(epoch ms)→ yyyy-mm-dd。非數字回空字串。 */
-export function fmtDate(v: unknown): string {
+/**
+ * 日期(epoch ms)→ yyyy-mm-dd,以站台時區算是哪一天(1.41.0;以前用 UTC,在台灣挑的
+ * 9/18 存成台北的 00:00,也就是 UTC 的 9/17 16:00,表格會顯示前一天)。非數字回空字串。
+ */
+export function fmtDate(v: unknown, timeZone: string = DEFAULT_TIME_ZONE): string {
   const n = typeof v === "number" ? v : typeof v === "string" ? Date.parse(v) : NaN;
   if (!Number.isFinite(n)) return "";
-  return new Date(n).toISOString().slice(0, 10);
+  const w = wallClock(n, timeZone);
+  return `${w.year}-${String(w.month).padStart(2, "0")}-${String(w.day).padStart(2, "0")}`;
 }
 
 /** 依欄位型別把 data 值格式化為表格 cell / detail 顯示用的字串。 */
-export function displayValue(field: DeclarativeField, value: unknown): string {
+export function displayValue(
+  field: DeclarativeField,
+  value: unknown,
+  /** 站台時區(lib/datetime-server.ts getSiteTimeZone);date 欄位用。 */
+  timeZone?: string,
+): string {
   if (value === undefined || value === null) return "";
   switch (field.type) {
     case "date":
-      return fmtDate(value);
+      return fmtDate(value, timeZone);
     case "boolean":
       return value ? "yes" : "no";
     case "json":

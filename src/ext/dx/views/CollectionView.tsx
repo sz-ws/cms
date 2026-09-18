@@ -6,6 +6,7 @@ import type {
 } from "../manifest";
 import { displayValue, fieldLabel, isSortable, selectColumns } from "./field-utils";
 import { getLocale } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { renderCell } from "./collection/cell-renderers";
@@ -50,7 +51,7 @@ export async function CollectionView({
   searchParams,
   layout = "table",
 }: CollectionViewProps) {
-  const locale = await getLocale();
+  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const def = toTypeDef(extId, contentType);
   const fields = contentType.fields;
   const typeLabel = resolveLocalizedString(contentType.label, locale) ?? contentType.name;
@@ -111,7 +112,7 @@ export async function CollectionView({
         id: entry.id,
         status: entry.status,
         editHref: editHref(entry.id),
-        cells: columns.map((f) => renderCell(f, entry.data[f.key])),
+        cells: columns.map((f) => renderCell(f, entry.data[f.key], timeZone)),
       }));
 
   // grid 卡片(§3.5 推斷 cover/title/meta)。
@@ -129,7 +130,7 @@ export async function CollectionView({
           coverKey:
             typeof cover === "string" && cover.length > 0 ? cover : null,
           meta: metaField
-            ? displayValue(metaField, entry.data[metaField.key])
+            ? displayValue(metaField, entry.data[metaField.key], timeZone)
             : "",
         };
       })

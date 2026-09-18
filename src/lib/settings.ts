@@ -9,6 +9,7 @@ import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
 import type { LocalizedString } from "./i18n/localized";
 import type { BatchItem } from "drizzle-orm/batch";
 import { ADMIN_ACCENT_SWATCHES, DEFAULT_ADMIN_ACCENT } from "./admin-accent";
+import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from "./datetime";
 
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
@@ -94,6 +95,21 @@ export const CORE_SETTINGS: SettingField[] = [
       { value: "zh-Hant", label: "繁體中文" },
     ],
     default: DEFAULT_CONTENT_LOCALE,
+  },
+  {
+    // 1.41.0:日期與時間顯示用的時區(lib/datetime.ts)。Workers 本身是 UTC,
+    // 沒有這個設定時 server 畫出來的時間在台灣會差 8 小時。儲存一律是 UTC 的 epoch ms,
+    // 改這裡只改顯示與「某一天」的換算,不動資料。
+    key: "core.timeZone",
+    group: "general",
+    label: { en: "Time zone", "zh-Hant": "時區" },
+    description: {
+      en: "Dates and times across the site and admin, CSV exports, and date filters use this time zone.",
+      "zh-Hant": "前台、後台、CSV 匯出與日期篩選的時間都以這個時區顯示。",
+    },
+    type: "select",
+    options: TIME_ZONE_OPTIONS,
+    default: DEFAULT_TIME_ZONE,
   },
   {
     key: "core.siteTitle",

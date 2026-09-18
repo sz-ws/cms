@@ -13,6 +13,8 @@ import {
   recordSearchParams,
   type RecordSearch,
 } from "@/ext/record-search";
+import { useDateFormatter } from "@/components/DateTimeProvider";
+import type { DateFormatter } from "@/lib/datetime";
 
 // 1.40.0:插件後台頁的搜尋框,畫在頂欄麵包屑右邊。
 //
@@ -48,12 +50,9 @@ const DATE_FIELD =
   "h-8 rounded-[8px] bg-white px-2.5 text-[13px] text-black/80 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] " +
   "focus:outline-none focus:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]";
 
-function rangeLabel(search: RecordSearch): string | null {
+function rangeLabel(search: RecordSearch, formatter: DateFormatter): string | null {
   if (search.from === undefined && search.to === undefined) return null;
-  const short = (ms: number) => {
-    const d = new Date(ms);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  };
+  const short = (ms: number) => formatter.monthDay(ms);
   const from = search.from !== undefined ? short(search.from) : "";
   const to = search.to !== undefined ? short(search.to - 1) : "";
   return `${from}–${to}`;
@@ -67,11 +66,13 @@ function PageSearchForm({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const formatter = useDateFormatter();
+  const timeZone = formatter.timeZone;
   const [q, setQ] = useState(search.q ?? "");
-  const [from, setFrom] = useState(msToDayInput(search.from));
-  const [to, setTo] = useState(msToDayInput(search.to, true));
+  const [from, setFrom] = useState(msToDayInput(search.from, false, timeZone));
+  const [to, setTo] = useState(msToDayInput(search.to, true, timeZone));
   const [rangeOpen, setRangeOpen] = useState(false);
-  const range = rangeLabel(search);
+  const range = rangeLabel(search, formatter);
 
   function go(next: RecordSearch) {
     const kept = new URLSearchParams(params);
@@ -83,8 +84,8 @@ function PageSearchForm({
 
   const current = (): RecordSearch => ({
     q: q.trim() || undefined,
-    from: dayInputToMs(from),
-    to: dayInputToMs(to, true),
+    from: dayInputToMs(from, false, timeZone),
+    to: dayInputToMs(to, true, timeZone),
   });
 
   function onSubmit(event: FormEvent) {

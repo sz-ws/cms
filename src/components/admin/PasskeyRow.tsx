@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { StackedListItem } from "@/components/ui/stacked-list";
 import { FaceIdIcon } from "@/components/ui/face-id-icon";
 import { relativeTimeWords } from "@/lib/relative-time";
+import { useTimeZone } from "@/components/DateTimeProvider";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import type { PasskeySummary } from "@/components/admin/PasskeysManager";
 
@@ -28,6 +29,7 @@ export function PasskeyRow({
 }: PasskeyRowProps) {
   const t = useT();
   const locale = useLocale();
+  const timeZone = useTimeZone();
   return (
     <StackedListItem>
       <div className="group flex items-center gap-3 border-t border-black/[0.06] px-4 py-3 transition-colors duration-150 ease-out first:border-t-0 hover:bg-black/[0.02]">
@@ -40,9 +42,9 @@ export function PasskeyRow({
             {passkey.name}
           </span>
           <span className="truncate text-[11.5px] tabular-nums text-black/40">
-            {t("passkey.added", { relative: relativeTimeWords(passkey.createdAt, now, locale) })}
+            {t("passkey.added", { relative: relativeTimeWords(passkey.createdAt, now, locale, timeZone) })}
             {passkey.lastUsedAt != null &&
-              ` · ${t("passkey.lastUsed", { relative: relativeTimeWords(passkey.lastUsedAt, now, locale) })}`}
+              ` · ${t("passkey.lastUsed", { relative: relativeTimeWords(passkey.lastUsedAt, now, locale, timeZone) })}`}
           </span>
         </div>
 

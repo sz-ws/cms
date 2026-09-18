@@ -10,6 +10,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useDateFormatter } from "@/components/DateTimeProvider";
+import { wallClock, zonedTimeToMs, type DateFormatter } from "@/lib/datetime";
 
 // Admin-only publish scheduling control(FormView status 區塊,僅 Draft 時顯示)。
 // value = epoch ms(row 層 publishAt,見 content-provider.ts extractPublishAt)
@@ -18,6 +20,9 @@ import { cn } from "@/lib/utils";
 //
 // Calendar 擋掉今天以前的日子(排程過去沒有意義);既有 value 若已過期(舊排程
 // 未被 sweep 前重開編輯),chip 下方顯示「下次掃描立即發佈」提示而非阻擋。
+//
+// 1.41.0:日期與時間是站台時區的(lib/datetime.ts)——人在國外排「9/20 09:00」,
+// 發佈的是店家那邊的 9/20 早上九點。月曆元件用瀏覽器時區,進出時用年月日換算。
 
 interface PublishScheduleControlProps {
   value: number | null;
@@ -27,36 +32,38 @@ interface PublishScheduleControlProps {
 
 const DEFAULT_TIME = "09:00";
 
-function formatSchedule(v: number): string {
-  return new Date(v).toLocaleString(undefined, {
+function formatSchedule(v: number, dates: DateFormatter): string {
+  return dates.format(v, {
     year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 
-function toTimeString(v: number): string {
-  const d = new Date(v);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+function toTimeString(v: number, timeZone: string): string {
+  const w = wallClock(v, timeZone);
+  return `${String(w.hour).padStart(2, "0")}:${String(w.minute).padStart(2, "0")}`;
 }
 
-function combine(date: Date, time: string): number | null {
+/** 站台時區那天的日曆日(給瀏覽器時區的月曆元件用)。 */
+function toCalendarDate(v: number, timeZone: string): Date {
+  const w = wallClock(v, timeZone);
+  return new Date(w.year, w.month - 1, w.day);
+}
+
+function combine(date: Date, time: string, timeZone: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(time);
   if (!m) return null;
   const h = Number(m[1]);
   const min = Number(m[2]);
   if (h > 23 || min > 59) return null;
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    h,
-    min,
-  ).getTime();
+  return zonedTimeToMs(
+    { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), hour: h, minute: min },
+    timeZone,
+  );
 }
 
 export function PublishScheduleControl({
@@ -65,6 +72,8 @@ export function PublishScheduleControl({
   disabled,
 }: PublishScheduleControlProps) {
   const [open, setOpen] = useState(false);
+  const dates = useDateFormatter();
+  const timeZone = dates.timeZone;
   // Popover 的 draft state:開啟時從 value 播種(見 onOpenChange)。
   const [draftDate, setDraftDate] = useState<Date | undefined>(undefined);
   const [draftTime, setDraftTime] = useState(DEFAULT_TIME);
@@ -74,13 +83,13 @@ export function PublishScheduleControl({
 
   const scheduled = value !== null;
   const past = scheduled && value <= mountedAt;
-  const combined = draftDate ? combine(draftDate, draftTime) : null;
+  const combined = draftDate ? combine(draftDate, draftTime, timeZone) : null;
 
   function seedAndToggle(next: boolean) {
     if (next) {
-      const base = value !== null ? new Date(value) : undefined;
+      const base = value !== null ? toCalendarDate(value, timeZone) : undefined;
       setDraftDate(base);
-      setDraftTime(value !== null ? toTimeString(value) : DEFAULT_TIME);
+      setDraftTime(value !== null ? toTimeString(value, timeZone) : DEFAULT_TIME);
     }
     setOpen(next);
   }
@@ -109,7 +118,7 @@ export function PublishScheduleControl({
               >
                 <CalendarClock className="size-3.5" aria-hidden />
                 <TextMorph respectReducedMotion>
-                  {scheduled ? formatSchedule(value) : "Schedule…"}
+                  {scheduled ? formatSchedule(value, dates) : "Schedule…"}
                 </TextMorph>
               </button>
             }

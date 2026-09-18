@@ -4,6 +4,8 @@ import { getDB, getEnv, getStorage } from "@/lib/cf";
 import { getExtRuntime } from "@/ext/loader";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { getLocale } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
+import { fmtDate } from "@/ext/dx/views/field-utils";
 import {
   EXPORT_FORMAT,
   CONTENT_BATCH,
@@ -47,8 +49,8 @@ function param(url: URL, name: string, re: RegExp): string | null | false {
 }
 
 /** site-export-2026-07-25.ndjson / site-export-blog.post-2026-07-25.ndjson */
-function filename(type: string | null): string {
-  const day = new Date().toISOString().slice(0, 10);
+function filename(type: string | null, timeZone: string): string {
+  const day = fmtDate(Date.now(), timeZone);
   const slice = type ? `-${type}` : "";
   return `site-export${slice}-${day}.ndjson`;
 }
@@ -169,7 +171,7 @@ export async function POST(req: Request): Promise<Response> {
   return new Response(stream, {
     headers: {
       "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename(type)}"`,
+      "Content-Disposition": `attachment; filename="${filename(type, await getSiteTimeZone())}"`,
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
     },

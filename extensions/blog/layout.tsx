@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { useTimeZone } from "@/components/DateTimeProvider";
+import { fmtDate } from "@/ext/dx/views/field-utils";
 import type { JSONContent } from "@tiptap/core";
 import {
   registerExtensionLayout,
@@ -41,18 +43,19 @@ type Strings = Record<string, string>;
 
 const STRING_FIELDS = ["title", "slug", "excerpt", "cover", "author", "publishedAt"] as const;
 
-function seedStrings(props: LayoutComponentProps): Strings {
+function seedStrings(props: LayoutComponentProps, timeZone: string): Strings {
   const initial = (props.initialData ?? {}) as Record<string, unknown>;
   const out: Strings = {};
-  for (const key of STRING_FIELDS) out[key] = readStr(initial, key);
+  for (const key of STRING_FIELDS) out[key] = readStr(initial, key, timeZone);
   return out;
 }
 
-function readStr(data: Record<string, unknown>, key: string): string {
+function readStr(data: Record<string, unknown>, key: string, timeZone: string): string {
   const v = data[key];
   if (typeof v === "string") return v;
   if (typeof v === "number" && Number.isFinite(v) && key === "publishedAt") {
-    return new Date(v).toISOString().slice(0, 10);
+    // 站台時區的那一天(core 1.41.0),不是 UTC 的。
+    return fmtDate(v, timeZone);
   }
   return "";
 }
@@ -65,7 +68,8 @@ function autoGrow(el: HTMLTextAreaElement | null) {
 
 export function BlogLayout(props: LayoutComponentProps) {
   const router = useRouter();
-  const [str, setStr] = useState<Strings>(() => seedStrings(props));
+  const timeZone = useTimeZone();
+  const [str, setStr] = useState<Strings>(() => seedStrings(props, timeZone));
   const [body, setBody] = useState<unknown>(props.initialData?.body ?? "");
   const [initialBody] = useState(() => props.initialData?.body ?? "");
   const [pending, setPending] = useState(false);
@@ -77,7 +81,7 @@ export function BlogLayout(props: LayoutComponentProps) {
   const [coverPreset] = useState(0);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const baseline = useMemo(() => seedStrings(props), [props]);
+  const baseline = useMemo(() => seedStrings(props, timeZone), [props, timeZone]);
   const dirty = useMemo(() => {
     if (STRING_FIELDS.some((k) => str[k] !== baseline[k])) return true;
     return JSON.stringify(body) !== JSON.stringify(initialBody);

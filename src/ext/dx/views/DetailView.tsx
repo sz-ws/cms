@@ -8,6 +8,7 @@ import { displayValue, fieldLabel } from "./field-utils";
 import { renderRichtext } from "./richtext-render";
 import { renderStructural } from "./structural-render";
 import { getLocale } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { resolveRelations, type ResolvedRelation } from "../relation-resolve";
 import { isMediaKey } from "../media-key";
 import { collectMediaKeys, loadMediaDims } from "./media-dims";
@@ -46,7 +47,7 @@ export async function DetailView({
   contentType,
   slug,
 }: DetailViewProps) {
-  const locale = await getLocale();
+  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const def = toTypeDef(extId, contentType);
   // public 匿名讀取:走 tagged data cache(content:<type> / ext:<extId>),mutation 精準失效。
   // core.locale 是管理介面語言；公開 route 尚未携帶內容 locale，不能用它過濾
@@ -58,7 +59,7 @@ export async function DetailView({
     contentType.fields.find((f) => f.key === contentType.slugField) ??
     contentType.fields[0];
   const title =
-    displayValue(titleField, entry.data[titleField.key]) || entry.id;
+    displayValue(titleField, entry.data[titleField.key], timeZone) || entry.id;
 
   // 08 §2:先解析所有 relation/relations 欄位的 id → { title, href }(server-side,
   // 走 provider 直查,無 HTTP)。逐欄位一組,供下方同步 map 顯示。
@@ -172,7 +173,7 @@ export async function DetailView({
                   // Tier 2 v1.2: group/repeater/blocks → readable nested render.
                   renderStructural(f, value, locale, mediaDims)
                 ) : (
-                  displayValue(f, value)
+                  displayValue(f, value, timeZone)
                 )}
               </dd>
             </div>

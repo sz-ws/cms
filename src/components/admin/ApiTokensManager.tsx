@@ -22,6 +22,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
+import { useTimeZone } from "@/components/DateTimeProvider";
 
 // roadmap #1 §5:API Tokens manager(mirror RegistrySourcesManager 模式)。
 // 列出 tokens(server 只下發 prefix / scope / 時間,永不含 raw 或 hash);「New token」
@@ -42,7 +43,7 @@ interface ApiTokensManagerProps {
 
 // SSR/CSR 都以 admin 的 core.locale 為準(undefined 會吃瀏覽器 locale,
 // server render 對不上會 hydration mismatch)。
-function formatDate(ms: number | null, locale: "en" | "zh-Hant"): string {
+function formatDate(ms: number | null, locale: "en" | "zh-Hant", timeZone: string): string {
   if (!ms) return "—";
   try {
     return new Date(ms).toLocaleDateString(
@@ -51,6 +52,7 @@ function formatDate(ms: number | null, locale: "en" | "zh-Hant"): string {
         year: "numeric",
         month: "short",
         day: "numeric",
+        timeZone,
       },
     );
   } catch {
@@ -62,6 +64,7 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
   const t = useT();
   const ime = useImeGuard();
   const locale = useLocale();
+  const timeZone = useTimeZone();
   const router = useRouter();
   const [tokens, setTokens] = useState<ApiToken[]>(initialTokens);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -179,8 +182,8 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
                   <span className="flex items-center gap-2 text-[11px] text-black/40">
                     <code className="font-mono">{token.prefix}…</code>
                     <span className="uppercase tracking-wide">{token.scope}</span>
-                    <span>{t("apiTokens.used", { date: formatDate(token.lastUsedAt, locale) })}</span>
-                    <span>{t("apiTokens.created", { date: formatDate(token.createdAt, locale) })}</span>
+                    <span>{t("apiTokens.used", { date: formatDate(token.lastUsedAt, locale, timeZone) })}</span>
+                    <span>{t("apiTokens.created", { date: formatDate(token.createdAt, locale, timeZone) })}</span>
                   </span>
                 </div>
               </div>

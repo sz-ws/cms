@@ -64,7 +64,12 @@ function MediaCell({ value }: { value: unknown }) {
   return <Chip>{truncate(key.split("/").pop() ?? key, 18)}</Chip>;
 }
 
-export function renderCell(field: DeclarativeField, value: unknown): ReactNode {
+export function renderCell(
+  field: DeclarativeField,
+  value: unknown,
+  /** 站台時區;date 欄位用(1.41.0)。 */
+  timeZone?: string,
+): ReactNode {
   if (value === undefined || value === null || value === "") {
     // boolean false 是有效值,交給下方分支;其餘空值統一 em-dash。
     if (field.type !== "boolean") return EMPTY;
@@ -90,7 +95,7 @@ export function renderCell(field: DeclarativeField, value: unknown): ReactNode {
         </span>
       );
     case "date": {
-      const d = fmtDate(value);
+      const d = fmtDate(value, timeZone);
       return d ? (
         <span className="tabular-nums text-black/70">{d}</span>
       ) : (

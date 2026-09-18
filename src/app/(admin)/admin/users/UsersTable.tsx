@@ -38,6 +38,8 @@ import { FaceIdIcon } from "@/components/ui/face-id-icon";
 import { cn } from "@/lib/utils";
 import { stableReducer } from "@/lib/optimistic";
 import { relativeTimeWords } from "@/lib/relative-time";
+import { useDateFormatter } from "@/components/DateTimeProvider";
+import type { DateFormatter } from "@/lib/datetime";
 import { UserSheet, type SheetMode } from "./UserSheet";
 import { applyUsersAction, type UsersAction } from "./users-optimistic";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
@@ -72,6 +74,8 @@ interface ColumnCtx {
   /** COLUMNS 是 module 常數,cell 不是元件不能自己 useT —— t/locale 由表格層注入。 */
   t: ReturnType<typeof useT>;
   locale: Locale;
+  /** 站台時區的日期(1.41.0)。 */
+  dates: DateFormatter;
 }
 
 interface ColumnDef {
@@ -248,9 +252,9 @@ const COLUMNS: ColumnDef[] = [
       u.lastActiveAt ? (
         <span
           className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums"
-          title={new Date(u.lastActiveAt).toLocaleString()}
+          title={ctx.dates.dateTime(u.lastActiveAt)}
         >
-          {relativeTimeWords(u.lastActiveAt, ctx.now, ctx.locale)}
+          {relativeTimeWords(u.lastActiveAt, ctx.now, ctx.locale, ctx.dates.timeZone)}
         </span>
       ) : (
         <span className="text-[12.5px] text-black/25">{ctx.t("usersTable.never")}</span>
@@ -266,9 +270,9 @@ const COLUMNS: ColumnDef[] = [
     render: (u, ctx) => (
       <span
         className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums"
-        title={new Date(u.createdAt).toLocaleString()}
+        title={ctx.dates.dateTime(u.createdAt)}
       >
-        {relativeTimeWords(u.createdAt, ctx.now, ctx.locale)}
+        {relativeTimeWords(u.createdAt, ctx.now, ctx.locale, ctx.dates.timeZone)}
       </span>
     ),
   },
@@ -434,6 +438,7 @@ export function UsersTable({
 }) {
   const t = useT();
   const locale = useLocale();
+  const dates = useDateFormatter();
   const router = useRouter();
   // 真相是 server 給的 initialUsers;樂觀變更只活在 transition 裡,router.refresh()
   // 帶回新資料的同一次 commit 換成真實結果,失敗則自動退回。
@@ -453,6 +458,7 @@ export function UsersTable({
     now,
     t,
     locale,
+    dates,
     onUserChanged: (u) => applyOptimistic({ kind: "upsert", user: u }),
   };
 

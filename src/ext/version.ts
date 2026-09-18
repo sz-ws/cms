@@ -654,4 +654,24 @@
 //   optimistically; lib/optimistic.ts stableReducer keeps row identity stable while
 //   a transition is pending.
 // Additive: without the new declarations everything renders as in 1.39.0.
-export const CORE_API_VERSION = "1.40.0";
+// 1.41.0: dates and times follow the site time zone.
+// - Setting `core.timeZone` (Settings → General, default Asia/Taipei). Workers run
+//   in UTC, so server-rendered times were 8 hours off in Taiwan and the first
+//   client render disagreed with the browser's.
+// - lib/datetime.ts is the one adapter: createDateFormatter(locale, timeZone) gives
+//   date / dateTime / time / monthDay / format / stamp (CSV) / dayKey / dayStart.
+//   Server: getDateFormatter() / getSiteTimeZone() (lib/datetime-server.ts).
+//   Client: useDateFormatter() / useTimeZone() and <DateTimeText at={ms} />
+//   (components/DateTimeProvider.tsx; the root layout provides the zone), which a
+//   server component can render directly. Extensions should use these instead of
+//   toLocaleString / toISOString for anything shown to people.
+// - Core uses it everywhere it shows a date: dashboard, users, audit log, inbox,
+//   revisions, passkeys, API tokens, account, shop and payment order tables,
+//   <Timeline>, OG images, the export filename. Date fields now mean a day in the
+//   site time zone: a day picked in Taiwan used to display as the day before
+//   (fmtDate read it in UTC). Page-search date ranges and publish scheduling use
+//   the site's days and hours. relativeTimeWords / relativeTime / renderCell /
+//   displayValue / dayInputToMs / msToDayInput take an optional time zone.
+// Additive: callers that pass no time zone behave as before, except fmtDate and
+// displayValue, which now default to the site default (Asia/Taipei) instead of UTC.
+export const CORE_API_VERSION = "1.41.0";

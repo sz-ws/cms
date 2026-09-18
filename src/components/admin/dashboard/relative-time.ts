@@ -13,6 +13,8 @@ export function relativeTime(
   epochMs: number,
   now: number = Date.now(),
   locale: Locale = "en",
+  /** 1.41.0:超過一週改顯示日期時用的時區(站台的,見 lib/datetime.ts)。 */
+  timeZone?: string,
 ): string {
   const diff = now - epochMs;
   if (!Number.isFinite(diff)) return "";
@@ -25,6 +27,7 @@ export function relativeTime(
     return new Date(epochMs).toLocaleDateString("zh-TW", {
       month: "short",
       day: "numeric",
+      timeZone,
     });
   }
   if (diff < MINUTE) return "just now";
@@ -34,5 +37,6 @@ export function relativeTime(
   return new Date(epochMs).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone,
   });
 }

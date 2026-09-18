@@ -21,6 +21,8 @@ export function relativeTimeWords(
   epochMs: number,
   now: number,
   locale: Locale = "en",
+  /** 1.41.0:超過一週改顯示日期時用的時區(站台的,見 lib/datetime.ts)。 */
+  timeZone?: string,
 ): string {
   const diff = now - epochMs;
   if (!Number.isFinite(diff) || diff < MINUTE) {
@@ -34,5 +36,6 @@ export function relativeTimeWords(
     month: "short",
     day: "numeric",
     year: diff > YEAR ? "numeric" : undefined,
+    timeZone,
   });
 }

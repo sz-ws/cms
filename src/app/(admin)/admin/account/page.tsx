@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import { db } from "@/lib/db";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { listLoginProviders, listUserIdentities } from "@/lib/oidc";
 import { passkeys, users } from "@/lib/schema";
 import {
@@ -75,7 +76,7 @@ export default async function AccountPage({
 }) {
   const user = await requireAuth("guest");
   const now = requestTimestamp();
-  const locale = await getLocale();
+  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const m = getMessages(locale);
   // OAuth link 回跳的 flash(?linked=1 / ?error=<code>),交給 IdentitiesManager 顯示。
   const sp = await searchParams;
@@ -118,6 +119,7 @@ export default async function AccountPage({
       year: "numeric",
       month: "short",
       day: "numeric",
+      timeZone,
     }),
   }));
   const loginProviders = await listLoginProviders();
@@ -130,6 +132,7 @@ export default async function AccountPage({
           year: "numeric",
           month: "short",
           day: "numeric",
+          timeZone,
         },
       )
     : null;

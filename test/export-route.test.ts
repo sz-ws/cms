@@ -61,6 +61,7 @@ vi.mock("@/ext/loader", () => ({
 }));
 
 vi.mock("@/lib/i18n/server", () => ({ getLocale: async () => "en" }));
+vi.mock("@/lib/datetime-server", () => ({ getSiteTimeZone: async () => "Asia/Taipei" }));
 
 // 引擎替身:記錄實際收到的參數,並吐出可預測的紀錄流。
 const engineState = vi.hoisted(() => ({

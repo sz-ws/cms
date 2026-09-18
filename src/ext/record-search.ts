@@ -1,4 +1,5 @@
 import type { LocalizedString } from "@/lib/i18n/localized";
+import { wallClock, zonedTimeToMs } from "@/lib/datetime";
 
 // 1.40.0:extension 後台頁的搜尋 —— 插件宣告,core 負責畫與組 SQL。
 //
@@ -164,20 +165,30 @@ export function recordSearchClauses(
   return { clauses, args };
 }
 
-// ---- 日期欄位 ↔ 期間(瀏覽器端,以瀏覽器所在時區的「一整天」為單位)----
+// ---- 日期欄位 ↔ 期間(以「一整天」為單位)----
+//
+// 1.41.0:傳 timeZone(站台時區,useTimeZone())時,一天是站台時區的 00:00 到隔天
+// 00:00 —— 在國外看後台的人篩出來的「9/18」跟店家說的是同一天。沒傳時照舊用執行
+// 環境的時區(瀏覽器)。
 
 /** `YYYY-MM-DD` → 當天 00:00 的 epoch ms;`end` 時回隔天 00:00(to 不含)。 */
-export function dayInputToMs(value: string, end = false): number | undefined {
+export function dayInputToMs(value: string, end = false, timeZone?: string): number | undefined {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!m) return undefined;
-  const ms = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + (end ? 1 : 0)).getTime();
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3]) + (end ? 1 : 0)];
+  const ms = timeZone ? zonedTimeToMs({ year, month, day }, timeZone) : new Date(year, month - 1, day).getTime();
   return Number.isNaN(ms) ? undefined : ms;
 }
 
 /** epoch ms → `YYYY-MM-DD`;`end` 表示這是不含的上限,顯示前一天。 */
-export function msToDayInput(ms: number | undefined, end = false): string {
+export function msToDayInput(ms: number | undefined, end = false, timeZone?: string): string {
   if (ms === undefined) return "";
-  const d = new Date(end ? ms - 1 : ms);
+  const at = end ? ms - 1 : ms;
   const pad = (n: number) => String(n).padStart(2, "0");
+  if (timeZone) {
+    const w = wallClock(at, timeZone);
+    return `${w.year}-${pad(w.month)}-${pad(w.day)}`;
+  }
+  const d = new Date(at);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

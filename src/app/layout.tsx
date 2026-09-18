@@ -24,7 +24,9 @@ import "./site.css";
 import "../../public/fonts/chiron-hei-hk/chiron-hei-hk.css";
 import { Geist, Inter } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DateTimeProvider } from "@/components/DateTimeProvider";
 import { getSetting } from "@/lib/settings";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { cn } from "@/lib/utils";
 
 // Distinct var names (not --font-sans/--font-heading) so they don't collide with
@@ -68,18 +70,23 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: ReactNode;
 }>) {
+  // 1.41.0:站台時區給所有 client component(useDateFormatter)。settings 是整包快取,
+  // generateMetadata 已經讀過,這裡不會多一趟 D1。
+  const timeZone = await getSiteTimeZone();
   return (
     <html
       lang="en"
       className={cn("font-sans", geist.variable, interHeading.variable)}
     >
       <body>
-        <TooltipProvider>{children}</TooltipProvider>
+        <DateTimeProvider timeZone={timeZone}>
+          <TooltipProvider>{children}</TooltipProvider>
+        </DateTimeProvider>
       </body>
     </html>
   );

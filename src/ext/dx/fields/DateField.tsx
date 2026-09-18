@@ -10,6 +10,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useDateFormatter } from "@/components/DateTimeProvider";
+import type { DateFormatter } from "@/lib/datetime";
 import type { FieldComponentProps } from "./types";
 
 // date field:Calendar popover picker(react-day-picker,shadcn Calendar) —— 從不
@@ -19,20 +21,24 @@ import type { FieldComponentProps } from "./types";
 // 這個 codebase 的 date 欄位一律以 **epoch 毫秒 number** 儲存
 // (content-provider.ts CoreContentProvider.toEpoch),不是文件寫的 ISO date
 // string。這裡 value/onChange 都走 epoch-ms number,顯示時才轉 Date。
+//
+// 1.41.0:「哪一天」以站台時區為準(lib/datetime.ts)。存的是站台時區那天的 00:00;
+// 月曆元件用瀏覽器時區,所以進出月曆時用年月日換算,不直接拿 ms 當 Date。
 
-function epochToDate(v: number | undefined): Date | undefined {
+function epochToDate(v: number | undefined, dates: DateFormatter): Date | undefined {
   if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
-  return new Date(v);
+  const [year, month, day] = dates.dayKey(v).split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
 
-function formatDisplay(v: number | undefined): string {
-  const d = epochToDate(v);
-  if (!d) return "Pick a date";
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+function dateToEpoch(d: Date, dates: DateFormatter): number | undefined {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return dates.dayStart(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+}
+
+function formatDisplay(v: number | undefined, dates: DateFormatter): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "Pick a date";
+  return dates.format(v, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function DateField({
@@ -43,7 +49,8 @@ export function DateField({
   disabled,
 }: FieldComponentProps<number | undefined>) {
   const [open, setOpen] = useState(false);
-  const selected = epochToDate(value);
+  const dates = useDateFormatter();
+  const selected = epochToDate(value, dates);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -61,7 +68,7 @@ export function DateField({
             )}
           >
             <CalendarIcon className="size-4" />
-            {formatDisplay(value)}
+            {formatDisplay(value, dates)}
           </Button>
         }
       />
@@ -70,7 +77,7 @@ export function DateField({
           mode="single"
           selected={selected}
           onSelect={(date) => {
-            onChange(date ? date.getTime() : undefined);
+            onChange(date ? dateToEpoch(date, dates) : undefined);
             setOpen(false);
           }}
           autoFocus

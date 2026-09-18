@@ -5,6 +5,8 @@ import {
   collectText,
 } from "@/components/og/subset-text";
 import { getExtRuntime } from "@/ext/loader";
+import { getSiteTimeZone } from "@/lib/datetime-server";
+import { fmtDate } from "@/ext/dx/views/field-utils";
 import { getContentProvider, toTypeDef } from "@/ext/dx/runtime";
 import type { DeclarativeContentType } from "@/ext/dx/manifest";
 import { getOgTemplate } from "@/components/og/templates";
@@ -56,18 +58,18 @@ function text(data: Record<string, unknown>, fields: { key: string }[], names: s
   return v && v.trim() ? v : fallback;
 }
 
-function dateText(value: unknown): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return new Date().toISOString().slice(0, 10);
-  return new Date(value).toISOString().slice(0, 10);
+// 1.41.0:日期以站台時區算是哪一天(lib/datetime.ts)。
+function dateText(value: unknown, timeZone: string): string {
+  return fmtDate(typeof value === "number" && Number.isFinite(value) ? value : Date.now(), timeZone);
 }
 
-function metaText(data: Record<string, unknown>, fields: { key: string }[]) {
+function metaText(data: Record<string, unknown>, fields: { key: string }[], timeZone: string) {
   const author = pickField<string>(data, fields, ["author", "byline"]);
   const publishedAt = pickField<number>(data, fields, ["publishedAt", "date"]);
   const category = pickField<string>(data, fields, ["category", "kind"]);
   const parts: string[] = [];
   if (author) parts.push(author);
-  if (publishedAt) parts.push(dateText(publishedAt));
+  if (publishedAt) parts.push(dateText(publishedAt, timeZone));
   else if (category) parts.push(category);
   return parts.join(" · ");
 }
@@ -107,6 +109,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
   }
 
   const brand = og.brand ?? "";
+  const timeZone = await getSiteTimeZone();
   const fallbackTitle = slug.replace(/[-_]/g, " ");
 
   const props: Record<string, unknown> = {};
@@ -117,7 +120,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
         title: text(data, fields, ["title", "name", "headline"], fallbackTitle),
         excerpt: text(data, fields, ["excerpt", "summary", "description"], ""),
         author: text(data, fields, ["author", "byline"], "Unknown"),
-        meta: metaText(data, fields),
+        meta: metaText(data, fields, timeZone),
         avatar: pickField<string>(data, fields, ["avatar", "cover"]) ?? undefined,
         brand,
       });
@@ -125,7 +128,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
     case "changelog":
       Object.assign(props, {
         version: pickField<string>(data, fields, ["version"]) ?? "v0.0.0",
-        date: dateText(pickField<number>(data, fields, ["date"]) ?? Date.now()),
+        date: dateText(pickField<number>(data, fields, ["date"]) ?? Date.now(), timeZone),
         title: text(data, fields, ["title", "name"], fallbackTitle),
         items: pickStringArray(data, fields, ["items", "highlights", "changes"]),
         brand,
@@ -134,7 +137,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
     case "event":
       Object.assign(props, {
         title: text(data, fields, ["title", "name"], fallbackTitle),
-        date: dateText(pickField<number>(data, fields, ["date", "startsAt"]) ?? Date.now()),
+        date: dateText(pickField<number>(data, fields, ["date", "startsAt"]) ?? Date.now(), timeZone),
         location: text(data, fields, ["location", "venue"], "Online"),
         description: text(data, fields, ["description", "summary"], ""),
         brand,

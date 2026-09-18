@@ -15,14 +15,14 @@ import { CronTickProvider } from "./provider";
 // 再包一層(詳見 src/lib/jobs.ts header)。worker/ 下的 companion worker 範本改為
 // 「外部排程器」的備選方案,不再是唯一路徑。
 //
-// coreApi "^1.0.0":只用 provides(core-v2 §2.2)與 adminPages/settings(03 §6a,
-// 皆自 1.0.0 即在),對現行 CORE_API_VERSION(1.9.0)以 caret 相容(同 major)。
+// coreApi "^1.41.0":provides(core-v2 §2.2)、adminPages/settings(03 §6a)、
+// heartbeats(1.40.0),以及後台頁的時間照站台時區顯示(1.41.0 lib/datetime)。
 
 export const cron = defineExtension({
   id: "cron",
   name: "Cron",
-  version: "1.0.1",
-  coreApi: "^1.0.0",
+  version: "1.0.2",
+  coreApi: "^1.41.0",
   description:
     "分鐘級準時排程入口:外部 companion worker 以簽章回呼催動 core 的到期任務掃描。",
   icon: "clock",
