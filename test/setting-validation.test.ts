@@ -5,6 +5,7 @@ import {
   validateSettingEntries,
   validateSettingValue,
 } from "../src/lib/setting-validation";
+import { defineExtension } from "../src/ext/types";
 
 describe("setting value validation", () => {
   it("validates primitive types and finite numbers", () => {
@@ -101,5 +102,30 @@ describe("setting value validation", () => {
         ],
       ),
     ).toEqual([]);
+  });
+});
+
+describe("color settings (1.40.0)", () => {
+  const field = { key: "adminAccent", type: "color" as const };
+
+  it("accepts only normalised #rrggbb — the value ends up inside CSS", () => {
+    expect(validateSettingValue(field, "#5672e4")).toBeNull();
+    expect(validateSettingValue(field, "")).toBeNull();
+    for (const bad of ["#5672E4", "5672e4", "#abc", "red", "#5672e4;}body{display:none"]) {
+      expect(validateSettingValue(field, bad)).toBe("invalid_color");
+    }
+    expect(validateSettingValue(field, 5672)).toBe("expected_string");
+  });
+
+  it("defineExtension accepts swatches on color settings only", () => {
+    const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: "^1.40.0" };
+    const color = { key: "brand", label: "Brand", type: "color" as const, default: "#5672e4" };
+    expect(() =>
+      defineExtension({ ...base, settings: [{ ...color, swatches: [{ value: "#e0457b", label: "Pink" }] }] }),
+    ).not.toThrow();
+    expect(() =>
+      defineExtension({ ...base, settings: [{ ...color, swatches: [{ value: "#E0457B", label: "Pink" }] }] }),
+    ).toThrow();
+    expect(() => defineExtension({ ...base, settings: [{ ...color, default: "pink" }] })).toThrow();
   });
 });

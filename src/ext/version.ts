@@ -622,5 +622,7 @@
 //   table to ⌘K (admins only); results open the page with ?open=<key>.
 // - commerce-kit exports ORDER_SEARCH_FIELDS and listOrders accepts `search`.
 // - <Timeline> renders a record's history (components/admin/Timeline.tsx).
+// - Settings gain type "color" (#rrggbb, optional `swatches`): a row of swatches
+//   plus a custom picker (components/admin/ColorSwatchPicker.tsx, lib/color.ts).
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

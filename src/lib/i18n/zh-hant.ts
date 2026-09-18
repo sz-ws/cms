@@ -290,6 +290,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settingsWorkspace.fieldRequired": "必填",
   "settingsWorkspace.fieldInvalidOption": "請從選項裡選一個",
   "settingsWorkspace.fieldExpectedNumber": "只能填數字",
+  "settingsWorkspace.fieldInvalidColor": "請用色碼，例如 #5672e4",
   "settingsWorkspace.fieldInvalid": "格式不正確",
   "settingsWorkspace.notAllowed": "不允許此操作。",
   "settingsWorkspace.saveFailedError": "儲存失敗。",

@@ -293,6 +293,7 @@ export const en = {
   "settingsWorkspace.fieldRequired": "Required",
   "settingsWorkspace.fieldInvalidOption": "Pick one of the options",
   "settingsWorkspace.fieldExpectedNumber": "Numbers only",
+  "settingsWorkspace.fieldInvalidColor": "Use a colour code like #5672e4",
   "settingsWorkspace.fieldInvalid": "Invalid format",
   "settingsWorkspace.notAllowed": "Not allowed.",
   "settingsWorkspace.saveFailedError": "Save failed.",

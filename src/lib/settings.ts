@@ -36,6 +36,8 @@ export type SettingField = SettingFieldBase &
     | { type: "number" }
     | { type: "boolean" }
     | { type: "select"; options: { value: string; label: LocalizedString }[] }
+    // 1.40.0:顏色(#rrggbb),設定頁畫成一排色票 + 自訂;swatches 省略時只有自訂。
+    | { type: "color"; swatches?: { value: string; label: LocalizedString }[] }
   );
 
 /**

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
+import { ColorSwatchPicker } from "./ColorSwatchPicker";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { changedSettingEntries, settingControlId } from "@/lib/settings-ui";
@@ -128,7 +129,7 @@ function NavAnchor({
           "absolute inset-x-3 -bottom-px h-[2px] rounded-full transition-opacity duration-150",
           active ? "opacity-100" : "opacity-0",
         )}
-        style={{ backgroundColor: "var(--accent-blue)" }}
+        style={{ backgroundColor: "var(--admin-accent)" }}
       />
     </button>
   );
@@ -152,6 +153,7 @@ function fieldErrorText(code: string, t: ReturnType<typeof useT>): string {
   if (code === "required") return t("settingsWorkspace.fieldRequired");
   if (code === "invalid_option") return t("settingsWorkspace.fieldInvalidOption");
   if (code === "expected_number") return t("settingsWorkspace.fieldExpectedNumber");
+  if (code === "invalid_color") return t("settingsWorkspace.fieldInvalidColor");
   return t("settingsWorkspace.fieldInvalid");
 }
 
@@ -249,6 +251,18 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                     onChange={(e) => update(fullKey, e.target.checked)}
                   />
                 </div>
+              ) : field.type === "color" ? (
+                <ColorSwatchPicker
+                  id={controlId}
+                  label={resolveLocalizedString(field.label, locale) ?? field.key}
+                  value={String(state[fullKey] ?? "")}
+                  invalid={Boolean(fieldErrors[fullKey])}
+                  onChange={(next) => update(fullKey, next)}
+                  swatches={(field.swatches ?? []).map((swatch) => ({
+                    value: swatch.value,
+                    label: resolveLocalizedString(swatch.label, locale) ?? swatch.value,
+                  }))}
+                />
               ) : field.type === "select" ? (
                 <Select
                   value={String(state[fullKey] ?? "")}

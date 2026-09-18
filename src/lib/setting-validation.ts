@@ -1,6 +1,8 @@
+import { normalizeHex } from "./color";
+
 export type SettingValueField = {
   key: string;
-  type: "text" | "textarea" | "number" | "boolean" | "select";
+  type: "text" | "textarea" | "number" | "boolean" | "select" | "color";
   required?: boolean;
   secret?: boolean;
   options?: readonly { value: string }[];
@@ -12,6 +14,7 @@ export type SettingValueErrorCode =
   | "expected_number"
   | "expected_boolean"
   | "invalid_option"
+  | "invalid_color"
   | "not_serializable";
 
 export interface SettingValueError {
@@ -63,6 +66,10 @@ export function validateSettingValue(
       return (field.options ?? []).some((option) => option.value === value)
         ? null
         : "invalid_option";
+    case "color":
+      // 會被拼進 CSS(後台主色):只收正規化過的 #rrggbb。
+      if (typeof value !== "string") return "expected_string";
+      return normalizeHex(value) === value ? null : "invalid_color";
   }
 }
 

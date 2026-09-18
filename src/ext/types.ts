@@ -12,6 +12,7 @@ import type {
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { isSqlIdentifier, type AdminPageSearch } from "./record-search";
 import { validateSettingValue } from "../lib/setting-validation";
+import { normalizeHex } from "../lib/color";
 import { rangeStartsAtOrAfter } from "./semver";
 import {
   adminIconIssue,
@@ -48,6 +49,8 @@ export type SettingField = SettingFieldBase &
     | { type: "boolean" }
     // §1 #11:settings select 已 value/label 分離,label 可乾淨 localize。
     | { type: "select"; options: { value: string; label: LocalizedString }[] }
+    // 1.40.0:顏色(#rrggbb),設定頁畫成一排色票 + 自訂;swatches 省略時只有自訂。
+    | { type: "color"; swatches?: { value: string; label: LocalizedString }[] }
   );
 
 export interface AdminPage {
@@ -310,11 +313,22 @@ const settingSchema = z
     default: z.unknown(),
     required: z.boolean().optional(),
     secret: z.boolean().optional(),
-    type: z.enum(["text", "textarea", "number", "boolean", "select"]),
+    type: z.enum(["text", "textarea", "number", "boolean", "select", "color"]),
     options: z
       .array(
         z.object({ value: z.string(), label: localizedStringSchema }).strict(),
       )
+      .optional(),
+    swatches: z
+      .array(
+        z
+          .object({
+            value: z.string().refine((value) => normalizeHex(value) === value, "swatch must be #rrggbb (lower-case)"),
+            label: localizedStringSchema,
+          })
+          .strict(),
+      )
+      .max(16)
       .optional(),
   })
   .strict()
@@ -339,6 +353,13 @@ const settingSchema = z
         code: "custom",
         message: "options are only valid for select settings",
         path: ["options"],
+      });
+    }
+    if (setting.swatches !== undefined && setting.type !== "color") {
+      ctx.addIssue({
+        code: "custom",
+        message: "swatches are only valid for color settings",
+        path: ["swatches"],
       });
     }
     if (setting.secret && setting.default !== "") {
