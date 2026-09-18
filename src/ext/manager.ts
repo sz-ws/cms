@@ -7,6 +7,7 @@ import {
   extensions,
   extMigrations,
   settings,
+  heartbeats,
   declarativeExtensions,
   contents,
 } from "@/lib/schema";
@@ -161,6 +162,15 @@ export async function uninstallExtension(extId: string): Promise<void> {
   await db()
     .delete(settings)
     .where(like(settings.key, `ext.${extId}.%`));
+  // 心跳(migrations/0018,如 cron 的 ext.cron.lastTick)以前跟著 settings 一起刪,
+  // 搬家後照樣要刪。best-effort:觀測值刪不掉不該讓解除安裝半途失敗。
+  try {
+    await db()
+      .delete(heartbeats)
+      .where(like(heartbeats.key, `ext.${extId}.%`));
+  } catch (e) {
+    console.error("[ext] heartbeat cleanup failed", extId, e);
+  }
   await db().delete(extensions).where(eq(extensions.id, extId));
 
   // disableExtension 已失效過一次,但其後的 getExtRuntime(fire hook)會用「僅停用」

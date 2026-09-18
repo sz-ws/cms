@@ -643,5 +643,8 @@
 //   0019), lib/record-status-notes.ts for plugins, GET/PUT /api/record-status/notes
 //   { set, id, status, note } for admin pages. A described badge shows a small
 //   icon; hovering or focusing it shows the text (ext/record-status.ts).
+// - Scheduler heartbeats (cron tick, lazy sweep, core job lastRun) live in the
+//   `heartbeats` table (migration 0018, lib/heartbeats.ts) instead of settings, so
+//   they no longer move the settings stamp or fire settings:saved every minute.
 // Additive: without the new declarations everything renders as in 1.39.0.
 export const CORE_API_VERSION = "1.40.0";

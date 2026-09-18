@@ -21,7 +21,8 @@ import { computeExtRuntimeStamp } from "@/ext/runtime-stamp";
 // 之後若寫入,寫入路徑本來就會主動清 memo(invalidateSettingsCache /
 // invalidateExtRuntimeMemo)→ 呼叫端退回完整讀取,讀到的是新值;route handler 沒有
 // React cache 的 request 範圍,每次呼叫都會重算。render 期間唯一的寫入是 admin layout
-// 的 maybeRunJobs(只寫 settings,且經 setSettings 清 memo)。
+// 的 maybeRunJobs:它的心跳寫進 heartbeats 表(migrations/0018),**刻意不在任何一組
+// 戳裡** —— 每分鐘一次的心跳若推動 settings 的戳,整包設定快取就每分鐘失效一次。
 
 export const SETTINGS_STAMP_SQL =
   "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), 0) AS m FROM settings";

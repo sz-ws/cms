@@ -384,4 +384,43 @@ describe("migration parity — migrations/ 與 schema.ts 說的是同一個資�
     ).results;
     expect(hits.map((h) => h.content_id)).toEqual(["mp-1"]);
   });
+
+  // ── 0018 的資料搬移(不只是 DDL)───────────────────────────────────────────
+  // 從零套用時 settings 是空的,搬移那兩句等於沒被測到。這裡模擬既有站:settings
+  // 裡已經有心跳(值是 JSON 編碼的 epoch ms)再重跑 0018(全部語句冪等)。
+  // ext.cron.secret 跟 lastTick 同前綴,是最該確認沒被誤刪的那一列。
+  it("0018:心跳從 settings 搬進 heartbeats,其他設定原封不動", async () => {
+    const m = files.find((f) => f.name === "0018_heartbeats.sql");
+    expect(m, "找不到 0018_heartbeats.sql").toBeTruthy();
+
+    const seed: [string, string][] = [
+      ["ext.cron.lastTick", "1700000000111"],
+      ["core.jobs.lastSweep", "1700000000222"],
+      ["core.jobs.lastRun.publish-due", "1700000000333"],
+      ["ext.cron.secret", JSON.stringify("ciphertext")],
+      ["core.siteTitle", JSON.stringify("Keep me")],
+    ];
+    for (const [key, value] of seed) {
+      await db()
+        .prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 1)")
+        .bind(key, value)
+        .run();
+    }
+    for (const stmt of splitStatements(m!.sql)) await db().prepare(stmt).run();
+
+    const beats = (
+      await db()
+        .prepare("SELECT key, at FROM heartbeats ORDER BY key")
+        .all<{ key: string; at: number }>()
+    ).results;
+    expect(beats).toEqual([
+      { key: "core.jobs.lastRun.publish-due", at: 1700000000333 },
+      { key: "core.jobs.lastSweep", at: 1700000000222 },
+      { key: "ext.cron.lastTick", at: 1700000000111 },
+    ]);
+    const kept = (
+      await db().prepare("SELECT key FROM settings ORDER BY key").all<{ key: string }>()
+    ).results.map((r) => r.key);
+    expect(kept).toEqual(["core.siteTitle", "ext.cron.secret"]);
+  });
 });

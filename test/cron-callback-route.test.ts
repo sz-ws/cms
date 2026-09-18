@@ -13,13 +13,21 @@ const SECRET = "route-cron-secret";
 // db 不被 provider 建構期以外觸達；回傳空物件即可（scopedServices 會 eager 呼叫 db()）。
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
 
-// settings:provider 的 secret 讀取（ext.cron.secret）與 lastTick 寫入走這裡。
+// settings:provider 的 secret 讀取（ext.cron.secret）走這裡。
 const settingsStore = vi.hoisted(() => ({ values: {} as Record<string, unknown> }));
 vi.mock("@/lib/settings", () => ({
   getSetting: async (key: string, fallback?: unknown) =>
     key in settingsStore.values ? settingsStore.values[key] : fallback,
   setSettings: async (entries: Record<string, unknown>) => {
     Object.assign(settingsStore.values, entries);
+  },
+}));
+
+// heartbeats:lastTick 心跳寫這裡(migrations/0018),不寫 settings。
+const heartbeatStore = vi.hoisted(() => ({ values: {} as Record<string, number> }));
+vi.mock("@/lib/heartbeats", () => ({
+  setHeartbeats: async (entries: Record<string, number>) => {
+    Object.assign(heartbeatStore.values, entries);
   },
 }));
 
@@ -86,6 +94,7 @@ const BODY = JSON.stringify({ ts: 1_700_000_000_000 });
 describe("POST /api/callback/cron:tick/cron (unified ingress → cron provider)", () => {
   beforeEach(() => {
     settingsStore.values = { "ext.cron.secret": SECRET };
+    heartbeatStore.values = {};
     jobsState.calls = [];
   });
 
@@ -150,6 +159,7 @@ describe("POST /api/callback/cron:tick/cron (unified ingress → cron provider)"
     const res = await POST(req(BODY, sig), ctx("cron:tick", "cron"));
     expect(res.status).toBe(200);
     expect(jobsState.calls).toHaveLength(1);
-    expect(typeof settingsStore.values["ext.cron.lastTick"]).toBe("number");
+    expect(typeof heartbeatStore.values["ext.cron.lastTick"]).toBe("number");
+    expect("ext.cron.lastTick" in settingsStore.values).toBe(false);
   });
 });

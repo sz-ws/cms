@@ -387,6 +387,18 @@ export const aiUsage = sqliteTable(
   (t) => [index("ai_usage_user_at").on(t.userId, t.at)],
 );
 
+// 排程心跳(migrations/0018_heartbeats.sql,手寫,照 0006–0017 precedent)。
+// 一個 key 一列:cron tick、lazy sweep、各 core job 最後一次發生的 epoch ms。
+// key 沿用搬家前的 settings key 字串(ext.cron.lastTick / core.jobs.lastSweep /
+// core.jobs.lastRun.<id>)。執行期契約見 src/lib/heartbeats.ts。
+//
+// 刻意不放在 settings:心跳每分鐘寫一次,放在 settings 會每分鐘推動 settings 的
+// 版本戳,讓整包設定快取每分鐘失效一次(完整理由見 migration 檔頭)。本表不參與
+// 任何版本戳(src/lib/request-stamps.ts)。
+export const heartbeats = sqliteTable("heartbeats", {
+  key: text("key").primaryKey(),
+  at: integer("at").notNull(),
+});
 
 // migrations/0019_record_status_notes.sql:每一筆紀錄的狀態描述(後台才看得到)。
 // 鍵 = 狀態組 `<extId>:<setId>`(src/ext/record-status.ts)+ 紀錄 id + 狀態。描述不參與任何

@@ -2,7 +2,7 @@ import { and, desc, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { getDB } from "./cf";
 import { contents, extJobs, storageHistory } from "./schema";
-import { getSetting, setSettings } from "./settings";
+import { getHeartbeats, setHeartbeats } from "./heartbeats";
 import { indexContentEntry } from "./search";
 import { revalidateContent } from "@/ext/dx/cache-invalidate";
 
@@ -65,16 +65,19 @@ export type JobRunReport = JobRunResult & { id: string };
 /** lazy 掃描節流間隔:兩次 sweep 至少相隔此毫秒數。 */
 const SWEEP_INTERVAL_MS = 60_000;
 
-/** settings key:某任務最後一次執行的 epoch ms。 */
+// 以下三種 key 都住在 heartbeats 表(migrations/0018),不在 settings:每分鐘一次的
+// 寫入若落在 settings,會讓整包設定快取每分鐘失效一次(見 ./heartbeats.ts)。
+
+/** heartbeat key:某任務最後一次執行的 epoch ms。 */
 const lastRunKey = (jobId: string): string => `core.jobs.lastRun.${jobId}`;
-/** settings key:lazy fallback 最後一次 sweep 的 epoch ms(節流用)。 */
+/** heartbeat key:lazy fallback 最後一次 sweep 的 epoch ms(節流用)。 */
 const LAST_SWEEP_KEY = "core.jobs.lastSweep";
 /**
  * cron extension 每次成功跑完的 heartbeat；新鮮時 lazy fallback 不重跑同一批 job。
  *
  * 寫的人是 extensions/cron/provider.ts 的 LAST_TICK_KEY(handleCallback 驗簽後
- * set)。core 只讀不寫,兩邊靠這個字串字面量對上 —— core 沒有 import extension 的
- * 權利,所以改名要兩處一起改。extension 沒裝 / 沒啟用時這個 key 永遠是 0,
+ * 寫進 heartbeats 表)。core 只讀不寫,兩邊靠這個字串字面量對上 —— core 沒有 import
+ * extension 的權利,所以改名要兩處一起改。extension 沒裝 / 沒啟用時讀不到這個 key(當 0),
  * 也就是 fail-open:讀不到 heartbeat 就當 cron 不健康,lazy sweep 照跑。壞掉的方向
  * 是「多跑一次 sweep」而不是「job 停擺」。
  */
@@ -559,7 +562,7 @@ const CORE_JOBS: readonly CoreJob[] = [
 
 /**
  * 依序執行所有 core job。**逐任務失敗隔離**:任一任務 throw 不影響其他任務。每支任務
- * 執行後寫 `core.jobs.lastRun.<id>`(epoch ms,經 setSettings)。回傳逐任務報告。
+ * 執行後寫 `core.jobs.lastRun.<id>`(epoch ms,heartbeats 表)。回傳逐任務報告。
  */
 export async function runDueJobs(now: number = Date.now()): Promise<JobRunReport[]> {
   const reports: JobRunReport[] = [];
@@ -575,21 +578,22 @@ export async function runDueJobs(now: number = Date.now()): Promise<JobRunReport
     bookkeeping[lastRunKey(job.id)] = now;
     reports.push({ id: job.id, ...result });
   }
-  // 四支 job 的 lastRun 一次 D1 batch 寫完，也只觸發一次 settings cache/hook。
+  // 四支 job 的 lastRun 一句 upsert 寫完。心跳表不在任何版本戳裡,寫它不會讓
+  // settings 快取失效(migrations/0018)。
   // bookkeeping 仍是 best-effort：失敗不改變各 job 的真實執行結果。
   try {
-    await setSettings(bookkeeping);
+    await setHeartbeats(bookkeeping);
   } catch (e) {
-    console.error("[jobs] lastRun bookkeeping batch failed", e);
+    console.error("[jobs] lastRun bookkeeping failed", e);
   }
   return reports;
 }
 
 /**
- * 本 isolate 已知的最後 sweep 時戳(`core.jobs.lastSweep` 的 per-isolate cache)。
+ * 本 isolate 已知的最後 sweep 時戳(`core.jobs.lastSweep` 心跳的 per-isolate cache)。
  * Workers isolate 跨請求存活,這層 in-memory 前擋讓「間隔內的 admin render」連那一次
- * settings 讀都省掉——精度不變(cache 的值就是 settings 會回答的值,頂多偏舊;偏舊只會
- * 多做一次無害的 settings 讀,不會漏 sweep)。
+ * 心跳讀都省掉——精度不變(cache 的值就是心跳表會回答的值,頂多偏舊;偏舊只會
+ * 多做一次無害的心跳讀,不會漏 sweep)。
  */
 let knownLastSweep = 0;
 
@@ -600,22 +604,26 @@ let knownLastSweep = 0;
  */
 export async function maybeRunJobs(now: number = Date.now()): Promise<void> {
   try {
-    // in-memory 前擋:已知上次 sweep 在間隔內 → 連 settings 讀都不用。
+    // in-memory 前擋:已知上次 sweep 在間隔內 → 連心跳讀都不用。
     if (now - knownLastSweep <= SWEEP_INTERVAL_MS) return;
-    // 兩次 getSetting 共用同一份 request-cached settings Map，不會多一次全表讀。
-    const [lastSweep, lastCronTick] = await Promise.all([
-      getSetting<number>(LAST_SWEEP_KEY, 0),
-      getSetting<number>(LAST_CRON_TICK_KEY, 0),
-    ]);
-    if (now - (lastCronTick ?? 0) <= CRON_HEALTH_WINDOW_MS) {
-      knownLastSweep = Math.max(knownLastSweep, lastCronTick ?? 0);
+    // 一句 PK 查詢拿齊兩個心跳。getHeartbeats 不 throw:讀不到回空 Map = 當作沒有
+    // cron、也沒 sweep 過 → 照跑(fail-open,壞掉的方向是多跑一次)。
+    const beats = await getHeartbeats([LAST_SWEEP_KEY, LAST_CRON_TICK_KEY]);
+    const lastCronTick = beats.get(LAST_CRON_TICK_KEY) ?? 0;
+    if (now - lastCronTick <= CRON_HEALTH_WINDOW_MS) {
+      knownLastSweep = Math.max(knownLastSweep, lastCronTick);
       return;
     }
-    knownLastSweep = lastSweep ?? 0;
+    knownLastSweep = beats.get(LAST_SWEEP_KEY) ?? 0;
     if (now - knownLastSweep <= SWEEP_INTERVAL_MS) return;
-    // 先記帳(縮短併發窗)再執行。
+    // 先記帳(縮短併發窗)再執行。記帳失敗不擋 sweep:本 isolate 的 knownLastSweep
+    // 已前移,節流照樣成立,頂多別的 isolate 多跑一次。
     knownLastSweep = now;
-    await setSettings({ [LAST_SWEEP_KEY]: now });
+    try {
+      await setHeartbeats({ [LAST_SWEEP_KEY]: now });
+    } catch (e) {
+      console.error("[jobs] lastSweep heartbeat write failed; sweeping anyway", e);
+    }
     await runDueJobs(now);
   } catch (e) {
     // 保底:sweep 的任何失敗都不得冒泡到呼叫端(admin layout render)。

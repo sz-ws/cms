@@ -1,6 +1,7 @@
 import type { CallbackReceiver } from "@/ext/capabilities";
 import type { CoreServices } from "@/ext/services";
 import { runDueJobs } from "@/lib/jobs";
+import { setHeartbeats } from "@/lib/heartbeats";
 
 // cron:tick 的 CallbackReceiver provider —— 分鐘級準時排程的「安全入口」。
 //
@@ -13,7 +14,9 @@ import { runDueJobs } from "@/lib/jobs";
 // 自己的加密 setting `ext.cron.secret`(services scope 綁定 extId="cron")。
 
 const SECRET_KEY = "ext.cron.secret";
-const LAST_TICK_KEY = "ext.cron.lastTick"; // 非 secret;admin 觀測用(epoch ms)。
+// heartbeats 表的 key(epoch ms):admin 的 Cron 頁與 core 的 lazy sweep 都讀它
+// (src/lib/jobs.ts 的 LAST_CRON_TICK_KEY,字串必須一致)。
+const LAST_TICK_KEY = "ext.cron.lastTick";
 const SIGNATURE_HEADER = "x-signature"; // hex(HMAC-SHA256)
 
 /** hex 字串 → bytes;非法字元/奇數長度 → null(呼叫端當作驗證失敗)。 */
@@ -67,7 +70,9 @@ export class CronTickProvider implements CallbackReceiver {
     const reports = await runDueJobs(Date.now());
     // 逐任務報告 —— 證明 tick 確實催動了 core jobs,供 log 觀測。
     console.log("[cron:tick] ran due jobs", { reports });
-    // marker setting(非 secret):admin 可讀回最後一次 tick 的 epoch ms。
-    await this.services.settings.set({ [LAST_TICK_KEY]: Date.now() });
+    // 心跳:最後一次 tick 的 epoch ms。寫 heartbeats 表而不是 settings —— 每分鐘一次的
+    // settings 寫入會讓整包設定快取每分鐘失效(migrations/0018)。寫失敗照常 throw,
+    // callback 回 500,scheduled 端回報「tick 被拒」。
+    await setHeartbeats({ [LAST_TICK_KEY]: Date.now() });
   }
 }

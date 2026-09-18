@@ -19,6 +19,7 @@
     "0015_storage_history.sql": "ec3ffce0506043bd3312807833efdb442e78c3f93bb9e75acb3b0bc24bfec291",
     "0016_agent_audit.sql": "d3087ebad9593d37a8cdfb37713754098a893ba9d0c5f379592934ee17525316",
     "0017_ai_usage.sql": "9f6ca6adb8c9bc5d26a69793766bdc941c7d18d3521484b8845d4c29a861943e",
+    "0018_heartbeats.sql": "0a9aad7e7f125c8cc023e09f3ef7e787f1a08eccc54349dbce8bc97bc3e63af9",
     "0019_record_status_notes.sql": "4349fa5f99e9746c1b5ed4ae6efcce6b0a0c45a96e3f9a4883cf5481958e76b4"
   }
 }

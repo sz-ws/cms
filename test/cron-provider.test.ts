@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // CronTickProvider 單元測試:HMAC-SHA256 驗簽(fail-closed / 錯簽 / 正確簽)+
-// handleCallback 催動 runDueJobs 並寫 lastTick marker。runDueJobs 全 mock —— 不碰
+// handleCallback 催動 runDueJobs 並寫 lastTick 心跳。runDueJobs 與心跳表全 mock —— 不碰
 // D1/loader(避開 workers pool 地雷),只驗 provider 自身的驗簽與副作用契約。
 
 const jobsState = vi.hoisted(() => ({
@@ -12,6 +12,14 @@ vi.mock("@/lib/jobs", () => ({
   runDueJobs: vi.fn(async (now: number) => {
     jobsState.calls.push(now);
     return jobsState.reports;
+  }),
+}));
+
+// 心跳表(migrations/0018):lastTick 寫這裡,不寫 settings。
+const heartbeatState = vi.hoisted(() => ({ values: {} as Record<string, number> }));
+vi.mock("@/lib/heartbeats", () => ({
+  setHeartbeats: vi.fn(async (entries: Record<string, number>) => {
+    Object.assign(heartbeatState.values, entries);
   }),
 }));
 
@@ -111,9 +119,10 @@ describe("CronTickProvider.handleCallback", () => {
   beforeEach(() => {
     jobsState.reports = [];
     jobsState.calls = [];
+    heartbeatState.values = {};
   });
 
-  it("催動 runDueJobs 並寫 ext.cron.lastTick（epoch ms）", async () => {
+  it("催動 runDueJobs 並寫 ext.cron.lastTick 心跳（epoch ms）", async () => {
     jobsState.reports = [{ id: "publish-due", ok: true, processed: 2 }];
     const { services, store } = fakeServices({ [SECRET_KEY]: SECRET });
     const provider = new CronTickProvider(services);
@@ -125,10 +134,12 @@ describe("CronTickProvider.handleCallback", () => {
 
     // runDueJobs 被呼叫一次。
     expect(jobsState.calls).toHaveLength(1);
-    // lastTick marker 寫入且為合理的 epoch ms。
-    const tick = store[LAST_TICK_KEY];
+    // lastTick 心跳寫入且為合理的 epoch ms。
+    const tick = heartbeatState.values[LAST_TICK_KEY];
     expect(typeof tick).toBe("number");
-    expect(tick as number).toBeGreaterThanOrEqual(before);
-    expect(tick as number).toBeLessThanOrEqual(after);
+    expect(tick).toBeGreaterThanOrEqual(before);
+    expect(tick).toBeLessThanOrEqual(after);
+    // 不再寫 settings:每分鐘一次的 settings 寫入會讓整包設定快取每分鐘失效。
+    expect(LAST_TICK_KEY in store).toBe(false);
   });
 });

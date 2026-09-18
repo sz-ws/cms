@@ -1,8 +1,9 @@
 import { getSetting } from "@/lib/settings";
+import { getHeartbeat } from "@/lib/heartbeats";
 import { relativeTimeWords } from "@/lib/relative-time";
 
 // cron extension 的 adminPage —— 補「裝完零引導」缺口(handoff-2026-07-11-cron-gaps #1):
-// tick 觀測(ext.cron.lastTick)+ 驗簽 endpoint + companion worker 三步部署指引。
+// tick 觀測(heartbeats 表的 ext.cron.lastTick)+ 驗簽 endpoint + companion worker 三步部署指引。
 //
 // 語言:extension 自帶 UI 不進 core 字典(MessageKey 是封閉聯集,extension 加不了鍵),
 // 跟隨本 extension 既有語言(description / worker README 皆 zh-Hant)。
@@ -44,7 +45,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export async function CronAdminPage() {
   const [secret, lastTick, siteUrl] = await Promise.all([
     getSetting<string>("ext.cron.secret", ""),
-    getSetting<number | null>("ext.cron.lastTick", null),
+    getHeartbeat("ext.cron.lastTick"),
     getSetting<string>("core.siteUrl", ""),
   ]);
   const now = requestTimestamp();

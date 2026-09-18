@@ -56,6 +56,8 @@ import {
   setSettings,
   invalidateSettingsCache,
 } from "../src/lib/settings";
+import { getHeartbeat, setHeartbeats } from "../src/lib/heartbeats";
+import { computeSettingsStamp } from "../src/lib/request-stamps";
 import { POST } from "../src/app/api/jobs/run/route";
 
 type TestEnv = { DB: D1Database };
@@ -117,6 +119,10 @@ const LICENSE_CHECKIN_NOOP = expect.objectContaining({
 const STORAGE_HISTORY_DDL =
   "CREATE TABLE IF NOT EXISTS storage_history (at INTEGER PRIMARY KEY, size_after INTEGER NOT NULL, rows_read INTEGER, note TEXT);";
 
+// cron tick / lazy sweep / 各 job lastRun 的心跳(migrations/0018)。
+const HEARTBEATS_DDL =
+  "CREATE TABLE IF NOT EXISTS heartbeats (key TEXT PRIMARY KEY, at INTEGER NOT NULL);";
+
 /** storage-probe 的報告:只保證 id 與 ok,大小數字不可預測。 */
 const STORAGE_PROBE_EMPTY = expect.objectContaining({
   id: "storage-probe",
@@ -134,6 +140,7 @@ beforeAll(async () => {
   await d1().exec(EXT_JOBS_DDL);
   await d1().exec(CONTENT_SUBMISSIONS_DDL);
   await d1().exec(STORAGE_HISTORY_DDL);
+  await d1().exec(HEARTBEATS_DDL);
 });
 
 beforeEach(async () => {
@@ -143,6 +150,7 @@ beforeEach(async () => {
   invalidateSettingsCache(); // 直接清表繞開寫入路徑,一併清 isolate settings 快取。
   await d1().exec("DELETE FROM ext_jobs;");
   await d1().exec("DELETE FROM storage_history;");
+  await d1().exec("DELETE FROM heartbeats;");
   hookState.calls = [];
   authState.user = ADMIN;
 });
@@ -304,9 +312,7 @@ describe("runDueJobs — publish-due", () => {
   it("writes lastRun bookkeeping (epoch ms) after running", async () => {
     const now = 7_777_000;
     await runDueJobs(now);
-    expect(await getSetting<number>("core.jobs.lastRun.publish-due", 0)).toBe(
-      now,
-    );
+    expect(await getHeartbeat("core.jobs.lastRun.publish-due")).toBe(now);
   });
 
   it("isolates a job failure: reports ok:false, never throws, still bookkeeps", async () => {
@@ -329,9 +335,7 @@ describe("runDueJobs — publish-due", () => {
       STORAGE_PROBE_EMPTY,
     );
     // 失敗仍寫 lastRun(記帳與任務結果解耦)。
-    expect(await getSetting<number>("core.jobs.lastRun.publish-due", 0)).toBe(
-      now,
-    );
+    expect(await getHeartbeat("core.jobs.lastRun.publish-due")).toBe(now);
 
     // 還原,避免後續測試受影響。
     await d1().exec(CONTENTS_DDL);
@@ -349,12 +353,12 @@ describe("maybeRunJobs — throttling", () => {
       publishAt: now - 1,
       data: { title: "Cron owns this window" },
     });
-    await setSettings({ "ext.cron.lastTick": now - 30_000 });
+    await setHeartbeats({ "ext.cron.lastTick": now - 30_000 });
 
     await maybeRunJobs(now);
 
     expect((await readRow("cron-owned"))?.status).toBe("draft");
-    expect(await getSetting<number>("core.jobs.lastSweep", 0)).toBe(0);
+    expect(await getHeartbeat("core.jobs.lastSweep")).toBeNull();
   });
 
   it("no-ops within the sweep interval, then runs after it elapses", async () => {
@@ -366,7 +370,7 @@ describe("maybeRunJobs — throttling", () => {
       data: { title: "Sweep target" },
     });
     // 記錄一次剛發生的 sweep。
-    await setSettings({ "core.jobs.lastSweep": base });
+    await setHeartbeats({ "core.jobs.lastSweep": base });
 
     // 60s 內再掃:節流 no-op,草稿仍為 draft。
     await maybeRunJobs(base + 1000);
@@ -376,7 +380,7 @@ describe("maybeRunJobs — throttling", () => {
     const later = base + 61_000;
     await maybeRunJobs(later);
     expect((await readRow("sweep1"))?.status).toBe("published");
-    expect(await getSetting<number>("core.jobs.lastSweep", 0)).toBe(later);
+    expect(await getHeartbeat("core.jobs.lastSweep")).toBe(later);
   });
 
   it("runs when no prior sweep is recorded", async () => {
@@ -389,6 +393,48 @@ describe("maybeRunJobs — throttling", () => {
     });
     await maybeRunJobs(now);
     expect((await readRow("firstsweep"))?.status).toBe("published");
+  });
+
+  // migrations/0018 的整個理由:心跳每分鐘寫一次,若落在 settings 就會推動 settings
+  // 的版本戳,整包設定快取每分鐘失效一次。sweep + 四支 job 的 lastRun 全部寫完之後,
+  // settings 的戳必須原封不動,settings 表裡也不該出現任何心跳 key。
+  it("heartbeat writes leave the settings stamp untouched", async () => {
+    const now = 13_000_000;
+    await setSettings({ "core.siteTitle": "Stamp probe" });
+    const before = await computeSettingsStamp();
+
+    await maybeRunJobs(now);
+
+    expect(await getHeartbeat("core.jobs.lastSweep")).toBe(now);
+    expect(await getHeartbeat("core.jobs.lastRun.publish-due")).toBe(now);
+    expect(await computeSettingsStamp()).toBe(before);
+    const leaked = await d1()
+      .prepare(
+        "SELECT count(*) AS n FROM settings WHERE key LIKE 'core.jobs.%' OR key = 'ext.cron.lastTick'",
+      )
+      .first<{ n: number }>();
+    expect(leaked?.n).toBe(0);
+    // 讀值不受影響(順帶證明這次 sweep 沒碰到 settings 的內容)。
+    expect(await getSetting<string>("core.siteTitle")).toBe("Stamp probe");
+  });
+
+  // 部署窗:新程式碼已上、migration 還沒套 → heartbeats 表不存在。讀心跳當作
+  // 「從沒發生」,sweep 照跑;記帳失敗只記錯,不擋任務。
+  it("fails open when the heartbeats table is missing", async () => {
+    const now = 14_000_000;
+    await insertContent({
+      id: "no-heartbeats",
+      status: "draft",
+      publishAt: now - 1,
+      data: { title: "Still publishes" },
+    });
+    await d1().exec("DROP TABLE heartbeats;");
+    try {
+      await maybeRunJobs(now);
+      expect((await readRow("no-heartbeats"))?.status).toBe("published");
+    } finally {
+      await d1().exec(HEARTBEATS_DDL);
+    }
   });
 });
 
