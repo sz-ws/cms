@@ -7,10 +7,11 @@ Clone it and you already have authentication, a content model, media storage,
 scheduled publishing, full-text search, and a bilingual admin. What you add is
 the shape of *your* site: a JSON manifest you install at runtime, no rebuild.
 
-> **Status:** pre-1.0 and developed in the open. The core API is versioned and
-> extensions declare the range they support, so upgrades are checked rather
-> than hoped for — but that version number will be reset to `1.0.0` at the
-> first stable release. Pin a commit if you need stability today.
+> **Status:** developed in the open and still changing. The core API is
+> versioned and extensions declare the range they support, so upgrades are
+> checked rather than hoped for. Each minor version marks features an extension
+> can rely on, so the number keeps counting up and is never reset. Pin a commit
+> if you need stability today.
 
 ## The short path
 
@@ -112,12 +113,13 @@ manifest can use uploads, email or AI without knowing what's behind them.
 See [DEPLOY.md](./DEPLOY.md). It's about ten steps against your own Cloudflare
 account — two D1 databases, two R2 buckets, one secret.
 
-**Workers Paid ($5/mo) is recommended, not required.** Size is not the problem —
-the server bundle is around 2.3 MiB gzipped against a 3 MiB free-plan ceiling, so
-it fits. What runs short first is CPU: server-rendering Next.js regularly wants
-more than the free plan's 10 ms per request. Headroom is the other reason — a few
-code extensions with real dependencies will use up what's left of the bundle
-ceiling. Measure your own build before deciding:
+**Workers Paid ($5/mo) is recommended, not required.** Bundle size no longer
+decides it: since September 4, 2026 both plans allow a 64 MiB uncompressed Worker
+and there is no compressed limit, so extensions with real dependencies fit on
+either plan (a build with ten code extensions measures about 18 MiB). What runs
+short on the free plan is CPU: server-rendering Next.js regularly wants more than
+its 10 ms per request. Check your own build's **Total Upload** (the uncompressed
+size that counts) before deciding:
 
 ```bash
 npx wrangler deploy --dry-run
