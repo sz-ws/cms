@@ -339,20 +339,12 @@ export function CheckoutView({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(
-        options.managedOrders
-          ? "/api/ext/shop-operations/actions"
-          : "/api/ext/shop/transfer-report",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...(options.managedOrders ? { action: "report" } : {}),
-            orderNo: manual.orderNo,
-            last5,
-          }),
-        },
-      );
+      // 受管訂單不在這裡回報(見下方結局頁),這裡只剩舊路徑。
+      const res = await fetch("/api/ext/shop/transfer-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNo: manual.orderNo, last5 }),
+      });
       const data = (await res.json()) as { ok: boolean; error?: string };
       if (!data.ok) {
         setError(
@@ -415,6 +407,17 @@ export function CheckoutView({
             >
               返回網站
             </Link>
+          </div>
+        ) : options.managedOrders ? (
+          // 受管訂單(shop-operations)在「我的訂單」回報:那裡的表單照站台設定要末五碼、
+          // 匯款人姓名或兩者,這頁只知道末五碼,設成姓名的站台在這裡會回報失敗。
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Link href="/shop/orders" className={PRIMARY_BTN}>
+              匯款後到我的訂單回報
+            </Link>
+            <p className="text-[12px] text-black/60">
+              訂單編號 <span className="font-mono">{manual.orderNo}</span>
+            </p>
           </div>
         ) : (
           <form onSubmit={(e) => void report(e)} className="flex flex-col gap-3">

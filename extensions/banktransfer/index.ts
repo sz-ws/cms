@@ -41,14 +41,15 @@ async function buildInstructions(
       { label: "金額", value: `NT$ ${req.amount.toLocaleString("zh-TW")}` },
       { label: "訂單編號", value: req.orderNo },
     ],
-    note: "轉帳完成後,請回報您的匯款帳號末五碼,對帳完成即為您處理訂單。",
+    // 0.1.2:不寫「末五碼」—— 受管訂單的站台可以改成回報匯款人姓名。
+    note: "轉帳完成後請回報匯款，對帳完成就會處理您的訂單。",
   };
 }
 
 export const banktransfer = defineExtension({
   id: "banktransfer",
   name: "銀行轉帳",
-  version: "0.1.1",
+  version: "0.1.2",
   coreApi: "^1.28.0",
   description:
     "匯款收款(無金流閘道):結帳時出示收款帳號,款項由後台人工對帳後入帳。",
