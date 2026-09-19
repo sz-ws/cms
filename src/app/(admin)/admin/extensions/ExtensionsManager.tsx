@@ -4,11 +4,20 @@ import { startTransition, useOptimistic, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import NumberFlow from "@number-flow/react";
 import { TextMorph } from "torph/react";
-import { CircleAlert, Power, Trash2 } from "lucide-react";
+import { CircleAlert, CircleArrowUp, Power, Trash2 } from "lucide-react";
 import { CoreTable, RowIconButton, type CoreColumn } from "@/components/admin/core-table";
 import { RegistryBrowser } from "./RegistryBrowser";
 import { DevInstallTrigger } from "./DevInstallDialog";
 import { ExtensionSheet } from "./ExtensionSheet";
+import {
+  EnableProgressCard,
+  applyStepEvent,
+  initialSteps,
+  markFailed,
+  withMigrations,
+  type EnableProgressState,
+} from "./EnableProgress";
+import type { EnableStepEvent } from "@/ext/manager";
 import { cn } from "@/lib/utils";
 import { stableReducer } from "@/lib/optimistic";
 import { useT } from "@/lib/i18n/I18nProvider";
@@ -27,6 +36,32 @@ export interface ExtensionRow {
   installed: boolean;
   kind: "code" | "declarative";
   issue: ExtensionRuntimeIssue | null;
+  /** 1.45.0:已部署新版、但還沒套用(migration 沒跑或資料庫記的是舊版號)。 */
+  upgrade?: { from: string; to: string; migrations: string[] } | null;
+}
+
+class EnableStepError extends Error {
+  constructor(
+    readonly status: number,
+    readonly reason: string,
+  ) {
+    super(reason || `enable step failed (${status})`);
+  }
+}
+
+/** 1.45.0:啟用的一步(api/extensions/[extId] 的 action "enable-step")。 */
+async function enableStep(
+  extId: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`/api/extensions/${extId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "enable-step", kind: "code", ...body }),
+  });
+  const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  if (res.ok && data?.ok === true) return data;
+  throw new EnableStepError(res.status, typeof data?.error === "string" ? data.error : "");
 }
 
 interface ExtensionsManagerProps {
@@ -117,6 +152,8 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
   >(extensions, reduceExtensions);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 1.45.0:啟用／套用更新的逐步進度(EnableProgress.tsx)。
+  const [progress, setProgress] = useState<EnableProgressState | null>(null);
   // sheet 以 id 尋址,資料永遠取自 rows(樂觀變更與 router.refresh() 後的新資料都就地
   // 反映;uninstall 後找不到該列 → request 變 null → sheet 退場)。
   // seq 每次「打開」遞增,當 sheet body 的 key —— 確認面板等內部狀態全新。
@@ -136,12 +173,73 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
   // router.refresh() —— 啟停會改側欄選單,layout 非重畫不可,但新資料到之前畫面維持
   // 樂觀的樣子。失敗:transition 結束時列表自己退回原狀,並顯示原因。
   // pending 只擋重複送出與顯示「…」,在 server 回應時就放開,不等 refresh。
+  // 1.45.0:code extension 的啟用與套用更新一步一步做,每一步畫在進度卡上。
+  function runWithProgress(ext: ExtensionRow) {
+    const upgrade = ext.enabled && ext.upgrade ? ext.upgrade : null;
+    setError(null);
+    setPending(`${ext.id}:enable`);
+    setProgress({
+      extId: ext.id,
+      name: ext.name,
+      upgrade: upgrade ? { from: upgrade.from, to: upgrade.to } : undefined,
+      steps: initialSteps(upgrade ? upgrade.migrations : null),
+      outcome: "running",
+    });
+    const update = (fn: (prev: EnableProgressState) => EnableProgressState) =>
+      setProgress((prev) => (prev && prev.extId === ext.id ? fn(prev) : prev));
+    const on = (event: EnableStepEvent) =>
+      update((prev) => ({ ...prev, steps: applyStepEvent(prev.steps, event) }));
+    startTransition(async () => {
+      if (!ext.enabled) applyOptimistic({ id: ext.id, action: "enable" });
+      try {
+        on({ step: "check", status: "running" });
+        const checked = await enableStep(ext.id, { step: "check" });
+        on({ step: "check", status: "done" });
+        const ids = Array.isArray(checked.migrations)
+          ? checked.migrations.filter((id): id is string => typeof id === "string")
+          : [];
+        update((prev) => ({ ...prev, steps: withMigrations(prev.steps, ids) }));
+        if (ids.length === 0) on({ step: "migrate", status: "skipped" });
+        for (const id of ids) {
+          on({ step: "migrate", status: "running", migration: id });
+          await enableStep(ext.id, { step: "migrate", migration: id });
+          on({ step: "migrate", status: "done", migration: id });
+        }
+        on({ step: "settings", status: "running" });
+        const settled = await enableStep(ext.id, { step: "settings" });
+        on({ step: "settings", status: "done", count: typeof settled.count === "number" ? settled.count : 0 });
+        on({ step: "record", status: "running" });
+        await enableStep(ext.id, { step: "record" });
+        on({ step: "record", status: "done" });
+        update((prev) => ({ ...prev, outcome: "done" }));
+        router.refresh();
+      } catch (e) {
+        const message =
+          e instanceof EnableStepError
+            ? e.status === 409 && e.reason
+              ? e.reason
+              : e.status === 403
+                ? t("extensions.notAllowed")
+                : t("extensions.enableIncomplete")
+            : t("extensions.networkError");
+        update((prev) => ({ ...prev, outcome: "failed", error: message, steps: markFailed(prev.steps) }));
+      } finally {
+        setPending(null);
+      }
+    });
+  }
+
   function run(
     extId: string,
     action: Action,
     kind: ExtensionRow["kind"],
     purgeContent?: boolean,
   ) {
+    const row = rows.find((r) => r.id === extId);
+    if (action === "enable" && kind === "code" && row) {
+      runWithProgress(row);
+      return;
+    }
     setError(null);
     setPending(`${extId}:${action}`);
     startTransition(async () => {
@@ -200,11 +298,21 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
       label: t("extensions.version"),
       sortable: true,
       sortValue: (e) => e.version,
-      render: (e) => (
-        <span className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums">
-          {e.version}
-        </span>
-      ),
+      render: (e) =>
+        e.enabled && e.upgrade ? (
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums">
+              {e.upgrade.from} → {e.upgrade.to}
+            </span>
+            <span className="text-[11px] font-medium whitespace-nowrap text-(--admin-accent)">
+              {t("extensions.upgradePending")}
+            </span>
+          </span>
+        ) : (
+          <span className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums">
+            {e.version}
+          </span>
+        ),
     },
     {
       key: "status",
@@ -225,8 +333,37 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
     );
   }
 
+  // 有 migration 沒跑的更新:相關頁面在套用前可能出錯,放在最上面提醒。
+  const urgent = rows.filter((e) => e.enabled && e.upgrade && e.upgrade.migrations.length > 0);
+
   return (
     <div className="flex flex-col gap-3">
+      {urgent.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-[12px] bg-(--admin-accent)/[0.06] px-4 py-3 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_18%,transparent)]">
+          <p className="text-[13px] text-black/75">
+            {t("extensions.upgradeBanner", { names: urgent.map((e) => e.name).join("、") })}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {urgent.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                disabled={pending !== null}
+                onClick={() => runWithProgress(e)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-black px-3 text-[12.5px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-black/85 active:scale-[0.96] disabled:opacity-45"
+              >
+                <CircleArrowUp aria-hidden className="size-3.5" />
+                {urgent.length > 1 ? `${t("extensions.upgrade")} · ${e.name}` : t("extensions.upgrade")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {progress && (
+        <EnableProgressCard state={progress} onClose={() => setProgress(null)} />
+      )}
+
       {error && (
         <p
           role="alert"
@@ -245,6 +382,16 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
         trailingLabel={t("extensions.actions")}
         trailingActions={(e) => (
           <>
+            {e.enabled && e.upgrade && (
+              <RowIconButton
+                label={t("extensions.upgrade")}
+                onClick={() => {
+                  if (pending === null) runWithProgress(e);
+                }}
+              >
+                <CircleArrowUp className="size-3.5" />
+              </RowIconButton>
+            )}
             <RowIconButton
               label={e.enabled ? t("extensions.disable") : t("extensions.enable")}
               onClick={() => {

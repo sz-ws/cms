@@ -5,6 +5,7 @@ import {
   declarativeExtensions as dxTable,
 } from "@/lib/schema";
 import { getExtRuntime } from "@/ext/loader";
+import { pendingCodeUpgrades } from "@/ext/manager";
 import { parseManifest } from "@/ext/dx/manifest";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
@@ -33,6 +34,8 @@ export default async function ExtensionsPage() {
     dbRows.filter((r) => r.enabled === 1).map((r) => r.id),
   );
   const installedIds = new Set(dbRows.map((r) => r.id));
+  // 1.45.0:部署了新版、還沒套用的(migration 沒跑或版號沒更新)。
+  const upgrades = await pendingCodeUpgrades(dbRows);
 
   // §1 #1/#2:name/description 可為 LocalizedString;此 server 頁以 getLocale() resolve
   // 成純字串後才進 ExtensionsManager(client DTO,ExtensionRow.name/description 為 string)。
@@ -45,6 +48,7 @@ export default async function ExtensionsPage() {
     installed: installedIds.has(e.id),
     kind: "code",
     issue: enabledIds.has(e.id) ? (rt.unavailableById.get(e.id) ?? null) : null,
+    upgrade: upgrades.get(e.id) ?? null,
   }));
 
   // declarative extensions:name/description 取自 manifest(驗證後)。

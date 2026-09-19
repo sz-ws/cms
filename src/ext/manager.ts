@@ -43,6 +43,67 @@ function findManifest(extId: string): Extension {
   return ext;
 }
 
+// ---- 1.45.0:啟用／套用更新的進度 ----
+//
+// 啟用一個 code extension 是四步:檢查相容與相依 → 套用還沒跑過的 migration → 寫入新設定
+// 的預設值 → 記錄版本並通知其他插件。以前 API 全部做完才回一個 200,後台只能轉圈等。
+// 現在四步各自是一個函式(enableStep*),後台一步打一次 API(api/extensions/[extId] 的
+// action "enable-step"),畫面照實顯示走到哪一步、卡在哪一步。每一步都是完整的一個請求,
+// D1、快取失效(revalidateTag)都在請求裡做完 —— 不用串流,也就沒有「回應送出後才執行」的問題。
+//
+// 已啟用的 extension 再跑一次 = 套用更新:已套用的 migration 會跳過、已存在的設定不覆寫,
+// 所以中途失敗後重按一次是安全的。
+
+export type EnableStepId = "check" | "migrate" | "settings" | "record";
+
+export interface EnableStepEvent {
+  step: EnableStepId;
+  status: "running" | "done" | "skipped";
+  /** migrate:正在套用／套用完的 migration id(每個 migration 各一組 running/done)。 */
+  migration?: string;
+  /** settings:這次新寫入幾個預設值。 */
+  count?: number;
+}
+
+export type EnableProgress = (event: EnableStepEvent) => void;
+
+/** 已啟用、但程式碼版本與資料庫紀錄不同,或有 migration 還沒套用的 code extension。 */
+export interface PendingUpgrade {
+  /** 資料庫記錄的版本(上次啟用時的版本)。 */
+  from: string;
+  /** 目前程式碼裡的版本。 */
+  to: string;
+  /** 還沒套用的 migration id,依宣告順序。 */
+  migrations: string[];
+}
+
+/**
+ * 1.45.0:列出待套用的更新。code extension 是編進程式碼的,部署新版後資料庫還停在舊版;
+ * migration 只在 enable 時跑,所以要有人按「套用更新」(= 再 enable 一次)。
+ */
+export async function pendingCodeUpgrades(
+  /** 呼叫端已經讀過 extensions 表就傳進來(省一次查詢)。 */
+  known?: readonly { id: string; enabled: number; version: string }[],
+): Promise<Map<string, PendingUpgrade>> {
+  const [rows, applied] = await Promise.all([
+    known ?? db().select({ id: extensions.id, enabled: extensions.enabled, version: extensions.version }).from(extensions),
+    db().select({ id: extMigrations.id }).from(extMigrations),
+  ]);
+  const appliedIds = new Set(applied.map((r) => r.id));
+  const out = new Map<string, PendingUpgrade>();
+  for (const row of rows) {
+    if (row.enabled !== 1) continue;
+    const ext = registry.find((e) => e.id === row.id);
+    if (!ext) continue;
+    const migrations = (ext.migrations ?? [])
+      .map((m) => m.id)
+      .filter((id) => !appliedIds.has(`${ext.id}:${id}`));
+    if (migrations.length === 0 && row.version === ext.version) continue;
+    out.set(ext.id, { from: row.version, to: ext.version, migrations });
+  }
+  return out;
+}
+
 /** migration sql 以 ";" 切分,忽略空白 statement(03 §1:statement 內不得出現字面值分號)。 */
 function splitStatements(sqlText: string): string[] {
   return sqlText
@@ -51,83 +112,131 @@ function splitStatements(sqlText: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-/**
- * 執行未套用的 migrations(原子性,03 §5 步驟 2)。
- * 對每一項未記錄的 migration:將 sql 以 ";" 切分,連同「寫入 ext_migrations 記錄」的
- * INSERT 一起組成一個 db.batch([...]) 呼叫——D1 batch 具交易語意,任一失敗整批 rollback。
- */
-async function runMigrations(
-  extId: string,
-  migs: ExtMigration[],
-): Promise<void> {
-  // 查已套用的 migration 記錄(<extId>:<migId> 作為 ext_migrations.id)。
+/** 還沒套用的 migration id(<extId>:<migId> 不在 ext_migrations 裡),依宣告順序。 */
+async function pendingMigrationIds(extId: string, migs: ExtMigration[]): Promise<string[]> {
   const applied = await db()
     .select({ id: extMigrations.id })
     .from(extMigrations)
     .where(eq(extMigrations.extId, extId));
   const appliedIds = new Set(applied.map((r) => r.id));
-
-  for (const mig of migs) {
-    const migKey = `${extId}:${mig.id}`;
-    if (appliedIds.has(migKey)) continue;
-
-    const statements = splitStatements(mig.sql);
-    const items: BatchItem<"sqlite">[] = statements.map((stmt) =>
-      db().run(sql.raw(stmt)),
-    );
-    // 連同 ext_migrations 記錄一起 batch,任一失敗整批 rollback。
-    items.push(
-      db().insert(extMigrations).values({
-        id: migKey,
-        extId,
-        appliedAt: Date.now(),
-      }),
-    );
-    // batch 需要非空 tuple 型別。
-    await db().batch(items as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
-  }
+  return migs.filter((mig) => !appliedIds.has(`${extId}:${mig.id}`)).map((mig) => mig.id);
 }
 
-export async function enableExtension(extId: string): Promise<void> {
-  // 1. 從 registry 找 manifest,找不到 → throw ExtNotFound
-  const ext = findManifest(extId);
+/**
+ * 套用一個 migration(原子性,03 §5 步驟 2):sql 以 ";" 切分,連同「寫入 ext_migrations
+ * 記錄」的 INSERT 一起組成一個 db.batch([...]) —— D1 batch 具交易語意,任一失敗整批 rollback。
+ * 已套用過回 "skipped"。
+ */
+async function applyMigration(extId: string, mig: ExtMigration): Promise<"applied" | "skipped"> {
+  const migKey = `${extId}:${mig.id}`;
+  const done = await db()
+    .select({ id: extMigrations.id })
+    .from(extMigrations)
+    .where(eq(extMigrations.id, migKey));
+  if (done.length > 0) return "skipped";
+  const items: BatchItem<"sqlite">[] = splitStatements(mig.sql).map((stmt) =>
+    db().run(sql.raw(stmt)),
+  );
+  items.push(db().insert(extMigrations).values({ id: migKey, extId, appliedAt: Date.now() }));
+  // batch 需要非空 tuple 型別。
+  await db().batch(items as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  return "applied";
+}
 
-  // 1b. core-v2 §1:coreApi 相容性檢查,不相容 → 拒絕(訊息可於 /admin/extensions 呈現)。
+// ---- 啟用的四步(1.45.0 起各自獨立,後台一步打一次 API;enableExtension 依序全跑)----
+
+/** 1. 相容性與相依檢查;回傳還沒套用的 migration(後台據此列出要跑哪些)。 */
+export async function enableStepCheck(extId: string): Promise<{ migrations: string[] }> {
+  const ext = findManifest(extId);
+  // core-v2 §1:coreApi 相容性檢查,不相容 → 拒絕(訊息可於 /admin/extensions 呈現)。
   if (!satisfies(CORE_API_VERSION, ext.coreApi)) {
     throw new CoreApiIncompatible(extId, ext.coreApi);
   }
-
   await assertCodeDependencies(getDB(), ext, registry);
+  return { migrations: await pendingMigrationIds(extId, ext.migrations ?? []) };
+}
 
-  // 2. 執行未套用的 migrations(原子性)
-  await runMigrations(extId, ext.migrations ?? []);
+/** 2. 套用一個 migration。id 必須是這個 extension 宣告過的。 */
+export async function enableStepMigrate(
+  extId: string,
+  migrationId: string,
+): Promise<"applied" | "skipped"> {
+  const ext = findManifest(extId);
+  const mig = (ext.migrations ?? []).find((m) => m.id === migrationId);
+  if (!mig) throw new ExtNotFound(`${extId}:${migrationId}`);
+  return applyMigration(extId, mig);
+}
 
-  // 3. 寫入預設 settings:對 ext.settings 每項,若 settings 表無 ext.<extId>.<key> → insert default
+/** 3. 寫入預設 settings:settings 表還沒有的 ext.<extId>.<key> 才寫。回傳新寫入幾個。 */
+export async function enableStepSettings(extId: string): Promise<number> {
+  const ext = findManifest(extId);
   const now = Date.now();
+  const existing = new Set(
+    (
+      await db()
+        .select({ key: settings.key })
+        .from(settings)
+        .where(like(settings.key, `ext.${extId}.%`))
+    ).map((r) => r.key),
+  );
+  let added = 0;
   for (const field of ext.settings ?? []) {
     const key = `ext.${extId}.${field.key}`;
+    if (existing.has(key)) continue;
     await db()
       .insert(settings)
       .values({ key, value: JSON.stringify(field.default), updatedAt: now })
       .onConflictDoNothing({ target: settings.key });
+    added += 1;
   }
+  // 寫了預設 settings,失效 isolate settings 快取(同 isolate 立即生效)。
+  if (added > 0) invalidateSettingsCache();
+  return added;
+}
 
-  // 4. upsert extensions 表:enabled=1, version, updated_at=now(首次同時填 installed_at)。
-  //    硬規則:ON CONFLICT DO UPDATE 的 SET 子句不得包含 installed_at。
-  await writeCodeEnabled(getDB(), ext, registry, now);
+/** 4. 記錄啟用與版本,失效快取,通知其他 extension。 */
+export async function enableStepRecord(extId: string): Promise<void> {
+  const ext = findManifest(extId);
+  // upsert extensions 表:enabled=1, version, updated_at=now(首次同時填 installed_at)。
+  // 硬規則:ON CONFLICT DO UPDATE 的 SET 子句不得包含 installed_at。
+  await writeCodeEnabled(getDB(), ext, registry, Date.now());
 
   // memo 主動失效(belt-and-braces;跨 isolate 靠 stamp)。
   invalidateExtRuntimeMemo();
-  // 步驟 3 寫了預設 settings,失效 isolate settings 快取(同 isolate 立即生效)。
   invalidateSettingsCache();
   // 該 extension 的 public content cache 整批失效(enable 後結構/資料可能全變)。
   revalidateExt(extId);
 
-  // 5. hooks.doAction("ext:enabled", extId)
+  // hooks.doAction("ext:enabled", extId)
   // 已知行為(03 §5):此 HookBus 是「更新前」建好的(per-request cache),
   // 剛啟用的 extension 收不到自己的 ext:enabled;其他原本 enabled 的收得到。
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
+}
+
+/** 一次跑完四步(安裝流程、agent tool 等不需要逐步顯示的呼叫端)。onStep 可旁聽每一步。 */
+export async function enableExtension(
+  extId: string,
+  onStep: EnableProgress = () => {},
+): Promise<void> {
+  onStep({ step: "check", status: "running" });
+  const { migrations } = await enableStepCheck(extId);
+  onStep({ step: "check", status: "done" });
+
+  if (migrations.length === 0) onStep({ step: "migrate", status: "skipped" });
+  for (const id of migrations) {
+    onStep({ step: "migrate", status: "running", migration: id });
+    await enableStepMigrate(extId, id);
+    onStep({ step: "migrate", status: "done", migration: id });
+  }
+
+  onStep({ step: "settings", status: "running" });
+  const count = await enableStepSettings(extId);
+  onStep({ step: "settings", status: "done", count });
+
+  onStep({ step: "record", status: "running" });
+  await enableStepRecord(extId);
+  onStep({ step: "record", status: "done" });
 }
 
 export async function disableExtension(extId: string): Promise<void> {

@@ -10,16 +10,25 @@ import {
   disableDeclarative,
   uninstallDeclarative,
   ExtNotFound,
+  CoreApiIncompatible,
+  enableStepCheck,
+  enableStepMigrate,
+  enableStepSettings,
+  enableStepRecord,
 } from "@/ext/manager";
 
 // 05 §2:PATCH /api/extensions/[extId]。admin only + Origin 檢查。
 // body { action: "enable" | "disable" | "uninstall", kind?: "code" | "declarative", purgeContent?: boolean }。
 // declarative uninstall(core-v2 §3.4 Phase D):purgeContent 決定是否連帶刪除該 extension
 // 的 contents 列(type LIKE "<extId>.%")。
+// 1.45.0:action "enable-step" 一次只做啟用的一步(manager.ts 的 enableStep*),後台依序呼叫
+// check → 每個 migration → settings → record,邊做邊顯示進度。
 const bodySchema = z.object({
-  action: z.enum(["enable", "disable", "uninstall"]),
+  action: z.enum(["enable", "disable", "uninstall", "enable-step"]),
   kind: z.enum(["code", "declarative"]).optional(),
   purgeContent: z.boolean().optional(),
+  step: z.enum(["check", "migrate", "settings", "record"]).optional(),
+  migration: z.string().min(1).max(100).optional(),
 });
 
 export async function PATCH(
@@ -52,6 +61,18 @@ export async function PATCH(
   const { extId } = await ctx.params;
 
   try {
+    if (parsed.action === "enable-step") {
+      if (parsed.step === "check") return Response.json({ ok: true, ...(await enableStepCheck(extId)) });
+      if (parsed.step === "migrate" && parsed.migration) {
+        return Response.json({ ok: true, result: await enableStepMigrate(extId, parsed.migration) });
+      }
+      if (parsed.step === "settings") return Response.json({ ok: true, count: await enableStepSettings(extId) });
+      if (parsed.step === "record") {
+        await enableStepRecord(extId);
+        return Response.json({ ok: true });
+      }
+      return Response.json({ error: "invalid_input" }, { status: 400 });
+    }
     if (parsed.kind === "declarative") {
       if (parsed.action === "enable") await enableDeclarative(extId);
       else if (parsed.action === "disable") await disableDeclarative(extId);
@@ -60,7 +81,7 @@ export async function PATCH(
     else if (parsed.action === "disable") await disableExtension(extId);
     else await uninstallExtension(extId);
   } catch (e) {
-    if (e instanceof ExtensionLifecycleConflict) {
+    if (e instanceof ExtensionLifecycleConflict || e instanceof CoreApiIncompatible) {
       return Response.json({ error: e.message }, { status: 409 });
     }
     if (e instanceof ExtNotFound) {

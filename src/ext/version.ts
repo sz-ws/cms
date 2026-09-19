@@ -722,4 +722,22 @@
 // - A secret field says it is set only when a value is stored; before, every secret
 //   field showed "set — type to replace" even when empty.
 // Additive: sites that never set core.provider.email:send keep sending via Resend.
-export const CORE_API_VERSION = "1.44.0";
+// 1.45.0: enabling a code extension, or applying its update, shows each step.
+// - Enabling is four exported steps in manager.ts: enableStepCheck (compatibility
+//   and dependencies; returns the migrations still to run), enableStepMigrate (one
+//   migration), enableStepSettings (defaults for new settings; returns how many),
+//   enableStepRecord (version, caches, ext:enabled). PATCH /api/extensions/<id>
+//   with action "enable-step" runs one of them, so the admin calls them in order and
+//   shows each result; every step is a whole request. enableExtension(extId,
+//   onStep?) still runs all four for other callers and reports EnableStepEvent.
+//   A core API mismatch now returns 409 with the reason instead of a bare 500.
+// - manager.pendingCodeUpgrades(): enabled code extensions whose code version
+//   differs from the stored one or that have migrations not yet applied. A deploy
+//   ships new code but migrations only run on enable, so until someone applies the
+//   update the extension's pages can fail on missing columns.
+// - /admin/extensions marks those rows (from → to, 「待套用更新」), adds an
+//   「套用更新」 action (enable again: applied migrations and existing settings are
+//   skipped, so a retry after a failure is safe), and puts a notice at the top when
+//   an update carries migrations. Enable and apply-update draw a step list with
+//   waiting / running / done / skipped / failed and the reason on failure.
+export const CORE_API_VERSION = "1.45.0";
