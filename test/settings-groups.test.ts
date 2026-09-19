@@ -91,3 +91,28 @@ describe("setting group derivation", () => {
     expect(advanced?.fields.some((f) => f.key.startsWith("core.ai."))).toBe(false);
   });
 });
+
+// 1.43.0:中文後台的設定頁不再一半英文。畫在設定頁上的核心欄位,標題與說明都要有
+// 中英兩版;選項可以是純字串(語言名稱、Workers AI 這種兩邊都一樣的)。
+describe("core settings copy", () => {
+  const HIDDEN = new Set(["core.registrySources", "core.registryTokens", "core.dashboard.insights"]);
+  const shown = CORE_SETTINGS.filter((f) => !HIDDEN.has(f.key));
+  const bilingual = (value: unknown) =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).en === "string" &&
+    typeof (value as Record<string, unknown>)["zh-Hant"] === "string";
+
+  it("every shown label and description has en and zh-Hant", () => {
+    const missing = shown.flatMap((f) => [
+      ...(bilingual(f.label) ? [] : [`${f.key}.label`]),
+      ...(f.description === undefined || bilingual(f.description) ? [] : [`${f.key}.description`]),
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("descriptions do not cite spec documents", () => {
+    const cites = shown.filter((f) => /spec-|core-v2|§/.test(JSON.stringify(f.description ?? "")));
+    expect(cites.map((f) => f.key)).toEqual([]);
+  });
+});

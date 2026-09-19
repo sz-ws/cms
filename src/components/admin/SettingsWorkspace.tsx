@@ -45,8 +45,10 @@ function initialValue(
   if (field.secret) return "";
   const fullKey = `${keyPrefix}${field.key}`;
   const v = values[fullKey];
-  if (field.type === "boolean") return Boolean(v);
+  // 沒存過的欄位照預設值畫:以前布林欄位直接 Boolean(undefined),預設開著的
+  // (robots / sitemap / RSS)在設定頁顯示成關著。
   const raw = v === undefined || v === null ? (field.default ?? "") : v;
+  if (field.type === "boolean") return Boolean(raw);
   if (field.type === "textarea" && typeof raw !== "string") {
     return JSON.stringify(raw);
   }
@@ -211,14 +213,18 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
 
   function renderSectionFields(section: SettingsSection) {
     return (
+      // 每個欄位佔三列(標題 / 輸入框 / 說明),用 subgrid 跟同一排的欄位共用列高:
+      // 一邊有說明、一邊沒有,或標題折成兩行時,兩邊的輸入框仍然對齊。
+      // 說明放在輸入框下面,沒有說明的欄位標題才不會跟輸入框隔一段空白。
       <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
         {section.fields.map((field) => {
           const fullKey = `${section.keyPrefix}${field.key}`;
           const controlId = settingControlId(fullKey);
+          const descriptionId = field.description ? `${controlId}-description` : undefined;
           return (
             <div
               key={fullKey}
-              className={`flex min-w-0 flex-col gap-1.5 ${fieldWrapperClass(field)}`}
+              className={`row-span-3 grid min-w-0 grid-rows-subgrid items-start gap-y-1.5 ${fieldWrapperClass(field)}`}
             >
               <label htmlFor={controlId} className={labelClass()}>
                 {resolveLocalizedString(field.label, locale)}
@@ -228,14 +234,10 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   </span>
                 )}
               </label>
-              {field.description && (
-                <p className={descriptionClass()}>
-                  {resolveLocalizedString(field.description, locale)}
-                </p>
-              )}
               {field.type === "textarea" ? (
                 <Textarea
                   id={controlId}
+                  aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
                   className="min-h-[120px] rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
                   value={String(state[fullKey] ?? "")}
@@ -246,6 +248,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                 <div className="inline-flex h-10 items-center rounded-[10px] bg-black/[0.03] px-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
                   <Checkbox
                     id={controlId}
+                    aria-describedby={descriptionId}
                     checked={Boolean(state[fullKey])}
                     aria-required={field.required || undefined}
                     onChange={(e) => update(fullKey, e.target.checked)}
@@ -276,6 +279,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                 >
                   <SelectTrigger
                     id={controlId}
+                    aria-describedby={descriptionId}
                     aria-invalid={fieldErrors[fullKey] ? true : undefined}
                     aria-required={field.required || undefined}
                     className="w-full rounded-[10px] border-black/10 bg-white text-[14px] text-black/85"
@@ -293,6 +297,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
               ) : (
                 <Input
                   id={controlId}
+                  aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
                   className="rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
                   type={field.type === "number" ? "number" : "text"}
@@ -302,17 +307,24 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   placeholder={field.secret ? t("settings.secretSet") : undefined}
                 />
               )}
-              {fieldErrors[fullKey] && (
-                <p role="alert" className="text-[12px] text-red-600">
-                  {fieldErrorText(fieldErrors[fullKey], t)}
-                </p>
-              )}
-              {fullKey === "core.emailFrom" && (
-                <EmailDomainChips
-                  value={String(state[fullKey] ?? "")}
-                  onPick={(next) => update(fullKey, next)}
-                />
-              )}
+              <div className="flex min-w-0 flex-col gap-1.5">
+                {fieldErrors[fullKey] && (
+                  <p role="alert" className="text-[12px] text-red-600">
+                    {fieldErrorText(fieldErrors[fullKey], t)}
+                  </p>
+                )}
+                {field.description && (
+                  <p id={descriptionId} className={descriptionClass()}>
+                    {resolveLocalizedString(field.description, locale)}
+                  </p>
+                )}
+                {fullKey === "core.emailFrom" && (
+                  <EmailDomainChips
+                    value={String(state[fullKey] ?? "")}
+                    onPick={(next) => update(fullKey, next)}
+                  />
+                )}
+              </div>
             </div>
           );
         })}

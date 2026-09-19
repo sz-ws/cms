@@ -688,4 +688,20 @@
 //   hover or focus only. Admin tables, cards, pagination and filters use it; the
 //   default prefetched every visible row link again after each refresh, and each
 //   prefetch ran the admin layout on the server.
-export const CORE_API_VERSION = "1.42.0";
+// 1.43.0: the settings page reads in one language, and the admin sidebar
+// remembers what was opened.
+// - Every core setting's label, description and option label now has en and
+//   zh-Hant text (LocalizedString). Descriptions say what the setting changes and
+//   what an empty value does; spec references are gone from them. Adds the
+//   settings.group.ai / aiDesc messages. General group order: site title, site URL,
+//   description, the two languages, time zone, logo, accent colour.
+// - Setting fields use a CSS subgrid (label / control / help rows), so two fields
+//   side by side keep their controls level when only one has a description.
+//   Descriptions moved below the control and are linked with aria-describedby.
+// - A boolean setting that was never saved shows its default: robots / sitemap / RSS
+//   are on by default but the form showed them unchecked.
+// - components/admin/nav-open-store.ts: sidebar groups and folders a person opens
+//   or closes are kept in localStorage (cms.adminNavOpen) and survive a reload.
+//   Ones never clicked still follow the current page.
+// Additive: no manifest or API change.
+export const CORE_API_VERSION = "1.43.0";

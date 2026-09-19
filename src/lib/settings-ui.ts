@@ -36,7 +36,7 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
     id: "general",
     order: 10,
     title: "General",
-    description: "Site identity and admin locale.",
+    description: "Site name, languages, time zone and admin look.",
   },
   {
     id: "seo",
@@ -48,13 +48,13 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
     id: "email",
     order: 30,
     title: "Email",
-    description: "Outgoing mail provider and sender address.",
+    description: "Sender address, mail provider and notifications.",
   },
   {
     id: "ai",
     order: 40,
     title: "AI",
-    description: "Provider, model, and credentials for the ai:generate capability.",
+    description: "Provider, model and key for AI features.",
   },
   {
     id: "advanced",

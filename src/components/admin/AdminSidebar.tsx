@@ -33,6 +33,7 @@ import { AdminNavGroup } from "./AdminNavGroup";
 import { AdminNavLink } from "./AdminNavLink";
 import { NavIcon } from "./adminNavIcons";
 import { pickActiveHref } from "./nav-active";
+import { setNavOpen, useNavOpen } from "./nav-open-store";
 import type { AdminNavGroupData, AdminNavItem, AdminNavKind } from "./nav-groups";
 
 // Admin sidebar. Structure/behavior (a11y, mobile drawer, keyboard toggle) come
@@ -122,12 +123,12 @@ export function AdminSidebar({
   const { state, isMobile } = useSidebar();
   const docked = state === "collapsed" && !isMobile;
   const folderIdBase = useId();
-  // Folders open when they hold the current page; a click overrides that until
-  // the next full load. Keyed by folder href (its first child, stable per menu).
-  const [folderOverrides, setFolderOverrides] = useState<Record<string, boolean>>({});
+  // Folders open when they hold the current page; a click overrides that.
   // 1.40.0:分區同一套規則。"open" 的分區預設展開;"active" 的只有目前頁面所在
-  // 那一區展開。點分區標題的覆寫記在這裡,以分區 id 為 key。
-  const [groupOverrides, setGroupOverrides] = useState<Record<string, boolean>>({});
+  // 那一區展開。
+  // 1.43.0:點過的開合記在 localStorage(nav-open-store.ts),重新整理後還在。
+  // 資料夾以 href(第一個子項,選單內穩定)為 key,分區以 id 為 key。
+  const remembered = useNavOpen();
   // 有任何一區平常收合,分區標題就是主要導覽層 —— 全部用同一種標題樣式,不然常駐
   // 展開的那一區會比其他區小一號。
   const accordion = groups.some((group) => group.collapse === "active");
@@ -215,7 +216,7 @@ export function AdminSidebar({
       );
     }
 
-    const open = folderOverrides[item.href] ?? holdsActive;
+    const open = remembered.folders[item.href] ?? holdsActive;
     const panelId = `${folderIdBase}-${item.href}`;
     // Collapsed with the current page inside: the folder row carries the white
     // chip so the sidebar still says where you are. Open: the child row does.
@@ -226,9 +227,7 @@ export function AdminSidebar({
           type="button"
           aria-expanded={open}
           aria-controls={panelId}
-          onClick={() =>
-            setFolderOverrides((prev) => ({ ...prev, [item.href]: !open }))
-          }
+          onClick={() => setNavOpen("folders", item.href, !open)}
           className={cn(
             navItemClasses(chip),
             "flex w-full items-center gap-x-2.5 text-start outline-hidden focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
@@ -300,7 +299,7 @@ export function AdminSidebar({
                 (item.children ?? []).some((child) => child.href === activeHref),
             );
             const open =
-              groupOverrides[group.id] ??
+              remembered.groups[group.id] ??
               (group.collapse === "active" ? holdsActive : true);
             return (
               <AdminNavGroup
@@ -308,9 +307,7 @@ export function AdminSidebar({
                 label={group.label}
                 // Icon rail has no group headers to click, so every group shows.
                 open={docked || open}
-                onToggle={() =>
-                  setGroupOverrides((prev) => ({ ...prev, [group.id]: !open }))
-                }
+                onToggle={() => setNavOpen("groups", group.id, !open)}
                 prominent={accordion}
                 holdsActive={holdsActive}
               >

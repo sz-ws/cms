@@ -67,11 +67,42 @@ export async function getDefaultContentLocale(): Promise<string> {
 // Key 慣例:CORE_SETTINGS 的 key 寫「完整 key」(含 core. 前綴,直接等於 D1 key)。
 // 所以 core section 的 keyPrefix=""。
 
+// 1.43.0:核心設定的標題、說明、選項都附中英兩版。之前大多只有英文,中文後台的設定頁
+// 一半中文一半英文。說明只寫管理者需要知道的事(會影響什麼、留空會怎樣),不寫規格章節。
 export const CORE_SETTINGS: SettingField[] = [
+  {
+    key: "core.siteTitle",
+    group: "general",
+    label: { en: "Site title", "zh-Hant": "網站名稱" },
+    type: "text",
+    default: "My Site",
+  },
+  {
+    key: "core.siteUrl",
+    group: "general",
+    label: { en: "Site URL", "zh-Hant": "網站網址" },
+    description: {
+      en: "The address people use to reach the site, e.g. https://example.com. Payment returns, third-party sign-in and the sitemap build full links from it.",
+      "zh-Hant": "客人連到網站的網址，例如 https://example.com。付款完成後的返回、第三方登入與 sitemap 都用它組出完整連結。",
+    },
+    type: "text",
+    default: "",
+  },
+  {
+    key: "core.siteDescription",
+    group: "general",
+    label: { en: "Site description", "zh-Hant": "網站介紹" },
+    description: {
+      en: "Shown on the home page, in search results and in the RSS feed.",
+      "zh-Hant": "顯示在首頁、搜尋結果與 RSS 訂閱裡。",
+    },
+    type: "textarea",
+    default: "",
+  },
   {
     key: "core.locale",
     group: "general",
-    label: "Admin language",
+    label: { en: "Admin language", "zh-Hant": "後台語言" },
     type: "select",
     options: [
       { value: "en", label: "English" },
@@ -86,9 +117,11 @@ export const CORE_SETTINGS: SettingField[] = [
     //(locale 建立後不可變更)。
     key: "core.content.defaultLocale",
     group: "general",
-    label: "Default content language",
-    description:
-      "New content is created in this language unless a locale is given. Separate from the admin interface language above.",
+    label: { en: "Default content language", "zh-Hant": "內容預設語言" },
+    description: {
+      en: "New content is written in this language unless you pick another. Set separately from the admin language.",
+      "zh-Hant": "新增內容時預設用這個語言。跟後台語言分開設定。",
+    },
     type: "select",
     options: [
       { value: "en", label: "English" },
@@ -112,25 +145,13 @@ export const CORE_SETTINGS: SettingField[] = [
     default: DEFAULT_TIME_ZONE,
   },
   {
-    key: "core.siteTitle",
-    group: "general",
-    label: "Site Title",
-    type: "text",
-    default: "My Site",
-  },
-  {
-    key: "core.siteDescription",
-    group: "general",
-    label: "Site Description",
-    type: "textarea",
-    default: "",
-  },
-  {
     key: "core.brandLogo",
     group: "general",
-    label: "Brand logo URL",
-    description:
-      "Shown top-left in the admin sidebar. Upload an image to the Media Library and paste its file URL here; empty falls back to the default mark.",
+    label: { en: "Brand logo URL", "zh-Hant": "品牌標誌網址" },
+    description: {
+      en: "Shown top-left in the admin sidebar. Upload an image to the Media Library and paste its URL here. Leave empty for the default mark.",
+      "zh-Hant": "顯示在後台側欄左上角。先把圖片上傳到媒體庫，再把圖片網址貼在這裡；留空就用預設圖示。",
+    },
     type: "text",
     default: "",
   },
@@ -150,54 +171,57 @@ export const CORE_SETTINGS: SettingField[] = [
     swatches: ADMIN_ACCENT_SWATCHES,
   },
   {
-    key: "core.siteUrl",
-    group: "general",
-    label: "Site URL",
-    type: "text",
-    default: "",
-  },
-  {
     key: "core.seo.robots",
     group: "seo",
-    label: "Publish robots.txt",
-    description:
-      "Serves /robots.txt for crawlers. Off disallows the entire site (Disallow: /). Uses core.siteUrl for absolute URLs when set, otherwise falls back to the request origin. Setting changes take up to 5 minutes to apply (isolate-level cache).",
+    label: { en: "Allow search engines", "zh-Hant": "允許搜尋引擎收錄" },
+    description: {
+      en: "When off, /robots.txt asks every crawler to stay out of the whole site. Changes take up to 5 minutes.",
+      "zh-Hant": "關閉後，/robots.txt 會要求所有搜尋引擎不要收錄整個網站。改動最多 5 分鐘後生效。",
+    },
     type: "boolean",
     default: true,
   },
   {
     key: "core.seo.sitemap",
     group: "seo",
-    label: "Publish sitemap.xml",
-    description:
-      "Serves /sitemap.xml listing published detail pages and list routes declared by enabled declarative extensions. Setting changes take up to 5 minutes to apply (isolate-level cache).",
+    label: { en: "Publish sitemap.xml", "zh-Hant": "提供 sitemap.xml" },
+    description: {
+      en: "Lists your published pages at /sitemap.xml so search engines find them. Changes take up to 5 minutes.",
+      "zh-Hant": "在 /sitemap.xml 列出已發布的頁面，方便搜尋引擎找到。改動最多 5 分鐘後生效。",
+    },
     type: "boolean",
     default: true,
   },
   {
     key: "core.seo.rss",
     group: "seo",
-    label: "Publish RSS feed",
-    description:
-      "Serves /feed.xml with the 50 most recently updated published entries. Setting changes take up to 5 minutes to apply (isolate-level cache).",
+    label: { en: "Publish RSS feed", "zh-Hant": "提供 RSS 訂閱" },
+    description: {
+      en: "Lists the 50 most recently updated published entries at /feed.xml. Changes take up to 5 minutes.",
+      "zh-Hant": "在 /feed.xml 列出最近更新的 50 篇已發布內容。改動最多 5 分鐘後生效。",
+    },
     type: "boolean",
     default: true,
   },
   {
     key: "core.emailFrom",
     group: "email",
-    label: "Email from address",
-    description:
-      'Sender for all outgoing mail, e.g. "Acme <noreply@yourdomain.com>". The domain must be verified with the email provider.',
+    label: { en: "From address", "zh-Hant": "寄件地址" },
+    description: {
+      en: 'Every email the site sends comes from this address, e.g. "Acme <noreply@yourdomain.com>". Verify the domain with your email provider first.',
+      "zh-Hant": "網站寄出的信都用這個寄件人，例如 Acme <noreply@yourdomain.com>。網域要先在寄信服務驗證過。",
+    },
     type: "text",
     default: "",
   },
   {
     key: "core.resendApiKey",
     group: "email",
-    label: "Resend API key",
-    description:
-      "Enables the built-in email provider (email:send capability). Create a key at resend.com; stored encrypted.",
+    label: { en: "Resend API key", "zh-Hant": "Resend API 金鑰" },
+    description: {
+      en: "Needed to send email. Create one at resend.com. Stored encrypted.",
+      "zh-Hant": "寄信需要這把金鑰，可到 resend.com 建立。儲存時會加密。",
+    },
     type: "text",
     secret: true,
     default: "",
@@ -205,23 +229,27 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.notifyEmail",
     group: "email",
-    label: "Notification email",
-    description:
-      'Recipient for content type "notify on create" submissions (declarative contentTypes[].notifyOnCreate). Empty disables the feature.',
+    label: { en: "Notification email", "zh-Hant": "通知信收件人" },
+    description: {
+      en: "Gets an email whenever someone submits a form that has notifications turned on. Leave empty to send none.",
+      "zh-Hant": "有人送出開啟通知的表單時，通知信寄到這個信箱。留空就不寄。",
+    },
     type: "text",
     default: "",
   },
   {
     key: "core.ai.mode",
     group: "ai",
-    label: "AI provider mode",
-    description:
-      'Enables the ai:generate capability. "off" leaves it unconfigured; openai / anthropic route through their chat/completions-style APIs; workers-ai uses the Cloudflare Workers AI binding (add it to wrangler.jsonc yourself — not managed by this setting).',
+    label: { en: "AI provider", "zh-Hant": "AI 服務" },
+    description: {
+      en: "Turns on AI features. Workers AI also needs the AI binding in wrangler.jsonc.",
+      "zh-Hant": "開啟 AI 功能。選 Workers AI 時，wrangler.jsonc 也要加上 AI binding。",
+    },
     type: "select",
     options: [
-      { value: "off", label: "Off" },
-      { value: "openai", label: "OpenAI-compatible" },
-      { value: "anthropic", label: "Anthropic-compatible" },
+      { value: "off", label: { en: "Off", "zh-Hant": "關閉" } },
+      { value: "openai", label: { en: "OpenAI-compatible", "zh-Hant": "OpenAI 相容" } },
+      { value: "anthropic", label: { en: "Anthropic-compatible", "zh-Hant": "Anthropic 相容" } },
       { value: "workers-ai", label: "Workers AI" },
     ],
     default: "off",
@@ -229,18 +257,22 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.ai.baseUrl",
     group: "ai",
-    label: "AI base URL",
-    description:
-      'Empty uses the mode default (openai → "https://api.openai.com/v1"; anthropic → "https://api.anthropic.com"). Ignored in workers-ai mode.',
+    label: { en: "API base URL", "zh-Hant": "API 網址" },
+    description: {
+      en: "Leave empty to use the provider's own address. Not used with Workers AI.",
+      "zh-Hant": "留空就用該服務的預設網址。Workers AI 不用填。",
+    },
     type: "text",
     default: "",
   },
   {
     key: "core.ai.apiKey",
     group: "ai",
-    label: "AI API key",
-    description:
-      "Required for openai / anthropic mode; not needed for workers-ai. Stored encrypted.",
+    label: { en: "API key", "zh-Hant": "API 金鑰" },
+    description: {
+      en: "Needed for OpenAI and Anthropic, not for Workers AI. Stored encrypted.",
+      "zh-Hant": "OpenAI 與 Anthropic 需要，Workers AI 不用。儲存時會加密。",
+    },
     type: "text",
     secret: true,
     default: "",
@@ -248,29 +280,41 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.ai.model",
     group: "ai",
-    label: "AI model",
-    description:
-      'e.g. "gpt-4o-mini", "claude-haiku-4-5-20251001", or "@cf/meta/llama-3.1-8b-instruct".',
+    label: { en: "Model", "zh-Hant": "模型" },
+    description: {
+      en: "For example gpt-4o-mini, claude-haiku-4-5-20251001, or @cf/meta/llama-3.1-8b-instruct.",
+      "zh-Hant": "例如 gpt-4o-mini、claude-haiku-4-5-20251001 或 @cf/meta/llama-3.1-8b-instruct。",
+    },
     type: "text",
     default: "",
   },
-    {
+  {
+    // spec-login-providers.md §5:第三方登入(Google/LINE/OIDC)找不到已連結的身分時
+    // 怎麼辦。email 相同也絕不自動連結(防帳號接管)。
     key: "core.auth.oauthRegistration",
     group: "advanced",
-    label: "OAuth open registration",
-    description:
-      'spec-login-providers.md §5. Controls what happens when a third-party (Google/LINE/OIDC) login has no linked identity yet. "guest" auto-creates a new account with the lowest-privilege guest role; "off" refuses login for unlinked identities (existing users must sign in with a password first, then link from the account page). Email collisions never auto-link (anti-takeover).',
+    label: { en: "New third-party sign-ins", "zh-Hant": "第三方登入的新使用者" },
+    description: {
+      en: "When someone signs in with Google, LINE or another provider that isn't linked to an account yet. Existing users sign in with their password first, then link the provider on their account page. A matching email never links accounts on its own.",
+      "zh-Hant": "有人用 Google、LINE 等第三方登入、但還沒連結任何帳號時怎麼處理。已有帳號的人要先用密碼登入，再到帳號頁連結。email 相同也不會自動連結。",
+    },
     type: "select",
     options: [
-      { value: "guest", label: "Auto-create guest accounts" },
-      { value: "off", label: "Off (linked identities only)" },
+      {
+        value: "guest",
+        label: { en: "Create a guest account", "zh-Hant": "自動建立訪客帳號" },
+      },
+      {
+        value: "off",
+        label: { en: "Turn them away", "zh-Hant": "不讓他登入" },
+      },
     ],
     default: "guest",
   },
   {
     key: "core.apiSecret",
     group: "advanced",
-    label: "API Secret",
+    label: { en: "API secret", "zh-Hant": "API 密鑰" },
     type: "text",
     secret: true,
     default: "",
@@ -279,9 +323,13 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.demoCallbackSecret",
     group: "advanced",
-    label: "Demo Callback Signing Secret",
-    description:
-      "core-v2 §2.5 DEMO ONLY. HMAC-SHA256 signing secret for the demo `echo` callback provider (POST /api/callback/demo-callback/echo). Remove together with the demo provider once a real payment/extraction provider ships.",
+    label: { en: "Demo callback signing secret", "zh-Hant": "示範回呼的簽章密鑰" },
+    description: {
+      en: "Only used by the demo echo callback at /api/callback/demo-callback/echo.",
+      "zh-Hant": "只有示範用的 echo 回呼（/api/callback/demo-callback/echo）會用到。",
+    },
+    // core-v2 §2.5 DEMO ONLY:demo `echo` callback provider 的 HMAC-SHA256 簽章密鑰。
+    // 真的付款/擷取 provider 上線後跟 demo provider 一起拿掉。
     type: "text",
     secret: true, // 加密儲存;verifyCallback 讀取明文比對簽章。
     default: "",
