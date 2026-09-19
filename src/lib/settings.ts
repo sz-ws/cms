@@ -31,13 +31,31 @@ export interface SettingFieldBase {
    * 標題由 id 推導)。extension settings 不分組(單卡),此欄位對其無效。
    */
   group?: string;
+  /**
+   * 1.44.0:另一個欄位是某個值時才顯示(例如選了 Resend 才出現 API 金鑰)。
+   * key 是同一區的欄位 key(core 寫完整 key,extension 寫自己的 key)。隱藏只影響
+   * 畫面,值照舊保存。
+   */
+  showWhen?: { key: string; equals: string | boolean };
 }
+
+/** select 的一個選項。logo / description 只在 presentation: "tabs" 時畫出來。 */
+export interface SettingOption {
+  value: string;
+  label: LocalizedString;
+  /** 1.44.0:選項上的標誌(站內圖片路徑,如 /brand/email/resend.svg)。 */
+  logo?: string;
+  /** 1.44.0:選到這個選項時,欄位下方顯示的說明。 */
+  description?: LocalizedString;
+}
+
 export type SettingField = SettingFieldBase &
   (
     | { type: "text" | "textarea" }
     | { type: "number" }
     | { type: "boolean" }
-    | { type: "select"; options: { value: string; label: LocalizedString }[] }
+    // 1.44.0:presentation: "tabs" 畫成一排分頁(佔整列),適合二選一、三選一的「用哪個服務」。
+    | { type: "select"; options: SettingOption[]; presentation?: "tabs" }
     // 1.40.0:顏色(#rrggbb),設定頁畫成一排色票 + 自訂;swatches 省略時只有自訂。
     | { type: "color"; swatches?: { value: string; label: LocalizedString }[] }
   );
@@ -204,6 +222,37 @@ export const CORE_SETTINGS: SettingField[] = [
     default: true,
   },
   {
+    // 1.44.0:寄信服務。值是 provider registry 的 id(ext/providers.ts):"core" = 內建的
+    // Resend,"cloudflare" = Cloudflare Email Service(send_email 綁定)。registry 本來就
+    // 讀 core.provider.<capability> 決定用誰,這裡只是把它放上設定頁。
+    key: "core.provider.email:send",
+    group: "email",
+    label: { en: "Email service", "zh-Hant": "寄信服務" },
+    type: "select",
+    presentation: "tabs",
+    options: [
+      {
+        value: "core",
+        label: "Resend",
+        logo: "/brand/email/resend.svg",
+        description: {
+          en: "Sends through your Resend account. Paste its API key below.",
+          "zh-Hant": "用你的 Resend 帳號寄信，在下方貼上 API 金鑰。",
+        },
+      },
+      {
+        value: "cloudflare",
+        label: "Cloudflare",
+        logo: "/brand/email/cloudflare.svg",
+        description: {
+          en: "Sends through Cloudflare Email Service. Add a send_email binding named EMAIL in wrangler.jsonc and verify the sending domain in the Cloudflare dashboard. No API key needed.",
+          "zh-Hant": "用 Cloudflare Email Service 寄信，不需要 API 金鑰。wrangler.jsonc 要加上名為 EMAIL 的 send_email 綁定，並在 Cloudflare 後台驗證寄件網域。",
+        },
+      },
+    ],
+    default: "core",
+  },
+  {
     key: "core.emailFrom",
     group: "email",
     label: { en: "From address", "zh-Hant": "寄件地址" },
@@ -217,6 +266,7 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.resendApiKey",
     group: "email",
+    showWhen: { key: "core.provider.email:send", equals: "core" },
     label: { en: "Resend API key", "zh-Hant": "Resend API 金鑰" },
     description: {
       en: "Needed to send email. Create one at resend.com. Stored encrypted.",

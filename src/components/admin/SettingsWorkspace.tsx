@@ -15,9 +15,10 @@ import {
 import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
 import { ColorSwatchPicker } from "./ColorSwatchPicker";
+import { SettingTabs } from "./SettingTabs";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
-import { changedSettingEntries, settingControlId } from "@/lib/settings-ui";
+import { changedSettingEntries, isSettingVisible, settingControlId } from "@/lib/settings-ui";
 
 export interface SettingsSection {
   id: string;
@@ -80,8 +81,14 @@ function sameState(a: SettingsState, b: SettingsState): boolean {
   return true;
 }
 
+// 不寫成 type predicate:false 的那一邊還有一般下拉選單,不能把整個 select 型別排除掉。
+function isTabs(field: SettingField): boolean {
+  return field.type === "select" && field.presentation === "tabs";
+}
+
 function fieldWrapperClass(field: SettingField): string {
-  return field.type === "textarea"
+  // 分頁(1.44.0)佔整列:它決定下面出現哪些欄位,放半欄會跟旁邊的欄位混在一起。
+  return field.type === "textarea" || isTabs(field)
     ? "col-span-full"
     : "col-span-full sm:col-span-1";
 }
@@ -219,14 +226,22 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
       <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
         {section.fields.map((field) => {
           const fullKey = `${section.keyPrefix}${field.key}`;
+          // 1.44.0:showWhen 不成立的欄位不畫(值照舊保存,沒改就不會送出)。
+          if (!isSettingVisible(field, section.keyPrefix, state)) return null;
           const controlId = settingControlId(fullKey);
-          const descriptionId = field.description ? `${controlId}-description` : undefined;
+          // 分頁選項自己的說明(選到哪個就顯示哪個的)。
+          const optionDescription =
+            field.type === "select" && field.presentation === "tabs"
+              ? field.options.find((o) => o.value === state[fullKey])?.description
+              : undefined;
+          const descriptionId =
+            field.description || optionDescription ? `${controlId}-description` : undefined;
           return (
             <div
               key={fullKey}
               className={`row-span-3 grid min-w-0 grid-rows-subgrid items-start gap-y-1.5 ${fieldWrapperClass(field)}`}
             >
-              <label htmlFor={controlId} className={labelClass()}>
+              <label id={`${controlId}-label`} htmlFor={controlId} className={labelClass()}>
                 {resolveLocalizedString(field.label, locale)}
                 {field.required && (
                   <span className="ml-1 text-red-600" aria-hidden="true">
@@ -264,6 +279,20 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   swatches={(field.swatches ?? []).map((swatch) => ({
                     value: swatch.value,
                     label: resolveLocalizedString(swatch.label, locale) ?? swatch.value,
+                  }))}
+                />
+              ) : field.type === "select" && field.presentation === "tabs" ? (
+                <SettingTabs
+                  id={controlId}
+                  labelledBy={`${controlId}-label`}
+                  describedBy={descriptionId}
+                  value={String(state[fullKey] ?? "")}
+                  invalid={Boolean(fieldErrors[fullKey])}
+                  onChange={(next) => update(fullKey, next)}
+                  tabs={field.options.map((o) => ({
+                    value: o.value,
+                    label: resolveLocalizedString(o.label, locale) ?? o.value,
+                    logo: o.logo,
                   }))}
                 />
               ) : field.type === "select" ? (
@@ -304,7 +333,10 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}
-                  placeholder={field.secret ? t("settings.secretSet") : undefined}
+                  // 伺服器把存過的密鑰遮成 "•••";沒存過的不該寫「已設定」。
+                  placeholder={
+                    field.secret && values[fullKey] === "•••" ? t("settings.secretSet") : undefined
+                  }
                 />
               )}
               <div className="flex min-w-0 flex-col gap-1.5">
@@ -313,9 +345,12 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                     {fieldErrorText(fieldErrors[fullKey], t)}
                   </p>
                 )}
-                {field.description && (
+                {(field.description || optionDescription) && (
                   <p id={descriptionId} className={descriptionClass()}>
-                    {resolveLocalizedString(field.description, locale)}
+                    {[field.description, optionDescription]
+                      .filter(Boolean)
+                      .map((text) => resolveLocalizedString(text, locale))
+                      .join(" ")}
                   </p>
                 )}
                 {fullKey === "core.emailFrom" && (

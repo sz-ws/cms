@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTING_GROUP,
   SETTING_GROUPS,
   groupSettingFields,
+  isSettingVisible,
   settingGroupMeta,
 } from "../src/lib/settings-ui";
 import { CORE_SETTINGS } from "../src/lib/settings";
@@ -114,5 +115,28 @@ describe("core settings copy", () => {
   it("descriptions do not cite spec documents", () => {
     const cites = shown.filter((f) => /spec-|core-v2|§/.test(JSON.stringify(f.description ?? "")));
     expect(cites.map((f) => f.key)).toEqual([]);
+  });
+});
+
+// 1.44.0:寄信服務用分頁選;選 Resend 才出現 API 金鑰。
+describe("email service setting", () => {
+  const provider = CORE_SETTINGS.find((f) => f.key === "core.provider.email:send");
+  const apiKey = CORE_SETTINGS.find((f) => f.key === "core.resendApiKey");
+
+  it("選項就是 provider registry 裡 email:send 的 id", () => {
+    expect(provider?.type).toBe("select");
+    if (provider?.type !== "select") return;
+    expect(provider.presentation).toBe("tabs");
+    expect(provider.options.map((o) => o.value)).toEqual(["core", "cloudflare"]);
+    expect(provider.options.every((o) => o.logo?.startsWith("/brand/email/"))).toBe(true);
+  });
+
+  it("API 金鑰只在選 Resend 時顯示", () => {
+    expect(apiKey?.showWhen).toEqual({ key: "core.provider.email:send", equals: "core" });
+    const state = { "core.provider.email:send": "core" };
+    expect(isSettingVisible(apiKey!, "", state)).toBe(true);
+    expect(isSettingVisible(apiKey!, "", { "core.provider.email:send": "cloudflare" })).toBe(false);
+    expect(isSettingVisible({ showWhen: { key: "mode", equals: true } }, "ext.demo.", { "ext.demo.mode": true })).toBe(true);
+    expect(isSettingVisible({}, "", {})).toBe(true);
   });
 });

@@ -704,4 +704,22 @@
 //   or closes are kept in localStorage (cms.adminNavOpen) and survive a reload.
 //   Ones never clicked still follow the current page.
 // Additive: no manifest or API change.
-export const CORE_API_VERSION = "1.43.0";
+// 1.44.0: choose the email service, Resend or Cloudflare.
+// - ext/providers/email-cloudflare.ts: a second built-in email:send provider (id
+//   "cloudflare") that sends through the Worker's send_email binding named EMAIL
+//   (Cloudflare Email Service). No API key; a missing binding or from address
+//   returns not_configured, a thrown error's code (E_SENDER_NOT_VERIFIED, …) goes
+//   into detail. core.emailFrom's "Name <addr>" is split into { name, email }.
+// - core.provider.email:send (the registry's existing switch) is now a setting on
+//   the Email card, drawn as tabs with each service's mark; core.resendApiKey only
+//   shows while Resend is chosen.
+// - SettingField gains showWhen { key, equals } (hide a field unless another field
+//   has a value; the value is still kept) and, for select, presentation: "tabs"
+//   with per-option logo (a site image path) and description (shown under the tabs
+//   for the chosen option). Code extensions can use both; declarative manifests
+//   cannot yet.
+// - validRecipients() in ext/providers/email.ts is shared by both providers.
+// - A secret field says it is set only when a value is stored; before, every secret
+//   field showed "set — type to replace" even when empty.
+// Additive: sites that never set core.provider.email:send keep sending via Resend.
+export const CORE_API_VERSION = "1.44.0";

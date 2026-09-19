@@ -5,6 +5,7 @@ import type { HookBus } from "./hooks";
 import { CoreContentProvider } from "./dx/content-provider";
 import { DemoCallbackProvider } from "./providers/demo-callback";
 import { ResendEmailProvider } from "./providers/email";
+import { CloudflareEmailProvider } from "./providers/email-cloudflare";
 import { CoreAiProvider } from "./providers/ai";
 import type { Extension } from "./types";
 import type { CoreServices } from "./services";
@@ -124,6 +125,9 @@ export function createRegistry(hooks: HookBus): ProviderRegistryImpl {
   // 慣例(同 upload/content);extension 的 SMTP 等 provider 以自己的 id 註冊,
   // 使用者以 core.provider.email:send 切換。
   reg.register("email:send", FALLBACK_ID, new ResendEmailProvider());
+  // 1.44.0:Cloudflare Email Service(send_email 綁定)。設定頁「寄信服務」選它時
+  // core.provider.email:send = "cloudflare"。
+  reg.register("email:send", "cloudflare", new CloudflareEmailProvider());
   // ai:generate 內建 provider(docs/spec-ai-capability.md):設定驅動路由
   // openai-compatible / anthropic-compatible / Workers AI 三模式。同 email:send,
   // 註冊≠已設定 —— mode:off 或缺 model/key 時 generate() 回 not_configured。

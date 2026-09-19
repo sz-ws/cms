@@ -51,17 +51,24 @@ const RESEND_DOMAINS_ENDPOINT = "https://api.resend.com/domains";
 const SEND_TIMEOUT_MS = 15_000;
 const DOMAINS_TIMEOUT_MS = 8_000;
 
+/** 收件人正規化成陣列;訊息不完整(沒有收件人、空主旨、html/text 都沒有)回 null。 */
+export function validRecipients(msg: EmailMessage): string[] | null {
+  const to = Array.isArray(msg.to) ? msg.to : [msg.to];
+  if (
+    to.length === 0 ||
+    to.some((a) => !a.trim()) ||
+    !msg.subject.trim() ||
+    (!msg.html && !msg.text)
+  ) {
+    return null;
+  }
+  return to;
+}
+
 export class ResendEmailProvider implements EmailProvider {
   async send(msg: EmailMessage): Promise<EmailSendResult> {
-    const to = Array.isArray(msg.to) ? msg.to : [msg.to];
-    if (
-      to.length === 0 ||
-      to.some((a) => !a.trim()) ||
-      !msg.subject.trim() ||
-      (!msg.html && !msg.text)
-    ) {
-      return { ok: false, error: "invalid_message" };
-    }
+    const to = validRecipients(msg);
+    if (!to) return { ok: false, error: "invalid_message" };
 
     // apiKey 是 secret 欄位 —— getSetting 已透過 AES-GCM 管線解密回明文。
     const apiKey = await getSetting<string>("core.resendApiKey", "");

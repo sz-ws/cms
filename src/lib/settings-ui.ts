@@ -148,6 +148,19 @@ export function groupSettingFields<F extends { group?: string }>(
     }));
 }
 
+/**
+ * 1.44.0:欄位的 showWhen 成立才畫(例如寄信服務選 Resend 才出現 API 金鑰)。
+ * showWhen.key 是同一區的欄位 key,前面補 keyPrefix 就是 state 的 key。
+ */
+export function isSettingVisible(
+  field: { showWhen?: { key: string; equals: string | boolean } },
+  keyPrefix: string,
+  state: Readonly<Record<string, string | boolean>>,
+): boolean {
+  if (!field.showWhen) return true;
+  return state[`${keyPrefix}${field.showWhen.key}`] === field.showWhen.equals;
+}
+
 /** textarea 的輸入:看起來像 JSON 陣列/物件就 parse,parse 不了就原字串送出。 */
 export function parseTextareaValue(raw: string): unknown {
   const trimmed = raw.trim();

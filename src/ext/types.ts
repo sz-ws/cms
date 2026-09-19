@@ -47,6 +47,8 @@ export interface SettingFieldBase {
   /** Empty/blank values are rejected at manifest/install/settings boundaries. */
   required?: boolean;
   secret?: boolean; // true → 加密儲存、API 只寫不讀(02 §1、05 §4)
+  /** 1.44.0:另一個設定是某個值時才顯示;key 寫同一個 extension 的設定 key。 */
+  showWhen?: { key: string; equals: string | boolean };
 }
 export type SettingField = SettingFieldBase &
   (
@@ -54,7 +56,12 @@ export type SettingField = SettingFieldBase &
     | { type: "number" }
     | { type: "boolean" }
     // §1 #11:settings select 已 value/label 分離,label 可乾淨 localize。
-    | { type: "select"; options: { value: string; label: LocalizedString }[] }
+    // 1.44.0:presentation: "tabs" 畫成分頁;選項可帶 logo(站內圖片路徑)與選到時的說明。
+    | {
+        type: "select";
+        options: { value: string; label: LocalizedString; logo?: string; description?: LocalizedString }[];
+        presentation?: "tabs";
+      }
     // 1.40.0:顏色(#rrggbb),設定頁畫成一排色票 + 自訂;swatches 省略時只有自訂。
     | { type: "color"; swatches?: { value: string; label: LocalizedString }[] }
   );
