@@ -740,4 +740,15 @@
 //   skipped, so a retry after a failure is safe), and puts a notice at the top when
 //   an update carries migrations. Enable and apply-update draw a step list with
 //   waiting / running / done / skipped / failed and the reason on failure.
-export const CORE_API_VERSION = "1.45.0";
+// 1.46.0: an extension page can replace another extension's page.
+// - AdminPage.replaces: ["<extId>"] (that extension's main page) or
+//   ["<extId>/<slug>"]. While the replacing extension is enabled, the replaced page
+//   leaves the sidebar (a folder then opens on its first remaining page) and its URL
+//   redirects to the replacement with the query string kept.
+// - ext/admin-menu.ts: adminPageHref() and replacedAdminPages() (chains followed,
+//   cycles, self-references and malformed refs ignored). The page route
+//   /admin/ext/[extId]/[[...page]] does the redirect.
+// - Use case: shop-operations replaces shop's order list and payment queue, which
+//   only a site plugin used to hide. Code extensions only; declarative manifests
+//   cannot declare it yet.
+export const CORE_API_VERSION = "1.46.0";

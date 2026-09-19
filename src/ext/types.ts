@@ -77,6 +77,13 @@ export interface AdminPage {
    * parseRecordSearch / useRecordSearch 取用;加 `global` 同時進 ⌘K(record-search.ts)。
    */
   search?: AdminPageSearch;
+  /**
+   * 1.46.0:這一頁取代別的 extension 的哪幾頁:"<extId>" 是對方的主頁,
+   * "<extId>/<slug>" 是對方的子頁。本 extension 啟用時,被取代的頁從側欄拿掉,
+   * 直接開那個網址會轉到這一頁(ext/admin-menu.ts 的 replacedAdminPages)。
+   * 例:商城營運的訂單管理取代商店的訂單頁(replaces: ["shop"])。
+   */
+  replaces?: string[];
   component: ComponentType<{
     params: Record<string, string>; // 至少含 { extId }
     searchParams: Record<string, string>; // URL query(如 ?id=xxx)

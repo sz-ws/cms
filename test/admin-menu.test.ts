@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildExtensionMenu,
+  replacedAdminPages,
   safeAdminIcon,
   type MenuExtension,
 } from "../src/ext/admin-menu";
@@ -185,3 +186,52 @@ describe("pickActiveHref", () => {
     expect(pickActiveHref(items, "/admin/extensions", null)).toBe("/admin/extensions");
   });
 });
+
+// 1.46.0:AdminPage.replaces —— 被取代的頁不進側欄,網址轉到取代者。
+describe("replaced admin pages", () => {
+  const shop: MenuExtension = {
+    id: "shop",
+    name: "商店",
+    menu: { section: "commerce" },
+    adminPages: [page("", "訂單"), page("verify", "對帳佇列"), page("shipping", "運費"), page("promos", "優惠碼")],
+  };
+  const operations: MenuExtension = {
+    id: "shop-operations",
+    name: "商城營運",
+    menu: { section: "commerce" },
+    adminPages: [
+      { ...page("", "訂單管理"), replaces: ["shop"] },
+      { ...page("payments", "收款管理"), replaces: ["shop/verify"] },
+    ],
+  };
+
+  it("maps each replaced page to its replacement", () => {
+    expect(Object.fromEntries(replacedAdminPages([shop, operations]))).toEqual({
+      "/admin/ext/shop": "/admin/ext/shop-operations",
+      "/admin/ext/shop/verify": "/admin/ext/shop-operations/payments",
+    });
+  });
+
+  it("drops replaced pages from the sidebar; the folder opens on the first page left", () => {
+    const items = buildExtensionMenu([shop, operations], resolve, "總覽");
+    const shopFolder = items.find((item) => item.title === "商店");
+    expect(shopFolder?.href).toBe("/admin/ext/shop/shipping");
+    expect(shopFolder?.children?.map((c) => c.title)).toEqual(["運費", "優惠碼"]);
+  });
+
+  it("without the replacing extension nothing changes", () => {
+    expect(replacedAdminPages([shop]).size).toBe(0);
+    expect(buildExtensionMenu([shop], resolve, "總覽")[0].children).toHaveLength(4);
+  });
+
+  it("follows chains, ignores cycles, self-references and malformed refs", () => {
+    const a: MenuExtension = { id: "aaa", name: "A", adminPages: [{ ...page("", "A"), replaces: ["bbb", "aaa", "Bad Ref"] }] };
+    const b: MenuExtension = { id: "bbb", name: "B", adminPages: [{ ...page("", "B"), replaces: ["ccc"] }] };
+    const c: MenuExtension = { id: "ccc", name: "C", adminPages: [page("", "C")] };
+    expect(replacedAdminPages([a, b, c]).get("/admin/ext/ccc")).toBe("/admin/ext/aaa");
+    const loop: MenuExtension = { id: "ccc", name: "C", adminPages: [{ ...page("", "C"), replaces: ["aaa"] }] };
+    const cycle = replacedAdminPages([a, b, loop]);
+    expect(cycle.size).toBe(0);
+  });
+});
+

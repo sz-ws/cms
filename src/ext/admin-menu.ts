@@ -167,7 +167,47 @@ export interface MenuExtension {
   name: LocalizedString;
   icon?: string;
   menu?: ExtensionMenu;
-  adminPages?: Pick<AdminPage, "slug" | "title" | "showInMenu">[];
+  adminPages?: Pick<AdminPage, "slug" | "title" | "showInMenu" | "replaces">[];
+}
+
+/** extension 後台頁的網址。slug "" = 主頁。 */
+export function adminPageHref(extId: string, slug: string): string {
+  return `/admin/ext/${extId}${slug ? `/${slug}` : ""}`;
+}
+
+const PAGE_REF_RE = /^[a-z][a-z0-9-]{1,30}(\/[a-z0-9][a-z0-9-]*)*$/;
+
+/**
+ * 1.46.0:被取代的頁 → 取代它的頁(AdminPage.replaces)。只看傳進來的(已啟用的)extension。
+ *
+ * 側欄把被取代的頁拿掉;/admin/ext/[extId]/[[...page]] 把它的網址轉到取代者。
+ * 取代者自己又被取代時,一路追到最後那一頁;繞成一圈的全部不算(兩邊都留著),
+ * 不然兩頁互相轉址、側欄也兩頁都不見。自己取代自己、格式不對的 ref 也不算。
+ */
+export function replacedAdminPages(exts: readonly MenuExtension[]): Map<string, string> {
+  const direct = new Map<string, string>();
+  for (const ext of exts) {
+    for (const page of ext.adminPages ?? []) {
+      for (const ref of page.replaces ?? []) {
+        if (!PAGE_REF_RE.test(ref)) continue;
+        const [targetId, ...rest] = ref.split("/");
+        if (targetId === ext.id) continue;
+        const target = adminPageHref(targetId, rest.join("/"));
+        if (!direct.has(target)) direct.set(target, adminPageHref(ext.id, page.slug));
+      }
+    }
+  }
+  const out = new Map<string, string>();
+  for (const [from, to] of direct) {
+    const seen = new Set([from]);
+    let end = to;
+    while (direct.has(end) && !seen.has(end)) {
+      seen.add(end);
+      end = direct.get(end)!;
+    }
+    if (!seen.has(end)) out.set(from, end);
+  }
+  return out;
 }
 
 /**
@@ -184,13 +224,16 @@ export function buildExtensionMenu(
   overviewTitle: string,
 ): AdminMenuItem[] {
   const nodes = new Map<string, { ext: MenuExtension; pages: AdminMenuItem[] }>();
+  // 1.46.0:被別的 extension 取代的頁不進側欄。
+  const replaced = replacedAdminPages(exts);
   for (const ext of exts) {
     const pages = (ext.adminPages ?? [])
       .filter((page) => page.showInMenu !== false)
       .map((page) => ({
-        href: `/admin/ext/${ext.id}${page.slug ? `/${page.slug}` : ""}`,
+        href: adminPageHref(ext.id, page.slug),
         title: resolve(page.title) || page.slug || ext.id,
-      }));
+      }))
+      .filter((page) => !replaced.has(page.href));
     if (pages.length > 0) nodes.set(ext.id, { ext, pages });
   }
 
