@@ -4,9 +4,6 @@ import { zhHant } from "../src/lib/i18n/zh-hant";
 import { getMessages, format } from "../src/lib/i18n/index";
 
 describe("i18n", () => {
-  describe("en dictionary", () => {
-  });
-
   describe("zh-Hant dictionary", () => {
     it("should have zh-Hant translations for all en keys", () => {
       const enKeys = Object.keys(en) as (keyof typeof en)[];
