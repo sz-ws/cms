@@ -154,19 +154,25 @@ describe("真實的 wrangler.jsonc", () => {
   // 對著 repo 裡那份真檔跑。刻意只斷言結構性事實(解析得動、binding 在、
   // 只有一個 D1 宣告 migrations_dir),這樣註解或欄位增修不會誤殺這個測試,
   // 但「設定檔變成 CLI 解析不了的形狀」一定會被抓到。
+  //
+  // 名稱一律不寫死:`cms setup --site-slug <slug>` 會把 worker 與資料庫改成
+  // slug 衍生的名字(cms → cms-jiangji),寫死的話每個站台 clone 的 CI 都會紅。
   it("解析得動,且 binding 與 migrations_dir 的分佈符合預期", async () => {
     const real = await readFile(
       path.join(process.cwd(), "wrangler.jsonc"),
       "utf8",
     );
     const c = readWranglerConfig(real);
-    expect(c.workerName).toBe("cms");
+    expect(c.workerName).toBeTruthy();
     expect(c.d1.map((d) => d.binding)).toContain("DB");
     expect(c.d1.map((d) => d.binding)).toContain("NEXT_TAG_CACHE_D1");
     expect(c.r2.map((b) => b.binding)).toContain("STORAGE");
     expect(c.r2.map((b) => b.binding)).toContain("NEXT_INC_CACHE_R2_BUCKET");
+    // 跑 migrations 的必須正好是 DB binding 指的那一個 —— tag cache 的表由
+    // OpenNext 部署時自建,跟著跑 migrations 會炸。
+    const main = c.d1.find((d) => d.binding === "DB");
     expect(c.d1.filter((d) => d.hasMigrationsDir).map((d) => d.databaseName)).toEqual([
-      "cms-db",
+      main?.databaseName,
     ]);
   });
 });
