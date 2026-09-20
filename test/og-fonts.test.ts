@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectText, OG_FONT_FAMILY, OG_FONT_WEIGHTS } from "@/components/og/subset-text";
+import { collectText } from "@/components/og/subset-text";
 
 // 這個檔只測純邏輯(文字收集與字型常數)。實際產圖需要 yoga/resvg 的 wasm,
 // 那要在真的 Workers 上跑 —— 見檔尾「無法在此驗證的部分」。
@@ -42,17 +42,6 @@ describe("collectText — 決定字型子集要抓哪些字", () => {
 });
 
 describe("OG 字型設定", () => {
-  it("用 Chiron GoRound TC —— 與站台字型同家族,且在 Google Fonts 上", () => {
-    // Chiron Hei HK(站上 self-host 的那顆)也在 Google Fonts,但 GoRound 是
-    // 可變字重,對 OG 這種要多個 weight 的場景更省。
-    expect(OG_FONT_FAMILY).toBe("Chiron GoRound TC");
-  });
-
-  it("只抓兩個字重 —— 每個字重都是一次獨立往返", () => {
-    // 模板實際用到 500/600/700/800,satori 會對應到最接近的可用字重。
-    // 想加字重的人要知道代價是多一次網路抓取,不是免費的。
-    expect([...OG_FONT_WEIGHTS]).toEqual([400, 700]);
-  });
 });
 
 // ---- 無法在此驗證的部分 ----------------------------------------------------

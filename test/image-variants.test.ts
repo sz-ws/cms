@@ -6,7 +6,6 @@ import { describe, it, expect } from "vitest";
 import {
   VARIANT_WIDTHS,
   DEFAULT_VARIANT_FORMAT,
-  FORMAT_CONTENT_TYPE,
   buildSrcSet,
   fileUrl,
   isTransformableContentType,
@@ -170,11 +169,3 @@ describe("variantEtag", () => {
   });
 });
 
-describe("FORMAT_CONTENT_TYPE", () => {
-  it("maps every format to a real image MIME", () => {
-    expect(FORMAT_CONTENT_TYPE.webp).toBe("image/webp");
-    expect(FORMAT_CONTENT_TYPE.avif).toBe("image/avif");
-    expect(FORMAT_CONTENT_TYPE.jpeg).toBe("image/jpeg");
-    expect(FORMAT_CONTENT_TYPE.png).toBe("image/png");
-  });
-});

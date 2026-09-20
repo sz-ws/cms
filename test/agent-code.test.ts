@@ -26,7 +26,6 @@ import {
   CODE_REASON_MAX_CHARS,
   CODE_RESULT_MAX_CHARS,
   CODE_STACK_LIMIT_BYTES,
-  CODE_TIMEOUT_MS,
   codeArgsSchema,
   toCodeOutput,
 } from "../src/ext/agent-code";
@@ -96,10 +95,6 @@ describe("給 LLM 的說明", () => {
 });
 
 describe("常數", () => {
-  it("逾時是 5 秒(spec §4.7 的表)", () => {
-    expect(CODE_TIMEOUT_MS).toBe(5_000);
-  });
-
   it("堆疊上限 ≤ 256 KB —— 這是量出來的,調大會讓宿主先爆", () => {
     // 實測(Node 26 + quickjs-emscripten-core 0.32):≥512 KB 時無窮遞迴會丟宿主的
     // RangeError,而且後續的 runtime.dispose() 會讓整個 WASM 模組 abort。

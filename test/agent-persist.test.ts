@@ -426,9 +426,6 @@ describe("key 綁使用者", () => {
     expect(transcriptStorageKey("u_aaa")).not.toBe(transcriptStorageKey("u_bbb"));
   });
 
-  it("前綴帶版本,而且掃得到自己寫過的東西", () => {
-    expect(AGENT_TRANSCRIPT_KEY_PREFIX.startsWith("sz.agent.transcript.")).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------

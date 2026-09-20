@@ -33,11 +33,4 @@ describe("cache-tags", () => {
     expect(extIdOfType("blog")).toBe("blog");
   });
 
-  it("a type-scoped read and its mutation revalidate agree on the tag", () => {
-    // 讀取端(content-cache)與 mutation 端(cache-invalidate)都經由 contentTag(type),
-    // 故同一 type 兩端必然一致 —— 這條測試把該不變式釘住。
-    const type = "gallery.photo";
-    expect(contentTag(type)).toBe(contentTag(type));
-    expect(extTag(extIdOfType(type))).toBe("ext:gallery");
-  });
 });

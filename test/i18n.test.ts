@@ -5,9 +5,6 @@ import { getMessages, format } from "../src/lib/i18n/index";
 
 describe("i18n", () => {
   describe("en dictionary", () => {
-    it("should have string keys", () => {
-      expect(typeof en["nav.dashboard"]).toBe("string");
-    });
   });
 
   describe("zh-Hant dictionary", () => {

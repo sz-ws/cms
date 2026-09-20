@@ -4,7 +4,11 @@
 // `import x from "./x.wasm"` 載入 yoga / resvg —— vitest 解析不了 .wasm,
 // 於是整個 route 模組在測試裡載不起來。抽出來之後這幾個純函式測得到。
 
+// 與站台字型同家族,而且在 Google Fonts 上。站上 self-host 的 Chiron Hei HK 也在
+// Google Fonts,但 GoRound 是可變字重,對 OG 這種要多個 weight 的場景更省。
 export const OG_FONT_FAMILY = "Chiron GoRound TC";
+// 每個字重都是一次獨立的網路往返 —— 想加字重的人要知道代價不是零。模板實際用到
+// 500/600/700/800,satori 會對應到最接近的可用字重。
 export const OG_FONT_WEIGHTS = [400, 700] as const;
 
 /**
