@@ -3,7 +3,6 @@ import {
   DEFAULT_SETTING_GROUP,
   SETTING_GROUPS,
   groupSettingFields,
-  isSettingVisible,
   settingGroupMeta,
 } from "../src/lib/settings-ui";
 import { CORE_SETTINGS } from "../src/lib/settings";
@@ -131,12 +130,10 @@ describe("email service setting", () => {
     expect(provider.options.every((o) => o.logo?.startsWith("/brand/email/"))).toBe(true);
   });
 
+  // 1.46.1:比對的那兩行搬進 SettingsWorkspace(理由見那裡的註解),這裡只確認
+  // showWhen 指到正確的欄位與值 —— 錯了的話金鑰欄位就會在選 Cloudflare 時還留著。
   it("API 金鑰只在選 Resend 時顯示", () => {
     expect(apiKey?.showWhen).toEqual({ key: "core.provider.email:send", equals: "core" });
-    const state = { "core.provider.email:send": "core" };
-    expect(isSettingVisible(apiKey!, "", state)).toBe(true);
-    expect(isSettingVisible(apiKey!, "", { "core.provider.email:send": "cloudflare" })).toBe(false);
-    expect(isSettingVisible({ showWhen: { key: "mode", equals: true } }, "ext.demo.", { "ext.demo.mode": true })).toBe(true);
-    expect(isSettingVisible({}, "", {})).toBe(true);
+    expect(provider?.default).toBe("core");
   });
 });

@@ -751,4 +751,13 @@
 // - Use case: shop-operations replaces shop's order list and payment queue, which
 //   only a site plugin used to hide. Code extensions only; declarative manifests
 //   cannot declare it yet.
-export const CORE_API_VERSION = "1.46.0";
+// 1.46.1: SettingsWorkspace keeps its memoization again (CI was red on lint).
+// - 1.44.0 called isSettingVisible(field, keyPrefix, state) from the render to
+//   apply showWhen. Handing a value read from state to a function in another
+//   module makes the React Compiler treat that state as possibly mutated later,
+//   so it drops every useMemo in the component and
+//   react-hooks/preserve-manual-memoization errors. The two-line comparison now
+//   lives in the component and the helper is gone; behaviour is unchanged.
+// - Rule of thumb for admin components: keep values read from useState inside
+//   the file. Passing props or constants across modules stays fine.
+export const CORE_API_VERSION = "1.46.1";

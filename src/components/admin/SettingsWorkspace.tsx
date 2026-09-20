@@ -18,7 +18,7 @@ import { ColorSwatchPicker } from "./ColorSwatchPicker";
 import { SettingTabs } from "./SettingTabs";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
-import { changedSettingEntries, isSettingVisible, settingControlId } from "@/lib/settings-ui";
+import { changedSettingEntries, settingControlId } from "@/lib/settings-ui";
 
 export interface SettingsSection {
   id: string;
@@ -227,7 +227,14 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
         {section.fields.map((field) => {
           const fullKey = `${section.keyPrefix}${field.key}`;
           // 1.44.0:showWhen 不成立的欄位不畫(值照舊保存,沒改就不會送出)。
-          if (!isSettingVisible(field, section.keyPrefix, state)) return null;
+          // 1.46.1:這段判斷寫在這裡,不呼叫別的模組的函式 —— 只要把讀自 state 的
+          // 值交給 React Compiler 看不到內容的函式,它就當 state 之後可能被改動,
+          // 於是整張設定頁的 useMemo 全部保不住(lint 的
+          // react-hooks/preserve-manual-memoization 會擋,CI 直接紅)。
+          const showWhen = field.showWhen;
+          if (showWhen && state[`${section.keyPrefix}${showWhen.key}`] !== showWhen.equals) {
+            return null;
+          }
           const controlId = settingControlId(fullKey);
           // 分頁選項自己的說明(選到哪個就顯示哪個的)。
           const optionDescription =
