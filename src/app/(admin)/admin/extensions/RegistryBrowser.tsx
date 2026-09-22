@@ -2,6 +2,7 @@
 
 import {
   createElement,
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -249,15 +250,10 @@ function entryUnmetServices(
   return unmet;
 }
 
-// manifest id 允許連字號但 JS 識別字不行:import 名慣例 = camelCase(id)
-// (extensions/<id>/index.ts 的 named export,同 szws-cms-cli-spec)。
-function importIdent(id: string): string {
-  return id.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
-}
-
 // code extension 的安裝狀態:index route 本來就回 installed/installedVersion
 // (extensions 表比對),UI 過去一律渲染死的「手動安裝」——這裡接上:
-// 未裝 → 灰「手動安裝」;已裝同版 → 綠「已安裝」;已裝舊版 → 琥珀「可更新」。
+// 未裝 → 灰「開發者安裝」(管理員自己裝不了,詳情頁底下再一句話說誰來做);
+// 已裝同版 → 綠「已安裝」;已裝舊版 → 琥珀「可更新」。
 type CodeState = "none" | "installed" | "update";
 function codeEntryState(entry: RegistryEntry): CodeState {
   if (!entry.installed) return "none";
@@ -1019,6 +1015,64 @@ export function RegistryBrowser() {
   );
 }
 
+// 公開 registry(CLI 的預設來源):從這裡來的不必加 --source。
+const PUBLIC_REGISTRY = "https://raw.githubusercontent.com/sz-ws/registry/main";
+
+// 程式碼插件的安裝指令,給自架這套 CMS 的開發者。老闆看不到也不需要,所以預設收合,
+// 放在詳情頁最下面;展開後一行指令可以直接複製。
+function DevInstall({ entry, update }: { entry: RegistryEntry; update: boolean }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const external = entry.source.replace(/\/+$/, "") !== PUBLIC_REGISTRY;
+  const command = [
+    `npx @sz.ws/cms add ${entry.id}`,
+    external ? `--source ${entry.source}` : null,
+    update ? "--force" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 沒有剪貼簿權限就算了,指令還在畫面上可以手動選。
+    }
+  }
+
+  return (
+    <details
+      className={`group rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-4 ${CARD}`}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between text-[13px] font-medium text-ink/55 [&::-webkit-details-marker]:hidden">
+        {t("registryBrowser.dev.title")}
+        <ChevronRight className="size-4 text-ink/35 transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="mt-3 flex flex-col gap-2.5">
+        <p className="text-[12.5px] leading-relaxed text-ink/55">{t("registryBrowser.dev.intro")}</p>
+        <div className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.04] py-1.5 pl-3 pr-1.5">
+          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] text-ink/80">
+            {command}
+          </code>
+          <button
+            type="button"
+            onClick={() => void copy()}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 text-[12px] font-medium text-ink/55 transition-colors hover:bg-ink/[0.06] hover:text-ink/85"
+          >
+            {copied ? <Check className="size-3.5" /> : null}
+            {copied ? t("registryBrowser.dev.copied") : t("registryBrowser.dev.copy")}
+          </button>
+        </div>
+        {external && (
+          <p className="text-[12px] leading-relaxed text-ink/45">{t("registryBrowser.dev.token")}</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function ExtensionDetail({
   entry,
   services,
@@ -1054,6 +1108,26 @@ function ExtensionDetail({
     entry.installedVersion !== null &&
     entry.installedVersion !== entry.version;
 
+  // 程式碼插件管理員自己裝不了:按鈕位置放狀態,底下一句話說誰來做。
+  const codeState = entry.kind === "code" ? codeEntryState(entry) : null;
+  const codeNote =
+    codeState === "none"
+      ? t("registryBrowser.detail.codeNote")
+      : codeState === "update"
+        ? t("registryBrowser.detail.codeUpdateNote")
+        : null;
+
+  // 需要項目只列管理員該知道的:不支援的功能、以及服務需求(附原因)。
+  // 支援的 core 功能代號(contents、admin-pages…)對管理員沒有意義,不列。
+  const requires = entry.requires ?? [];
+  const showRequirements = missing.length > 0 || requires.length > 0;
+
+  const links = [
+    { label: t("registryBrowser.detail.link.homepage"), url: entry.homepage },
+    { label: t("registryBrowser.detail.link.repository"), url: entry.repository },
+    { label: t("registryBrowser.detail.link.support"), url: entry.supportUrl },
+  ].filter((l): l is { label: string; url: string } => !!l.url);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -1061,7 +1135,6 @@ function ExtensionDetail({
       transition={{ type: "spring", stiffness: 280, damping: 26 }}
       className="flex flex-col gap-6"
     >
-      {/* Back */}
       <button
         type="button"
         onClick={onBack}
@@ -1070,102 +1143,15 @@ function ExtensionDetail({
         ← {t("registryBrowser.detail.back")}
       </button>
 
-      {/* Banner */}
-      <div className="relative -mx-4 -mt-4 overflow-hidden rounded-b-[calc(14px*var(--admin-radius-scale,1))] lg:-mx-6 lg:-mt-6">
-        <div className="relative h-[160px] w-full sm:h-[220px]">
-          {bannerUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={bannerUrl}
-              alt=""
-              className="size-full object-cover"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <div
-              className="size-full"
-              style={{
-                backgroundImage: `linear-gradient(135deg, oklch(0.92 0.05 250), oklch(0.88 0.08 290))`,
-              }}
-            />
-          )}
-          {/* gradient overlay for text readability */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-        </div>
-      </div>
-
-      {/* Header: icon + name + version + install */}
-      <div className="flex items-start gap-4">
+      <div className="flex items-center gap-4">
         <ExtIcon entry={entry} size="large" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-0.5">
           <h1 className="text-[24px] font-bold tracking-[-0.02em] text-ink/90">
             {entry.name}
           </h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink/45">
-            <span>{kindLabel(t, entry.kind)}</span>
-            <span>·</span>
-            <span>v{entry.version}</span>
-            {entry.author && (
-              <>
-                <span>·</span>
-                <span>
-                  {t("registryBrowser.detail.byAuthor", {
-                    author: entry.author,
-                  })}
-                </span>
-              </>
-            )}
-            {entry.license && (
-              <>
-                <span>·</span>
-                <span>{entry.license}</span>
-              </>
-            )}
-            {entry.category && (
-              <span className="rounded-full bg-ink/[0.04] px-2 py-0.5 text-[11px] font-medium capitalize text-ink/45">
-                {entry.category}
-              </span>
-            )}
-            <DeploymentBadge entry={entry} />
-          </div>
-        </div>
-        <div className="shrink-0">
-          {entry.kind === "code" ? (
-            <CodeStateChip
-              entry={entry}
-              t={t}
-              className="inline-flex h-10 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium"
-            />
-          ) : !entry.compatible ? (
-            <span className="text-[12px] text-red-600/70">
-              {t("registryBrowser.install.requiresCore", {
-                core: entry.coreApi,
-              })}
-            </span>
-          ) : missing.length > 0 ? (
-            <span className="text-[12px] text-red-600/70">
-              {t("registryBrowser.install.needsFeatures", {
-                features: missing.join(", "),
-              })}
-            </span>
-          ) : unmetServices.length > 0 ? (
-            <span className="text-[12px] text-red-600/70">
-              {t("registryBrowser.install.needsServices", {
-                services: unmetServices.join(", "),
-              })}
-            </span>
-          ) : (
-            <StatusButton
-              size="lg"
-              variant={isUpdate ? "soft" : "solid"}
-              status={statusFromInstall(state)}
-              label={installLabel(t, state, isUpdate)}
-              idleIcon={isUpdate ? undefined : <Download className="size-4" />}
-              onClick={() => void install()}
-            />
-          )}
+          <span className="text-[13px] text-ink/45">
+            {kindLabel(t, entry.kind)}
+          </span>
         </div>
       </div>
 
@@ -1193,7 +1179,6 @@ function ExtensionDetail({
         />
       )}
 
-      {/* Error */}
       {error && (
         <div className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-red-50 px-3 py-2 text-[13px] text-red-700">
           <AlertCircle className="size-4" />
@@ -1201,258 +1186,184 @@ function ExtensionDetail({
         </div>
       )}
 
-      {/* Description */}
-      {entry.description && (
-        <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
-          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
-            {t("registryBrowser.detail.about")}
-          </h2>
-          <p className="text-[14px] leading-relaxed text-ink/65">
-            {entry.description}
-          </p>
-        </div>
-      )}
-
-      {/* Manual install (code kind):cards 上的灰標籤只給視覺提示,
-          真實步驟放這裡。canonical 安裝指令為 `npx @sz.ws/cms add <id>`(cli/)。
-          import 識別字:manifest id 允許連字號,但 JS 識別字不行 —— 慣例為
-          camelCase(id) 的 named export(同 szws-cms-cli-spec)。 */}
-      {entry.kind === "code" && (
-        <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
-          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
-            {t("registryBrowser.manualInstall.title")}
-          </h2>
-          <p className="mb-4 text-[13px] leading-relaxed text-ink/55">
-            {t("registryBrowser.manualInstall.intro")}
-          </p>
-          <ol className="mb-4 flex flex-col gap-2 text-[13px] leading-relaxed text-ink/65">
-            <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-ink/35">1.</span>
-              <span>{t("registryBrowser.manualInstall.step1")}</span>
-            </li>
-            <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-ink/35">2.</span>
-              <span>
-                {t("registryBrowser.manualInstall.step2", { id: entry.id })}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-ink/35">3.</span>
-              <span>
-                {t("registryBrowser.manualInstall.step3Prefix")}
-                <code className="mx-1 rounded bg-ink/[0.06] px-1.5 py-0.5 font-mono text-[12px] text-ink/80">
-                  {`import { ${importIdent(entry.id)} } from "./${entry.id}";`}
-                </code>
-                {t("registryBrowser.manualInstall.step3Suffix")}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-ink/35">4.</span>
-              <span>{t("registryBrowser.manualInstall.step4")}</span>
-            </li>
-          </ol>
-          <div className="rounded-[calc(10px*var(--admin-radius-scale,1))] bg-ink/[0.04] px-4 py-3">
-            <div className="mb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-ink/45">
-              {t("registryBrowser.manualInstall.canonicalLabel")}
-            </div>
-            <code className="block font-mono text-[13px] text-ink/85">
-              npx @sz.ws/cms add {entry.id}
-            </code>
-            <div className="mt-1 text-[11.5px] text-ink/40">
-              {t("registryBrowser.manualInstall.canonicalNote")}
-            </div>
-          </div>
-          {entry.repository && (
-            <div className="mt-3 flex flex-wrap items-baseline gap-2 text-[12.5px]">
-              <span className="text-ink/50">
-                {t("registryBrowser.manualInstall.repoLabel")}:
-              </span>
-              <a
-                href={entry.repository}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-(--admin-accent) hover:underline"
-              >
-                {entry.repository.replace(/^https?:\/\//, "")}
-              </a>
-            </div>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="flex min-w-0 flex-col gap-6">
+          {bannerUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={bannerUrl}
+              alt=""
+              className="h-40 w-full rounded-[calc(14px*var(--admin-radius-scale,1))] object-cover sm:h-52"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
           )}
-        </div>
-      )}
 
-      {/* Requires:capability chips(core 版本功能,roadmap #17)+ 服務需求 chips
-          (manifest.requires:provider 在場與否 — met 綠 / unmet 紅 / optional 缺席琥珀)。 */}
-      {((entry.capabilities ?? []).length > 0 ||
-        (entry.requires ?? []).length > 0) && (
-        <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
-          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
-            {t("registryBrowser.detail.requires")}
-          </h2>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(entry.capabilities ?? []).map((cap) => {
-              const unsupported = missing.includes(cap);
-              return (
-                <span
-                  key={cap}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
-                    unsupported
-                      ? "bg-red-600/10 text-red-700"
-                      : "bg-ink/[0.04] text-ink/50",
-                  )}
-                  title={
-                    unsupported
-                      ? t("registryBrowser.detail.notSupportedTitle")
-                      : undefined
-                  }
-                >
-                  {cap}
-                  {unsupported && (
-                    <span className="text-red-600/70">
-                      {t("registryBrowser.detail.notSupportedBadge")}
+          <section className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
+            <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
+              {t("registryBrowser.detail.about")}
+            </h2>
+            <p className="text-[14px] leading-relaxed text-ink/65">
+              {entry.description || t("registryBrowser.noDescription")}
+            </p>
+          </section>
+
+          {showRequirements && (
+            <section className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
+              <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
+                {t("registryBrowser.detail.requires")}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {missing.map((cap) => (
+                  <li key={cap} className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-medium text-red-700">
+                      {cap} {t("registryBrowser.detail.notSupportedBadge")}
                     </span>
-                  )}
-                </span>
-              );
-            })}
-            {(entry.requires ?? []).map((req) => {
-              const met = services.includes(req.capability);
-              const tone = met
-                ? "bg-[rgba(16,145,90,0.10)] text-[rgb(18,124,88)] shadow-[inset_0_0_0_1px_rgba(16,145,90,0.16)]"
-                : req.optional
-                  ? "bg-amber-500/10 text-amber-700 shadow-[inset_0_0_0_1px_rgba(217,119,6,0.18)]"
-                  : "bg-red-600/10 text-red-700 shadow-[inset_0_0_0_1px_rgba(220,38,38,0.16)]";
-              const badge = met
-                ? t("registryBrowser.detail.serviceProvided")
-                : req.optional
-                  ? t("registryBrowser.detail.serviceOptional")
-                  : t("registryBrowser.detail.serviceMissing");
-              return (
-                <span
-                  key={`svc-${req.capability}`}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
-                    tone,
-                  )}
-                  title={req.reason}
-                >
-                  {req.capability}
-                  <span className="opacity-70">· {badge}</span>
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Screenshots */}
-      {screenshots.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
-            {t("registryBrowser.detail.screenshots")}
-          </h2>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {screenshots.map((url, i) => (
-              <div
-                key={i}
-                className="relative aspect-[16/10] w-[400px] shrink-0 overflow-hidden rounded-[calc(12px*var(--admin-radius-scale,1))] shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_-2px_rgba(0,0,0,0.08))]"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  alt={`Screenshot ${i + 1}`}
-                  className="size-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tags */}
-      {(entry.tags ?? []).length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {entry.tags!.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-ink/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink/50"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Links */}
-      {(entry.homepage || entry.repository || entry.supportUrl) && (
-        <div
-          className={`flex flex-col gap-2 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-4 ${CARD}`}
-        >
-          {entry.homepage && (
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-ink/55">
-                {t("registryBrowser.detail.link.homepage")}
-              </span>
-              <a
-                href={entry.homepage}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="max-w-[60%] truncate text-(--admin-accent) hover:underline"
-              >
-                {entry.homepage.replace(/^https:\/\//, "")}
-              </a>
-            </div>
-          )}
-          {entry.repository && (
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-ink/55">
-                {t("registryBrowser.detail.link.repository")}
-              </span>
-              <a
-                href={entry.repository}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="max-w-[60%] truncate text-(--admin-accent) hover:underline"
-              >
-                {entry.repository.replace(/^https:\/\//, "")}
-              </a>
-            </div>
-          )}
-          {entry.supportUrl && (
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-ink/55">
-                {t("registryBrowser.detail.link.support")}
-              </span>
-              <a
-                href={entry.supportUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="max-w-[60%] truncate text-(--admin-accent) hover:underline"
-              >
-                {entry.supportUrl.replace(/^https:\/\//, "")}
-              </a>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Compatibility info */}
-      <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-4 ${CARD}`}>
-        <div className="flex items-center justify-between text-[13px]">
-          <span className="font-medium text-ink/55">
-            {t("registryBrowser.detail.compatibility")}
-          </span>
-          <span
-            className={entry.compatible ? "text-green-600" : "text-red-600"}
-          >
-            {entry.compatible
-              ? t("registryBrowser.detail.compatible")
-              : t("registryBrowser.detail.requiresCoreApi", {
-                  core: entry.coreApi,
+                    <span className="text-[12.5px] text-ink/50">
+                      {t("registryBrowser.detail.notSupportedTitle")}
+                    </span>
+                  </li>
+                ))}
+                {requires.map((req) => {
+                  const met = services.includes(req.capability);
+                  const tone = met
+                    ? "text-[rgb(18,124,88)]"
+                    : req.optional
+                      ? "text-amber-700"
+                      : "text-red-700";
+                  const badge = met
+                    ? t("registryBrowser.detail.serviceProvided")
+                    : req.optional
+                      ? t("registryBrowser.detail.serviceOptional")
+                      : t("registryBrowser.detail.serviceMissing");
+                  return (
+                    <li key={`svc-${req.capability}`} className="flex flex-col gap-0.5">
+                      <span className="text-[13px] text-ink/80">
+                        {req.capability}
+                        <span className={cn("ml-2 text-[12px] font-medium", tone)}>{badge}</span>
+                      </span>
+                      {req.reason && (
+                        <span className="text-[12.5px] leading-relaxed text-ink/50">{req.reason}</span>
+                      )}
+                    </li>
+                  );
                 })}
-          </span>
+              </ul>
+            </section>
+          )}
+
+          {screenshots.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
+                {t("registryBrowser.detail.screenshots")}
+              </h2>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {screenshots.map((url, i) => (
+                  // 照原比例、固定高度,不裁切:介紹圖常是示範畫面(例如左下角浮層),裁掉就看不到重點。
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={i}
+                    src={url}
+                    alt={`Screenshot ${i + 1}`}
+                    loading="lazy"
+                    className="h-56 w-auto max-w-full shrink-0 rounded-[calc(12px*var(--admin-radius-scale,1))] bg-surface shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_-2px_rgba(0,0,0,0.08))] sm:h-72"
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {entry.kind === "code" && codeState !== "installed" && (
+            <DevInstall entry={entry} update={codeState === "update"} />
+          )}
         </div>
+
+        <aside
+          className={`order-first flex flex-col gap-4 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-5 lg:sticky lg:top-6 lg:order-none ${CARD}`}
+        >
+          <div className="flex flex-col gap-2">
+            {entry.kind === "code" ? (
+              <CodeStateChip
+                entry={entry}
+                t={t}
+                className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium"
+              />
+            ) : !entry.compatible ? (
+              <span className="text-[12.5px] text-red-600/80">
+                {t("registryBrowser.install.requiresCore", { core: entry.coreApi })}
+              </span>
+            ) : missing.length > 0 ? (
+              <span className="text-[12.5px] text-red-600/80">
+                {t("registryBrowser.install.needsFeatures", { features: missing.join(", ") })}
+              </span>
+            ) : unmetServices.length > 0 ? (
+              <span className="text-[12.5px] text-red-600/80">
+                {t("registryBrowser.install.needsServices", { services: unmetServices.join(", ") })}
+              </span>
+            ) : (
+              <StatusButton
+                size="lg"
+                variant={isUpdate ? "soft" : "solid"}
+                status={statusFromInstall(state)}
+                label={installLabel(t, state, isUpdate)}
+                idleIcon={isUpdate ? undefined : <Download className="size-4" />}
+                onClick={() => void install()}
+              />
+            )}
+            {codeNote && (
+              <p className="text-[12.5px] leading-relaxed text-ink/50">{codeNote}</p>
+            )}
+          </div>
+
+          <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 border-t border-ink/[0.06] pt-4 text-[13px]">
+            <dt className="text-ink/45">{t("registryBrowser.detail.version")}</dt>
+            <dd className="tabular-nums text-ink/80">
+              {isUpdate ? `v${entry.installedVersion} → v${entry.version}` : `v${entry.version}`}
+            </dd>
+            {entry.author && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.author")}</dt>
+                <dd className="truncate text-ink/80">{entry.author}</dd>
+              </>
+            )}
+            {entry.category && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.category")}</dt>
+                <dd className="text-ink/80">{categoryLabel(t, entry.category)}</dd>
+              </>
+            )}
+            {entry.license && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.license")}</dt>
+                <dd className="text-ink/80">{entry.license}</dd>
+              </>
+            )}
+            {!entry.compatible && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.compatibility")}</dt>
+                <dd className="text-red-600/80">
+                  {t("registryBrowser.detail.requiresCoreApi", { core: entry.coreApi })}
+                </dd>
+              </>
+            )}
+            {links.map((link) => (
+              <Fragment key={link.url}>
+                <dt className="text-ink/45">{link.label}</dt>
+                <dd className="min-w-0">
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block truncate text-(--admin-accent) hover:underline"
+                  >
+                    {link.url.replace(/^https?:\/\//, "")}
+                  </a>
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </aside>
       </div>
     </motion.div>
   );

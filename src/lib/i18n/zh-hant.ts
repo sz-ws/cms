@@ -521,7 +521,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "registryBrowser.kind.declarative": "宣告式",
   "registryBrowser.kind.code": "程式碼",
   "registryBrowser.install.install": "安裝",
-  "registryBrowser.install.manualInstall": "手動安裝",
+  "registryBrowser.install.manualInstall": "開發者安裝",
   "registryBrowser.install.get": "取得",
   "registryBrowser.install.installing": "安裝中…",
   "registryBrowser.install.update": "更新",
@@ -544,32 +544,27 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "registryBrowser.detail.notSupportedTitle": "此核心不支援",
   "registryBrowser.detail.notSupportedBadge": "· 不支援",
   "registryBrowser.detail.screenshots": "截圖",
-  "registryBrowser.detail.byAuthor": "由 {author} 提供",
   "registryBrowser.detail.link.homepage": "首頁",
   "registryBrowser.detail.link.repository": "存放庫",
   "registryBrowser.detail.link.support": "支援",
   "registryBrowser.detail.compatibility": "相容性",
-  "registryBrowser.detail.compatible": "✓ 與您的 CMS 版本相容",
   "registryBrowser.detail.requiresCoreApi": "需要核心 API {core}",
+  "registryBrowser.detail.codeNote": "要由開發者加進網站、重新部署後才能使用。",
+  "registryBrowser.detail.codeUpdateNote": "新版要由開發者更新網站、重新部署。",
+  "registryBrowser.detail.version": "版本",
+  "registryBrowser.detail.kind": "類型",
+  "registryBrowser.detail.author": "提供者",
+  "registryBrowser.detail.license": "授權",
+  "registryBrowser.detail.category": "分類",
+  "registryBrowser.dev.title": "給開發者",
+  "registryBrowser.dev.intro": "在網站專案的資料夾執行，重新部署後，到「已安裝」啟用。",
+  "registryBrowser.dev.token": "如果這個來源需要權杖，先設定環境變數 SZWS_REGISTRY_TOKEN。",
+  "registryBrowser.dev.copy": "複製",
+  "registryBrowser.dev.copied": "已複製",
   "registryBrowser.deployment.instant": "立即可用",
   "registryBrowser.deployment.progressive": "漸進式",
   "registryBrowser.deployment.codeOnly": "需要重建",
 
-  // Manual install (ExtensionDetail — code kind)
-  "registryBrowser.manualInstall.title": "手動安裝",
-  "registryBrowser.manualInstall.intro":
-    "程式碼型擴充功能以原始碼形式發佈，需放入 CMS 專案後重新建置，無法一鍵安裝。",
-  "registryBrowser.manualInstall.step1": "從 registry repository 取得原始碼。",
-  "registryBrowser.manualInstall.step2":
-    "將 extensions/{id}/files/ 內容複製到 CMS 專案的 extensions/{id}/。",
-  "registryBrowser.manualInstall.step3Prefix":
-    "在 extensions/registry.ts 加入 import：",
-  "registryBrowser.manualInstall.step3Suffix": "並列入 registry 陣列。",
-  "registryBrowser.manualInstall.step4": "重新建置並部署 CMS。",
-  "registryBrowser.manualInstall.canonicalLabel": "正式指令",
-  "registryBrowser.manualInstall.canonicalNote":
-    "尚未上線 —— 目前請依上述步驟操作。",
-  "registryBrowser.manualInstall.repoLabel": "Registry repository",
   "registryBrowser.code.updateAvailable": "可更新 → v{version}",
 
   // Account — avatar

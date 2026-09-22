@@ -533,7 +533,7 @@ export const en = {
   "registryBrowser.kind.declarative": "Declarative",
   "registryBrowser.kind.code": "Code",
   "registryBrowser.install.install": "Install",
-  "registryBrowser.install.manualInstall": "Manual install",
+  "registryBrowser.install.manualInstall": "Developer install",
   "registryBrowser.install.get": "Get",
   "registryBrowser.install.installing": "Installing…",
   "registryBrowser.install.update": "Update",
@@ -556,35 +556,27 @@ export const en = {
   "registryBrowser.detail.notSupportedTitle": "not supported by this core",
   "registryBrowser.detail.notSupportedBadge": "· not supported",
   "registryBrowser.detail.screenshots": "Screenshots",
-  "registryBrowser.detail.byAuthor": "by {author}",
   "registryBrowser.detail.link.homepage": "Homepage",
   "registryBrowser.detail.link.repository": "Repository",
   "registryBrowser.detail.link.support": "Support",
   "registryBrowser.detail.compatibility": "Compatibility",
-  "registryBrowser.detail.compatible": "✓ Compatible with your CMS version",
   "registryBrowser.detail.requiresCoreApi": "Requires core API {core}",
+  "registryBrowser.detail.codeNote": "A developer adds this to your site and redeploys it before you can use it.",
+  "registryBrowser.detail.codeUpdateNote": "A developer updates your site and redeploys it to get the new version.",
+  "registryBrowser.detail.version": "Version",
+  "registryBrowser.detail.kind": "Type",
+  "registryBrowser.detail.author": "By",
+  "registryBrowser.detail.license": "License",
+  "registryBrowser.detail.category": "Category",
+  "registryBrowser.dev.title": "For developers",
+  "registryBrowser.dev.intro": "Run this in the site's project folder and redeploy, then turn it on under Installed.",
+  "registryBrowser.dev.token": "If this source needs an access token, set the SZWS_REGISTRY_TOKEN environment variable first.",
+  "registryBrowser.dev.copy": "Copy",
+  "registryBrowser.dev.copied": "Copied",
   "registryBrowser.deployment.instant": "Instant",
   "registryBrowser.deployment.progressive": "Progressive",
   "registryBrowser.deployment.codeOnly": "Requires rebuild",
 
-  // Manual install (ExtensionDetail — code kind; 詳情頁給真安裝指示)
-  "registryBrowser.manualInstall.title": "Manual install",
-  "registryBrowser.manualInstall.intro":
-    "Code extensions ship as source files. Drop them into your CMS repo and rebuild — there's no one-click install.",
-  "registryBrowser.manualInstall.step1":
-    "Pull the source files from the registry repository.",
-  "registryBrowser.manualInstall.step2":
-    "Copy the contents of extensions/{id}/files/ into your CMS repo at extensions/{id}/.",
-  "registryBrowser.manualInstall.step3Prefix":
-    "Register the extension in extensions/registry.ts — add the import",
-  "registryBrowser.manualInstall.step3Suffix":
-    "and include it in the registry array.",
-  "registryBrowser.manualInstall.step4":
-    "Rebuild and deploy your CMS.",
-  "registryBrowser.manualInstall.canonicalLabel": "Canonical command",
-  "registryBrowser.manualInstall.canonicalNote":
-    "Not yet shipped — follow the manual steps above for now.",
-  "registryBrowser.manualInstall.repoLabel": "Registry repository",
   "registryBrowser.code.updateAvailable": "Update available → v{version}",
 
   // Account — avatar
