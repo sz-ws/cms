@@ -440,11 +440,20 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
 export function ExtensionsManager({ extensions }: ExtensionsManagerProps) {
   const t = useT();
   // The Shop sidebar group deep-links here: "Browse store" → ?tab=browse,
-  // "Installed" → no tab. Seed local tab state from the URL param.
+  // "Installed" → no tab. The URL is the tab state: both sidebar links are the
+  // same route, so a copy seeded once in useState never saw the second click.
+  // In-page tabs write the URL with history.pushState, which Next syncs into
+  // useSearchParams without a server round trip (and the sidebar highlight follows).
   const searchParams = useSearchParams();
-  const initialTab: Tab =
-    searchParams.get("tab") === "browse" ? "browse" : "installed";
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const tab: Tab = searchParams.get("tab") === "browse" ? "browse" : "installed";
+  const setTab = (next: Tab) => {
+    if (next === tab) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "browse") params.set("tab", "browse");
+    else params.delete("tab");
+    const query = params.toString();
+    window.history.pushState(null, "", query ? `?${query}` : window.location.pathname);
+  };
 
   return (
     <div className="flex flex-col gap-4">

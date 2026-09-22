@@ -152,6 +152,10 @@ export function AdminSidebar({
   const [pending, setPending] = useState<{ href: string; from: string } | null>(
     null,
   );
+  // 網址一離開按下時的那頁就丟掉這筆,不能只靠比對 from:同頁的分頁
+  // (?tab=browse ↔ 沒有 tab)切回原網址時,舊的 pending 會復活,把高亮搶回去。
+  // render 中重設 state 是 React 認可的「跟著輸入重設」寫法,不用 effect。
+  if (pending && pending.from !== routeKey) setPending(null);
   const activeHref =
     pending && pending.from === routeKey ? pending.href : resolvedHref;
   const markPending = (href: string) => setPending({ href, from: routeKey });
