@@ -46,11 +46,11 @@ function ToolButton({ onClick, active, disabled, label, children }: ToolButtonPr
       aria-label={label}
       title={label}
       className={cn(
-        "grid size-10 place-items-center rounded-[8px] outline-none transition-[background-color,color,box-shadow] active:scale-[0.96] disabled:opacity-40 motion-reduce:active:scale-100",
+        "grid size-10 place-items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] outline-none transition-[background-color,color,box-shadow] active:scale-[0.96] disabled:opacity-40 motion-reduce:active:scale-100",
         "focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
         active
           ? "bg-(--admin-accent)/[0.1] text-(--admin-accent) shadow-[0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_25%,transparent)]"
-          : "text-black/55 hover:bg-black/[0.04] hover:text-black/85",
+          : "text-black/55 admin:text-ink/55 hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/85 admin:hover:text-ink/85",
       )}
     >
       {children}
@@ -59,7 +59,7 @@ function ToolButton({ onClick, active, disabled, label, children }: ToolButtonPr
 }
 
 function Divider() {
-  return <span aria-hidden className="mx-0.5 h-6 w-px self-center bg-black/10" />;
+  return <span aria-hidden className="mx-0.5 h-6 w-px self-center bg-black/10 admin:bg-ink/10" />;
 }
 
 export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolbarProps) {
@@ -86,7 +86,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
   const iconCls = "size-4";
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 rounded-t-[13px] bg-white px-2 py-1.5 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.06)]">
+    <div className="flex flex-wrap items-center gap-0.5 rounded-t-[13px] admin:rounded-t-[calc(13px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-2 py-1.5 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.06)]">
       <ToolButton
         label="Bold"
         disabled={disabled}

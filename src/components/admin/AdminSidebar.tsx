@@ -63,8 +63,8 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-// Paper & Ink nav item: 8px radius, 13px medium, text-black/55 idle →
-// text-black/90 + white surface + shadow-ring when active; the icon turns
+// Paper & Ink nav item: 8px radius, 13px medium, text-ink/55 idle →
+// text-ink/90 + white surface + shadow-ring when active; the icon turns
 // dither-blue and that is the whole "active" mark (the mock's 2px edge bar was
 // dropped: on a rounded white card it sat half outside the corner radius and
 // read as a rendering glitch, not a marker). Hover is a whisper.
@@ -77,18 +77,18 @@ function initialsOf(name: string): string {
 // that never got aligned.
 function navItemClasses(active: boolean): string {
   return cn(
-    "group/nav relative h-8 rounded-[8px] px-2.5 text-[13px] font-medium",
+    "group/nav relative h-8 rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[13px] font-medium",
     "flex items-center gap-x-2.5",
     "transition-[background-color,color,box-shadow,transform] duration-150 ease-out",
     "active:scale-[0.97]",
     "[&_svg]:size-4 [&_svg]:shrink-0",
     active
       ? cn(
-          "bg-white text-black/90",
-          "shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08)]",
-          "hover:bg-white",
+          "bg-surface text-ink/90",
+          "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08))]",
+          "hover:bg-surface",
         )
-      : "text-black/55 hover:bg-black/[0.03] hover:text-black/90",
+      : "text-ink/55 hover:bg-ink/[0.03] hover:text-ink/90",
   );
 }
 
@@ -97,7 +97,7 @@ function navItemClasses(active: boolean): string {
 function iconClasses(active: boolean): string {
   return active
     ? "text-(--admin-accent)"
-    : "text-black/55 transition-colors duration-150 group-hover/nav:text-black/90";
+    : "text-ink/55 transition-colors duration-150 group-hover/nav:text-ink/90";
 }
 
 // A child row inside a folder: no icon column, label indented to sit under the
@@ -238,7 +238,7 @@ export function AdminSidebar({
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 text-black/30 transition-transform duration-150 ease-out",
+              "size-3.5 shrink-0 text-ink/30 transition-transform duration-150 ease-out",
               open && "rotate-90",
             )}
           />
@@ -264,7 +264,7 @@ export function AdminSidebar({
   }
 
   return (
-    <Sidebar collapsible="dock" className="bg-[#fbfaf9]">
+    <Sidebar collapsible="dock" className="bg-background">
       <SidebarHeader>
         <div className="flex items-center gap-x-2.5 px-1 py-0.5">
           {/* 自訂品牌(core.brandLogo);空值退回預設黑底 mark。 */}
@@ -274,17 +274,17 @@ export function AdminSidebar({
               src={brandLogo}
               alt=""
               aria-hidden
-              className="size-7 shrink-0 rounded-[8px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.12)]"
+              className="size-7 shrink-0 rounded-[calc(8px*var(--admin-radius-scale,1))] object-cover shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.12))]"
             />
           ) : (
             <span
               aria-hidden
-              className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-black text-white shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
+              className="flex size-7 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink text-white shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
             >
               <Boxes className="size-[15px]" />
             </span>
           )}
-          <SidebarLabel className="truncate text-[14px] font-semibold tracking-[-0.01em] text-black/90">
+          <SidebarLabel className="truncate text-[14px] font-semibold tracking-[-0.01em] text-ink/90">
             {siteTitle}
           </SidebarLabel>
         </div>
@@ -322,8 +322,8 @@ export function AdminSidebar({
         <Menu>
           <MenuTrigger
             className={cn(
-              "flex w-full items-center justify-between rounded-[10px] p-1.5 text-left",
-              "bg-white shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08)]",
+              "flex w-full items-center justify-between rounded-[calc(10px*var(--admin-radius-scale,1))] p-1.5 text-left",
+              "bg-surface shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08))]",
               "transition-[background-color,transform] duration-150 ease-out",
               "hover:shadow-[0_0_0_1px_rgba(20,18,22,0.06),0_2px_4px_-2px_rgba(20,18,22,0.06),0_16px_34px_-14px_rgba(30,20,50,0.20)] active:scale-[0.98]",
               "in-data-[collapsible=dock]:bg-transparent in-data-[collapsible=dock]:shadow-none",
@@ -338,7 +338,7 @@ export function AdminSidebar({
                   src={`/api/files/${user.avatarKey}`}
                   alt=""
                   aria-hidden
-                  className="size-7 shrink-0 rounded-[8px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.08)]"
+                  className="size-7 shrink-0 rounded-[calc(8px*var(--admin-radius-scale,1))] object-cover shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))]"
                 />
               ) : (
                 <span
@@ -346,23 +346,23 @@ export function AdminSidebar({
                   style={{
                     backgroundImage: "linear-gradient(135deg,var(--admin-accent),color-mix(in srgb,var(--admin-accent) 60%,white))",
                   }}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-[8px] text-[12px] font-semibold text-white"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] text-[12px] font-semibold text-white"
                 >
                   {initialsOf(user.name)}
                 </span>
               )}
               <div className="min-w-0 text-start in-data-[collapsible=dock]:hidden">
-                <div className="truncate text-[12.5px] font-semibold leading-tight text-black/90">
+                <div className="truncate text-[12.5px] font-semibold leading-tight text-ink/90">
                   {user.name}
                 </div>
-                <div className="truncate text-[11px] text-black/40">
+                <div className="truncate text-[11px] text-ink/40">
                   {user.role}
                 </div>
               </div>
             </div>
             <ChevronsUpDown
               data-slot="chevron"
-              className="size-4 shrink-0 text-black/30 in-data-[collapsible=dock]:hidden"
+              className="size-4 shrink-0 text-ink/30 in-data-[collapsible=dock]:hidden"
             />
           </MenuTrigger>
           <MenuContent
@@ -371,10 +371,10 @@ export function AdminSidebar({
           >
             <MenuSection>
               <MenuHeader separator>
-                <span className="block truncate text-[13px] font-medium text-black/85">
+                <span className="block truncate text-[13px] font-medium text-ink/85">
                   {user.name}
                 </span>
-                <span className="block truncate text-[11.5px] font-normal text-black/40">
+                <span className="block truncate text-[11.5px] font-normal text-ink/40">
                   {/* placeholder email(OAuth 帳號拿不到 email)遮罩;role 走 i18n。 */}
                   {isPlaceholderEmail(user.email)
                     ? t("account.noEmail")

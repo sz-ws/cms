@@ -69,7 +69,7 @@ export default function UiSandboxPage() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
         <PageTitle>UI sandbox</PageTitle>
-        <p className="text-[13px] text-black/55">
+        <p className="text-[13px] text-ink/55">
           Recent registry dumps (all live in <code>src/components/ui/</code>). Pick the vibe, then
           we wire it where it belongs.
         </p>
@@ -78,25 +78,25 @@ export default function UiSandboxPage() {
       {GROUPS.map((g) => (
         <section
           key={g.name}
-          className="rounded-[14px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] p-5"
+          className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] p-5"
         >
           <header className="flex flex-col gap-1 pb-4">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
               {g.name}
             </h2>
-            <p className="text-[12px] font-mono lowercase text-black/35">
+            <p className="text-[12px] font-mono lowercase text-ink/35">
               {g.source}
             </p>
-            <p className="pt-1 text-[13px] leading-relaxed text-black/70">
+            <p className="pt-1 text-[13px] leading-relaxed text-ink/70">
               {g.about}
             </p>
-            <p className="text-[12px] text-black/45">
-              <span className="text-black/35">Possible placement ·</span>{" "}
+            <p className="text-[12px] text-ink/45">
+              <span className="text-ink/35">Possible placement ·</span>{" "}
               {g.placement}
             </p>
           </header>
 
-          <div className="flex flex-wrap items-start gap-5 border-t border-black/[0.06] pt-5">
+          <div className="flex flex-wrap items-start gap-5 border-t border-ink/[0.06] pt-5">
             {renderDemoFor(g.name)}
           </div>
         </section>

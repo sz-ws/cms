@@ -58,7 +58,7 @@ export function LoadingState({
       )}
     >
       <AccentSpinner className={size === "page" ? "size-6" : "size-5"} />
-      <span className="text-[12.5px] text-black/40">{label}</span>
+      <span className="text-[12.5px] text-ink/40">{label}</span>
     </div>
   );
 }

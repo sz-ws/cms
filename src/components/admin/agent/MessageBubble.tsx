@@ -57,7 +57,7 @@ export function MessageBubble({
   if (variant === "user") {
     return (
       <div className={cn("flex justify-end", className)}>
-        <div className="max-w-[85%] rounded-[14px] bg-white px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-black/85 shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08)]">
+        <div className="max-w-[85%] rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink/85 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08))]">
           {children}
         </div>
       </div>
@@ -66,11 +66,11 @@ export function MessageBubble({
 
   return (
     <div className={cn("flex flex-col gap-1", className)}>
-      {label && <span className="text-[11px] text-black/30">{label}</span>}
+      {label && <span className="text-[11px] text-ink/30">{label}</span>}
       <Streamdown
         mode={streaming ? "streaming" : "static"}
         controls={false}
-        className="agent-markdown max-w-[46rem] text-[14px] leading-[1.7] text-black/85"
+        className="agent-markdown max-w-[46rem] text-[14px] leading-[1.7] text-ink/85"
       >
         {children}
       </Streamdown>

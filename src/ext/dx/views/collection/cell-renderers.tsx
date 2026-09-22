@@ -10,12 +10,12 @@ import { MediaImage } from "@/components/ui/media-image";
 // Paper & Ink:數字 tabular-nums、boolean ring-dot、select 借 StatusBadge 藥丸、
 // media 小縮圖(/api/files/<key>,fallback 檔案 chip)、richtext/json 收斂為靜音摘要。
 
-const EMPTY = <span className="text-black/25">—</span>;
+const EMPTY = <span className="text-black/25 admin:text-ink/25">—</span>;
 
 /** 極短技術 chip(json、media fallback)。 */
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-[6px] bg-black/[0.04] px-1.5 py-0.5 font-mono text-[11px] lowercase text-black/45">
+    <span className="inline-flex items-center rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] px-1.5 py-0.5 font-mono text-[11px] lowercase text-black/45 admin:text-ink/45">
       {children}
     </span>
   );
@@ -27,13 +27,13 @@ function RingDot({ on }: { on: boolean }) {
     <span
       className={
         "relative inline-flex size-3 items-center justify-center rounded-full " +
-        (on ? "ring-1 ring-(--admin-accent)" : "ring-1 ring-black/20")
+        (on ? "ring-1 ring-(--admin-accent)" : "ring-1 ring-black/20 admin:ring-ink/20")
       }
       aria-hidden
     >
       <span
         className={
-          "size-1 rounded-full " + (on ? "bg-(--admin-accent)" : "bg-black/25")
+          "size-1 rounded-full " + (on ? "bg-(--admin-accent)" : "bg-black/25 admin:bg-ink/25")
         }
       />
     </span>
@@ -57,7 +57,7 @@ function MediaCell({ value }: { value: unknown }) {
         alt=""
         maxWidth={320}
         sizes="32px"
-        className="size-8 rounded-[6px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+        className="size-8 rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))]"
       />
     );
   }
@@ -79,17 +79,17 @@ export function renderCell(
     case "text":
     case "slug":
       return (
-        <span className="text-black/85">
+        <span className="text-black/85 admin:text-ink/85">
           {truncate(String(value), field.type === "slug" ? 40 : 60)}
         </span>
       );
     case "number":
       return (
-        <span className="tabular-nums text-black/85">{String(value)}</span>
+        <span className="tabular-nums text-black/85 admin:text-ink/85">{String(value)}</span>
       );
     case "boolean":
       return (
-        <span className="inline-flex items-center gap-1.5 text-black/55">
+        <span className="inline-flex items-center gap-1.5 text-black/55 admin:text-ink/55">
           <RingDot on={value === true} />
           <span className="text-[12px]">{value === true ? "yes" : "no"}</span>
         </span>
@@ -97,7 +97,7 @@ export function renderCell(
     case "date": {
       const d = fmtDate(value, timeZone);
       return d ? (
-        <span className="tabular-nums text-black/70">{d}</span>
+        <span className="tabular-nums text-black/70 admin:text-ink/70">{d}</span>
       ) : (
         EMPTY
       );
@@ -109,7 +109,7 @@ export function renderCell(
     case "richtext": {
       const text = richtextToPlainText(value, 80);
       return text ? (
-        <span className="text-black/55">{text}</span>
+        <span className="text-black/55 admin:text-ink/55">{text}</span>
       ) : (
         EMPTY
       );
@@ -139,7 +139,7 @@ export function renderCell(
           : {};
       const summary = firstScalarSummary(obj);
       return summary ? (
-        <span className="text-black/70">{truncate(summary, 60)}</span>
+        <span className="text-black/70 admin:text-ink/70">{truncate(summary, 60)}</span>
       ) : (
         EMPTY
       );
@@ -157,7 +157,7 @@ export function renderCell(
       return <Chip>{`${n} block${n === 1 ? "" : "s"}`}</Chip>;
     }
     default:
-      return <span className="text-black/85">{truncate(String(value))}</span>;
+      return <span className="text-black/85 admin:text-ink/85">{truncate(String(value))}</span>;
   }
 }
 

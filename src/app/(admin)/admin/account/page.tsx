@@ -32,10 +32,10 @@ function RoleBadge({
     <span
       className={
         role === "admin"
-          ? "inline-flex h-5 items-center rounded-full bg-black/[0.06] px-2 text-[11px] font-medium tracking-wide text-black/60 uppercase"
+          ? "inline-flex h-5 items-center rounded-full bg-ink/[0.06] px-2 text-[11px] font-medium tracking-wide text-ink/60 uppercase"
           : role === "guest"
-            ? "inline-flex h-5 items-center rounded-full bg-black/[0.03] px-2 text-[11px] font-medium tracking-wide text-black/35 uppercase"
-            : "inline-flex h-5 items-center rounded-full bg-black/[0.04] px-2 text-[11px] font-medium tracking-wide text-black/40 uppercase"
+            ? "inline-flex h-5 items-center rounded-full bg-ink/[0.03] px-2 text-[11px] font-medium tracking-wide text-ink/35 uppercase"
+            : "inline-flex h-5 items-center rounded-full bg-ink/[0.04] px-2 text-[11px] font-medium tracking-wide text-ink/40 uppercase"
       }
     >
       {label}
@@ -59,8 +59,8 @@ function IdentityRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between border-t border-black/[0.06] py-3 first:border-t-0 first:pt-0 last:pb-0">
-      <span className="text-[13px] text-black/45">{label}</span>
+    <div className="flex items-center justify-between border-t border-ink/[0.06] py-3 first:border-t-0 first:pt-0 last:pb-0">
+      <span className="text-[13px] text-ink/45">{label}</span>
       {children}
     </div>
   );
@@ -140,26 +140,26 @@ export default async function AccountPage({
   return (
     <div className="relative flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/90">
           {m["account.title"]}
         </h1>
-        <p className="text-[13px] leading-relaxed text-black/40">
+        <p className="text-[13px] leading-relaxed text-ink/40">
           {m["account.subtitle"]}
         </p>
       </div>
 
-      <section className="rounded-[20px] bg-white/55 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md">
-        <div className="rounded-[14px] bg-white px-6 pt-6 pb-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+      <section className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           <div className="mb-4 flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
               {m["account.identity"]}
             </h3>
-            <p className="text-[12px] text-black/40">
+            <p className="text-[12px] text-ink/40">
               {m["account.whoYouAre"]}
             </p>
           </div>
           {/* 頭像:放 Identity 卡最上方(51a329f 後端)。 */}
-          <div className="mb-4 border-b border-black/[0.06] pb-4">
+          <div className="mb-4 border-b border-ink/[0.06] pb-4">
             <AvatarManager name={user.name} avatarKey={user.avatarKey} />
           </div>
           <div className="flex flex-col">
@@ -167,11 +167,11 @@ export default async function AccountPage({
               {isPlaceholderEmail(user.email) ? (
                 // placeholder email(LINE 等拿不到 email 的 OAuth 帳號)遮罩顯示,
                 // 不露內部合成字串(spec-login-providers §2)。
-                <span className="text-[13px] text-black/35">
+                <span className="text-[13px] text-ink/35">
                   {m["account.noEmail"]}
                 </span>
               ) : (
-                <span className="text-[13px] font-medium text-black/85">
+                <span className="text-[13px] font-medium text-ink/85">
                   {user.email}
                 </span>
               )}
@@ -190,7 +190,7 @@ export default async function AccountPage({
             </IdentityRow>
             {memberSince && (
               <IdentityRow label={m["account.memberSince"]}>
-                <span className="text-[13px] tabular-nums text-black/85">
+                <span className="text-[13px] tabular-nums text-ink/85">
                   {memberSince}
                 </span>
               </IdentityRow>
@@ -199,25 +199,25 @@ export default async function AccountPage({
         </div>
       </section>
 
-      <section className="rounded-[20px] bg-white/55 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md">
-        <div className="rounded-[14px] bg-white px-6 pt-6 pb-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+      <section className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           <div className="mb-4 flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
               {m["account.signInMethods"]}
             </h3>
-            <p className="text-[12px] text-black/40">
+            <p className="text-[12px] text-ink/40">
               {m["account.passkeyDesc"]}
             </p>
           </div>
           <PasskeysManager initialPasskeys={initialPasskeys} now={now} />
 
           {showIdentities && (
-            <div className="mt-5 border-t border-black/[0.06] pt-5">
+            <div className="mt-5 border-t border-ink/[0.06] pt-5">
               <div className="mb-4 flex flex-col gap-1">
-                <h4 className="text-[14px] font-semibold tracking-[-0.01em] text-black/85">
+                <h4 className="text-[14px] font-semibold tracking-[-0.01em] text-ink/85">
                   {m["account.connectedAccounts"]}
                 </h4>
-                <p className="text-[12px] text-black/40">
+                <p className="text-[12px] text-ink/40">
                   {m["account.connectedAccountsDesc"]}
                 </p>
               </div>

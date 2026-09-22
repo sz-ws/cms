@@ -29,10 +29,10 @@ export async function NewebPayAdminPage() {
   return (
     <div className="flex max-w-3xl flex-col gap-5">
       <header>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/85">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/85">
           藍新金流
         </h1>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-black/55">
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
           NewebPay MPG 2.0 收款。這個 extension 提供 payment
           capability(其他模組可透過 provider registry
           建立結帳)、付款回呼驗簽處理與訂單記錄。商店金鑰到設定頁的
@@ -42,7 +42,7 @@ export async function NewebPayAdminPage() {
 
       {/* 狀態:金鑰在否 + 環境 + 回呼 URL。 */}
       <section className={CARD}>
-        <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           狀態
         </h2>
         <div className="flex flex-col gap-2.5">
@@ -50,7 +50,7 @@ export async function NewebPayAdminPage() {
             {merchantId ? (
               <>
                 <ConfiguredPill configured />
-                <span className="font-mono text-[12.5px] text-black/60">
+                <span className="font-mono text-[12.5px] text-ink/60">
                   {merchantId}
                 </span>
               </>
@@ -61,7 +61,7 @@ export async function NewebPayAdminPage() {
           <Row label="Hash Key / IV">
             <ConfiguredPill configured={Boolean(hashKey && hashIv)} />
             {!configured && (
-              <span className="text-black/50">
+              <span className="text-ink/50">
                 三項皆填妥前,付款入口關閉(fail-closed,拒收所有回呼)。
               </span>
             )}
@@ -73,7 +73,7 @@ export async function NewebPayAdminPage() {
           </Row>
           <Row label="Notify URL">
             {siteUrl ? (
-              <code className="break-all font-mono text-[12px] text-black/60">
+              <code className="break-all font-mono text-[12px] text-ink/60">
                 {notifyUrl}
               </code>
             ) : (
@@ -88,10 +88,10 @@ export async function NewebPayAdminPage() {
 
       {/* 測試付款:走完整真實路徑(checkout API → 藍新付款頁 → 回呼)。 */}
       <section className={CARD}>
-        <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           測試付款
         </h2>
-        <p className="mb-4 text-[13px] leading-relaxed text-black/55">
+        <p className="mb-4 text-[13px] leading-relaxed text-ink/55">
           建立一筆訂單並跳轉到藍新付款頁(依上方環境設定)。測試機用藍新提供的
           測試卡號;付款結果由 Notify 回呼寫回下方訂單表。
         </p>
@@ -103,7 +103,7 @@ export async function NewebPayAdminPage() {
 
       {/* 訂單:最近 50 筆。 */}
       <section className={CARD}>
-        <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           訂單
         </h2>
         <PaymentOrdersTable orders={orders} />

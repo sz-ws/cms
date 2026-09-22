@@ -19,7 +19,7 @@ import {
 
 const MAX_CHIPS = 3;
 
-const EMPTY = <span className="text-black/25">—</span>;
+const EMPTY = <span className="text-black/25 admin:text-ink/25">—</span>;
 
 function useResolvedTitles(to: string, ids: readonly string[]) {
   const [titles, setTitles] = useState<Record<string, string>>({});
@@ -51,7 +51,7 @@ function useResolvedTitles(to: string, ids: readonly string[]) {
 
 function TitlePill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex max-w-[14rem] items-center truncate rounded-[6px] bg-black/[0.04] px-1.5 py-0.5 text-[12px] text-black/70">
+    <span className="inline-flex max-w-[14rem] items-center truncate rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] px-1.5 py-0.5 text-[12px] text-black/70 admin:text-ink/70">
       {children}
     </span>
   );
@@ -74,7 +74,7 @@ export function RelationCell({
         <TitlePill key={id}>{titles[id] ?? id}</TitlePill>
       ))}
       {extra > 0 && (
-        <span className="text-[12px] text-black/35 tabular-nums">
+        <span className="text-[12px] text-black/35 admin:text-ink/35 tabular-nums">
           +{extra}
         </span>
       )}

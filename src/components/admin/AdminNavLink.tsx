@@ -64,7 +64,7 @@ export function AdminNavLink({
         if (isMobile) setIsOpenOnMobile(false);
       }}
       className={cn(
-        "group/nav relative flex items-center rounded-[8px] outline-hidden",
+        "group/nav relative flex items-center rounded-[calc(8px*var(--admin-radius-scale,1))] outline-hidden",
         "focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
         className,
       )}

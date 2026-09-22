@@ -760,4 +760,29 @@
 //   lives in the component and the helper is gone; behaviour is unchanged.
 // - Rule of thumb for admin components: keep values read from useState inside
 //   the file. Passing props or constants across modules stays fine.
-export const CORE_API_VERSION = "1.46.1";
+// 1.47.0: a shared admin style, under Settings → Style (/admin/settings?tab=style).
+// - core.adminTheme (versioned JSON: background, surface, ink, radius, elevation,
+//   font) sits next to core.adminAccent. /api/admin-theme reads both (any signed-in
+//   user) and writes both in one batch (admins, same origin). The schema rejects
+//   unknown keys, non-hex colours, dark surfaces and text under 7:1 contrast.
+// - Paper & Ink, the default, is the admin exactly as before: only the accent is
+//   written. Any other value marks <style id="cms-admin-theme" data-themed>, which
+//   turns on the token bridge in app/admin-theme.css and the `admin:` variant.
+//   The bridge follows the :root recipe (black at each opacity → the text colour),
+//   and Soft depth keeps every component's own shadow.
+// - Tokens for admin pages: bg-surface, text-ink, --admin-radius-scale and
+//   --admin-shadow-card/panel. Always pass the original value as the var()
+//   fallback, because under Paper & Ink these variables do not exist. Shared
+//   components keep their public classes and add `admin:` overrides. Semantic
+//   shadows (error rings, selection rings, checkbox borders) do not use the tokens.
+// - Fonts: a whitelist (ADMIN_FONTS) of Google Fonts, loaded only once chosen.
+// - Sidebar icons: Heroicons 16 solid (default) or Lucide outline (icons field).
+//   Every icon token maps to both sets, so manifests keep working.
+// - The accent is server-rendered CSS scoped to body:has([data-admin-surface])
+//   instead of a localStorage cache; AdminAccent, its boot script and
+//   GET /api/admin-accent are gone. Saving a style does not refresh the route.
+// - SaveBar is shared by the settings form and the style editor (hidden = inert),
+//   SettingTabs gains labelStyle and layout: "list", and ColorSwatchPicker's
+//   labels are translated.
+// Additive for extensions: pages only change if they opt into the tokens.
+export const CORE_API_VERSION = "1.47.0";

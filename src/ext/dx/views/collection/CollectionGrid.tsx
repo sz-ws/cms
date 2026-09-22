@@ -74,10 +74,10 @@ function CornerCheckbox({
     >
       <span
         className={cn(
-          "inline-flex size-5 items-center justify-center rounded-[6px] transition-[background,box-shadow] active:scale-[0.9]",
+          "inline-flex size-5 items-center justify-center rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] transition-[background,box-shadow] active:scale-[0.9]",
           checked
             ? "bg-(--admin-accent) shadow-[0_0_0_1px_var(--admin-accent)]"
-            : "bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.15)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.3)]",
+            : "bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.15)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.3)]",
         )}
       >
         {checked && (
@@ -108,15 +108,15 @@ function CardCover({ coverKey, title }: { coverKey: string | null; title: string
         alt=""
         maxWidth={320}
         sizes="(max-width: 768px) 50vw, 240px"
-        className="aspect-[4/3] w-full rounded-[8px] object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
+        className="aspect-[4/3] w-full rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
       />
     );
   }
   // 文字卡(無 media 欄或非圖):以首字母占位,維持相同 aspect 讓格線齊整。
   const initial = title.trim().charAt(0).toUpperCase() || "—";
   return (
-    <div className="flex aspect-[4/3] w-full items-center justify-center rounded-[8px] bg-black/[0.03] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
-      <span className="text-[28px] font-semibold text-black/15">{initial}</span>
+    <div className="flex aspect-[4/3] w-full items-center justify-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
+      <span className="text-[28px] font-semibold text-black/15 admin:text-ink/15">{initial}</span>
     </div>
   );
 }
@@ -156,7 +156,7 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
         <button
           type="button"
           onClick={toggleAll}
-          className="text-[12px] font-medium text-black/45 transition-colors hover:text-black/70"
+          className="text-[12px] font-medium text-black/45 admin:text-ink/45 transition-colors hover:text-black/70 admin:hover:text-ink/70"
         >
           {allSelected
             ? t("collection.deselectAll")
@@ -184,23 +184,23 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
               <AdminLink
                 href={card.editHref}
                 className={cn(
-                  "flex flex-col gap-3 rounded-[14px] bg-white p-1.5 outline-none transition-[transform,box-shadow] duration-150 ease-out",
+                  "flex flex-col gap-3 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface p-1.5 outline-none transition-[transform,box-shadow] duration-150 ease-out",
                   "will-change-transform hover:-translate-y-0.5",
                   isSel
                     ? "shadow-[0_0_0_1px_var(--admin-accent),0_8px_24px_-8px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
-                    : "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_28px_-10px_rgba(30,20,50,0.18)]",
+                    : "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_28px_-10px_rgba(30,20,50,0.18)]",
                 )}
               >
                 <CardCover coverKey={card.coverKey} title={card.title} />
                 <div className="flex flex-col gap-2 px-1.5 pb-1.5">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="line-clamp-2 text-[14px] font-medium leading-snug text-black/85">
+                    <span className="line-clamp-2 text-[14px] font-medium leading-snug text-black/85 admin:text-ink/85">
                       {card.title || card.id}
                     </span>
                     <StatusBadge status={card.status} />
                   </div>
                   {card.meta && (
-                    <span className="text-[12px] tabular-nums text-black/45">
+                    <span className="text-[12px] tabular-nums text-black/45 admin:text-ink/45">
                       {card.meta}
                     </span>
                   )}

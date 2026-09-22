@@ -92,8 +92,8 @@ function StepIcon({ status }: { status: StepStatus }) {
   if (status === "running") return <Loader2 aria-hidden className={cn(base, "animate-spin text-(--admin-accent)")} />;
   if (status === "done") return <Check aria-hidden className={cn(base, "text-[rgb(18,124,88)]")} />;
   if (status === "failed") return <X aria-hidden className={cn(base, "text-red-600")} />;
-  if (status === "skipped") return <Minus aria-hidden className={cn(base, "text-black/30")} />;
-  return <Circle aria-hidden className={cn(base, "text-black/20")} />;
+  if (status === "skipped") return <Minus aria-hidden className={cn(base, "text-ink/30")} />;
+  return <Circle aria-hidden className={cn(base, "text-ink/20")} />;
 }
 
 export function EnableProgressCard({
@@ -136,17 +136,17 @@ export function EnableProgressCard({
     <section
       aria-live="polite"
       className={cn(
-        "rounded-[12px] bg-white px-4 py-3.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]",
+        "rounded-[calc(12px*var(--admin-radius-scale,1))] bg-surface px-4 py-3.5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]",
         state.outcome === "failed" && "shadow-[0_0_0_1px_rgba(220,38,38,0.2),0_1px_2px_-1px_rgba(0,0,0,0.06)]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[13.5px] font-medium text-black/85">{title}</p>
+        <p className="text-[13.5px] font-medium text-ink/85">{title}</p>
         {state.outcome !== "running" && (
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-[6px] px-2 py-0.5 text-[12px] text-black/45 transition-colors hover:bg-black/[0.04] hover:text-black/75"
+            className="shrink-0 rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 py-0.5 text-[12px] text-ink/45 transition-colors hover:bg-ink/[0.04] hover:text-ink/75"
           >
             {t("extensions.progress.close")}
           </button>
@@ -158,7 +158,7 @@ export function EnableProgressCard({
             key={step.key}
             className={cn(
               "flex items-center gap-2 text-[12.5px]",
-              step.status === "waiting" || step.status === "skipped" ? "text-black/40" : "text-black/75",
+              step.status === "waiting" || step.status === "skipped" ? "text-ink/40" : "text-ink/75",
               step.status === "failed" && "text-red-700",
             )}
           >
@@ -170,7 +170,7 @@ export function EnableProgressCard({
       {state.outcome === "failed" && (
         <div className="mt-2.5 flex flex-col gap-1 text-[12.5px]">
           {state.error && <p className="text-red-700">{state.error}</p>}
-          <p className="text-black/45">{t("extensions.progress.retryNote")}</p>
+          <p className="text-ink/45">{t("extensions.progress.retryNote")}</p>
         </div>
       )}
     </section>

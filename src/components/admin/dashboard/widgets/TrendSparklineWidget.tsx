@@ -36,7 +36,7 @@ export function TrendSparklineWidget({ data }: { data: TrendWidgetData }) {
       <WidgetHeader label={data.label} />
       <div className="flex flex-1 flex-col justify-between gap-3">
         <div className="flex items-end justify-between gap-2">
-          <span className="text-[32px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-black/85">
+          <span className="text-[32px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-ink/85">
             {typeof data.value === "number" ? (
               <StatNumber value={data.value} />
             ) : (

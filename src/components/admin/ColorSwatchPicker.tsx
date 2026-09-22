@@ -5,8 +5,9 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { hexToHsv, hsvToHex, normalizeHex, readableOn, type Hsv } from "@/lib/color";
+import { useT } from "@/lib/i18n/I18nProvider";
 
-// 設定頁的顏色欄位(setting type "color"):一排圓形色票,最後一顆是自訂。
+// 顏色欄位:一排圓形色票,最後一顆是自訂。設定頁的 setting type "color" 與後台風格都用這個。
 //
 // 自訂色盤是自己畫的,沒有另外裝套件:飽和度/明度方塊 + 色相滑桿 + hex 輸入。
 // 方塊用方向鍵調(Shift 一次 10),色相是原生 range,鍵盤與讀屏都不用另外處理。
@@ -26,9 +27,10 @@ interface ColorSwatchPickerProps {
   invalid?: boolean;
 }
 
-const RING_SELECTED = "shadow-[0_0_0_2px_#fff,0_0_0_4px_rgba(0,0,0,0.75)]";
-const RING_IDLE = "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:shadow-[0_0_0_2px_#fff,0_0_0_4px_rgba(0,0,0,0.18)]";
-const DOT = "relative flex size-7 shrink-0 items-center justify-center rounded-full transition-shadow duration-150 outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_rgba(0,0,0,0.45)]";
+// 內圈用卡片色,不寫死白色:後台風格可以把卡片換成米色、淡綠。
+const RING_SELECTED = "shadow-[0_0_0_2px_var(--admin-surface,#fff),0_0_0_4px_rgba(0,0,0,0.75)]";
+const RING_IDLE = "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:shadow-[0_0_0_2px_var(--admin-surface,#fff),0_0_0_4px_rgba(0,0,0,0.18)]";
+const DOT = "relative flex size-7 shrink-0 items-center justify-center rounded-full transition-shadow duration-150 outline-none focus-visible:shadow-[0_0_0_2px_var(--admin-surface,#fff),0_0_0_4px_rgba(0,0,0,0.45)]";
 
 export function ColorSwatchPicker({ id, value, onChange, swatches, label, invalid }: ColorSwatchPickerProps) {
   const current = normalizeHex(value);
@@ -77,6 +79,7 @@ function CustomSwatch({
   fallback: string;
   onChange: (hex: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const selected = value !== null;
   return (
@@ -85,8 +88,8 @@ function CustomSwatch({
         type="button"
         role="radio"
         aria-checked={selected}
-        aria-label="自訂顏色"
-        title="自訂顏色"
+        aria-label={t("color.custom")}
+        title={t("color.custom")}
         className={cn(DOT, selected ? RING_SELECTED : RING_IDLE)}
         style={
           selected
@@ -109,6 +112,7 @@ function CustomSwatch({
 }
 
 function CustomPanel({ initial, onChange }: { initial: string; onChange: (hex: string) => void }) {
+  const t = useT();
   // 在 HSV 裡操作:hex 轉回來時灰色會丟掉色相,拖到灰再拖回來不能跳色。
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(initial));
   const [draft, setDraft] = useState(normalizeHex(initial) ?? initial);
@@ -164,8 +168,8 @@ function CustomPanel({ initial, onChange }: { initial: string; onChange: (hex: s
         ref={area}
         role="slider"
         tabIndex={0}
-        aria-label="飽和度與明度"
-        aria-valuetext={`飽和度 ${hsv.s}%,明度 ${hsv.v}%`}
+        aria-label={t("color.area")}
+        aria-valuetext={t("color.areaValue", { s: hsv.s, v: hsv.v })}
         aria-valuenow={hsv.s}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -175,7 +179,7 @@ function CustomPanel({ initial, onChange }: { initial: string; onChange: (hex: s
           if (event.currentTarget.hasPointerCapture(event.pointerId)) fromPointer(event);
         }}
         onKeyDown={onAreaKey}
-        className="relative h-[140px] w-full cursor-crosshair touch-none rounded-[8px] outline-none focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_rgba(0,0,0,0.45)]"
+        className="relative h-[140px] w-full cursor-crosshair touch-none rounded-[8px] outline-none focus-visible:shadow-[0_0_0_2px_var(--admin-surface,#fff),0_0_0_4px_rgba(0,0,0,0.45)]"
         style={{
           backgroundColor: `hsl(${hsv.h} 100% 50%)`,
           backgroundImage: "linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)",
@@ -192,27 +196,27 @@ function CustomPanel({ initial, onChange }: { initial: string; onChange: (hex: s
         min={0}
         max={359}
         value={hsv.h}
-        aria-label="色相"
+        aria-label={t("color.hue")}
         onChange={(event) => commit({ ...hsv, h: Number(event.target.value) })}
         className={cn(
           "h-3 w-full cursor-pointer appearance-none rounded-full outline-none",
           "[&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full",
           "[&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.2),0_1px_3px_rgba(0,0,0,0.3)]",
           "[&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white",
-          "focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_rgba(0,0,0,0.45)]",
+          "focus-visible:shadow-[0_0_0_2px_var(--admin-surface,#fff),0_0_0_4px_rgba(0,0,0,0.45)]",
         )}
         style={{
           background:
             "linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)",
         }}
       />
-      <label className="flex items-center gap-2 text-[12px] text-black/45">
+      <label className="flex items-center gap-2 text-[12px] text-ink/45">
         <span
           aria-hidden
           className="size-7 shrink-0 rounded-[6px] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]"
           style={{ backgroundColor: hsvToHex(hsv) }}
         />
-        <span className="sr-only">色碼</span>
+        <span className="sr-only">{t("color.hex")}</span>
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -225,7 +229,7 @@ function CustomPanel({ initial, onChange }: { initial: string; onChange: (hex: s
           }}
           spellCheck={false}
           maxLength={7}
-          className="h-8 w-full rounded-[8px] bg-white px-2.5 font-mono text-[13px] text-black/80 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] focus:outline-none focus:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]"
+          className="h-8 w-full rounded-[8px] bg-surface px-2.5 font-mono text-[13px] text-ink/80 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] focus:outline-none focus:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]"
         />
       </label>
     </div>

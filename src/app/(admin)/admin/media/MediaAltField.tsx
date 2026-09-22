@@ -86,21 +86,21 @@ export function MediaAltField({ alt, onSave }: MediaAltFieldProps) {
               }
             }}
             className={cn(
-              "h-7 min-w-0 flex-1 rounded-[8px] border-none bg-white px-2 text-[11px] text-black/85 outline-none placeholder:text-black/25",
-              "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[box-shadow] duration-150 ease-out",
+              "h-7 min-w-0 flex-1 rounded-[calc(8px*var(--admin-radius-scale,1))] border-none bg-surface px-2 text-[11px] text-ink/85 outline-none placeholder:text-ink/25",
+              "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[box-shadow] duration-150 ease-out",
               "focus:shadow-[0_0_0_1px_rgba(0,0,0,0.2),0_0_0_3px_rgba(0,0,0,0.05)]",
               "disabled:opacity-60",
             )}
           />
           {saving ? (
-            <span className="shrink-0 px-1 text-[11px] text-black/35">Saving…</span>
+            <span className="shrink-0 px-1 text-[11px] text-ink/35">Saving…</span>
           ) : (
             <>
               <button
                 type="button"
                 onClick={() => void save()}
                 aria-label="Save alt text"
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-[8px] text-black/45 transition-[background-color,color,transform] duration-150 ease-out hover:bg-black/[0.03] hover:text-(--admin-accent) active:scale-[0.94]"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] text-ink/45 transition-[background-color,color,transform] duration-150 ease-out hover:bg-ink/[0.03] hover:text-(--admin-accent) active:scale-[0.94]"
               >
                 <CheckIcon className="size-3.5" />
               </button>
@@ -108,7 +108,7 @@ export function MediaAltField({ alt, onSave }: MediaAltFieldProps) {
                 type="button"
                 onClick={cancel}
                 aria-label="Cancel"
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-[8px] text-black/30 transition-[background-color,color,transform] duration-150 ease-out hover:bg-black/[0.03] hover:text-black/60 active:scale-[0.94]"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] text-ink/30 transition-[background-color,color,transform] duration-150 ease-out hover:bg-ink/[0.03] hover:text-ink/60 active:scale-[0.94]"
               >
                 <XIcon className="size-3.5" />
               </button>
@@ -127,13 +127,13 @@ export function MediaAltField({ alt, onSave }: MediaAltFieldProps) {
       type="button"
       onClick={startEditing}
       title={alt ? `Alt text: ${alt}` : "Add alt text"}
-      className="group/alt flex min-w-0 items-center gap-1 px-2.5 py-1.5 text-left outline-none shadow-[inset_0_1px_0_rgba(0,0,0,0.06)] transition-colors duration-150 ease-out hover:bg-black/[0.02] focus-visible:bg-black/[0.02]"
+      className="group/alt flex min-w-0 items-center gap-1 px-2.5 py-1.5 text-left outline-none shadow-[inset_0_1px_0_rgba(0,0,0,0.06)] transition-colors duration-150 ease-out hover:bg-ink/[0.02] focus-visible:bg-ink/[0.02]"
     >
-      <PencilIcon className="size-3 shrink-0 text-black/20 transition-colors duration-150 ease-out group-hover/alt:text-black/40" />
+      <PencilIcon className="size-3 shrink-0 text-ink/20 transition-colors duration-150 ease-out group-hover/alt:text-ink/40" />
       <span
         className={cn(
           "min-w-0 truncate text-[11px]",
-          alt ? "text-black/45" : "text-black/30",
+          alt ? "text-ink/45" : "text-ink/30",
         )}
       >
         {alt ? alt : "Add alt text"}

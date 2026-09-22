@@ -4,7 +4,7 @@ import type { TrendWidgetData } from "./types";
 const TONE = {
   up: { bg: "bg-[rgba(16,145,90,0.10)]", fg: "text-[rgb(18,124,88)]", Icon: TrendingUp },
   down: { bg: "bg-red-600/10", fg: "text-red-700", Icon: TrendingDown },
-  flat: { bg: "bg-black/[0.05]", fg: "text-black/45", Icon: Minus },
+  flat: { bg: "bg-ink/[0.05]", fg: "text-ink/45", Icon: Minus },
 } as const;
 
 // 趨勢家族共用的漲跌 pill——琢瑯綠/紅沿用 registry requires chips 的既有色階

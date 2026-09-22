@@ -22,10 +22,10 @@ export default async function MediaPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
+        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-ink/90">
           {m["media.title"]}
         </h1>
-        <p className="text-[12px] text-black/35">
+        <p className="text-[12px] text-ink/35">
           {m["media.subtitle"]}
         </p>
       </div>

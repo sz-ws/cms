@@ -15,6 +15,7 @@ import {
 import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
 import { ColorSwatchPicker } from "./ColorSwatchPicker";
+import { SaveBar, SAVE_BUTTON_CLASS } from "./SaveBar";
 import { SettingTabs } from "./SettingTabs";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
@@ -33,10 +34,20 @@ interface SettingsWorkspaceProps {
   sections: SettingsSection[];
   values: Record<string, unknown>;
   coreAddon?: React.ReactNode;
+  /** 「風格」分頁的內容(AdminThemeEditor)。有自己的儲存鈕,不進這裡的表單。 */
+  styleTab?: React.ReactNode;
+  /** 網址的 ?tab=,不認得的值回到核心。 */
+  initialTab?: string;
 }
 
 type SettingsState = Record<string, string | boolean>;
-type SettingsTab = "core" | "declarative" | "extensions";
+type SettingsTab = "core" | "style" | "declarative" | "extensions";
+const SETTINGS_TABS: readonly SettingsTab[] = ["core", "style", "declarative", "extensions"];
+
+function resolveTab(value: string | undefined, hasStyle: boolean): SettingsTab {
+  const tab = SETTINGS_TABS.find((id) => id === value) ?? "core";
+  return tab === "style" && !hasStyle ? "core" : tab;
+}
 
 function initialValue(
   field: SettingField,
@@ -94,11 +105,11 @@ function fieldWrapperClass(field: SettingField): string {
 }
 
 function labelClass(): string {
-  return "text-[13px] font-medium text-black/55";
+  return "text-[13px] font-medium text-ink/55";
 }
 
 function descriptionClass(): string {
-  return "text-[12px] leading-relaxed text-black/40";
+  return "text-[12px] leading-relaxed text-ink/40";
 }
 
 /** core 分組卡的 id 慣例:`core-<group>`(見 settings/page.tsx)。 */
@@ -128,7 +139,7 @@ function NavAnchor({
       onClick={onClick}
       className={cn(
         "relative shrink-0 whitespace-nowrap px-3 py-2.5 text-[13px] font-medium transition-colors",
-        active ? "text-black/90" : "text-black/40 hover:text-black/65",
+        active ? "text-ink/90" : "text-ink/40 hover:text-ink/65",
       )}
     >
       {label}
@@ -193,7 +204,7 @@ function statusLine(
   };
 }
 
-export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorkspaceProps) {
+export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initialTab }: SettingsWorkspaceProps) {
   const t = useT();
   // §1 #9–#11:extension settings 的 label/description/option.label 可為 LocalizedString;
   // admin 有 I18nProvider,故直接 useLocale() resolve(核心 settings 為純字串,原樣透傳)。
@@ -209,9 +220,9 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
       <section
         key="core-addon"
         id={sectionAnchorId("core-addon")}
-        className="scroll-mt-20 rounded-[20px] bg-white/55 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md"
+        className="scroll-mt-20 rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md"
       >
-        <div className="rounded-[14px] bg-white px-6 pt-6 pb-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           {coreAddonNode}
         </div>
       </section>
@@ -261,13 +272,13 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   id={controlId}
                   aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
-                  className="min-h-[120px] rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
+                  className="min-h-[120px] rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}
                 />
               ) : field.type === "boolean" ? (
-                <div className="inline-flex h-10 items-center rounded-[10px] bg-black/[0.03] px-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+                <div className="inline-flex h-10 items-center rounded-[calc(10px*var(--admin-radius-scale,1))] bg-ink/[0.03] px-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
                   <Checkbox
                     id={controlId}
                     aria-describedby={descriptionId}
@@ -318,7 +329,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                     aria-describedby={descriptionId}
                     aria-invalid={fieldErrors[fullKey] ? true : undefined}
                     aria-required={field.required || undefined}
-                    className="w-full rounded-[10px] border-black/10 bg-white text-[14px] text-black/85"
+                    className="w-full rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -335,7 +346,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
                   id={controlId}
                   aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
-                  className="rounded-[10px] border-black/10 bg-white text-[14px] text-black/85 placeholder:text-black/25"
+                  className="rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
                   type={field.type === "number" ? "number" : "text"}
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
@@ -379,15 +390,15 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
       <section
         key={section.id}
         id={sectionAnchorId(section.id)}
-        className="scroll-mt-20 rounded-[20px] bg-white/55 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md"
+        className="scroll-mt-20 rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md"
       >
-        <div className="rounded-[14px] bg-white px-6 pt-6 pb-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           <div className="mb-5 flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
               {section.title}
             </h3>
             {section.description && (
-              <p className="text-[12px] text-black/40">{section.description}</p>
+              <p className="text-[12px] text-ink/40">{section.description}</p>
             )}
           </div>
           {renderSectionFields(section)}
@@ -407,13 +418,13 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
 
   function renderDeclarativePlaceholder() {
     return (
-      <section className="rounded-[20px] bg-white/55 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md">
-        <div className="rounded-[14px] bg-white px-6 pt-6 pb-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+      <section className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           <div className="flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
               {t("settingsWorkspace.declarative")}
             </h3>
-            <p className="text-[12px] leading-relaxed text-black/40">
+            <p className="text-[12px] leading-relaxed text-ink/40">
               {t("settingsWorkspace.declarativeDesc")}
             </p>
           </div>
@@ -423,7 +434,7 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
   }
 
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("core");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(initialTab, Boolean(styleTab)));
   const [state, setState] = useState<SettingsState>(() =>
     buildInitialState(sections, values),
   );
@@ -595,17 +606,25 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
 
   const bar = statusLine(pending, saved, error, t);
 
+  // 分頁寫進網址(?tab=),重新整理或分享連結會停在同一頁;核心是預設,不帶參數。
+  function selectTab(id: string) {
+    const next = resolveTab(id, Boolean(styleTab));
+    setActiveTab(next);
+    const url = new URL(window.location.href);
+    if (next === "core") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    url.hash = "";
+    window.history.replaceState(null, "", url);
+  }
+
   return (
-    <form
-      onSubmit={onSubmit}
-      className={`relative flex flex-col gap-5 ${showBar ? "pb-28" : "pb-6"}`}
-    >
+    <div className="relative flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
             {t("settingsWorkspace.surface")}
           </h2>
-          <p className="text-[12px] text-black/40">
+          <p className="text-[12px] text-ink/40">
             {t("settingsWorkspace.surfaceSubtitle")}
           </p>
         </div>
@@ -613,61 +632,48 @@ export function SettingsWorkspace({ sections, values, coreAddon }: SettingsWorks
           compact
           tabs={[
             { id: "core", label: t("settingsWorkspace.core") },
+            ...(styleTab ? [{ id: "style", label: t("settingsWorkspace.style") }] : []),
             { id: "declarative", label: t("settingsWorkspace.declarativeTab") },
             { id: "extensions", label: t("settingsWorkspace.extensions") },
           ]}
-          defaultActive="core"
-          onChange={(id) => {
-            const next = ["core", "declarative", "extensions"].includes(id)
-              ? (id as SettingsTab)
-              : "core";
-            setActiveTab(next);
-          }}
+          defaultActive={activeTab}
+          onChange={selectTab}
         />
       </div>
 
-      {navTargets.length > 1 && (
-        <div className="sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto rounded-t-[14px] bg-[#fbfaf9]/90 px-1 pt-1 shadow-[0_1px_0_rgba(0,0,0,0.06)] backdrop-blur-md">
-          {navTargets.map((target) => (
-            <NavAnchor
-              key={target.id}
-              label={target.label}
-              active={displayActiveId === target.id}
-              onClick={() => scrollToSection(target.id)}
-            />
-          ))}
-        </div>
-      )}
+      {/* 切走時不卸載:沒存的風格草稿要留著。 */}
+      {styleTab && <div hidden={activeTab !== "style"}>{styleTab}</div>}
 
-      {activeTab === "declarative"
-        ? renderDeclarativePlaceholder()
-        : renderSections(shownSections)}
-
-      <div
-        className={[
-          "pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4 transition-[opacity,transform] duration-220 ease-out",
-          showBar ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
-        ].join(" ")}
-      >
-        <div className="pointer-events-auto w-full max-w-4xl rounded-[20px] bg-white/65 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md">
-          <div className="flex items-center justify-between gap-4 rounded-[14px] bg-white px-4 py-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-[12px] font-medium text-black/45">
-                {bar.title}
-              </span>
-              <span className="text-[11px] text-black/35">{bar.note}</span>
+      {activeTab !== "style" && (
+        <form
+          onSubmit={onSubmit}
+          className={`flex flex-col gap-5 ${showBar ? "pb-28" : "pb-6"}`}
+        >
+          {navTargets.length > 1 && (
+            <div className="sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto rounded-t-[calc(14px*var(--admin-radius-scale,1))] bg-background/90 px-1 pt-1 shadow-[0_1px_0_rgba(0,0,0,0.06)] backdrop-blur-md">
+              {navTargets.map((target) => (
+                <NavAnchor
+                  key={target.id}
+                  label={target.label}
+                  active={displayActiveId === target.id}
+                  onClick={() => scrollToSection(target.id)}
+                />
+              ))}
             </div>
-            <button
-              type="submit"
-              disabled={pending || !dirty}
-              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-black pr-3 pl-3.5 text-[14px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.15)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
-            >
+          )}
+
+          {activeTab === "declarative"
+            ? renderDeclarativePlaceholder()
+            : renderSections(shownSections)}
+
+          <SaveBar visible={showBar} title={bar.title} note={bar.note} alert={Boolean(error)}>
+            <button type="submit" disabled={pending || !dirty} className={SAVE_BUTTON_CLASS}>
               <span>{pending ? t("settingsWorkspace.savingButton") : t("settingsWorkspace.saveAllChanges")}</span>
               {!pending && <span aria-hidden className="text-white/70">→</span>}
             </button>
-          </div>
-        </div>
-      </div>
-    </form>
+          </SaveBar>
+        </form>
+      )}
+    </div>
   );
 }

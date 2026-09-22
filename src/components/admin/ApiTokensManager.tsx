@@ -141,13 +141,13 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 pt-6 border-t border-black/[0.06]">
+    <div className="flex flex-col gap-4 pt-6 border-t border-ink/[0.06]">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
             {t("apiTokens.title")}
           </h3>
-          <p className="text-[12px] text-black/40">
+          <p className="text-[12px] text-ink/40">
             {t("apiTokens.desc")}
           </p>
         </div>
@@ -158,9 +158,9 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
       </div>
 
       {tokens.length === 0 ? (
-        <div className="rounded-[14px] border border-dashed border-black/20 p-8 text-center">
-          <p className="text-[13px] text-black/45">{t("apiTokens.noTokensYet")}</p>
-          <p className="mt-1 text-[12px] text-black/35">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/20 p-8 text-center">
+          <p className="text-[13px] text-ink/45">{t("apiTokens.noTokensYet")}</p>
+          <p className="mt-1 text-[12px] text-ink/35">
             {t("apiTokens.noTokensDesc")}
           </p>
         </div>
@@ -169,17 +169,17 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
           {tokens.map((token) => (
             <div
               key={token.id}
-              className="group flex items-center justify-between rounded-[10px] border border-black/10 bg-white px-4 py-3 transition-colors hover:border-black/20"
+              className="group flex items-center justify-between rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface px-4 py-3 transition-colors hover:border-ink/20"
             >
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-black/[0.04] text-black/45">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.04] text-ink/45">
                   <KeyRound className="size-4" />
                 </div>
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-[14px] font-medium text-black/85">
+                  <span className="truncate text-[14px] font-medium text-ink/85">
                     {token.name}
                   </span>
-                  <span className="flex items-center gap-2 text-[11px] text-black/40">
+                  <span className="flex items-center gap-2 text-[11px] text-ink/40">
                     <code className="font-mono">{token.prefix}…</code>
                     <span className="uppercase tracking-wide">{token.scope}</span>
                     <span>{t("apiTokens.used", { date: formatDate(token.lastUsedAt, locale, timeZone) })}</span>
@@ -191,7 +191,7 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
                 <button
                   type="button"
                   onClick={() => handleRevoke(token.id)}
-                  className="rounded-[6px] p-1.5 text-black/35 hover:bg-red-50 hover:text-red-600"
+                  className="rounded-[calc(6px*var(--admin-radius-scale,1))] p-1.5 text-ink/35 hover:bg-red-50 hover:text-red-600"
                   title={t("apiTokens.revokeToken")}
                 >
                   <Trash2 className="size-4" />
@@ -203,7 +203,7 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={closeDialog}>
-        <DialogContent className="max-w-md rounded-[20px] p-0 shadow-[0_16px_48px_-12px_rgba(30,20,50,0.18)]">
+        <DialogContent className="max-w-md rounded-[calc(20px*var(--admin-radius-scale,1))] p-0 shadow-[var(--admin-shadow-panel,0_16px_48px_-12px_rgba(30,20,50,0.18))]">
           <div className="flex flex-col gap-4 p-5">
             <DialogHeader>
               <DialogTitle>
@@ -218,18 +218,18 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
 
             {rawToken ? (
               <div className="flex flex-col gap-3">
-                <div className="flex items-start gap-2 rounded-[8px] bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                <div className="flex items-start gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span>{t("apiTokens.onlyTimeShown")}</span>
                 </div>
-                <div className="flex items-center gap-2 rounded-[10px] border border-black/10 bg-black/[0.03] px-3 py-2.5">
-                  <code className="min-w-0 flex-1 break-all font-mono text-[12px] text-black/85">
+                <div className="flex items-center gap-2 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/10 bg-ink/[0.03] px-3 py-2.5">
+                  <code className="min-w-0 flex-1 break-all font-mono text-[12px] text-ink/85">
                     {rawToken}
                   </code>
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className="shrink-0 rounded-[6px] p-1.5 text-black/45 hover:bg-black/[0.06] hover:text-black/85"
+                    className="shrink-0 rounded-[calc(6px*var(--admin-radius-scale,1))] p-1.5 text-ink/45 hover:bg-ink/[0.06] hover:text-ink/85"
                     title={t("apiTokens.copy")}
                   >
                     {copied ? (
@@ -246,7 +246,7 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
             ) : (
               <div className="flex flex-col gap-3">
                 <div>
-                  <label className="mb-1.5 block text-[12px] font-medium text-black/55">
+                  <label className="mb-1.5 block text-[12px] font-medium text-ink/55">
                     {t("apiTokens.tokenName")}
                   </label>
                   <Input

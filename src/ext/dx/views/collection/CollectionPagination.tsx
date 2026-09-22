@@ -38,7 +38,7 @@ function PagerButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-9 min-w-9 items-center justify-center rounded-[8px] bg-white px-3 text-[13px] font-medium text-black/70 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[box-shadow,transform] active:scale-[0.96]",
+        "inline-flex h-9 min-w-9 items-center justify-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-3 text-[13px] font-medium text-black/70 admin:text-ink/70 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[box-shadow,transform] active:scale-[0.96]",
         disabled
           ? "cursor-not-allowed opacity-40"
           : "hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)]",
@@ -67,21 +67,21 @@ export function CollectionPagination({
           只靠 CSS padding)分隔 —— padding 產生的間距純視覺,text-only 讀取(複製
           貼上、螢幕閱讀器、自動化檢測)會被吃掉變成 "20of",两種 layout(table/
           grid)共用同一顆元件,這裡修一次兩邊都對。 */}
-      <p className="text-[12px] tabular-nums text-black/45">
+      <p className="text-[12px] tabular-nums text-black/45 admin:text-ink/45">
         <span className="tabular-nums">{from}</span>
         <span>–</span>
         <span className="tabular-nums">{to}</span>
-        <span className="text-black/30"> of </span>
+        <span className="text-black/30 admin:text-ink/30"> of </span>
         <NumberFlow
           value={total}
-          className="text-black/70"
+          className="text-black/70 admin:text-ink/70"
           style={{ fontVariantNumeric: "tabular-nums" }}
         />
       </p>
 
       <div className="flex items-center gap-3">
         <div className="inline-flex items-center gap-2">
-          <span className="text-[12px] text-black/40">{t("collection.perPage")}</span>
+          <span className="text-[12px] text-black/40 admin:text-ink/40">{t("collection.perPage")}</span>
           <Select
             value={String(perPage)}
             onValueChange={(next) => setParam("perPage", String(next))}
@@ -105,7 +105,7 @@ export function CollectionPagination({
             disabled={page <= 1}
             onClick={() => setParam("page", String(page - 1), false)}
           />
-          <span className="px-1 text-[12px] tabular-nums text-black/40">
+          <span className="px-1 text-[12px] tabular-nums text-black/40 admin:text-ink/40">
             {page} / {lastPage}
           </span>
           <PagerButton

@@ -226,10 +226,10 @@ export function RegistrySourcesManager({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
             {t("registry.title")}
           </h3>
-          <p className="text-[12px] text-black/40">{t("registry.desc")}</p>
+          <p className="text-[12px] text-ink/40">{t("registry.desc")}</p>
         </div>
         <Button onClick={openAddDialog} className="gap-1.5" size="sm">
           <Plus className="size-4" />
@@ -238,9 +238,9 @@ export function RegistrySourcesManager({
       </div>
 
       {sources.length === 0 ? (
-        <div className="rounded-[14px] border border-dashed border-black/20 p-8 text-center">
-          <p className="text-[13px] text-black/45">{t("registry.noSources")}</p>
-          <p className="mt-1 text-[12px] text-black/35">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/20 p-8 text-center">
+          <p className="text-[13px] text-ink/45">{t("registry.noSources")}</p>
+          <p className="mt-1 text-[12px] text-ink/35">
             {t("registry.noSourcesDesc")}
           </p>
         </div>
@@ -249,17 +249,17 @@ export function RegistrySourcesManager({
           {sources.map((source, index) => (
             <div
               key={index}
-              className="group flex items-center justify-between rounded-[10px] border border-black/10 bg-white px-4 py-3 transition-colors hover:border-black/20"
+              className="group flex items-center justify-between rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface px-4 py-3 transition-colors hover:border-ink/20"
             >
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-black/[0.04] text-xl">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.04] text-xl">
                   {getIcon(source)}
                 </div>
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-[14px] font-medium text-black/85">
+                  <span className="truncate text-[14px] font-medium text-ink/85">
                     {getDisplayName(source)}
                   </span>
-                  <code className="truncate font-mono text-[11px] text-black/40">
+                  <code className="truncate font-mono text-[11px] text-ink/40">
                     {getDisplayUrl(source)}
                   </code>
                 </div>
@@ -268,14 +268,14 @@ export function RegistrySourcesManager({
                 <button
                   type="button"
                   onClick={() => openEditDialog(index)}
-                  className="rounded-[6px] p-1.5 text-black/35 hover:bg-black/[0.04] hover:text-black/85"
+                  className="rounded-[calc(6px*var(--admin-radius-scale,1))] p-1.5 text-ink/35 hover:bg-ink/[0.04] hover:text-ink/85"
                 >
                   <Edit2 className="size-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleDelete(index)}
-                  className="rounded-[6px] p-1.5 text-black/35 hover:bg-red-50 hover:text-red-600"
+                  className="rounded-[calc(6px*var(--admin-radius-scale,1))] p-1.5 text-ink/35 hover:bg-red-50 hover:text-red-600"
                 >
                   <Trash2 className="size-4" />
                 </button>
@@ -286,7 +286,7 @@ export function RegistrySourcesManager({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md rounded-[20px] p-0 shadow-[0_16px_48px_-12px_rgba(30,20,50,0.18)]">
+        <DialogContent className="max-w-md rounded-[calc(20px*var(--admin-radius-scale,1))] p-0 shadow-[var(--admin-shadow-panel,0_16px_48px_-12px_rgba(30,20,50,0.18))]">
           <div className="flex flex-col gap-4 p-5">
             <DialogHeader>
               <DialogTitle>
@@ -299,7 +299,7 @@ export function RegistrySourcesManager({
 
             <div className="flex flex-col gap-3">
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-black/55">
+                <label className="mb-1.5 block text-[12px] font-medium text-ink/55">
                   {t("registry.displayName")}
                 </label>
                 <Input
@@ -310,7 +310,7 @@ export function RegistrySourcesManager({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-black/55">
+                <label className="mb-1.5 block text-[12px] font-medium text-ink/55">
                   {t("registry.icon")}
                 </label>
                 <Input
@@ -322,7 +322,7 @@ export function RegistrySourcesManager({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-black/55">
+                <label className="mb-1.5 block text-[12px] font-medium text-ink/55">
                   {t("registry.registryUrl")}
                 </label>
                 <Input
@@ -337,7 +337,7 @@ export function RegistrySourcesManager({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-black/55">
+                <label className="mb-1.5 block text-[12px] font-medium text-ink/55">
                   {t("registry.accessToken")}
                 </label>
                 <Input
@@ -360,7 +360,7 @@ export function RegistrySourcesManager({
             {testResult.status !== "idle" && (
               <div
                 className={cn(
-                  "flex items-center gap-2 rounded-[8px] px-3 py-2 text-[13px]",
+                  "flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-2 text-[13px]",
                   testResult.status === "testing" && "bg-blue-50 text-blue-700",
                   testResult.status === "success" && "bg-green-50 text-green-700",
                   testResult.status === "error" && "bg-red-50 text-red-700"

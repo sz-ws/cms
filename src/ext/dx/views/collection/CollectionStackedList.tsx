@@ -17,19 +17,19 @@ interface CollectionStackedListProps {
 
 export function CollectionStackedList({ columns, rows }: CollectionStackedListProps) {
   return (
-    <div className="overflow-hidden rounded-[14px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
-      <StackedList className="divide-y divide-black/[0.05]">
+    <div className="overflow-hidden rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
+      <StackedList className="divide-y divide-black/[0.05] admin:divide-ink/[0.05]">
         {rows.map((row) => (
           <StackedListItem key={row.id}>
             <AdminLink
               href={row.editHref}
-              className="flex items-center gap-4 px-[18px] py-[11px] transition-colors duration-150 ease-out hover:bg-black/[0.02]"
+              className="flex items-center gap-4 px-[18px] py-[11px] transition-colors duration-150 ease-out hover:bg-black/[0.02] admin:hover:bg-ink/[0.02]"
             >
-              <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-black/85">
+              <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-black/85 admin:text-ink/85">
                 {row.cells[0]}
               </span>
               {row.cells.length > 1 && (
-                <span className="hidden shrink-0 items-center gap-3 text-[12px] text-black/45 sm:flex">
+                <span className="hidden shrink-0 items-center gap-3 text-[12px] text-black/45 admin:text-ink/45 sm:flex">
                   {row.cells.slice(1).map((cell, i) => (
                     <span key={columns[i + 1]?.key ?? i} className="max-w-[140px] truncate">
                       {cell}

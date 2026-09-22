@@ -586,7 +586,7 @@ function StreamStatus({
         ? t("agent.stream.thinkingStep", { step })
         : t("agent.stream.thinking");
   return (
-    <p className="flex items-center gap-2 text-[12.5px] text-black/40">
+    <p className="flex items-center gap-2 text-[12.5px] text-ink/40">
       <ThinkingOrb
         aria-hidden
         size={20}
@@ -606,10 +606,10 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-start gap-2 pt-6">
       <RingDot accent />
-      <p className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+      <p className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
         {t("agent.emptyTitle")}
       </p>
-      <p className="max-w-[32rem] text-[13px] leading-relaxed text-black/40">
+      <p className="max-w-[32rem] text-[13px] leading-relaxed text-ink/40">
         {t("agent.emptyBody")}
       </p>
     </div>
@@ -622,7 +622,7 @@ function Notice({ tone, detail }: { tone: "maxSteps" | "error"; detail?: string 
 
   if (tone === "maxSteps") {
     return (
-      <p className="rounded-[10px] bg-black/[0.03] px-3 py-2 text-[12.5px] text-black/50">
+      <p className="rounded-[calc(10px*var(--admin-radius-scale,1))] bg-ink/[0.03] px-3 py-2 text-[12.5px] text-ink/50">
         {t("agent.maxSteps")}
       </p>
     );
@@ -641,7 +641,7 @@ function Notice({ tone, detail }: { tone: "maxSteps" | "error"; detail?: string 
   return (
     <div
       className={cn(
-        "flex max-w-[36rem] flex-col gap-2 rounded-[10px] bg-red-50 px-3 py-2.5",
+        "flex max-w-[36rem] flex-col gap-2 rounded-[calc(10px*var(--admin-radius-scale,1))] bg-red-50 px-3 py-2.5",
         "shadow-[0_0_0_1px_rgba(220,38,38,0.15)]",
       )}
     >
@@ -652,7 +652,7 @@ function Notice({ tone, detail }: { tone: "maxSteps" | "error"; detail?: string 
       {notConfigured && (
         <Link
           href={AI_SETTINGS_HREF}
-          className="w-fit rounded-[8px] bg-white px-2.5 py-1 text-[12px] font-medium text-black/75 shadow-[0_0_0_1px_rgba(20,18,22,0.07)] transition-colors duration-150 hover:text-black"
+          className="w-fit rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-2.5 py-1 text-[12px] font-medium text-ink/75 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.07))] transition-colors duration-150 hover:text-ink"
         >
           {t("agent.error.notConfiguredCta")}
         </Link>
@@ -671,7 +671,7 @@ function TransportNotice({ code }: { code: TransportError }) {
         ? t("agent.error.network")
         : t("agent.error.generic", { detail: code });
   return (
-    <p className="flex max-w-[36rem] items-start gap-2 rounded-[10px] bg-red-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-red-700 shadow-[0_0_0_1px_rgba(220,38,38,0.15)]">
+    <p className="flex max-w-[36rem] items-start gap-2 rounded-[calc(10px*var(--admin-radius-scale,1))] bg-red-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-red-700 shadow-[0_0_0_1px_rgba(220,38,38,0.15)]">
       <AlertTriangle className="mt-px size-3.5 shrink-0" />
       {body}
     </p>

@@ -147,9 +147,9 @@ export function RelationsField({
           {ids.map((id, i) => (
             <li
               key={id}
-              className="flex items-center gap-2 rounded-2xl bg-black/[0.04] py-1.5 pr-1.5 pl-3 text-sm text-black/85"
+              className="flex items-center gap-2 rounded-2xl bg-black/[0.04] admin:bg-ink/[0.04] py-1.5 pr-1.5 pl-3 text-sm text-black/85 admin:text-ink/85"
             >
-              <span className="min-w-4 text-[12px] tabular-nums text-black/35">
+              <span className="min-w-4 text-[12px] tabular-nums text-black/35 admin:text-ink/35">
                 {i + 1}
               </span>
               <span className="flex-1 truncate">{titles[id] ?? id}</span>
@@ -200,7 +200,7 @@ function ReorderButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex size-6 items-center justify-center rounded-full text-black/45 transition-colors hover:bg-black/[0.06] hover:text-black/70 active:scale-[0.92] disabled:pointer-events-none disabled:opacity-30"
+      className="inline-flex size-6 items-center justify-center rounded-full text-black/45 admin:text-ink/45 transition-colors hover:bg-black/[0.06] admin:hover:bg-ink/[0.06] hover:text-black/70 admin:hover:text-ink/70 active:scale-[0.92] disabled:pointer-events-none disabled:opacity-30"
     >
       {children}
     </button>

@@ -35,7 +35,7 @@ export function ProportionBar({
     >
       {total === 0 ? (
         // 空資料不畫比例(避免畫一條假滿條);留一條中性軌道佔位。
-        <div className="h-full w-full rounded-full bg-black/[0.05]" />
+        <div className="h-full w-full rounded-full bg-ink/[0.05]" />
       ) : (
         segments.map((s, i) => {
           const pct = (s.value / total) * 100;
@@ -68,8 +68,8 @@ export function ProportionBarWidget({ data }: { data: ProportionWidgetData }) {
                 className="size-2 shrink-0 rounded-full"
                 style={{ backgroundColor: segmentColor(i) }}
               />
-              <span className="text-[12.5px] text-black/55">{s.label}</span>
-              <span className="text-[12.5px] font-semibold tabular-nums text-black/80">
+              <span className="text-[12.5px] text-ink/55">{s.label}</span>
+              <span className="text-[12.5px] font-semibold tabular-nums text-ink/80">
                 <StatNumber value={s.value} />
               </span>
             </div>

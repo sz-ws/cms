@@ -16,16 +16,16 @@ import {
 // 依 payment-kit 慣例:client 元件不進 index.ts barrel。
 
 const FIELD =
-  "h-9 rounded-[8px] bg-white px-2.5 text-[13px] text-black/85 " +
+  "h-9 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-2.5 text-[13px] text-black/85 admin:text-ink/85 " +
   "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)] outline-none " +
   "focus:shadow-[inset_0_0_0_1.5px_rgba(0,0,0,0.6)]";
-const LABEL = "mb-1 block text-[12px] text-black/50";
+const LABEL = "mb-1 block text-[12px] text-black/50 admin:text-ink/50";
 const CARD_CLS =
-  "rounded-[14px] bg-white px-5 py-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06)," +
+  "rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-5 py-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06)," +
   "0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]";
 const GHOST_BTN =
-  "rounded-[8px] px-2.5 py-1.5 text-[12.5px] text-black/60 " +
-  "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-black/[0.04] " +
+  "rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 py-1.5 text-[12.5px] text-black/60 admin:text-ink/60 " +
+  "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] " +
   "disabled:opacity-35";
 
 type EffectType = ShippingRule["effect"]["type"];
@@ -133,7 +133,7 @@ export function ShippingEditor({
         {/* 配送方式 */}
         <section className={CARD_CLS}>
           <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-[14px] font-semibold text-black/85">配送方式</h2>
+            <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">配送方式</h2>
             <button
               type="button"
               className={GHOST_BTN}
@@ -148,7 +148,7 @@ export function ShippingEditor({
             </button>
           </div>
           {methods.length === 0 ? (
-            <p className="text-[13px] text-black/45">
+            <p className="text-[13px] text-black/45 admin:text-ink/45">
               尚未設定 —— 沒有配送方式時,結帳不會出現運費(數位商品/自取店家可留空)。
             </p>
           ) : (
@@ -184,7 +184,7 @@ export function ShippingEditor({
                       onChange={(e) => patchMethod(i, { base: num(e.target.value) ?? 0 })}
                     />
                   </div>
-                  <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-black/60">
+                  <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-black/60 admin:text-ink/60">
                     <input
                       type="checkbox"
                       checked={m.enabled}
@@ -208,7 +208,7 @@ export function ShippingEditor({
         {/* 規則 */}
         <section className={CARD_CLS}>
           <div className="mb-1 flex items-baseline justify-between">
-            <h2 className="text-[14px] font-semibold text-black/85">運費規則</h2>
+            <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">運費規則</h2>
             <button
               type="button"
               className={GHOST_BTN}
@@ -222,24 +222,24 @@ export function ShippingEditor({
               + 新增規則
             </button>
           </div>
-          <p className="mb-3 text-[12px] leading-relaxed text-black/45">
+          <p className="mb-3 text-[12px] leading-relaxed text-black/45 admin:text-ink/45">
             由上往下逐條套用,順序就是優先序;「免運」命中後不再套用後面的規則。
             條件留空 = 不限。
           </p>
           {rules.length === 0 ? (
-            <p className="text-[13px] text-black/45">沒有規則 —— 一律收基本運費。</p>
+            <p className="text-[13px] text-black/45 admin:text-ink/45">沒有規則 —— 一律收基本運費。</p>
           ) : (
             <ul className="space-y-3">
               {rules.map((r, i) => (
                 <li
                   key={i}
-                  className="rounded-[10px] bg-black/[0.025] px-3.5 py-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"
+                  className="rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.025] admin:bg-ink/[0.025] px-3.5 py-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"
                 >
                   <div className="mb-2.5 flex items-center gap-2">
-                    <span className="grid size-5 shrink-0 place-items-center rounded-full bg-black/[0.07] text-[11px] tabular-nums text-black/55">
+                    <span className="grid size-5 shrink-0 place-items-center rounded-full bg-black/[0.07] admin:bg-ink/[0.07] text-[11px] tabular-nums text-black/55 admin:text-ink/55">
                       {i + 1}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-black/75">
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-black/75 admin:text-ink/75">
                       {ruleSummary(r)}
                     </span>
                     <button type="button" className={GHOST_BTN} disabled={i === 0} onClick={() => moveRule(i, -1)}>
@@ -253,7 +253,7 @@ export function ShippingEditor({
                     >
                       ↓
                     </button>
-                    <label className="flex items-center gap-1.5 text-[12.5px] text-black/60">
+                    <label className="flex items-center gap-1.5 text-[12.5px] text-black/60 admin:text-ink/60">
                       <input
                         type="checkbox"
                         checked={r.enabled}
@@ -321,7 +321,7 @@ export function ShippingEditor({
                           return (
                             <label
                               key={m.id}
-                              className="flex items-center gap-1 text-[12.5px] text-black/60"
+                              className="flex items-center gap-1 text-[12.5px] text-black/60 admin:text-ink/60"
                             >
                               <input
                                 type="checkbox"
@@ -341,7 +341,7 @@ export function ShippingEditor({
                           );
                         })}
                         {methods.length === 0 ? (
-                          <span className="text-[12px] text-black/35">(不限)</span>
+                          <span className="text-[12px] text-black/35 admin:text-ink/35">(不限)</span>
                         ) : null}
                       </div>
                     </div>
@@ -391,18 +391,18 @@ export function ShippingEditor({
             type="button"
             disabled={busy}
             onClick={() => void save()}
-            className="grid h-10 place-items-center rounded-[10px] bg-black px-6 text-[13.5px] font-medium text-white hover:bg-black/85 disabled:opacity-50"
+            className="grid h-10 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-6 text-[13.5px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
           >
             {busy ? "儲存中…" : "儲存運費設定"}
           </button>
-          {notice ? <p className="text-[13px] text-black/55">{notice}</p> : null}
+          {notice ? <p className="text-[13px] text-black/55 admin:text-ink/55">{notice}</p> : null}
         </div>
       </div>
 
       {/* 即時試算 —— 與結帳同一個純函式,所見即所得。 */}
       <aside className={`${CARD_CLS} h-fit lg:sticky lg:top-6`}>
-        <h2 className="text-[14px] font-semibold text-black/85">試算</h2>
-        <p className="mt-0.5 text-[12px] text-black/45">
+        <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">試算</h2>
+        <p className="mt-0.5 text-[12px] text-black/45 admin:text-ink/45">
           改左邊任何欄位,這裡立刻重算 —— 跟結帳頁用同一套規則。
         </p>
         <div className="mt-3 space-y-2.5">
@@ -434,21 +434,21 @@ export function ShippingEditor({
             />
           </div>
         </div>
-        <div className="mt-4 border-t border-black/[0.08] pt-3">
+        <div className="mt-4 border-t border-black/[0.08] admin:border-ink/[0.08] pt-3">
           {preview.length === 0 ? (
-            <p className="text-[12.5px] text-black/40">沒有啟用中的配送方式。</p>
+            <p className="text-[12.5px] text-black/40 admin:text-ink/40">沒有啟用中的配送方式。</p>
           ) : (
             <ul className="space-y-2">
               {preview.map((o) => (
                 <li key={o.id} className="text-[13px]">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-black/70">{o.name}</span>
-                    <span className="font-semibold tabular-nums text-black/85">
+                    <span className="text-black/70 admin:text-ink/70">{o.name}</span>
+                    <span className="font-semibold tabular-nums text-black/85 admin:text-ink/85">
                       {o.fee === 0 ? "免運" : `NT$ ${o.fee.toLocaleString("zh-TW")}`}
                     </span>
                   </div>
                   {o.applied.length > 0 ? (
-                    <p className="text-[11.5px] text-black/40">
+                    <p className="text-[11.5px] text-black/40 admin:text-ink/40">
                       套用:{o.applied.join("、")}
                     </p>
                   ) : null}

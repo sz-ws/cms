@@ -9,11 +9,11 @@ import type { TrendWidgetData } from "./types";
 export function StatSimpleWidget({ data }: { data: TrendWidgetData }) {
   return (
     <WidgetShell className="justify-center">
-      <span className="text-[13px] font-medium text-black/50">
+      <span className="text-[13px] font-medium text-ink/50">
         {data.label}
       </span>
       <div className="flex items-end gap-2.5">
-        <span className="text-[36px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-black/85">
+        <span className="text-[36px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-ink/85">
           {typeof data.value === "number" ? (
             <StatNumber value={data.value} />
           ) : (

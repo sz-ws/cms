@@ -19,25 +19,25 @@ export function DashboardEmpty({ labels }: DashboardEmptyProps) {
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-4 rounded-[14px] bg-white px-6 py-16 text-center",
+        "flex flex-col items-center gap-4 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-16 text-center",
         SHADOW_RING,
       )}
     >
       <RingDot accent className="scale-125" />
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
           {labels.title}
         </h2>
-        <p className="max-w-sm text-[13px] leading-relaxed text-black/45">
+        <p className="max-w-sm text-[13px] leading-relaxed text-ink/45">
           {labels.desc}
         </p>
       </div>
       <AdminLink
         href="/admin/extensions"
         className={cn(
-          "inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-black px-4 text-[13px] font-medium text-white",
+          "inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-4 text-[13px] font-medium text-white",
           "transition-[background-color,transform] duration-150 ease-out",
-          "hover:bg-black/85 active:scale-[0.96]",
+          "hover:bg-ink/85 active:scale-[0.96]",
         )}
       >
         {labels.browseExtensions}

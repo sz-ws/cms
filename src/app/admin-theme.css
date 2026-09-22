@@ -1,0 +1,73 @@
+/* 後台風格(lib/admin-theme.ts)。
+ *
+ * 預設的「紙與墨」就是改版前的後台:什麼都不覆蓋,globals.css 的 :root 與各元件原本的
+ * class 照舊。只有存了自訂風格時,AdminTheme 的 <style id="cms-admin-theme"> 才帶
+ * data-themed,下面的橋接與 `admin:` 變體(globals.css)才生效。body 範圍包含 portal
+ * 出去的選單與對話框;導向前台後 :has 自然失效。
+ *
+ * 橋接照抄 :root 的配方:純黑的各級透明度 → 文字色,#fbfaf9 → 背景,白 → 卡片。
+ * 所以只改圓角或層次時,顏色跟原本一樣。 */
+:where(body:has(#cms-admin-theme[data-themed]), [data-admin-theme-preview="custom"]) {
+  --paper: var(--admin-ground);
+  --ink: var(--admin-ink);
+  --background: var(--admin-ground);
+  --foreground: color-mix(in srgb, var(--admin-ink) 90%, transparent);
+  --card: var(--admin-surface);
+  --card-foreground: color-mix(in srgb, var(--admin-ink) 90%, transparent);
+  --popover: var(--admin-surface);
+  --popover-foreground: color-mix(in srgb, var(--admin-ink) 90%, transparent);
+  --primary: var(--admin-ink);
+  --secondary: var(--admin-surface);
+  --secondary-foreground: color-mix(in srgb, var(--admin-ink) 85%, transparent);
+  --muted: color-mix(in srgb, var(--admin-ink) 3%, transparent);
+  --muted-foreground: color-mix(in srgb, var(--admin-ink) 45%, transparent);
+  --accent: color-mix(in srgb, var(--admin-ink) 3%, transparent);
+  --accent-foreground: color-mix(in srgb, var(--admin-ink) 90%, transparent);
+  --border: color-mix(in srgb, var(--admin-ink) 8%, transparent);
+  --input: color-mix(in srgb, var(--admin-ink) 10%, transparent);
+  --radius: var(--admin-radius-control);
+  --sidebar: var(--admin-ground);
+  --sidebar-foreground: color-mix(in srgb, var(--admin-ink) 55%, transparent);
+  --sidebar-accent: color-mix(in srgb, var(--admin-ink) 3%, transparent);
+  --sidebar-accent-foreground: color-mix(in srgb, var(--admin-ink) 90%, transparent);
+  --sidebar-border: color-mix(in srgb, var(--admin-ink) 8%, transparent);
+  --bg: var(--background);
+  --fg: var(--foreground);
+  --overlay: var(--popover);
+  --overlay-fg: var(--popover-foreground);
+  --navbar: var(--background);
+  --navbar-fg: var(--foreground);
+  --secondary-fg: var(--secondary-foreground);
+  --accent-fg: var(--accent-foreground);
+  --muted-fg: var(--muted-foreground);
+  --sidebar-fg: var(--sidebar-foreground);
+  --sidebar-accent-fg: var(--sidebar-accent-foreground);
+}
+
+/* 選了 Google Fonts 字體(AdminTheme 的 <style> 帶 data-admin-font)。明寫 font-sans /
+ * font-heading 的元素也跟著換;不在 layer 裡,所以蓋得過 utility。 */
+body:has(#cms-admin-theme[data-admin-font]),
+body:has(#cms-admin-theme[data-admin-font]) :is(.font-sans, .font-heading) {
+  font-family: var(--admin-font);
+}
+
+/* 編輯器的預覽區塊選回紙與墨,但已存的是別的風格:把外層傳下來的主題值清掉。
+ * 原本的 token 由 globals.css 的 :root 規則一起套在這裡。 */
+[data-admin-theme-preview="default"] {
+  --admin-ground: initial;
+  --admin-surface: initial;
+  --admin-ink: initial;
+  --admin-radius-scale: initial;
+  --admin-radius-control: initial;
+  --admin-radius-card: initial;
+  --admin-radius-panel: initial;
+  --admin-shadow-card: initial;
+  --admin-shadow-panel: initial;
+  --admin-font: initial;
+}
+
+/* 預覽是一般 div(對話框另有自己的底色):底色與字色要在這裡依預覽的 token 重算。 */
+[data-admin-theme-preview]:not([data-slot]) {
+  background-color: var(--background);
+  color: var(--foreground);
+}

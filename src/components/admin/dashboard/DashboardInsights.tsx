@@ -124,14 +124,14 @@ function EditRow({
 }) {
   const allowedPresets = INSIGHT_ALLOWED_PRESETS[entry.id];
   return (
-    <div className="flex items-center gap-3 rounded-[10px] bg-white px-3 py-2.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+    <div className="flex items-center gap-3 rounded-[calc(10px*var(--admin-radius-scale,1))] bg-surface px-3 py-2.5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))]">
       <div className="flex shrink-0 flex-col">
         <button
           type="button"
           aria-label={labels.moveUp}
           disabled={index === 0}
           onClick={() => onMove(entry.id, -1)}
-          className="flex size-5 items-center justify-center rounded-[4px] text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/70 disabled:pointer-events-none disabled:opacity-25"
+          className="flex size-5 items-center justify-center rounded-[calc(4px*var(--admin-radius-scale,1))] text-ink/35 transition-colors hover:bg-ink/[0.04] hover:text-ink/70 disabled:pointer-events-none disabled:opacity-25"
         >
           <ChevronUp className="size-3.5" />
         </button>
@@ -140,7 +140,7 @@ function EditRow({
           aria-label={labels.moveDown}
           disabled={index === total - 1}
           onClick={() => onMove(entry.id, 1)}
-          className="flex size-5 items-center justify-center rounded-[4px] text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/70 disabled:pointer-events-none disabled:opacity-25"
+          className="flex size-5 items-center justify-center rounded-[calc(4px*var(--admin-radius-scale,1))] text-ink/35 transition-colors hover:bg-ink/[0.04] hover:text-ink/70 disabled:pointer-events-none disabled:opacity-25"
         >
           <ChevronDown className="size-3.5" />
         </button>
@@ -153,10 +153,10 @@ function EditRow({
       />
 
       <div className="flex flex-1 flex-col gap-0.5">
-        <span className="text-[13px] font-medium text-black/85">
+        <span className="text-[13px] font-medium text-ink/85">
           {labels.widget[entry.id]}
         </span>
-        <span className="text-[11px] text-black/40">
+        <span className="text-[11px] text-ink/40">
           {entry.enabled ? labels.show : labels.hide}
         </span>
       </div>
@@ -237,10 +237,10 @@ export function DashboardInsights({
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-black/90">
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-ink/90">
             {labels.title}
           </h2>
-          <p className="text-[13px] text-black/40">{labels.subtitle}</p>
+          <p className="text-[13px] text-ink/40">{labels.subtitle}</p>
         </div>
         {canEdit && (
           <div className="flex items-center gap-1">
@@ -251,7 +251,7 @@ export function DashboardInsights({
                 type="button"
                 disabled={saving}
                 onClick={() => dispatch({ kind: "cancel", config })}
-                className="inline-flex h-9 items-center rounded-[8px] px-3 text-[13px] font-medium text-black/50 transition-colors hover:bg-black/[0.04] hover:text-black/80 disabled:pointer-events-none disabled:opacity-50"
+                className="inline-flex h-9 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium text-ink/50 transition-colors hover:bg-ink/[0.04] hover:text-ink/80 disabled:pointer-events-none disabled:opacity-50"
               >
                 {labels.cancel}
               </button>
@@ -263,8 +263,8 @@ export function DashboardInsights({
                 editing ? saveEditing() : dispatch({ kind: "open" })
               }
               className={cn(
-                "inline-flex h-9 items-center gap-1.5 rounded-[8px] px-3.5 text-[13px] font-medium transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50",
-                editing ? "bg-black text-white hover:bg-black/85" : "bg-black/[0.04] text-black/70 hover:bg-black/[0.07]",
+                "inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3.5 text-[13px] font-medium transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50",
+                editing ? "bg-ink text-white hover:bg-ink/85" : "bg-ink/[0.04] text-ink/70 hover:bg-ink/[0.07]",
               )}
             >
               {editing ? (
@@ -280,7 +280,7 @@ export function DashboardInsights({
 
       {saveError && <p role="alert" className="text-sm text-destructive">{t("settingsWorkspace.saveFailedError")}</p>}
       {editing ? (
-        <fieldset disabled={saving} className="flex flex-col gap-2 rounded-[14px] bg-black/[0.02] p-2">
+        <fieldset disabled={saving} className="flex flex-col gap-2 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-ink/[0.02] p-2">
           {localConfig.map((entry, i) => (
             <EditRow
               key={entry.id}
@@ -297,7 +297,7 @@ export function DashboardInsights({
           ))}
         </fieldset>
       ) : enabled.length === 0 ? (
-        <p className="rounded-[14px] bg-black/[0.02] px-4 py-6 text-center text-[13px] text-black/40">
+        <p className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-ink/[0.02] px-4 py-6 text-center text-[13px] text-ink/40">
           {labels.empty}
         </p>
       ) : rest.length === 0 ? (

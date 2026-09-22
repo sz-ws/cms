@@ -46,7 +46,7 @@ export function PasskeyNameDialog({ open, onSubmit }: PasskeyNameDialogProps) {
       }}
     >
       <DialogContent
-        className="max-w-sm rounded-[20px] p-0 shadow-[0_16px_48px_-12px_rgba(30,20,50,0.18)]"
+        className="max-w-sm rounded-[calc(20px*var(--admin-radius-scale,1))] p-0 shadow-[var(--admin-shadow-panel,0_16px_48px_-12px_rgba(30,20,50,0.18))]"
         showCloseButton={false}
       >
         <form

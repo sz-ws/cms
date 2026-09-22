@@ -17,14 +17,14 @@ export function BarListWidget({ data }: { data: ProportionWidgetData }) {
         {sorted.map((s, i) => (
           <div key={s.id} className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-[12.5px] text-black/55">
+              <span className="truncate text-[12.5px] text-ink/55">
                 {s.label}
               </span>
-              <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-black/80">
+              <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink/80">
                 <StatNumber value={s.value} />
               </span>
             </div>
-            <div className="h-[6px] w-full overflow-hidden rounded-full bg-black/[0.05]">
+            <div className="h-[6px] w-full overflow-hidden rounded-full bg-ink/[0.05]">
               <div
                 className="h-full rounded-full transition-[width] duration-500 ease-out"
                 style={{

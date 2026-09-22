@@ -55,19 +55,19 @@ export function MediaField({
         className="w-full"
       >
         <div className="flex items-center justify-between gap-3">
-          <TabsList className="rounded-[10px] bg-black/[0.04] p-0.5">
-            <TabsTrigger value="cover" className="rounded-[8px] px-3 py-1.5 text-[12.5px]">
+          <TabsList className="rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] p-0.5">
+            <TabsTrigger value="cover" className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-1.5 text-[12.5px]">
               Cover
             </TabsTrigger>
             <TabsTrigger
               value="library"
-              className="rounded-[8px] px-3 py-1.5 text-[12.5px]"
+              className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-1.5 text-[12.5px]"
             >
               Library
             </TabsTrigger>
             <TabsTrigger
               value="manual"
-              className="rounded-[8px] px-3 py-1.5 text-[12.5px]"
+              className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-1.5 text-[12.5px]"
             >
               Manual
             </TabsTrigger>
@@ -80,7 +80,7 @@ export function MediaField({
                 disabled={disabled}
                 aria-label={expanded ? "Shrink cover preview" : "Expand cover preview"}
                 onClick={() => setExpanded((v) => !v)}
-                className="inline-flex h-9 items-center gap-1 rounded-[8px] px-2.5 text-[12.5px] font-medium text-black/55 shadow-[0_0_0_1px_rgba(0,0,0,0.06)] transition-[color,background-color] hover:bg-black/[0.03] hover:text-black/85 active:scale-[0.96] disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-1 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[12.5px] font-medium text-black/55 admin:text-ink/55 shadow-[0_0_0_1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))] transition-[color,background-color] hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] hover:text-black/85 admin:hover:text-ink/85 active:scale-[0.96] disabled:opacity-50"
               >
                 {expanded ? (
                   <Minimize2 className="size-3.5" />
@@ -95,7 +95,7 @@ export function MediaField({
               disabled={disabled}
               onClick={() => setPickerOpen(true)}
               data-invalid={error ? "true" : undefined}
-              className="inline-flex h-10 items-center rounded-[8px] bg-black px-4 text-[13px] font-medium text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] transition-[background-color] outline-none hover:bg-black/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.25)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100 data-[invalid]:shadow-[0_0_0_1px_rgba(185,28,28,0.5)]"
+              className="inline-flex h-10 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[13px] font-medium text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] transition-[background-color] outline-none hover:bg-black/85 admin:hover:bg-ink/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.25)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100 data-[invalid]:shadow-[0_0_0_1px_rgba(185,28,28,0.5)]"
             >
               {key ? "Replace" : "Choose"}
             </button>
@@ -104,7 +104,7 @@ export function MediaField({
                 type="button"
                 disabled={disabled}
                 onClick={() => onChange("")}
-                className="inline-flex h-10 items-center gap-1 rounded-[8px] px-2.5 text-[13px] font-medium text-black/45 transition-[color,background-color] outline-none hover:bg-black/[0.03] hover:text-black/85 active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100"
+                className="inline-flex h-10 items-center gap-1 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[13px] font-medium text-black/45 admin:text-ink/45 transition-[color,background-color] outline-none hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] hover:text-black/85 admin:hover:text-ink/85 active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100"
               >
                 <XIcon className="size-3.5" />
                 Clear
@@ -116,7 +116,7 @@ export function MediaField({
         {/* Cover preview — 16:9 hero with object-contain, no clipping of the artwork. */}
         {mode === "cover" ? (
           <div
-            className={`relative mt-3 overflow-hidden rounded-[14px] bg-black/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] ${
+            className={`relative mt-3 overflow-hidden rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-black/[0.02] admin:bg-ink/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] ${
               expanded ? "aspect-[16/9]" : "aspect-[16/9] max-h-[18rem]"
             }`}
           >
@@ -138,7 +138,7 @@ export function MediaField({
                   }}
                 />
               ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-black/45">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-black/45 admin:text-ink/45">
                   <FileIcon className="size-7" />
                   <span className="font-mono text-[11px] lowercase">
                     {key.split("/").pop()}
@@ -146,7 +146,7 @@ export function MediaField({
                 </div>
               )
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-black/35">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-black/35 admin:text-ink/35">
                 <ImageIcon className="size-7" />
                 <span className="text-[12.5px]">No cover image yet</span>
               </div>
@@ -157,7 +157,7 @@ export function MediaField({
         {/* Library tile — small thumbnail + filename chip + key meta. */}
         {mode === "library" ? (
           <div className="mt-3 flex items-start gap-3">
-            <div className="relative size-20 shrink-0 overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)]">
+            <div className="relative size-20 shrink-0 overflow-hidden rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))]">
               {key ? (
                 src ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -176,23 +176,23 @@ export function MediaField({
                   />
                 ) : (
                   <span className="flex size-full items-center justify-center">
-                    <FileIcon className="size-6 text-black/35" />
+                    <FileIcon className="size-6 text-black/35 admin:text-ink/35" />
                   </span>
                 )
               ) : (
-                <div className="grid size-full place-items-center bg-black/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
-                  <ImageIcon className="size-5 text-black/25" />
+                <div className="grid size-full place-items-center bg-black/[0.02] admin:bg-ink/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+                  <ImageIcon className="size-5 text-black/25 admin:text-ink/25" />
                 </div>
               )}
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               {key ? (
                 <>
-                  <span className="truncate text-[12.5px] font-medium text-black/85">
+                  <span className="truncate text-[12.5px] font-medium text-black/85 admin:text-ink/85">
                     {key.split("/").pop()}
                   </span>
                   <span
-                    className="truncate font-mono text-[11px] lowercase text-black/45"
+                    className="truncate font-mono text-[11px] lowercase text-black/45 admin:text-ink/45"
                     title={key}
                   >
                     {key}
@@ -200,8 +200,8 @@ export function MediaField({
                 </>
               ) : (
                 <>
-                  <span className="text-[13px] text-black/55">Empty</span>
-                  <span className="text-[11.5px] text-black/35">
+                  <span className="text-[13px] text-black/55 admin:text-ink/55">Empty</span>
+                  <span className="text-[11.5px] text-black/35 admin:text-ink/35">
                     Open the picker to choose a file.
                   </span>
                 </>
@@ -213,7 +213,7 @@ export function MediaField({
         {/* Manual entry — direct storage key paste, hidden until tab is active. */}
         {mode === "manual" ? (
           <div className="mt-3 flex flex-col gap-1.5">
-            <label className="text-[12px] font-medium text-black/55">
+            <label className="text-[12px] font-medium text-black/55 admin:text-ink/55">
               Storage key
             </label>
             <Input
@@ -221,9 +221,9 @@ export function MediaField({
               placeholder="e.g. core/2026/07/abc.jpg"
               disabled={disabled}
               onChange={(e) => onChange(e.target.value)}
-              className="h-10 rounded-[8px] font-mono text-[12px]"
+              className="h-10 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] font-mono text-[12px]"
             />
-            <span className="text-[11px] text-black/40">
+            <span className="text-[11px] text-black/40 admin:text-ink/40">
               Type or paste a R2 storage key directly.
             </span>
           </div>

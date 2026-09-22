@@ -91,13 +91,13 @@ export function CommerceOrdersTable({
   transferProvider?: string;
 }) {
   if (orders.length === 0) {
-    return <p className="text-[13px] text-black/45">尚無訂單。</p>;
+    return <p className="text-[13px] text-black/45 admin:text-ink/45">尚無訂單。</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-[13px]">
         <thead>
-          <tr className="text-[12px] text-black/45">
+          <tr className="text-[12px] text-black/45 admin:text-ink/45">
             <th className="pb-2 pr-4 font-medium">訂單編號</th>
             <th className="pb-2 pr-4 font-medium">金額</th>
             <th className="pb-2 pr-4 font-medium">狀態</th>
@@ -112,7 +112,7 @@ export function CommerceOrdersTable({
           {orders.map((o) => (
             <tr
               key={o.orderNo}
-              className="border-t border-black/[0.05] text-black/70"
+              className="border-t border-black/[0.05] admin:border-ink/[0.05] text-black/70 admin:text-ink/70"
             >
               <td className="py-2.5 pr-4 font-mono text-[12px]">{o.orderNo}</td>
               <td className="py-2.5 pr-4 tabular-nums">
@@ -126,14 +126,14 @@ export function CommerceOrdersTable({
               </td>
               <td className="max-w-[10rem] truncate py-2.5 pr-4">
                 {o.customerName}
-                <span className="block truncate text-[11px] text-black/40">
+                <span className="block truncate text-[11px] text-black/40 admin:text-ink/40">
                   {o.customerEmail}
                 </span>
               </td>
-              <td className="py-2.5 pr-4 font-mono text-[12px] text-black/50">
+              <td className="py-2.5 pr-4 font-mono text-[12px] text-black/50 admin:text-ink/50">
                 {o.paymentProvider}
               </td>
-              <td className="py-2.5 pr-4 tabular-nums text-[12px] text-black/50">
+              <td className="py-2.5 pr-4 tabular-nums text-[12px] text-black/50 admin:text-ink/50">
                 <DateTimeText at={o.createdAt} locale="zh-Hant" />
               </td>
               {actionsEndpoint ? (
@@ -174,7 +174,7 @@ export function TransferVerifyQueue({
   emptyText?: string;
 }) {
   if (orders.length === 0) {
-    return <p className="text-[13px] text-black/45">{emptyText}</p>;
+    return <p className="text-[13px] text-black/45 admin:text-ink/45">{emptyText}</p>;
   }
   return (
     <ul className="space-y-3">
@@ -183,20 +183,20 @@ export function TransferVerifyQueue({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-[13px] text-black/80">
+                <span className="font-mono text-[13px] text-black/80 admin:text-ink/80">
                   {o.orderNo}
                 </span>
-                <span className="tabular-nums text-[13px] text-black/70">
+                <span className="tabular-nums text-[13px] text-black/70 admin:text-ink/70">
                   NT$ {o.amounts.total.toLocaleString("zh-TW")}
                 </span>
-                <span className="text-[12.5px] text-black/55">
+                <span className="text-[12.5px] text-black/55 admin:text-ink/55">
                   末五碼{" "}
-                  <span className="font-mono text-black/80">
+                  <span className="font-mono text-black/80 admin:text-ink/80">
                     {o.transferLast5 ?? "未回報"}
                   </span>
                 </span>
               </div>
-              <p className="mt-1 truncate text-[12px] text-black/45">
+              <p className="mt-1 truncate text-[12px] text-black/45 admin:text-ink/45">
                 {o.customerName} · {o.customerEmail}
                 {o.transferReportedAt ? (
                   <>

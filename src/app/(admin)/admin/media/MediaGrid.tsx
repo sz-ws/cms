@@ -53,8 +53,8 @@ function GridItem({
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 flex-col overflow-hidden rounded-[14px] bg-white",
-        "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]",
+        "flex w-full min-w-0 flex-col overflow-hidden rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface",
+        "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]",
         "transition-[box-shadow] duration-150 ease-out",
         selected
           ? "shadow-[0_0_0_2px_var(--admin-accent),0_2px_4px_0_rgba(0,0,0,0.04)]"
@@ -67,12 +67,12 @@ function GridItem({
         aria-pressed={selected}
         title={file.key}
         className={cn(
-          "group flex min-w-0 flex-col rounded-t-[14px] text-left outline-none",
+          "group flex min-w-0 flex-col rounded-t-[calc(14px*var(--admin-radius-scale,1))] text-left outline-none",
           "transition-transform duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100",
           "focus-visible:shadow-[inset_0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
         )}
       >
-        <span className="relative block aspect-square w-full shrink-0 overflow-hidden rounded-t-[14px] bg-black/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
+        <span className="relative block aspect-square w-full shrink-0 overflow-hidden rounded-t-[calc(14px*var(--admin-radius-scale,1))] bg-ink/[0.02] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
           {img ? (
             // aspect-square 已鎖住版位;縮圖只需要最小的幾格 srcset —— 這個頁面
             // 一次列 100 個檔,抓原圖是整個 admin 最貴的網路成本。
@@ -85,8 +85,8 @@ function GridItem({
             />
           ) : (
             <span className="flex size-full flex-col items-center justify-center gap-1.5 px-2">
-              <FileIcon className="size-6 text-black/30" />
-              <span className="font-mono text-[10px] lowercase text-black/40">
+              <FileIcon className="size-6 text-ink/30" />
+              <span className="font-mono text-[10px] lowercase text-ink/40">
                 {typeLabelOf(file)}
               </span>
             </span>
@@ -109,10 +109,10 @@ function GridItem({
           )}
         </span>
         <span className="flex min-w-0 flex-col gap-0.5 px-2.5 py-2">
-          <span className="block w-full min-w-0 truncate text-[12px] font-medium text-black/80">
+          <span className="block w-full min-w-0 truncate text-[12px] font-medium text-ink/80">
             {fileNameOf(file.key)}
           </span>
-          <span className="flex min-w-0 items-center gap-1 text-[11px] tabular-nums text-black/35">
+          <span className="flex min-w-0 items-center gap-1 text-[11px] tabular-nums text-ink/35">
             <span className="shrink-0">{formatBytes(file.size)}</span>
             <span aria-hidden className="shrink-0">
               ·

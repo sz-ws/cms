@@ -277,6 +277,11 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settings.emailDomains.hint": "寄信服務帳號裡的網域，點一下就填進寄件地址。",
   "settings.emailDomains.unverified": "未驗證",
   "settings.secretSet": "已設定，輸入新值即可取代",
+  "color.custom": "自訂顏色",
+  "color.area": "飽和度與明度",
+  "color.areaValue": "飽和度 {s}%,明度 {v}%",
+  "color.hue": "色相",
+  "color.hex": "色碼",
 
   // SettingsWorkspace
   "settingsWorkspace.saving": "儲存中…",
@@ -302,6 +307,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settingsWorkspace.surface": "設定面板",
   "settingsWorkspace.surfaceSubtitle": "改完一起按儲存。",
   "settingsWorkspace.core": "核心",
+  "settingsWorkspace.style": "風格",
   "settingsWorkspace.declarativeTab": "宣告式",
   "settingsWorkspace.extensions": "擴充功能",
   "settingsWorkspace.savingButton": "儲存中…",

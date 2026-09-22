@@ -110,10 +110,10 @@ export function PublishScheduleControl({
                 type="button"
                 disabled={disabled}
                 className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] disabled:opacity-50",
+                  "inline-flex h-8 items-center gap-1.5 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] disabled:opacity-50",
                   scheduled
                     ? "bg-(--admin-accent)/[0.10] text-[color-mix(in_srgb,var(--admin-accent)_88%,black)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_16%,transparent)]"
-                    : "text-black/45 hover:bg-black/[0.04] hover:text-black/70",
+                    : "text-black/45 admin:text-ink/45 hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/70 admin:hover:text-ink/70",
                 )}
               >
                 <CalendarClock className="size-3.5" aria-hidden />
@@ -131,19 +131,19 @@ export function PublishScheduleControl({
               disabled={{ before: new Date(mountedAt) }}
               autoFocus
             />
-            <div className="flex items-center justify-between gap-2 border-t border-black/[0.06] px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 border-t border-black/[0.06] admin:border-ink/[0.06] px-3 py-2.5">
               <input
                 type="time"
                 aria-label="Publish time"
                 value={draftTime}
                 onChange={(e) => setDraftTime(e.target.value)}
-                className="h-8 rounded-[8px] bg-black/[0.04] px-2 text-[13px] tabular-nums text-black/80 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
+                className="h-8 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] px-2 text-[13px] tabular-nums text-black/80 admin:text-ink/80 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
               />
               <button
                 type="button"
                 onClick={apply}
                 disabled={combined === null}
-                className="inline-flex h-8 items-center rounded-[8px] bg-black px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 admin:hover:bg-ink/85 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Set schedule
               </button>
@@ -156,14 +156,14 @@ export function PublishScheduleControl({
             aria-label="Clear schedule"
             disabled={disabled}
             onClick={() => onChange(null)}
-            className="inline-flex size-8 items-center justify-center rounded-[8px] text-black/35 transition-colors duration-150 hover:bg-black/[0.04] hover:text-black/70 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none disabled:opacity-50"
+            className="inline-flex size-8 items-center justify-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] text-black/35 admin:text-ink/35 transition-colors duration-150 hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/70 admin:hover:text-ink/70 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none disabled:opacity-50"
           >
             <X className="size-3.5" aria-hidden />
           </button>
         )}
       </div>
       {scheduled && (
-        <p className="text-[11px] text-black/35">
+        <p className="text-[11px] text-black/35 admin:text-ink/35">
           {past
             ? "This time has passed — the entry will publish on the next sweep."
             : "Publishes automatically at this time."}

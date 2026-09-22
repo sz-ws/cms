@@ -14,7 +14,8 @@ import {
   SettingsWorkspace,
   type SettingsSection,
 } from "@/components/admin/SettingsWorkspace";
-import { AdminAccentCacheSync } from "@/components/admin/AdminAccent";
+import { AdminThemeEditor } from "@/components/admin/AdminThemeEditor";
+import { resolveAdminAppearance } from "@/lib/admin-theme";
 import { RegistrySourcesManager, type RegistrySource } from "@/components/admin/RegistrySourcesManager";
 import { ApiTokensManager } from "@/components/admin/ApiTokensManager";
 import {
@@ -30,8 +31,13 @@ export const dynamic = "force-dynamic";
 // 05 §4:Core settings 表單 + 每個 enabled extension 一個 section。
 // 這頁不是 declarative dx/views surface；它是平台自己的 settings shell，
 // 所以直接吃 login page 的 Paper & Ink 語言。
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireAuth("admin");
+  const { tab } = await searchParams;
 
   const locale = await getLocale();
   const m = getMessages(locale);
@@ -53,6 +59,8 @@ export default async function SettingsPage() {
     (field) =>
       field.key !== "core.registrySources" &&
       field.key !== "core.registryTokens" &&
+      field.key !== "core.adminTheme" &&
+      field.key !== "core.adminAccent" &&
       field.key !== "core.dashboard.insights",
   );
 
@@ -131,19 +139,23 @@ export default async function SettingsPage() {
   return (
     <div className="relative flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/90">
           {m["settings.title"]}
         </h1>
-        <p className="text-[13px] leading-relaxed text-black/40">
+        <p className="text-[13px] leading-relaxed text-ink/40">
           {m["settings.subtitle"]}
         </p>
       </div>
 
-      {/* 1.40.0:後台主色的瀏覽器快取跟 DB 對齊(lib/admin-accent.ts)。 */}
-      <AdminAccentCacheSync accent={values["core.adminAccent"]} />
       <SettingsWorkspace
         sections={sections}
         values={values}
+        initialTab={typeof tab === "string" ? tab : undefined}
+        styleTab={
+          <AdminThemeEditor
+            initial={resolveAdminAppearance(values["core.adminTheme"], values["core.adminAccent"])}
+          />
+        }
         coreAddon={
           <div className="flex flex-col gap-6">
             <RegistrySourcesManager initialSources={registrySources} />
@@ -155,13 +167,13 @@ export default async function SettingsPage() {
 
       {/* About 標記:版本/作者的正統棲身處 —— 設定頁最底,安靜但找得到
           (sidebar 常駐 chrome 太吵,已搬離)。 */}
-      <p className="pt-2 text-center text-[11px] tracking-[0.02em] text-black/25">
+      <p className="pt-2 text-center text-[11px] tracking-[0.02em] text-ink/25">
         sz.ws CMS v{version} · crafted by{" "}
         <a
           href="https://okuso.uk"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-black/35 underline decoration-black/15 underline-offset-2 transition-colors hover:text-black/60 hover:decoration-black/35"
+          className="font-medium text-ink/35 underline decoration-ink/15 underline-offset-2 transition-colors hover:text-ink/60 hover:decoration-ink/35"
         >
           @kuosuko
         </a>

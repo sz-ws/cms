@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Core 表格範式(task #18 第一塊磚)—— /admin/users 立下的視覺語言抽成共用:
-// 白底 rounded-[12px] 容器 + hairline ring、uppercase 小表頭、hover 列 tint、
+// 白底 rounded-[12px] admin:rounded-[calc(12px*var(--admin-radius-scale,1))] 容器 + hairline ring、uppercase 小表頭、hover 列 tint、
 // active 列品牌藍 4.5% 底、trailing actions hover 才浮現、窄視窗容器自己橫向捲
 // (body 永不橫向捲)。資料驅動:加一欄 = 加一筆 CoreColumn 定義。
 // i18n 在消費端解好(label 收 ReactNode),這層不碰字典。
@@ -67,13 +67,13 @@ export function CoreTable<T>({
   }
 
   return (
-    <div className="overflow-x-auto rounded-[12px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.07),0_1px_3px_-1px_rgba(20,15,40,0.06)]">
+    <div className="overflow-x-auto rounded-[12px] admin:rounded-[calc(12px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.07),0_1px_3px_-1px_rgba(20,15,40,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.07),0_1px_3px_-1px_rgba(20,15,40,0.06))]">
       <table
         className="w-full border-separate border-spacing-0 text-left"
         style={{ minWidth }}
       >
         <thead>
-          <tr className="bg-black/[0.015]">
+          <tr className="bg-black/[0.015] admin:bg-ink/[0.015]">
             {columns.map((col) => (
               <th
                 key={col.key}
@@ -85,7 +85,7 @@ export function CoreTable<T>({
                     : undefined
                 }
                 className={cn(
-                  "border-b border-black/[0.07] px-4 py-2.5 text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap text-black/35 uppercase select-none",
+                  "border-b border-black/[0.07] admin:border-ink/[0.07] px-4 py-2.5 text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap text-black/35 admin:text-ink/35 uppercase select-none",
                   col.thClass,
                 )}
               >
@@ -93,7 +93,7 @@ export function CoreTable<T>({
                   <button
                     type="button"
                     onClick={() => toggleSort(col.key)}
-                    className="group/th relative -my-1 flex items-center gap-0.5 py-1 transition-colors hover:text-black/60"
+                    className="group/th relative -my-1 flex items-center gap-0.5 py-1 transition-colors hover:text-black/60 admin:hover:text-ink/60"
                   >
                     {col.label}
                     <span className="flex w-3 justify-center">
@@ -115,7 +115,7 @@ export function CoreTable<T>({
             ))}
             {trailingActions && (
               <th
-                className="w-0 border-b border-black/[0.07]"
+                className="w-0 border-b border-black/[0.07] admin:border-ink/[0.07]"
                 aria-label={trailingLabel}
               />
             )}
@@ -149,9 +149,9 @@ export function CoreTable<T>({
                   <td
                     key={col.key}
                     className={cn(
-                      "border-b border-black/[0.05] px-4 py-2.5 transition-colors duration-150",
+                      "border-b border-black/[0.05] admin:border-ink/[0.05] px-4 py-2.5 transition-colors duration-150",
                       onRowClick &&
-                        "group-hover/row:bg-black/[0.02] group-focus-visible/row:bg-black/[0.02]",
+                        "group-hover/row:bg-black/[0.02] admin:group-hover/row:bg-ink/[0.02] group-focus-visible/row:bg-black/[0.02] admin:group-focus-visible/row:bg-ink/[0.02]",
                       active && "bg-(--admin-accent)/[0.045]",
                       col.tdClass,
                     )}
@@ -162,9 +162,9 @@ export function CoreTable<T>({
                 {trailingActions && (
                   <td
                     className={cn(
-                      "border-b border-black/[0.05] py-2.5 pr-4 pl-2 text-right whitespace-nowrap transition-colors duration-150",
+                      "border-b border-black/[0.05] admin:border-ink/[0.05] py-2.5 pr-4 pl-2 text-right whitespace-nowrap transition-colors duration-150",
                       onRowClick &&
-                        "group-hover/row:bg-black/[0.02] group-focus-visible/row:bg-black/[0.02]",
+                        "group-hover/row:bg-black/[0.02] admin:group-hover/row:bg-ink/[0.02] group-focus-visible/row:bg-black/[0.02] admin:group-focus-visible/row:bg-ink/[0.02]",
                       active && "bg-(--admin-accent)/[0.045]",
                     )}
                   >
@@ -204,10 +204,10 @@ export function RowIconButton({
       onClick={onClick}
       className={cn(
         // 視覺 32px,relative before 撐滿 40px hit area
-        "relative flex size-8 items-center justify-center rounded-[7px] text-black/40 transition-[background-color,color,transform] before:absolute before:-inset-1 active:scale-[0.96]",
+        "relative flex size-8 items-center justify-center rounded-[7px] admin:rounded-[calc(7px*var(--admin-radius-scale,1))] text-black/40 admin:text-ink/40 transition-[background-color,color,transform] before:absolute before:-inset-1 active:scale-[0.96]",
         danger
           ? "hover:bg-red-50 hover:text-red-600"
-          : "hover:bg-black/[0.05] hover:text-black/75",
+          : "hover:bg-black/[0.05] admin:hover:bg-ink/[0.05] hover:text-black/75 admin:hover:text-ink/75",
       )}
     >
       {children}

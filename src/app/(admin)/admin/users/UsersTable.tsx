@@ -148,7 +148,7 @@ export function RolePill({
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold tracking-[0.04em] uppercase",
-        admin ? "text-[color-mix(in_srgb,var(--admin-accent)_88%,black)]" : guest ? "text-black/35" : "text-black/50",
+        admin ? "text-[color-mix(in_srgb,var(--admin-accent)_88%,black)]" : guest ? "text-ink/35" : "text-ink/50",
       )}
       style={{
         backgroundImage:
@@ -189,17 +189,17 @@ const COLUMNS: ColumnDef[] = [
       <span className="flex min-w-0 items-center gap-3">
         <Avatar user={u} />
         <span className="flex min-w-0 flex-col">
-          <span className="flex items-center gap-1.5 text-[13.5px] font-medium text-black/85">
+          <span className="flex items-center gap-1.5 text-[13.5px] font-medium text-ink/85">
             <span className="truncate">{u.name}</span>
             {u.id === ctx.selfId && (
-              <span className="rounded-full bg-black/[0.05] px-1.5 py-px text-[10px] font-medium text-black/45">
+              <span className="rounded-full bg-ink/[0.05] px-1.5 py-px text-[10px] font-medium text-ink/45">
                 {ctx.t("usersTable.you")}
               </span>
             )}
           </span>
           {isPlaceholderEmail(u.email) ? (
             // placeholder email(OAuth 帳號拿不到 email)遮罩,不露內部合成字串。
-            <span className="text-[12px] text-black/30 italic">
+            <span className="text-[12px] text-ink/30 italic">
               {ctx.t("usersTable.noEmail")}
             </span>
           ) : (
@@ -233,12 +233,12 @@ const COLUMNS: ColumnDef[] = [
     sortValue: (u) => u.passkeys,
     render: (u) =>
       u.passkeys > 0 ? (
-        <span className="inline-flex items-center gap-1.5 text-[12.5px] text-black/55 tabular-nums">
-          <FaceIdIcon className="size-3.5 text-black/35" />
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] text-ink/55 tabular-nums">
+          <FaceIdIcon className="size-3.5 text-ink/35" />
           {u.passkeys}
         </span>
       ) : (
-        <span className="text-[12.5px] text-black/25">—</span>
+        <span className="text-[12.5px] text-ink/25">—</span>
       ),
   },
   {
@@ -251,13 +251,13 @@ const COLUMNS: ColumnDef[] = [
     render: (u, ctx) =>
       u.lastActiveAt ? (
         <span
-          className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums"
+          className="text-[12.5px] whitespace-nowrap text-ink/45 tabular-nums"
           title={ctx.dates.dateTime(u.lastActiveAt)}
         >
           {relativeTimeWords(u.lastActiveAt, ctx.now, ctx.locale, ctx.dates.timeZone)}
         </span>
       ) : (
-        <span className="text-[12.5px] text-black/25">{ctx.t("usersTable.never")}</span>
+        <span className="text-[12.5px] text-ink/25">{ctx.t("usersTable.never")}</span>
       ),
   },
   {
@@ -269,7 +269,7 @@ const COLUMNS: ColumnDef[] = [
     sortValue: (u) => u.createdAt,
     render: (u, ctx) => (
       <span
-        className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums"
+        className="text-[12.5px] whitespace-nowrap text-ink/45 tabular-nums"
         title={ctx.dates.dateTime(u.createdAt)}
       >
         {relativeTimeWords(u.createdAt, ctx.now, ctx.locale, ctx.dates.timeZone)}
@@ -282,7 +282,7 @@ const COLUMNS: ColumnDef[] = [
     optional: true,
     defaultVisible: false,
     render: (u) => (
-      <code className="text-[11px] text-black/35">{u.id}</code>
+      <code className="text-[11px] text-ink/35">{u.id}</code>
     ),
   },
 ];
@@ -340,7 +340,7 @@ function CopyableEmail({ email, t }: { email: string; t: ReturnType<typeof useT>
         });
       }}
       title={t("usersTable.copyEmail")}
-      className="group/em relative flex w-fit items-center gap-1 text-[12px] text-black/40 transition-colors before:absolute before:-inset-1.5 hover:text-black/70"
+      className="group/em relative flex w-fit items-center gap-1 text-[12px] text-ink/40 transition-colors before:absolute before:-inset-1.5 hover:text-ink/70"
     >
       <span className="truncate">{email}</span>
       {copied ? (
@@ -403,7 +403,7 @@ function RoleCell({
           title={t("usersTable.changeRole")}
         >
           <RolePill role={role} label={roleLabel(role, t)} />
-          <ChevronDown className="size-3 text-black/30 opacity-0 transition-opacity group-hover/role:opacity-100" />
+          <ChevronDown className="size-3 text-ink/30 opacity-0 transition-opacity group-hover/role:opacity-100" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[9rem]">
           <DropdownMenuRadioGroup
@@ -496,7 +496,7 @@ export function UsersTable({
     <div className="flex flex-col gap-4">
       {/* toolbar:數量在左,Display / Add member 在右(頁面 h1 已交代語境,不再包卡)。 */}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[12.5px] text-black/35 tabular-nums">
+        <p className="text-[12.5px] text-ink/35 tabular-nums">
           {memberCount}
         </p>
         <div className="flex items-center gap-2">
@@ -505,8 +505,8 @@ export function UsersTable({
             type="button"
             onClick={() => setSheet({ mode: "create" })}
             className={cn(
-              "flex h-8 items-center gap-1.5 rounded-full bg-black pr-3.5 pl-3 text-[12.5px] font-medium text-white",
-              "transition-[background-color,transform] duration-150 hover:bg-black/85 active:scale-[0.96]",
+              "flex h-8 items-center gap-1.5 rounded-full bg-ink pr-3.5 pl-3 text-[12.5px] font-medium text-white",
+              "transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.96]",
             )}
           >
             <Plus className="size-3.5" />
@@ -518,7 +518,7 @@ export function UsersTable({
       {error && (
         <p
           role="alert"
-          className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+          className="rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
         >
           {error}
         </p>
@@ -538,14 +538,14 @@ export function UsersTable({
               <button
                 type="button"
                 onClick={() => setConfirmDelete(null)}
-                className="rounded-[6px] px-2 py-1 text-[12px] text-black/45 transition-colors hover:bg-black/[0.05]"
+                className="rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 py-1 text-[12px] text-ink/45 transition-colors hover:bg-ink/[0.05]"
               >
                 {t("usersTable.cancel")}
               </button>
               <button
                 type="button"
                 onClick={() => deleteUser(u.id)}
-                className="rounded-[6px] bg-red-600 px-2 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
+                className="rounded-[calc(6px*var(--admin-radius-scale,1))] bg-red-600 px-2 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
               >
                 {t("usersTable.remove")}
               </button>
@@ -602,13 +602,13 @@ function ColumnPicker({ hidden }: { hidden: Set<string> }) {
     <Popover>
       <PopoverTrigger
         title={t("usersTable.display")}
-        className="flex size-8 items-center justify-center rounded-full text-black/40 transition-colors hover:bg-black/[0.05] hover:text-black/70 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none"
+        className="flex size-8 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-ink/[0.05] hover:text-ink/70 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none"
       >
         <SlidersHorizontal className="size-4" />
         <span className="sr-only">{t("usersTable.display")}</span>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-44 p-1.5">
-        <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-black/35 uppercase">
+        <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-[0.06em] text-ink/35 uppercase">
           {t("usersTable.display")}
         </p>
         {optional.map((col) => {
@@ -623,10 +623,10 @@ function ColumnPicker({ hidden }: { hidden: Set<string> }) {
                 else next.delete(col.key);
                 writeColPref([...next]);
               }}
-              className="flex w-full items-center justify-between rounded-[7px] px-2 py-1.5 text-[13px] text-black/70 transition-colors hover:bg-black/[0.04]"
+              className="flex w-full items-center justify-between rounded-[calc(7px*var(--admin-radius-scale,1))] px-2 py-1.5 text-[13px] text-ink/70 transition-colors hover:bg-ink/[0.04]"
             >
               {t(col.label)}
-              {on && <Check className="size-3.5 text-black/55" />}
+              {on && <Check className="size-3.5 text-ink/55" />}
             </button>
           );
         })}

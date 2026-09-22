@@ -44,7 +44,7 @@ export function SortableHeader({
       type="button"
       onClick={cycle}
       className={cn(
-        "group inline-flex h-8 items-center gap-1 text-[12px] font-medium text-black/45 transition-colors hover:text-black/70",
+        "group inline-flex h-8 items-center gap-1 text-[12px] font-medium text-black/45 admin:text-ink/45 transition-colors hover:text-black/70 admin:hover:text-ink/70",
         align === "right" && "flex-row-reverse",
       )}
     >
@@ -54,7 +54,7 @@ export function SortableHeader({
           "text-[10px] leading-none transition-opacity",
           active
             ? "text-(--admin-accent) opacity-100"
-            : "text-black/30 opacity-0 group-hover:opacity-100",
+            : "text-black/30 admin:text-ink/30 opacity-0 group-hover:opacity-100",
         )}
         aria-hidden
       >

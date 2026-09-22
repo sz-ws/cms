@@ -70,50 +70,50 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
   ];
 
   return (
-    <div className="flex flex-col gap-4 border-t border-black/[0.06] pt-6">
+    <div className="flex flex-col gap-4 border-t border-ink/[0.06] pt-6">
       <div>
-        <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+        <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
           {t("export.title")}
         </h3>
-        <p className="text-[12px] text-black/40">{t("export.desc")}</p>
+        <p className="text-[12px] text-ink/40">{t("export.desc")}</p>
       </div>
 
-      <div className="rounded-[14px] bg-white p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+      <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
         <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <dt className="text-[12px] font-medium text-black/55">
+            <dt className="text-[12px] font-medium text-ink/55">
               {t("export.includedTitle")}
             </dt>
             {included.map((line) => (
               <dd
                 key={line}
-                className="flex items-start gap-2 text-[12px] leading-relaxed text-black/45"
+                className="flex items-start gap-2 text-[12px] leading-relaxed text-ink/45"
               >
-                <Check className="mt-0.5 size-3.5 shrink-0 text-black/30" />
+                <Check className="mt-0.5 size-3.5 shrink-0 text-ink/30" />
                 <span>{line}</span>
               </dd>
             ))}
           </div>
           <div className="flex flex-col gap-1.5">
-            <dt className="text-[12px] font-medium text-black/55">
+            <dt className="text-[12px] font-medium text-ink/55">
               {t("export.excludedTitle")}
             </dt>
             {excluded.map((line) => (
               <dd
                 key={line}
-                className="flex items-start gap-2 text-[12px] leading-relaxed text-black/45"
+                className="flex items-start gap-2 text-[12px] leading-relaxed text-ink/45"
               >
-                <Minus className="mt-0.5 size-3.5 shrink-0 text-black/20" />
+                <Minus className="mt-0.5 size-3.5 shrink-0 text-ink/20" />
                 <span>{line}</span>
               </dd>
             ))}
           </div>
         </dl>
 
-        <div className="mt-4 flex flex-col gap-3 border-t border-black/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end">
+        <div className="mt-4 flex flex-col gap-3 border-t border-ink/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end">
           <label
             htmlFor="export-scope"
-            className="text-[13px] font-medium text-black/55 sm:mr-auto"
+            className="text-[13px] font-medium text-ink/55 sm:mr-auto"
           >
             {t("export.scope")}
           </label>
@@ -128,7 +128,7 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
           >
             <SelectTrigger
               id="export-scope"
-              className="w-full rounded-[8px] border-black/10 bg-white text-[14px] text-black/85 sm:w-64"
+              className="w-full rounded-[calc(8px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 sm:w-64"
             >
               <SelectValue />
             </SelectTrigger>
@@ -148,7 +148,7 @@ export function ContentExportCard({ types }: ContentExportCardProps) {
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-black/30">
+      <p className="text-[11px] leading-relaxed text-ink/30">
         {t("export.formatNote")}
       </p>
     </div>

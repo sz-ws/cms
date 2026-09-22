@@ -26,27 +26,27 @@ const WHEN: Intl.DateTimeFormatOptions = { month: "numeric", day: "numeric", hou
 export function Timeline({ items, empty = "還沒有紀錄。" }: { items: TimelineItem[]; empty?: string }) {
   const dates = useDateFormatter("zh-Hant");
   const when = (ts: number) => dates.format(ts, WHEN);
-  if (items.length === 0) return <p className="text-[12.5px] text-black/35">{empty}</p>;
+  if (items.length === 0) return <p className="text-[12.5px] text-black/35 admin:text-ink/35">{empty}</p>;
   return (
     <ol className="flex flex-col">
       {items.map((item, i) => (
         <li key={item.id} className="relative flex gap-3 pb-3 last:pb-0">
           {/* 節點與連線:最後一筆不畫往下的線。 */}
           <span aria-hidden className="relative flex w-2 shrink-0 justify-center">
-            <span className="mt-[7px] size-[7px] rounded-full bg-black/25" />
+            <span className="mt-[7px] size-[7px] rounded-full bg-black/25 admin:bg-ink/25" />
             {i < items.length - 1 ? (
-              <span className="absolute top-[18px] bottom-[-6px] w-px bg-black/[0.08]" />
+              <span className="absolute top-[18px] bottom-[-6px] w-px bg-black/[0.08] admin:bg-ink/[0.08]" />
             ) : null}
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <p className="flex flex-wrap items-baseline gap-x-2 text-[13px] text-black/85">
+            <p className="flex flex-wrap items-baseline gap-x-2 text-[13px] text-black/85 admin:text-ink/85">
               <span className="font-medium">{item.title}</span>
-              <time dateTime={new Date(item.at).toISOString()} className="text-[12px] tabular-nums text-black/40">
+              <time dateTime={new Date(item.at).toISOString()} className="text-[12px] tabular-nums text-black/40 admin:text-ink/40">
                 {when(item.at)}
               </time>
             </p>
             {item.detail || item.actor ? (
-              <p className="text-[12.5px] text-black/55">
+              <p className="text-[12.5px] text-black/55 admin:text-ink/55">
                 {[item.detail, item.actor].filter(Boolean).join(" · ")}
               </p>
             ) : null}

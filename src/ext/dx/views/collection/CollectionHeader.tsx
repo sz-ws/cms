@@ -26,11 +26,11 @@ export function CollectionHeader({
   return (
     <div className="flex items-end justify-between gap-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-black/90">
+        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-black/90 admin:text-ink/90">
           {title}
         </h1>
-        <p className="text-[12px] text-black/40">
-          <StatNumber value={total} className="text-black/55" />
+        <p className="text-[12px] text-black/40 admin:text-ink/40">
+          <StatNumber value={total} className="text-black/55 admin:text-ink/55" />
           <span className="pl-1">
             {total === 1 ? t("collection.entry") : t("collection.entries")}
           </span>
@@ -38,7 +38,7 @@ export function CollectionHeader({
       </div>
       <AdminLink
         href={createHref}
-        className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-black px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85"
+        className="inline-flex h-10 items-center gap-2 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85 admin:hover:bg-ink/85"
       >
         {t("collection.new", { type: inlineLabel(typeLabel, locale) })}
         <span className="text-white/70">→</span>

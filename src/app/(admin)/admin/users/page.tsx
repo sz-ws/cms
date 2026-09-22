@@ -55,10 +55,10 @@ export default async function UsersPage() {
   return (
     <div className="relative flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/90">
           {title}
         </h1>
-        <p className="text-[13px] leading-relaxed text-black/40">
+        <p className="text-[13px] leading-relaxed text-ink/40">
           {subtitle}
         </p>
       </div>

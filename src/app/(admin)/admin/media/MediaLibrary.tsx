@@ -165,7 +165,7 @@ export function MediaLibrary({ initialFiles, initialCursor }: MediaLibraryProps)
           type="button"
           onClick={() => void loadMore()}
           disabled={loadingMore}
-          className="mx-auto inline-flex h-10 items-center rounded-[8px] bg-white px-4 text-[13px] font-medium text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] transition-[background-color,transform] active:scale-[0.96] hover:bg-black/[0.03] disabled:opacity-50"
+          className="mx-auto inline-flex h-10 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-4 text-[13px] font-medium text-ink/85 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color,transform] active:scale-[0.96] hover:bg-ink/[0.03] disabled:opacity-50"
         >
           {loadingMore ? t("mediaLibrary.loading") : t("mediaLibrary.loadMore")}
         </button>

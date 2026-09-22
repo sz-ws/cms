@@ -161,9 +161,9 @@ export function InboxTable({
           className={cn(
             "text-[13px]",
             r.state === "unread"
-              ? "font-medium text-black/90"
-              : "text-black/60",
-            r.state === "archived" && "text-black/40",
+              ? "font-medium text-black/90 admin:text-ink/90"
+              : "text-black/60 admin:text-ink/60",
+            r.state === "archived" && "text-black/40 admin:text-ink/40",
           )}
         >
           {r.cells[i] || "—"}
@@ -177,12 +177,12 @@ export function InboxTable({
       sortValue: (r) => r.createdAt,
       render: (r) => (
         <span className="flex items-center gap-2 whitespace-nowrap">
-          <span className="text-[13px] tabular-nums text-black/55">
+          <span className="text-[13px] tabular-nums text-black/55 admin:text-ink/55">
             {relativeTimeWords(r.createdAt, now, locale, timeZone)}
           </span>
           {r.repliedAt !== null && (
             <span
-              className="inline-flex items-center gap-1 rounded-full bg-black/[0.05] px-2 py-0.5 text-[11px] font-medium text-black/55"
+              className="inline-flex items-center gap-1 rounded-full bg-black/[0.05] admin:bg-ink/[0.05] px-2 py-0.5 text-[11px] font-medium text-black/55 admin:text-ink/55"
               title={t("inbox.repliedOn")}
             >
               <CornerUpLeft className="size-3" aria-hidden />
@@ -212,11 +212,11 @@ export function InboxTable({
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] transition-colors",
                 active
                   ? "bg-(--admin-accent)/10 font-medium text-(--admin-accent)"
-                  : "text-black/55 hover:bg-black/[0.04] hover:text-black/80",
+                  : "text-black/55 admin:text-ink/55 hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/80 admin:hover:text-ink/80",
               )}
             >
               {tab.label}
-              <span className="tabular-nums text-black/35">{tab.count}</span>
+              <span className="tabular-nums text-black/35 admin:text-ink/35">{tab.count}</span>
             </AdminLink>
           );
         })}
@@ -225,14 +225,14 @@ export function InboxTable({
       {error && (
         <p
           role="alert"
-          className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+          className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
         >
           {error}
         </p>
       )}
 
       {shownRows.length === 0 ? (
-        <p className="rounded-[12px] bg-black/[0.02] px-4 py-8 text-center text-[13px] text-black/35">
+        <p className="rounded-[12px] admin:rounded-[calc(12px*var(--admin-radius-scale,1))] bg-black/[0.02] admin:bg-ink/[0.02] px-4 py-8 text-center text-[13px] text-black/35 admin:text-ink/35">
           {t("inbox.empty")}
         </p>
       ) : (
@@ -298,7 +298,7 @@ function Pagination({
     return qs ? `${base}?${qs}` : base;
   };
   return (
-    <nav className="flex items-center justify-between text-[12.5px] text-black/45">
+    <nav className="flex items-center justify-between text-[12.5px] text-black/45 admin:text-ink/45">
       <span className="tabular-nums">
         {t("inbox.pageOf")
           .replace("{page}", String(page))
@@ -306,12 +306,12 @@ function Pagination({
       </span>
       <span className="flex gap-2">
         {page > 1 && (
-          <AdminLink href={href(page - 1)} className="hover:text-black/80">
+          <AdminLink href={href(page - 1)} className="hover:text-black/80 admin:hover:text-ink/80">
             {t("inbox.prev")}
           </AdminLink>
         )}
         {page < last && (
-          <AdminLink href={href(page + 1)} className="hover:text-black/80">
+          <AdminLink href={href(page + 1)} className="hover:text-black/80 admin:hover:text-ink/80">
             {t("inbox.next")}
           </AdminLink>
         )}
@@ -409,20 +409,20 @@ function InboxSheet({
           {shown &&
             fields.map((f, i) => (
               <div key={f.key} className="flex flex-col gap-1">
-                <dt className="text-[11px] uppercase tracking-[0.06em] text-black/35">
+                <dt className="text-[11px] uppercase tracking-[0.06em] text-black/35 admin:text-ink/35">
                   {f.label}
                 </dt>
-                <dd className="whitespace-pre-wrap break-words text-[13.5px] text-black/85">
+                <dd className="whitespace-pre-wrap break-words text-[13.5px] text-black/85 admin:text-ink/85">
                   {shown.detail[i] || "—"}
                 </dd>
               </div>
             ))}
           {shown?.repliedAt !== null && shown !== null && (
             <div className="flex flex-col gap-1">
-              <dt className="text-[11px] uppercase tracking-[0.06em] text-black/35">
+              <dt className="text-[11px] uppercase tracking-[0.06em] text-black/35 admin:text-ink/35">
                 {t("inbox.repliedOn")}
               </dt>
-              <dd className="text-[13.5px] text-black/85">
+              <dd className="text-[13.5px] text-black/85 admin:text-ink/85">
                 {relativeTimeWords(shown.repliedAt as number, now, locale, timeZone)}
               </dd>
             </div>

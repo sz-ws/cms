@@ -32,7 +32,7 @@ export function GroupField({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-[14px] bg-black/[0.015] p-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+    <div className="flex flex-col gap-3 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-black/[0.015] admin:bg-ink/[0.015] p-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
       {subfields.map((sub) => (
         <LeafFieldControl
           key={sub.key}

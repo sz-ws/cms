@@ -42,12 +42,12 @@ interface ProposalCardProps {
 /** 動作列按鈕:黑底主動作 / 白底次動作,同 8px 圓角、同 h-9(admin 表單語彙)。 */
 function actionClasses(tone: "primary" | "secondary"): string {
   return cn(
-    "inline-flex h-9 items-center gap-1.5 rounded-[8px] px-3.5 text-[13px] font-medium",
+    "inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3.5 text-[13px] font-medium",
     "transition-[background-color,box-shadow,transform,opacity] duration-150 ease-out",
     "active:scale-[0.96] disabled:pointer-events-none disabled:opacity-45",
     tone === "primary"
-      ? "bg-black text-white hover:bg-black/85"
-      : "bg-white text-black/65 shadow-[0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06)] hover:text-black/90",
+      ? "bg-ink text-white hover:bg-ink/85"
+      : "bg-surface text-ink/65 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06))] hover:text-ink/90",
   );
 }
 
@@ -61,7 +61,7 @@ function ResolutionLine({
   const t = useT();
   if (resolution === "cancelled") {
     return (
-      <p className="text-[12px] text-black/40">{t("agent.proposal.cancelled")}</p>
+      <p className="text-[12px] text-ink/40">{t("agent.proposal.cancelled")}</p>
     );
   }
   const ok = outcome?.ok ?? false;
@@ -70,14 +70,14 @@ function ResolutionLine({
       <p
         className={cn(
           "flex items-center gap-1.5 text-[12px]",
-          ok ? "text-black/55" : "text-red-700",
+          ok ? "text-ink/55" : "text-red-700",
         )}
       >
         {ok ? <Check className="size-3.5" /> : <X className="size-3.5" />}
         {ok ? t("agent.proposal.done") : t("agent.proposal.failed")}
       </p>
       {outcome?.detail && (
-        <pre className="max-h-40 overflow-auto rounded-[8px] bg-black/[0.035] px-2.5 py-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-black/55">
+        <pre className="max-h-40 overflow-auto rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.035] px-2.5 py-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink/55">
           {outcome.detail}
         </pre>
       )}
@@ -106,23 +106,23 @@ export function ProposalCard({
       // 同心圓角:20px halo → 14px 卡 → 8px 控制項(admin-design-language.md)。
       // halo 只給這一個 surface —— 它是這一頁唯一需要「停下來」的東西。
       className={cn(
-        "w-full max-w-[36rem] rounded-[20px] p-1.5 backdrop-blur-md",
+        "w-full max-w-[36rem] rounded-[calc(20px*var(--admin-radius-scale,1))] p-1.5 backdrop-blur-md",
         pending
-          ? "bg-white/55 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)]"
+          ? "bg-surface/55 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))]"
           : "bg-transparent",
       )}
     >
       <div
         className={cn(
-          "flex flex-col gap-3.5 rounded-[14px] bg-white p-4",
-          "shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06)]",
+          "flex flex-col gap-3.5 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4",
+          "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06))]",
           !pending && "opacity-90",
         )}
       >
         <div className="flex items-center gap-2">
           {/* 靜態 ring-dot。等待中不閃、不跳、不呼吸 —— 見檔頭的動效紅線。 */}
           <RingDot accent={pending} />
-          <span className="text-[11.5px] text-black/40">
+          <span className="text-[11.5px] text-ink/40">
             {pending
               ? t("agent.proposal.heading")
               : resolution === "cancelled"
@@ -135,34 +135,34 @@ export function ProposalCard({
 
         <div className="flex flex-col gap-1.5">
           <p className="font-mono text-[11px] lowercase">
-            <span className="text-black/35">{toolNamespace(proposal.toolName)}.</span>
-            <span className="text-black/75">{toolLeaf(proposal.toolName)}</span>
+            <span className="text-ink/35">{toolNamespace(proposal.toolName)}.</span>
+            <span className="text-ink/75">{toolLeaf(proposal.toolName)}</span>
           </p>
-          <p className="text-[14px] leading-relaxed text-black/85">
+          <p className="text-[14px] leading-relaxed text-ink/85">
             {proposal.summary}
           </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11.5px] font-medium text-black/45">
+          <p className="text-[11.5px] font-medium text-ink/45">
             {t("agent.proposal.args")}
           </p>
           {rows.length === 0 ? (
-            <p className="text-[12px] text-black/35">{t("agent.proposal.noArgs")}</p>
+            <p className="text-[12px] text-ink/35">{t("agent.proposal.noArgs")}</p>
           ) : (
-            <dl className="flex flex-col divide-y divide-black/[0.05] rounded-[8px] bg-black/[0.02] px-2.5 py-1">
+            <dl className="flex flex-col divide-y divide-ink/[0.05] rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.02] px-2.5 py-1">
               {rows.map((row, index) => (
                 <div
                   key={`${row.key}-${index}`}
                   className="flex items-baseline gap-3 py-1.5"
                   style={{ paddingLeft: `${row.depth * 14}px` }}
                 >
-                  <dt className="min-w-0 shrink-0 font-mono text-[11px] text-black/45">
+                  <dt className="min-w-0 shrink-0 font-mono text-[11px] text-ink/45">
                     {row.key}
                   </dt>
-                  <dd className="min-w-0 flex-1 text-[12.5px] break-words text-black/80">
+                  <dd className="min-w-0 flex-1 text-[12.5px] break-words text-ink/80">
                     {row.value === null ? (
-                      <span className="text-[11px] text-black/30">
+                      <span className="text-[11px] text-ink/30">
                         {row.hint === "truncated" ? "…" : `{${row.hint}}`}
                       </span>
                     ) : (
@@ -177,7 +177,7 @@ export function ProposalCard({
 
         {pending ? (
           <>
-            <p className="text-[11.5px] leading-relaxed text-black/35">
+            <p className="text-[11.5px] leading-relaxed text-ink/35">
               {t("agent.proposal.note")}
             </p>
             {/* 表單動作靠右,主動作最右(admin-design-language.md「Controls」)。 */}

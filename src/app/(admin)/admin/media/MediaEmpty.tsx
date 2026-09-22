@@ -13,15 +13,15 @@ interface MediaEmptyProps {
 export function MediaEmpty({ filtered, onClearFilter }: MediaEmptyProps) {
   const t = useT();
   return (
-    <div className="flex flex-col items-center gap-4 rounded-[14px] bg-white px-6 py-16 text-center shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
-      <span className="grid size-3 place-items-center rounded-full ring-1 ring-black/25">
-        <span className="size-1 rounded-full bg-black/25" />
+    <div className="flex flex-col items-center gap-4 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-16 text-center shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
+      <span className="grid size-3 place-items-center rounded-full ring-1 ring-ink/25">
+        <span className="size-1 rounded-full bg-ink/25" />
       </span>
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
           {filtered ? t("mediaEmpty.titleFiltered") : t("mediaEmpty.title")}
         </h2>
-        <p className="max-w-sm text-[13px] leading-relaxed text-black/45">
+        <p className="max-w-sm text-[13px] leading-relaxed text-ink/45">
           {filtered ? t("mediaEmpty.filteredDesc") : t("mediaEmpty.emptyDesc")}
         </p>
       </div>
@@ -29,7 +29,7 @@ export function MediaEmpty({ filtered, onClearFilter }: MediaEmptyProps) {
         <button
           type="button"
           onClick={onClearFilter}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-black px-4 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96]"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-4 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-ink/85 active:scale-[0.96]"
         >
           {t("mediaEmpty.clearFilter")}
         </button>

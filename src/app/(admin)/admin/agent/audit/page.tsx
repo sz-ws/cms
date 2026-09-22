@@ -47,15 +47,15 @@ export default async function AgentAuditPage({ searchParams }: AgentAuditPagePro
       <div className="flex flex-col gap-1.5">
         <AdminLink
           href="/admin/agent"
-          className="-ml-0.5 inline-flex w-fit items-center gap-1 text-[11.5px] text-black/35 transition-colors duration-150 hover:text-black/70"
+          className="-ml-0.5 inline-flex w-fit items-center gap-1 text-[11.5px] text-ink/35 transition-colors duration-150 hover:text-ink/70"
         >
           <ArrowLeft className="size-3" />
           {m["agent.audit.back"]}
         </AdminLink>
-        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
+        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-ink/90">
           {m["agent.audit.title"]}
         </h1>
-        <p className="text-[13px] leading-relaxed text-black/40">
+        <p className="text-[13px] leading-relaxed text-ink/40">
           {m["agent.audit.subtitle"]}
         </p>
       </div>
@@ -74,7 +74,7 @@ export default async function AgentAuditPage({ searchParams }: AgentAuditPagePro
         <div className="flex justify-center">
           <AdminLink
             href={olderHref}
-            className="inline-flex h-9 items-center rounded-[8px] bg-white px-3.5 text-[13px] font-medium text-black/70 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] transition-[color,box-shadow] duration-150 hover:text-black/90 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] active:scale-[0.98]"
+            className="inline-flex h-9 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-3.5 text-[13px] font-medium text-ink/70 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] transition-[color,box-shadow] duration-150 hover:text-ink/90 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] active:scale-[0.98]"
           >
             {m["agent.audit.older"]}
           </AdminLink>

@@ -19,7 +19,7 @@ import type { FieldComponentProps } from "./types";
 const RichtextEditor = dynamic(() => import("./RichtextEditor"), {
   ssr: false,
   loading: () => (
-    <div className="flex min-h-52 items-center justify-center rounded-[10px] bg-white text-[13px] text-black/45 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+    <div className="flex min-h-52 items-center justify-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface text-[13px] text-black/45 admin:text-ink/45 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))]">
       Loading editor…
     </div>
   ),

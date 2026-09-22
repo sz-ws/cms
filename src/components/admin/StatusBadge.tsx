@@ -80,7 +80,7 @@ export function StatusBadge({
             className={cn(
               "inline-flex size-4 items-center justify-center rounded-full outline-none",
               "transition-colors duration-150 focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
-              hasNote ? "text-(--admin-accent)" : "text-black/30 hover:text-black/60",
+              hasNote ? "text-(--admin-accent)" : "text-black/30 admin:text-ink/30 hover:text-black/60 admin:hover:text-ink/60",
             )}
           >
             <Info aria-hidden className="size-3.5" />

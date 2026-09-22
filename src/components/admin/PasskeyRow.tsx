@@ -32,16 +32,16 @@ export function PasskeyRow({
   const timeZone = useTimeZone();
   return (
     <StackedListItem>
-      <div className="group flex items-center gap-3 border-t border-black/[0.06] px-4 py-3 transition-colors duration-150 ease-out first:border-t-0 hover:bg-black/[0.02]">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-black/[0.04] text-black/55">
+      <div className="group flex items-center gap-3 border-t border-ink/[0.06] px-4 py-3 transition-colors duration-150 ease-out first:border-t-0 hover:bg-ink/[0.02]">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.04] text-ink/55">
           <FaceIdIcon className="size-4" />
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[14px] font-medium text-black/85">
+          <span className="truncate text-[14px] font-medium text-ink/85">
             {passkey.name}
           </span>
-          <span className="truncate text-[11.5px] tabular-nums text-black/40">
+          <span className="truncate text-[11.5px] tabular-nums text-ink/40">
             {t("passkey.added", { relative: relativeTimeWords(passkey.createdAt, now, locale, timeZone) })}
             {passkey.lastUsedAt != null &&
               ` · ${t("passkey.lastUsed", { relative: relativeTimeWords(passkey.lastUsedAt, now, locale, timeZone) })}`}
@@ -50,18 +50,18 @@ export function PasskeyRow({
 
         {confirming ? (
           <div className="flex shrink-0 items-center gap-1.5">
-            <span className="text-[12px] text-black/45">{t("passkey.removeConfirm")}</span>
+            <span className="text-[12px] text-ink/45">{t("passkey.removeConfirm")}</span>
             <button
               type="button"
               onClick={onCancelDelete}
-              className="flex h-8 items-center rounded-[6px] px-2.5 text-[12px] font-medium text-black/55 transition-[background-color,transform] duration-150 hover:bg-black/[0.06] active:scale-[0.96]"
+              className="flex h-8 items-center rounded-[calc(6px*var(--admin-radius-scale,1))] px-2.5 text-[12px] font-medium text-ink/55 transition-[background-color,transform] duration-150 hover:bg-ink/[0.06] active:scale-[0.96]"
             >
               {t("passkey.cancel")}
             </button>
             <button
               type="button"
               onClick={onConfirmDelete}
-              className="flex h-8 items-center rounded-[6px] bg-red-600 px-2.5 text-[12px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-red-700 active:scale-[0.96]"
+              className="flex h-8 items-center rounded-[calc(6px*var(--admin-radius-scale,1))] bg-red-600 px-2.5 text-[12px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-red-700 active:scale-[0.96]"
             >
               {t("passkey.remove")}
             </button>
@@ -73,7 +73,7 @@ export function PasskeyRow({
             type="button"
             onClick={onRequestDelete}
             aria-label={`Remove ${passkey.name}`}
-            className="flex size-10 shrink-0 items-center justify-center rounded-[8px] text-black/35 opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 active:scale-[0.96]"
+            className="flex size-10 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] text-ink/35 opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 active:scale-[0.96]"
           >
             <Trash2 className="size-4" />
           </button>

@@ -50,7 +50,7 @@ function ProviderMark({ provider }: { provider?: IdentityProviderOption }) {
     return (
       <span
         aria-hidden
-        className="inline-flex size-8 items-center justify-center rounded-[8px] shadow-[0_0_0_1px_rgba(0,0,0,0.08)] [&>svg]:size-[16px]"
+        className="inline-flex size-8 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] [&>svg]:size-[16px]"
         style={{ background: provider.background ?? "#ffffff" }}
         // 安裝時已過 svg-guard(allowlist 驗證),渲染端視為可信。
         dangerouslySetInnerHTML={{ __html: provider.svg }}
@@ -60,9 +60,9 @@ function ProviderMark({ provider }: { provider?: IdentityProviderOption }) {
   return (
     <span
       aria-hidden
-      className="inline-flex size-8 items-center justify-center rounded-[8px] bg-black/[0.04] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+      className="inline-flex size-8 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.04] shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))]"
     >
-      <Link2 className="size-4 text-black/35" />
+      <Link2 className="size-4 text-ink/35" />
     </span>
   );
 }
@@ -121,7 +121,7 @@ export function IdentitiesManager({
       {error && (
         <div
           role="alert"
-          className="flex items-center gap-2 rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+          className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
         >
           <AlertCircle className="size-4 shrink-0" />
           <span>{error}</span>
@@ -130,7 +130,7 @@ export function IdentitiesManager({
       {notice && (
         <div
           role="status"
-          className="flex items-center gap-2 rounded-[8px] border border-emerald-600/15 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700"
+          className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] border border-emerald-600/15 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700"
         >
           <Check className="size-4 shrink-0" />
           <span>{notice}</span>
@@ -138,11 +138,11 @@ export function IdentitiesManager({
       )}
 
       {identities.length === 0 ? (
-        <p className="text-[13px] text-black/40">
+        <p className="text-[13px] text-ink/40">
           {t("account.identityNoneConnected")}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-[14px] border border-black/10 bg-white">
+        <div className="overflow-hidden rounded-[calc(14px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface">
           <StackedList>
             {identities.map((identity) => {
               const provider = providers.find((p) => p.id === identity.provider);
@@ -154,10 +154,10 @@ export function IdentitiesManager({
                 >
                   <ProviderMark provider={provider} />
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[13.5px] font-medium text-black/85">
+                    <span className="truncate text-[13.5px] font-medium text-ink/85">
                       {provider?.label ?? identity.provider}
                     </span>
-                    <span className="truncate text-[12px] text-black/40">
+                    <span className="truncate text-[12px] text-ink/40">
                       {identity.display ? `${identity.display} · ` : ""}
                       {t("account.identityConnectedAt", {
                         date: identity.connectedAtLabel,
@@ -169,14 +169,14 @@ export function IdentitiesManager({
                       <button
                         type="button"
                         onClick={() => void onDisconnect(identity.id)}
-                        className="h-8 cursor-pointer rounded-[8px] bg-red-600 px-3 text-[12.5px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-red-700 active:scale-[0.96]"
+                        className="h-8 cursor-pointer rounded-[calc(8px*var(--admin-radius-scale,1))] bg-red-600 px-3 text-[12.5px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-red-700 active:scale-[0.96]"
                       >
                         {t("account.identityDisconnect")}
                       </button>
                       <button
                         type="button"
                         onClick={() => setConfirmingId(null)}
-                        className="h-8 cursor-pointer rounded-[8px] px-2.5 text-[12.5px] text-black/50 transition-colors hover:text-black/80"
+                        className="h-8 cursor-pointer rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[12.5px] text-ink/50 transition-colors hover:text-ink/80"
                       >
                         {t("userSheet.cancel")}
                       </button>
@@ -185,7 +185,7 @@ export function IdentitiesManager({
                     <button
                       type="button"
                       onClick={() => setConfirmingId(identity.id)}
-                      className="h-8 cursor-pointer rounded-[8px] px-3 text-[12.5px] font-medium text-black/50 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[color,box-shadow,transform] duration-150 hover:text-black/80 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)] active:scale-[0.96]"
+                      className="h-8 cursor-pointer rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[12.5px] font-medium text-ink/50 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[color,box-shadow,transform] duration-150 hover:text-ink/80 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)] active:scale-[0.96]"
                     >
                       {t("account.identityDisconnect")}
                     </button>
@@ -204,8 +204,8 @@ export function IdentitiesManager({
               key={p.id}
               href={`/api/auth/oauth/${encodeURIComponent(p.id)}/start?mode=link&next=/admin/account`}
               className={cn(
-                "flex h-9 items-center gap-2 rounded-[8px] px-3 text-[13px] font-medium",
-                "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[filter,transform] duration-150 ease-out",
+                "flex h-9 items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium",
+                "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[filter,transform] duration-150 ease-out",
                 "hover:brightness-[0.97] active:scale-[0.96]",
               )}
               style={{

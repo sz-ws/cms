@@ -95,7 +95,7 @@ export function StatusPill({
           ? "text-red-700"
           : enabled
             ? "text-[rgb(18,124,88)]"
-            : "text-black/50",
+            : "text-ink/50",
       )}
       style={{
         backgroundImage:
@@ -281,12 +281,12 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
       tdClass: "py-3 pr-4",
       render: (e) => (
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="flex items-center gap-1.5 text-[13.5px] font-medium text-black/85">
+          <span className="flex items-center gap-1.5 text-[13.5px] font-medium text-ink/85">
             <span className="truncate">{e.name}</span>
             <KindBadge kind={e.kind} />
           </span>
           {e.description && (
-            <span className="max-w-[36ch] truncate text-[12px] text-black/40">
+            <span className="max-w-[36ch] truncate text-[12px] text-ink/40">
               {e.description}
             </span>
           )}
@@ -301,7 +301,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
       render: (e) =>
         e.enabled && e.upgrade ? (
           <span className="flex flex-col gap-0.5">
-            <span className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums">
+            <span className="text-[12.5px] whitespace-nowrap text-ink/45 tabular-nums">
               {e.upgrade.from} → {e.upgrade.to}
             </span>
             <span className="text-[11px] font-medium whitespace-nowrap text-(--admin-accent)">
@@ -309,7 +309,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
             </span>
           </span>
         ) : (
-          <span className="text-[12.5px] whitespace-nowrap text-black/45 tabular-nums">
+          <span className="text-[12.5px] whitespace-nowrap text-ink/45 tabular-nums">
             {e.version}
           </span>
         ),
@@ -325,8 +325,8 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-[14px] border border-dashed border-black/20 p-8 text-center">
-        <p className="text-[13px] text-black/45">
+      <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/20 p-8 text-center">
+        <p className="text-[13px] text-ink/45">
           {t("extensions.noExtensions")}
         </p>
       </div>
@@ -339,8 +339,8 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
   return (
     <div className="flex flex-col gap-3">
       {urgent.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-[12px] bg-(--admin-accent)/[0.06] px-4 py-3 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_18%,transparent)]">
-          <p className="text-[13px] text-black/75">
+        <div className="flex flex-col gap-2 rounded-[calc(12px*var(--admin-radius-scale,1))] bg-(--admin-accent)/[0.06] px-4 py-3 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_18%,transparent)]">
+          <p className="text-[13px] text-ink/75">
             {t("extensions.upgradeBanner", { names: urgent.map((e) => e.name).join("、") })}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -350,7 +350,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
                 type="button"
                 disabled={pending !== null}
                 onClick={() => runWithProgress(e)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-black px-3 text-[12.5px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-black/85 active:scale-[0.96] disabled:opacity-45"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-3 text-[12.5px] font-medium text-white transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.96] disabled:opacity-45"
               >
                 <CircleArrowUp aria-hidden className="size-3.5" />
                 {urgent.length > 1 ? `${t("extensions.upgrade")} · ${e.name}` : t("extensions.upgrade")}
@@ -367,7 +367,7 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
       {error && (
         <p
           role="alert"
-          className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+          className="rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
         >
           {error}
         </p>

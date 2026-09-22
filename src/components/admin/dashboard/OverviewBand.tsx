@@ -43,7 +43,7 @@ function OverviewStat({
       >
         <StatNumber value={value} />
       </div>
-      <div className="mt-0.5 text-[12.5px] text-black/40">{label}</div>
+      <div className="mt-0.5 text-[12.5px] text-ink/40">{label}</div>
     </div>
   );
 }
@@ -59,17 +59,17 @@ export function OverviewBand({
   return (
     <section
       className={cn(
-        "flex flex-col gap-6 rounded-[16px] bg-white px-6 py-[22px] sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-2",
+        "flex flex-col gap-6 rounded-[calc(16px*var(--admin-radius-scale,1))] bg-surface px-6 py-[22px] sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-2",
         SHADOW_RING,
       )}
     >
       {/* Focal block: the one large number for the whole view. */}
-      <div className="flex min-w-[170px] flex-col justify-center border-black/[0.08] pb-4 sm:border-b-0 sm:border-r sm:pr-7 sm:pb-0">
-        <div className="text-[12.5px] text-black/40">{labels.totalContent}</div>
-        <div className="mt-0.5 text-[44px] font-semibold leading-none tabular-nums tracking-[-0.03em] text-black/90">
+      <div className="flex min-w-[170px] flex-col justify-center border-ink/[0.08] pb-4 sm:border-b-0 sm:border-r sm:pr-7 sm:pb-0">
+        <div className="text-[12.5px] text-ink/40">{labels.totalContent}</div>
+        <div className="mt-0.5 text-[44px] font-semibold leading-none tabular-nums tracking-[-0.03em] text-ink/90">
           <StatNumber value={totalEntries} />
         </div>
-        <div className="mt-2 flex items-center gap-1.5 text-[12.5px] text-black/40">
+        <div className="mt-2 flex items-center gap-1.5 text-[12.5px] text-ink/40">
           <StatusDot tone="good" />
           {totalPublished} {labels.published} · {totalDrafts}{" "}
           {totalDrafts === 1 ? labels.draft : labels.drafts}

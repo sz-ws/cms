@@ -124,9 +124,9 @@ function DeploymentBadge({ entry }: { entry: RegistryEntry }) {
 }
 
 const HALO =
-  "shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)]";
+  "shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))]";
 const CARD =
-  "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]";
+  "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]";
 
 // Resolve a relative media path (e.g. "icon.png") to a URL the browser can
 // actually load. Registry sources can be private (Gitea token lives
@@ -192,7 +192,7 @@ function ExtIcon({
   const iconUrl = mediaUrl(entry, entry.iconUrl);
   const [loaded, setLoaded] = useState(false);
   const dim =
-    size === "large" ? "size-16 rounded-[16px]" : "size-11 rounded-[10px]";
+    size === "large" ? "size-16 rounded-[calc(16px*var(--admin-radius-scale,1))]" : "size-11 rounded-[calc(10px*var(--admin-radius-scale,1))]";
   return (
     <div
       className={`relative isolate ${dim} shrink-0 overflow-hidden bg-gradient-to-b from-white/75 to-white/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.08),0_2px_6px_-2px_rgba(0,0,0,0.14)] backdrop-blur-[2px]`}
@@ -200,7 +200,7 @@ function ExtIcon({
       {iconUrl ? (
         <>
           {!loaded && (
-            <div className="absolute inset-0 animate-pulse bg-black/[0.05]" />
+            <div className="absolute inset-0 animate-pulse bg-ink/[0.05]" />
           )}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -211,7 +211,7 @@ function ExtIcon({
           />
         </>
       ) : (
-        <div className="flex size-full items-center justify-center text-black/55">
+        <div className="flex size-full items-center justify-center text-ink/55">
           {/* createElement:extGlyph 回傳的是既有元件「參照」而非新元件,但
               react-hooks/static-components 分不出來 —— 走 createElement 繞誤報。 */}
           {createElement(extGlyph(entry), {
@@ -300,7 +300,7 @@ function CodeStateChip({
     );
   }
   return (
-    <span className={cn(className, "bg-black/[0.04] text-black/40")}>
+    <span className={cn(className, "bg-ink/[0.04] text-ink/40")}>
       {t("registryBrowser.install.manualInstall")}
     </span>
   );
@@ -349,13 +349,13 @@ function FeaturedCard({
   return (
     <div
       onClick={onClick}
-      className={`relative cursor-pointer overflow-hidden rounded-[20px] bg-white p-1.5 transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_20%,transparent),0_16px_48px_-12px_rgba(30,20,50,0.22)] ${HALO}`}
+      className={`relative cursor-pointer overflow-hidden rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface p-1.5 transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--admin-accent)_20%,transparent),0_16px_48px_-12px_rgba(30,20,50,0.22)] ${HALO}`}
     >
       {/* 長圖主視覺 + 同心 nest:外殼 20px、p-1.5(6px)→ 內框 14px(concentric)。
           banner 有真圖用真圖;沒有就用「字記 image」—— id 雜湊出穩定色調,
           大字名稱當主視覺、超大 glyph 當水印。icon/名稱/安裝動作固定在圖底
           的 glass bar(editorial 慣例:artwork 說故事,bar 負責身分與行動)。 */}
-      <div className={`relative overflow-hidden rounded-[14px] ${CARD}`}>
+      <div className={`relative overflow-hidden rounded-[calc(14px*var(--admin-radius-scale,1))] ${CARD}`}>
         {bannerUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -376,11 +376,11 @@ function FeaturedCard({
             }}
           >
             <div className="flex h-full flex-col gap-1.5 p-6 pb-20 pr-28">
-              <span className="text-balance text-[clamp(22px,3.2vw,32px)] font-bold leading-tight tracking-[-0.02em] text-black/85">
+              <span className="text-balance text-[clamp(22px,3.2vw,32px)] font-bold leading-tight tracking-[-0.02em] text-ink/85">
                 {entry.name}
               </span>
               {entry.description && (
-                <span className="line-clamp-2 max-w-[560px] text-[13px] leading-relaxed text-black/45">
+                <span className="line-clamp-2 max-w-[560px] text-[13px] leading-relaxed text-ink/45">
                   {entry.description}
                 </span>
               )}
@@ -389,18 +389,18 @@ function FeaturedCard({
             {createElement(extGlyph(entry), {
               "aria-hidden": true,
               strokeWidth: 1,
-              className: "absolute -bottom-8 -right-6 size-40 text-black/[0.07]",
+              className: "absolute -bottom-8 -right-6 size-40 text-ink/[0.07]",
             })}
           </div>
         )}
         {/* 圖底固定 bar:glass。 */}
-        <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 border-t border-black/[0.05] bg-white/75 px-4 py-2.5 backdrop-blur-md">
+        <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 border-t border-ink/[0.05] bg-surface/75 px-4 py-2.5 backdrop-blur-md">
           <ExtIcon entry={entry} />
           <div className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-black/90">
+            <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-ink/90">
               {entry.name}
             </span>
-            <span className="flex items-center gap-2 text-[11px] text-black/45">
+            <span className="flex items-center gap-2 text-[11px] text-ink/45">
               v{entry.version} · {kindLabel(t, entry.kind)}
               {entry.installed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-(--admin-accent)/10 px-2 py-0.5 font-medium text-(--admin-accent)">
@@ -415,14 +415,14 @@ function FeaturedCard({
               <CodeStateChip
                 entry={entry}
                 t={t}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[8px] px-4 text-[13px] font-medium"
+                className="inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium"
               />
             ) : !entry.compatible ? (
               <div className="flex flex-col items-end gap-1">
                 <button
                   type="button"
                   disabled
-                  className="inline-flex h-9 items-center rounded-[8px] bg-black/[0.06] px-4 text-[13px] font-medium text-black/35"
+                  className="inline-flex h-9 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.06] px-4 text-[13px] font-medium text-ink/35"
                 >
                   {t("registryBrowser.install.install")}
                 </button>
@@ -437,7 +437,7 @@ function FeaturedCard({
                 <button
                   type="button"
                   disabled
-                  className="inline-flex h-9 items-center rounded-[8px] bg-black/[0.06] px-4 text-[13px] font-medium text-black/35"
+                  className="inline-flex h-9 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.06] px-4 text-[13px] font-medium text-ink/35"
                 >
                   {t("registryBrowser.install.install")}
                 </button>
@@ -523,7 +523,7 @@ function FeaturedShelf({
   }
 
   const arrow =
-    "inline-flex size-7 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 transition-[color,background-color,opacity] hover:bg-black/[0.04] hover:text-black/80 disabled:pointer-events-none disabled:opacity-30";
+    "inline-flex size-7 items-center justify-center rounded-full border border-ink/10 bg-surface text-ink/55 transition-[color,background-color,opacity] hover:bg-ink/[0.04] hover:text-ink/80 disabled:pointer-events-none disabled:opacity-30";
 
   return (
     <>
@@ -620,34 +620,34 @@ function StoreCard({
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
       onClick={onClick}
-      className={`group flex cursor-pointer flex-col gap-3 rounded-[14px] bg-white p-4 ${CARD} transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_4px_12px_-2px_rgba(0,0,0,0.08)]`}
+      className={`group flex cursor-pointer flex-col gap-3 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4 ${CARD} transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_4px_12px_-2px_rgba(0,0,0,0.08)]`}
     >
       {/* header */}
       <div className="flex items-start gap-3">
         <ExtIcon entry={entry} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[14px] font-semibold text-black/85">
+          <span className="text-[14px] font-semibold text-ink/85">
             {entry.name}
           </span>
-          <span className="line-clamp-2 text-[12px] leading-relaxed text-black/45">
+          <span className="line-clamp-2 text-[12px] leading-relaxed text-ink/45">
             {entry.description ?? t("registryBrowser.noDescription")}
           </span>
         </div>
       </div>
       {/* meta + badges */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium text-black/45">
+        <span className="rounded-full bg-ink/[0.04] px-2 py-0.5 text-[10px] font-medium text-ink/45">
           {kindLabel(t, entry.kind)}
         </span>
         {entry.category && (
-          <span className="rounded-full bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium capitalize text-black/45">
+          <span className="rounded-full bg-ink/[0.04] px-2 py-0.5 text-[10px] font-medium capitalize text-ink/45">
             {entry.category}
           </span>
         )}
         <DeploymentBadge entry={entry} />
-        <span className="text-[10px] text-black/35">v{entry.version}</span>
+        <span className="text-[10px] text-ink/35">v{entry.version}</span>
         {entry.author && (
-          <span className="text-[10px] text-black/35">· {entry.author}</span>
+          <span className="text-[10px] text-ink/35">· {entry.author}</span>
         )}
       </div>
       {/* action */}
@@ -663,7 +663,7 @@ function StoreCard({
             <CodeStateChip
               entry={entry}
               t={t}
-              className="inline-flex h-7 items-center gap-1 rounded-[6px] px-3 text-[11px] font-medium"
+              className="inline-flex h-7 items-center gap-1 rounded-[calc(6px*var(--admin-radius-scale,1))] px-3 text-[11px] font-medium"
             />
           ) : !entry.compatible ? (
             <span className="text-[11px] text-red-600/70">
@@ -824,7 +824,7 @@ export function RegistryBrowser() {
 
   if (loadError) {
     return (
-      <div className="rounded-[14px] border border-red-600/20 bg-red-50 p-6 text-center">
+      <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] border border-red-600/20 bg-red-50 p-6 text-center">
         <AlertCircle className="mx-auto size-6 text-red-600/60" />
         <p className="mt-2 text-[14px] font-medium text-red-700">{loadError}</p>
       </div>
@@ -849,7 +849,7 @@ export function RegistryBrowser() {
     <div className="flex flex-col gap-6">
       {/* Errors */}
       {data.errors.length > 0 && (
-        <div className="flex flex-col gap-1 rounded-[10px] border border-red-600/15 bg-red-50 px-4 py-3">
+        <div className="flex flex-col gap-1 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-4 py-3">
           {data.errors.map((e) => (
             <p key={e.source} className="text-[12px] text-red-700">
               {e.source}: {e.error}
@@ -868,7 +868,7 @@ export function RegistryBrowser() {
             header={
               <>
                 <Sparkles className="size-4 text-(--admin-accent)" />
-                <span className="text-[14px] font-semibold tracking-[-0.01em] text-black/85">
+                <span className="text-[14px] font-semibold tracking-[-0.01em] text-ink/85">
                   {t("registryBrowser.featured")}
                 </span>
               </>
@@ -893,14 +893,14 @@ export function RegistryBrowser() {
 
       {/* Search + Category */}
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 rounded-[10px] border border-black/10 bg-white px-3 py-2 shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
-          <Search className="size-4 shrink-0 text-black/35" />
+        <div className="flex items-center gap-2 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface px-3 py-2 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.04))]">
+          <Search className="size-4 shrink-0 text-ink/35" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("registryBrowser.searchPlaceholder")}
-            className="w-full bg-transparent text-[14px] text-black/85 outline-none placeholder:text-black/30"
+            className="w-full bg-transparent text-[14px] text-ink/85 outline-none placeholder:text-ink/30"
           />
         </div>
 
@@ -931,7 +931,7 @@ export function RegistryBrowser() {
       </div>
 
       {/* Count */}
-      <p className="text-[13px] text-black/40">
+      <p className="text-[13px] text-ink/40">
         {filtered.length === 1
           ? t("registryBrowser.extensionCount.one")
           : t("registryBrowser.extensionCount.other", { n: filtered.length })}
@@ -943,11 +943,11 @@ export function RegistryBrowser() {
 
       {/* Grid */}
       {filtered.length === 0 ? (
-        <div className="rounded-[14px] border border-dashed border-black/20 p-10 text-center">
-          <p className="text-[14px] font-medium text-black/45">
+        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/20 p-10 text-center">
+          <p className="text-[14px] font-medium text-ink/45">
             {t("registryBrowser.empty.title")}
           </p>
-          <p className="mt-1 text-[12px] text-black/30">
+          <p className="mt-1 text-[12px] text-ink/30">
             {query
               ? t("registryBrowser.empty.noResultsFor", { query })
               : t("registryBrowser.empty.checkSources")}
@@ -1009,13 +1009,13 @@ function ExtensionDetail({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex w-fit items-center gap-1.5 text-[13px] font-medium text-black/45 transition-colors hover:text-black/85"
+        className="inline-flex w-fit items-center gap-1.5 text-[13px] font-medium text-ink/45 transition-colors hover:text-ink/85"
       >
         ← {t("registryBrowser.detail.back")}
       </button>
 
       {/* Banner */}
-      <div className="relative -mx-4 -mt-4 overflow-hidden rounded-b-[14px] lg:-mx-6 lg:-mt-6">
+      <div className="relative -mx-4 -mt-4 overflow-hidden rounded-b-[calc(14px*var(--admin-radius-scale,1))] lg:-mx-6 lg:-mt-6">
         <div className="relative h-[160px] w-full sm:h-[220px]">
           {bannerUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -1044,10 +1044,10 @@ function ExtensionDetail({
       <div className="flex items-start gap-4">
         <ExtIcon entry={entry} size="large" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h1 className="text-[24px] font-bold tracking-[-0.02em] text-black/90">
+          <h1 className="text-[24px] font-bold tracking-[-0.02em] text-ink/90">
             {entry.name}
           </h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-black/45">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink/45">
             <span>{kindLabel(t, entry.kind)}</span>
             <span>·</span>
             <span>v{entry.version}</span>
@@ -1068,7 +1068,7 @@ function ExtensionDetail({
               </>
             )}
             {entry.category && (
-              <span className="rounded-full bg-black/[0.04] px-2 py-0.5 text-[11px] font-medium capitalize text-black/45">
+              <span className="rounded-full bg-ink/[0.04] px-2 py-0.5 text-[11px] font-medium capitalize text-ink/45">
                 {entry.category}
               </span>
             )}
@@ -1080,7 +1080,7 @@ function ExtensionDetail({
             <CodeStateChip
               entry={entry}
               t={t}
-              className="inline-flex h-10 items-center gap-1.5 rounded-[8px] px-4 text-[13px] font-medium"
+              className="inline-flex h-10 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium"
             />
           ) : !entry.compatible ? (
             <span className="text-[12px] text-red-600/70">
@@ -1126,7 +1126,7 @@ function ExtensionDetail({
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 rounded-[8px] bg-red-50 px-3 py-2 text-[13px] text-red-700">
+        <div className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-red-50 px-3 py-2 text-[13px] text-red-700">
           <AlertCircle className="size-4" />
           {error}
         </div>
@@ -1134,11 +1134,11 @@ function ExtensionDetail({
 
       {/* Description */}
       {entry.description && (
-        <div className={`rounded-[14px] bg-white px-6 py-5 ${CARD}`}>
-          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
+          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
             {t("registryBrowser.detail.about")}
           </h2>
-          <p className="text-[14px] leading-relaxed text-black/65">
+          <p className="text-[14px] leading-relaxed text-ink/65">
             {entry.description}
           </p>
         </div>
@@ -1149,53 +1149,53 @@ function ExtensionDetail({
           import 識別字:manifest id 允許連字號,但 JS 識別字不行 —— 慣例為
           camelCase(id) 的 named export(同 szws-cms-cli-spec)。 */}
       {entry.kind === "code" && (
-        <div className={`rounded-[14px] bg-white px-6 py-5 ${CARD}`}>
-          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
+          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
             {t("registryBrowser.manualInstall.title")}
           </h2>
-          <p className="mb-4 text-[13px] leading-relaxed text-black/55">
+          <p className="mb-4 text-[13px] leading-relaxed text-ink/55">
             {t("registryBrowser.manualInstall.intro")}
           </p>
-          <ol className="mb-4 flex flex-col gap-2 text-[13px] leading-relaxed text-black/65">
+          <ol className="mb-4 flex flex-col gap-2 text-[13px] leading-relaxed text-ink/65">
             <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-black/35">1.</span>
+              <span className="shrink-0 font-mono text-ink/35">1.</span>
               <span>{t("registryBrowser.manualInstall.step1")}</span>
             </li>
             <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-black/35">2.</span>
+              <span className="shrink-0 font-mono text-ink/35">2.</span>
               <span>
                 {t("registryBrowser.manualInstall.step2", { id: entry.id })}
               </span>
             </li>
             <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-black/35">3.</span>
+              <span className="shrink-0 font-mono text-ink/35">3.</span>
               <span>
                 {t("registryBrowser.manualInstall.step3Prefix")}
-                <code className="mx-1 rounded bg-black/[0.06] px-1.5 py-0.5 font-mono text-[12px] text-black/80">
+                <code className="mx-1 rounded bg-ink/[0.06] px-1.5 py-0.5 font-mono text-[12px] text-ink/80">
                   {`import { ${importIdent(entry.id)} } from "./${entry.id}";`}
                 </code>
                 {t("registryBrowser.manualInstall.step3Suffix")}
               </span>
             </li>
             <li className="flex gap-2">
-              <span className="shrink-0 font-mono text-black/35">4.</span>
+              <span className="shrink-0 font-mono text-ink/35">4.</span>
               <span>{t("registryBrowser.manualInstall.step4")}</span>
             </li>
           </ol>
-          <div className="rounded-[10px] bg-black/[0.04] px-4 py-3">
-            <div className="mb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-black/45">
+          <div className="rounded-[calc(10px*var(--admin-radius-scale,1))] bg-ink/[0.04] px-4 py-3">
+            <div className="mb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-ink/45">
               {t("registryBrowser.manualInstall.canonicalLabel")}
             </div>
-            <code className="block font-mono text-[13px] text-black/85">
+            <code className="block font-mono text-[13px] text-ink/85">
               npx @sz.ws/cms add {entry.id}
             </code>
-            <div className="mt-1 text-[11.5px] text-black/40">
+            <div className="mt-1 text-[11.5px] text-ink/40">
               {t("registryBrowser.manualInstall.canonicalNote")}
             </div>
           </div>
           {entry.repository && (
             <div className="mt-3 flex flex-wrap items-baseline gap-2 text-[12.5px]">
-              <span className="text-black/50">
+              <span className="text-ink/50">
                 {t("registryBrowser.manualInstall.repoLabel")}:
               </span>
               <a
@@ -1215,8 +1215,8 @@ function ExtensionDetail({
           (manifest.requires:provider 在場與否 — met 綠 / unmet 紅 / optional 缺席琥珀)。 */}
       {((entry.capabilities ?? []).length > 0 ||
         (entry.requires ?? []).length > 0) && (
-        <div className={`rounded-[14px] bg-white px-6 py-5 ${CARD}`}>
-          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
+          <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
             {t("registryBrowser.detail.requires")}
           </h2>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1229,7 +1229,7 @@ function ExtensionDetail({
                     "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
                     unsupported
                       ? "bg-red-600/10 text-red-700"
-                      : "bg-black/[0.04] text-black/50",
+                      : "bg-ink/[0.04] text-ink/50",
                   )}
                   title={
                     unsupported
@@ -1279,14 +1279,14 @@ function ExtensionDetail({
       {/* Screenshots */}
       {screenshots.length > 0 && (
         <div className="flex flex-col gap-3">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
             {t("registryBrowser.detail.screenshots")}
           </h2>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {screenshots.map((url, i) => (
               <div
                 key={i}
-                className="relative aspect-[16/10] w-[400px] shrink-0 overflow-hidden rounded-[12px] shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_-2px_rgba(0,0,0,0.08)]"
+                className="relative aspect-[16/10] w-[400px] shrink-0 overflow-hidden rounded-[calc(12px*var(--admin-radius-scale,1))] shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_-2px_rgba(0,0,0,0.08))]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -1307,7 +1307,7 @@ function ExtensionDetail({
           {entry.tags!.map((tag) => (
             <span
               key={tag}
-              className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-black/50"
+              className="rounded-full bg-ink/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink/50"
             >
               {tag}
             </span>
@@ -1318,11 +1318,11 @@ function ExtensionDetail({
       {/* Links */}
       {(entry.homepage || entry.repository || entry.supportUrl) && (
         <div
-          className={`flex flex-col gap-2 rounded-[14px] bg-white px-6 py-4 ${CARD}`}
+          className={`flex flex-col gap-2 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-4 ${CARD}`}
         >
           {entry.homepage && (
             <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-black/55">
+              <span className="font-medium text-ink/55">
                 {t("registryBrowser.detail.link.homepage")}
               </span>
               <a
@@ -1337,7 +1337,7 @@ function ExtensionDetail({
           )}
           {entry.repository && (
             <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-black/55">
+              <span className="font-medium text-ink/55">
                 {t("registryBrowser.detail.link.repository")}
               </span>
               <a
@@ -1352,7 +1352,7 @@ function ExtensionDetail({
           )}
           {entry.supportUrl && (
             <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-black/55">
+              <span className="font-medium text-ink/55">
                 {t("registryBrowser.detail.link.support")}
               </span>
               <a
@@ -1369,9 +1369,9 @@ function ExtensionDetail({
       )}
 
       {/* Compatibility info */}
-      <div className={`rounded-[14px] bg-white px-6 py-4 ${CARD}`}>
+      <div className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-4 ${CARD}`}>
         <div className="flex items-center justify-between text-[13px]">
-          <span className="font-medium text-black/55">
+          <span className="font-medium text-ink/55">
             {t("registryBrowser.detail.compatibility")}
           </span>
           <span

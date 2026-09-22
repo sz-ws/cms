@@ -280,6 +280,12 @@ export const en = {
   "settings.emailDomains.hint": "Domains on your email provider account — click one to use it in the from address.",
   "settings.emailDomains.unverified": "unverified",
   "settings.secretSet": "Set — type to replace",
+  // ColorSwatchPicker(設定頁的顏色欄位、後台風格)
+  "color.custom": "Custom color",
+  "color.area": "Saturation and brightness",
+  "color.areaValue": "Saturation {s}%, brightness {v}%",
+  "color.hue": "Hue",
+  "color.hex": "Hex code",
 
   // SettingsWorkspace
   "settingsWorkspace.saving": "Saving…",
@@ -305,6 +311,7 @@ export const en = {
   "settingsWorkspace.surface": "Settings surface",
   "settingsWorkspace.surfaceSubtitle": "Make your changes, then save once.",
   "settingsWorkspace.core": "Core",
+  "settingsWorkspace.style": "Style",
   "settingsWorkspace.declarativeTab": "Declarative",
   "settingsWorkspace.extensions": "Extensions",
   "settingsWorkspace.savingButton": "Saving…",

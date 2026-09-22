@@ -15,7 +15,7 @@ import { TestEventButton } from "./TestEventButton";
 // 跟隨本 repo 既有 code extension 的作法(cron / newebpay 皆 zh-Hant)。
 
 const CARD =
-  "rounded-[14px] bg-white px-6 py-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]";
+  "rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]";
 
 const PILL =
   "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium";
@@ -23,7 +23,7 @@ const PILL_GREEN =
   "bg-[rgba(16,145,90,0.10)] text-[rgb(18,124,88)] shadow-[inset_0_0_0_1px_rgba(16,145,90,0.16)]";
 const PILL_AMBER =
   "bg-amber-500/10 text-amber-700 shadow-[inset_0_0_0_1px_rgba(217,119,6,0.18)]";
-const PILL_NEUTRAL = "bg-black/[0.04] text-black/55";
+const PILL_NEUTRAL = "bg-ink/[0.04] text-ink/55";
 
 const LAYER_LABEL: Record<string, string> = {
   production: "正式站",
@@ -40,8 +40,8 @@ function Row({
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
-      <span className="w-28 shrink-0 text-[12.5px] text-black/45">{label}</span>
-      <span className="flex min-w-0 flex-wrap items-baseline gap-2 text-[13px] text-black/70">
+      <span className="w-28 shrink-0 text-[12.5px] text-ink/45">{label}</span>
+      <span className="flex min-w-0 flex-wrap items-baseline gap-2 text-[13px] text-ink/70">
         {children}
       </span>
     </div>
@@ -59,10 +59,10 @@ export async function SentryAdminPage() {
   return (
     <div className="flex max-w-3xl flex-col gap-5">
       <header>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/85">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/85">
           錯誤追蹤
         </h1>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-black/55">
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
           把沒接住的例外、失敗的 extension hook 與失敗的 cron tick
           送到自架的 GlitchTip(或任何說 Sentry 協定的收集端)。DSN
           留空就是整套安靜關閉 —— 沒有任何網路流量,也不會有警告。
@@ -71,7 +71,7 @@ export async function SentryAdminPage() {
 
       {/* 狀態:把每一個會讓事件送不出去的環節分開列。 */}
       <section className={CARD}>
-        <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           狀態
         </h2>
         <div className="flex flex-col gap-2.5">
@@ -79,7 +79,7 @@ export async function SentryAdminPage() {
             {status.source === "settings" && (
               <>
                 <span className={`${PILL} ${PILL_GREEN}`}>已設定</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   來自這個 extension 的設定(加密儲存,存檔即生效)。
                 </span>
               </>
@@ -87,7 +87,7 @@ export async function SentryAdminPage() {
             {status.source === "env" && (
               <>
                 <span className={`${PILL} ${PILL_GREEN}`}>已設定</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   來自環境變數{" "}
                   <code className="font-mono text-[12px]">CMS_ERROR_DSN</code>
                   。下方填了設定值的話,設定值優先。
@@ -97,7 +97,7 @@ export async function SentryAdminPage() {
             {status.source === "none" && (
               <>
                 <span className={`${PILL} ${PILL_NEUTRAL}`}>未設定</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   到設定頁的 Extensions 區填「錯誤追蹤
                   DSN」。整套目前是關閉的。
                 </span>
@@ -110,7 +110,7 @@ export async function SentryAdminPage() {
               {LAYER_LABEL[status.layer] ?? status.layer}
             </span>
             {status.origin ? (
-              <code className="break-all font-mono text-[12px] text-black/50">
+              <code className="break-all font-mono text-[12px] text-ink/50">
                 {status.origin}
               </code>
             ) : (
@@ -125,7 +125,7 @@ export async function SentryAdminPage() {
             {status.sending ? (
               <>
                 <span className={`${PILL} ${PILL_GREEN}`}>送出中</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   事件會標成 <code className="font-mono text-[12px]">{status.layer}</code>
                   ,GlitchTip 上可以用它篩選。
                 </span>
@@ -133,7 +133,7 @@ export async function SentryAdminPage() {
             ) : (
               <>
                 <span className={`${PILL} ${PILL_AMBER}`}>不送</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   {status.source === "none"
                     ? "還沒有 DSN。"
                     : "有 DSN,但這一層是本機 —— 本機的錯誤會和正式站的混進同一組 issue,而且堆疊裡有開發機的絕對路徑,所以預設不送。要在本機實測就加 CMS_ERROR_ALLOW_LOCAL=1。"}
@@ -146,14 +146,14 @@ export async function SentryAdminPage() {
             {hasClientDsn ? (
               <>
                 <span className={`${PILL} ${PILL_GREEN}`}>已設定</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   這次建置有帶到前端 DSN。
                 </span>
               </>
             ) : (
               <>
                 <span className={`${PILL} ${PILL_NEUTRAL}`}>未設定</span>
-                <span className="text-black/50">
+                <span className="text-ink/50">
                   前端的錯誤(編輯器、上傳、passkey
                   註冊)不會被記錄。這一顆只能是建置期的環境變數{" "}
                   <code className="font-mono text-[12px]">
@@ -170,10 +170,10 @@ export async function SentryAdminPage() {
 
       {/* 測試:走完整的真實路徑,不是驗證 DSN 長得像不像。 */}
       <section className={CARD}>
-        <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           送一筆測試事件
         </h2>
-        <p className="mb-4 text-[13px] leading-relaxed text-black/55">
+        <p className="mb-4 text-[13px] leading-relaxed text-ink/55">
           從伺服器端送出一筆刻意製造的錯誤,走的是和真實錯誤完全相同的路徑(同一個
           client、同一組清理規則)。成功會回傳 event
           id,拿去 GlitchTip 上就找得到那一筆。
@@ -183,19 +183,19 @@ export async function SentryAdminPage() {
 
       {/* 涵蓋範圍:講清楚哪些錯誤走得到、哪些走不到。 */}
       <section className={CARD}>
-        <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-black/85">
+        <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           收得到什麼
         </h2>
-        <ul className="flex flex-col gap-2 text-[13px] leading-relaxed text-black/65">
+        <ul className="flex flex-col gap-2 text-[13px] leading-relaxed text-ink/65">
           <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-black/35">·</span>
+            <span className="shrink-0 font-mono text-ink/35">·</span>
             <span>
               後台與公開站沒接住的例外(server component、route handler、
               middleware)。
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-black/35">·</span>
+            <span className="shrink-0 font-mono text-ink/35">·</span>
             <span>
               失敗的 extension hook。這些原本只印在 Worker
               log 裡:HTTP 照樣回 200、後台照樣顯示存檔成功,只是 webhook
@@ -203,7 +203,7 @@ export async function SentryAdminPage() {
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-black/35">·</span>
+            <span className="shrink-0 font-mono text-ink/35">·</span>
             <span>
               失敗的 cron tick。這條路不經過 Next.js,所以它自己 init
               一次(見 extensions/sentry/scheduled.ts);
@@ -211,7 +211,7 @@ export async function SentryAdminPage() {
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-black/35">·</span>
+            <span className="shrink-0 font-mono text-ink/35">·</span>
             <span>
               瀏覽器端的錯誤 —— 但只有在建置時帶了{" "}
               <code className="font-mono text-[12px]">
@@ -221,7 +221,7 @@ export async function SentryAdminPage() {
             </span>
           </li>
         </ul>
-        <p className="mt-4 text-[12.5px] leading-relaxed text-black/45">
+        <p className="mt-4 text-[12.5px] leading-relaxed text-ink/45">
           送出前會做刪去法清理:cookie、authorization / 簽章 header、請求內文與
           query string 一律拿掉。這個 CMS
           什麼資料都碰得到,而一份夠詳細的錯誤報告本身就是一次外洩 ——

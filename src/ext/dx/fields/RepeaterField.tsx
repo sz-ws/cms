@@ -91,7 +91,7 @@ export function RepeaterField({
           onClick={addRow}
         />
         {max !== undefined && (
-          <span className="text-[12px] tabular-nums text-black/35">
+          <span className="text-[12px] tabular-nums text-black/35 admin:text-ink/35">
             {rows.length} / {max}
           </span>
         )}

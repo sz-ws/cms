@@ -39,10 +39,10 @@ export function AuditFilters({ view, tool }: AuditFiltersProps) {
               href={auditHref({ view: v.view, tool })}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "inline-flex h-7 items-center rounded-[7px] px-2.5 text-[12.5px] font-medium transition-[color,background-color,box-shadow] duration-150",
+                "inline-flex h-7 items-center rounded-[calc(7px*var(--admin-radius-scale,1))] px-2.5 text-[12.5px] font-medium transition-[color,background-color,box-shadow] duration-150",
                 active
-                  ? "bg-white text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)]"
-                  : "text-black/45 hover:bg-black/[0.03] hover:text-black/75",
+                  ? "bg-surface text-ink/85 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))]"
+                  : "text-ink/45 hover:bg-ink/[0.03] hover:text-ink/75",
               )}
             >
               {t(v.label)}
@@ -55,10 +55,10 @@ export function AuditFilters({ view, tool }: AuditFiltersProps) {
           href={auditHref({ view, tool: null })}
           aria-label={t("agent.audit.filter.clearTool")}
           title={t("agent.audit.filter.clearTool")}
-          className="ml-1 inline-flex h-7 items-center gap-1.5 rounded-[7px] bg-black/[0.045] pr-1.5 pl-2.5 font-mono text-[11px] lowercase text-black/60 transition-colors duration-150 hover:bg-black/[0.07] hover:text-black/85"
+          className="ml-1 inline-flex h-7 items-center gap-1.5 rounded-[calc(7px*var(--admin-radius-scale,1))] bg-ink/[0.045] pr-1.5 pl-2.5 font-mono text-[11px] lowercase text-ink/60 transition-colors duration-150 hover:bg-ink/[0.07] hover:text-ink/85"
         >
           {tool}
-          <X className="size-3 text-black/40" />
+          <X className="size-3 text-ink/40" />
         </AdminLink>
       )}
     </div>

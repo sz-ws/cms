@@ -44,14 +44,14 @@ export function AdminNavGroup({
         aria-expanded={open}
         aria-controls={panelId}
         className={cn(
-          "group/nav-group flex w-full items-center gap-1.5 rounded-[8px] px-2.5",
+          "group/nav-group flex w-full items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5",
           "transition-colors duration-150 ease-out",
           prominent
             ? cn(
-                "h-7 text-[12px] font-medium hover:text-black/75",
-                holdsActive && !open ? "text-black/80" : "text-black/45",
+                "h-7 text-[12px] font-medium hover:text-ink/75",
+                holdsActive && !open ? "text-ink/80" : "text-ink/45",
               )
-            : "py-1 text-[11px] font-normal text-black/35 hover:text-black/60",
+            : "py-1 text-[11px] font-normal text-ink/35 hover:text-ink/60",
           // Hide entirely when the sidebar is docked/collapsed (icons only).
           "in-data-[collapsible=dock]:hidden",
         )}

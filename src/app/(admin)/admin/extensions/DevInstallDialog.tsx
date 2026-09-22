@@ -119,7 +119,7 @@ export function DevInstallDialog({
         ) : null}
 
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[12px] text-black/40">
+          <p className="text-[12px] text-ink/40">
             Declaring <code className="font-mono">stylesheet</code> is not
             supported here — there is no source to fetch it from.
           </p>
@@ -142,7 +142,7 @@ export function DevInstallTrigger() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-black/45 transition-colors hover:text-foreground"
+        className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-ink/45 transition-colors hover:text-foreground"
         title="Development only"
       >
         <FlaskConical className="size-3.5" />

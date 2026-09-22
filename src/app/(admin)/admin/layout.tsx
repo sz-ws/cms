@@ -3,13 +3,13 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
-import { ADMIN_ACCENT_BOOT_SCRIPT } from "@/lib/admin-accent";
+import { resolveAdminAppearance } from "@/lib/admin-theme";
 import {
   normalizeStatusSets,
   resolveStatusSets,
   type ResolvedStatusSets,
 } from "@/ext/record-status";
-import { AdminAccentSync } from "@/components/admin/AdminAccent";
+import { AdminTheme } from "@/components/admin/AdminTheme";
 import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
 import { AdminShell } from "@/components/admin/AdminShell";
@@ -67,6 +67,10 @@ export default async function AdminLayout({
 
   const siteTitle = await getSetting<string>("core.siteTitle", "My Site");
   const brandLogo = await getSetting<string>("core.brandLogo", "");
+  const appearance = resolveAdminAppearance(
+    await getSetting("core.adminTheme", null),
+    await getSetting("core.adminAccent", null),
+  );
   const rt = await getExtRuntime();
   const locale = await getLocale();
   const messages = getMessages(locale);
@@ -150,28 +154,26 @@ export default async function AdminLayout({
 
   return (
     <I18nProvider locale={locale} messages={messages}>
-      {/* 1.40.0:後台主色是這台瀏覽器的偏好(localStorage),畫面出來前套上,
-          不讀 DB。規則見 lib/admin-accent.ts。 */}
-      <script dangerouslySetInnerHTML={{ __html: ADMIN_ACCENT_BOOT_SCRIPT }} />
-      <AdminAccentSync />
-      <AdminShell
-        user={user}
-        menu={menu}
-        siteTitle={siteTitle}
-        brandLogo={brandLogo}
-        sections={sections}
-        pageSearch={pageSearch}
-        statusSets={statusSets}
-        shopLabels={{
-          browse: messages["nav.browse"],
-          installed: messages["nav.installed"],
-        }}
-        // 不在 sidebar、但有自己標題的 core 子頁。少了這裡,麵包屑會退回把路徑段
-        // 首字大寫(「Audit」),與整個後台的本地化脫節。
-        crumbTitles={{ "/admin/agent/audit": messages["agent.audit.title"] }}
-      >
-        {children}
-      </AdminShell>
+      <AdminTheme initial={appearance}>
+        <AdminShell
+          user={user}
+          menu={menu}
+          siteTitle={siteTitle}
+          brandLogo={brandLogo}
+          sections={sections}
+          pageSearch={pageSearch}
+          statusSets={statusSets}
+          shopLabels={{
+            browse: messages["nav.browse"],
+            installed: messages["nav.installed"],
+          }}
+          // 不在 sidebar、但有自己標題的 core 子頁。少了這裡,麵包屑會退回把路徑段
+          // 首字大寫(「Audit」),與整個後台的本地化脫節。
+          crumbTitles={{ "/admin/agent/audit": messages["agent.audit.title"] }}
+        >
+          {children}
+        </AdminShell>
+      </AdminTheme>
     </I18nProvider>
   );
 }

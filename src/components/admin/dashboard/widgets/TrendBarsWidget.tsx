@@ -19,7 +19,7 @@ export function TrendBarsWidget({ data }: { data: TrendWidgetData }) {
       <WidgetHeader label={data.label} />
       <div className="flex flex-1 flex-col justify-between gap-4">
         <div className="flex items-end justify-between gap-2">
-          <span className="text-[32px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-black/85">
+          <span className="text-[32px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-ink/85">
             {typeof data.value === "number" ? (
               <StatNumber value={data.value} />
             ) : (
@@ -33,7 +33,7 @@ export function TrendBarsWidget({ data }: { data: TrendWidgetData }) {
             {series.map((v, i) => (
               <div
                 key={i}
-                className="flex-1 origin-bottom rounded-[2px] transition-[height] duration-500 ease-out"
+                className="flex-1 origin-bottom rounded-[calc(2px*var(--admin-radius-scale,1))] transition-[height] duration-500 ease-out"
                 style={{
                   height: `${Math.max((v / max) * 100, 6)}%`,
                   backgroundColor: ACCENT,

@@ -37,24 +37,24 @@ interface AskCardProps {
 /** 動作列按鈕:同 ProposalCard 的兩種語氣(黑底主動作 / 白底次動作)。 */
 function actionClasses(tone: "primary" | "secondary"): string {
   return cn(
-    "inline-flex h-9 items-center gap-1.5 rounded-[8px] px-3.5 text-[13px] font-medium",
+    "inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3.5 text-[13px] font-medium",
     "transition-[background-color,box-shadow,transform,opacity] duration-150 ease-out",
     "active:scale-[0.96] disabled:pointer-events-none disabled:opacity-45",
     tone === "primary"
-      ? "bg-black text-white hover:bg-black/85"
-      : "bg-white text-black/65 shadow-[0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06)] hover:text-black/90",
+      ? "bg-ink text-white hover:bg-ink/85"
+      : "bg-surface text-ink/65 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06))] hover:text-ink/90",
   );
 }
 
 /** 輸入框:8px 圓角、shadow 造框(不是 border)、focus 時加一圈 accent 暈。 */
 function inputClasses(invalid: boolean): string {
   return cn(
-    "w-full rounded-[8px] bg-white px-2.5 py-2 text-[13px] leading-relaxed text-black/85",
-    "outline-none placeholder:text-black/25",
+    "w-full rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-2.5 py-2 text-[13px] leading-relaxed text-ink/85",
+    "outline-none placeholder:text-ink/25",
     "transition-shadow duration-150 ease-out",
     invalid
       ? "shadow-[0_0_0_1px_rgba(220,38,38,0.35)]"
-      : "shadow-[0_0_0_1px_rgba(20,18,22,0.08)] focus:shadow-[0_0_0_1px_rgba(20,18,22,0.12),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_8%,transparent)]",
+      : "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.08))] focus:shadow-[0_0_0_1px_rgba(20,18,22,0.12),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_8%,transparent)]",
   );
 }
 
@@ -76,15 +76,15 @@ function OptionButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex w-full flex-col items-start gap-0.5 rounded-[8px] bg-white px-3 py-2 text-left",
-        "shadow-[0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06)]",
+        "flex w-full flex-col items-start gap-0.5 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-3 py-2 text-left",
+        "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06))]",
         "transition-[box-shadow,transform,opacity] duration-150 ease-out",
         "hover:shadow-[0_0_0_1px_rgba(20,18,22,0.14),0_1px_2px_-1px_rgba(20,18,22,0.08)]",
         "active:scale-[0.985] disabled:pointer-events-none disabled:opacity-45",
       )}
     >
-      <span className="text-[13.5px] leading-snug text-black/85">{label}</span>
-      {hint && <span className="text-[11.5px] leading-snug text-black/40">{hint}</span>}
+      <span className="text-[13.5px] leading-snug text-ink/85">{label}</span>
+      {hint && <span className="text-[11.5px] leading-snug text-ink/40">{hint}</span>}
     </button>
   );
 }
@@ -101,7 +101,7 @@ function AnswerLine({
 }) {
   const t = useT();
   if (resolution === "dismissed") {
-    return <p className="text-[12px] text-black/40">{t("agent.ask.dismissed")}</p>;
+    return <p className="text-[12px] text-ink/40">{t("agent.ask.dismissed")}</p>;
   }
 
   // choice 是 value(給模型的識別字),admin 看到的是 label —— 回顯時換回來,
@@ -119,9 +119,9 @@ function AnswerLine({
 
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-[12px] text-black/40">{t("agent.ask.answered")}</p>
+      <p className="text-[12px] text-ink/40">{t("agent.ask.answered")}</p>
       {lines.map((line) => (
-        <p key={line.key} className="text-[12.5px] leading-relaxed text-black/60">
+        <p key={line.key} className="text-[12.5px] leading-relaxed text-ink/60">
           {line.text}
         </p>
       ))}
@@ -180,23 +180,23 @@ export function AskCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "w-full max-w-[36rem] rounded-[20px] p-1.5 backdrop-blur-md",
+        "w-full max-w-[36rem] rounded-[calc(20px*var(--admin-radius-scale,1))] p-1.5 backdrop-blur-md",
         pending
-          ? "bg-white/55 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)]"
+          ? "bg-surface/55 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))]"
           : "bg-transparent",
       )}
     >
       <div
         className={cn(
-          "flex flex-col gap-3.5 rounded-[14px] bg-white p-4",
-          "shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06)]",
+          "flex flex-col gap-3.5 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4",
+          "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06))]",
           !pending && "opacity-90",
         )}
       >
         <div className="flex items-center gap-2">
           {/* 靜態 ring-dot。等待中不閃、不跳、不呼吸 —— 見檔頭的動效紅線。 */}
           <RingDot accent={pending} />
-          <span className="text-[11.5px] text-black/40">
+          <span className="text-[11.5px] text-ink/40">
             {pending
               ? t("agent.ask.heading")
               : resolution === "dismissed"
@@ -205,7 +205,7 @@ export function AskCard({
           </span>
         </div>
 
-        <p className="text-[14px] leading-relaxed text-black/85">{ask.question}</p>
+        <p className="text-[14px] leading-relaxed text-ink/85">{ask.question}</p>
 
         {pending && (
           <>
@@ -266,11 +266,11 @@ export function AskCard({
                     <div key={field.key} className="flex flex-col gap-1.5">
                       <label
                         htmlFor={id}
-                        className="flex items-baseline gap-1.5 text-[12px] font-medium text-black/50"
+                        className="flex items-baseline gap-1.5 text-[12px] font-medium text-ink/50"
                       >
                         {field.label}
                         {field.required && (
-                          <span className="text-[11px] font-normal text-black/30">
+                          <span className="text-[11px] font-normal text-ink/30">
                             {t("agent.ask.required")}
                           </span>
                         )}
@@ -291,7 +291,7 @@ export function AskCard({
               </div>
             )}
 
-            <p className="text-[11.5px] leading-relaxed text-black/35">
+            <p className="text-[11.5px] leading-relaxed text-ink/35">
               {t("agent.ask.note")}
             </p>
 

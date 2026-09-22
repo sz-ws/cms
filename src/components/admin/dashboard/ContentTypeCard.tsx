@@ -63,10 +63,10 @@ function SplitStat({
   return (
     <div className="flex items-center gap-1.5">
       <StatusDot tone={tone} />
-      <span className="text-[14px] font-semibold tabular-nums text-black/85">
+      <span className="text-[14px] font-semibold tabular-nums text-ink/85">
         <StatNumber value={value} />
       </span>
-      <span className="text-[12px] text-black/40">{label}</span>
+      <span className="text-[12px] text-ink/40">{label}</span>
     </div>
   );
 }
@@ -84,9 +84,9 @@ function CardActions({
       <AdminLink
         href={stats.newHref}
         className={cn(
-          "inline-flex h-8 items-center rounded-[8px] bg-white px-3 text-[12.5px] font-semibold text-black/70",
+          "inline-flex h-8 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-3 text-[12.5px] font-semibold text-ink/70",
           "transition-[color,box-shadow] duration-150 ease-out active:scale-[0.96]",
-          "hover:text-black/90",
+          "hover:text-ink/90",
           SHADOW_RING,
         )}
       >
@@ -95,9 +95,9 @@ function CardActions({
       <AdminLink
         href={stats.collectionHref}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-black px-3 text-[12.5px] font-semibold text-white",
+          "inline-flex h-8 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-3 text-[12.5px] font-semibold text-white",
           "transition-[background-color,transform] duration-150 ease-out",
-          "hover:bg-black/85 active:scale-[0.96]",
+          "hover:bg-ink/85 active:scale-[0.96]",
         )}
       >
         {labels.viewAll}
@@ -123,24 +123,24 @@ function HeroCard({
   const sharePct = Math.round(shareOfTotal * 100);
 
   return (
-    <div className="rounded-[20px] bg-white/55 p-1.5 backdrop-blur">
+    <div className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 backdrop-blur">
       <div
         className={cn(
-          "flex flex-col gap-6 rounded-[14px] bg-white px-[22px] py-5 md:flex-row md:items-center md:gap-8",
+          "flex flex-col gap-6 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-[22px] py-5 md:flex-row md:items-center md:gap-8",
           SHADOW_RING,
         )}
       >
         {/* Left: identity + the one large number + why-it's-featured caption. */}
         <div className="flex shrink-0 flex-col gap-1 md:min-w-[190px]">
-          <div className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+          <div className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
             {typeLabel}
           </div>
-          <div className="text-[12px] text-black/40">{extName}</div>
-          <div className="mt-2 text-[46px] font-semibold leading-[0.9] tabular-nums tracking-[-0.03em] text-black/90">
+          <div className="text-[12px] text-ink/40">{extName}</div>
+          <div className="mt-2 text-[46px] font-semibold leading-[0.9] tabular-nums tracking-[-0.03em] text-ink/90">
             <StatNumber value={total} />
           </div>
           {sharePct > 0 && (
-            <div className="mt-1 text-[12px] tabular-nums text-black/40">
+            <div className="mt-1 text-[12px] tabular-nums text-ink/40">
               {sharePct}% {labels.ofAllContent}
             </div>
           )}
@@ -187,12 +187,12 @@ function StandardHeader({
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="flex flex-col gap-px">
-        <div className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+        <div className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
           {stats.typeLabel}
         </div>
-        <div className="text-[12px] text-black/40">{stats.extName}</div>
+        <div className="text-[12px] text-ink/40">{stats.extName}</div>
       </div>
-      <div className="text-[30px] font-semibold leading-[0.9] tabular-nums tracking-[-0.02em] text-black/90">
+      <div className="text-[30px] font-semibold leading-[0.9] tabular-nums tracking-[-0.02em] text-ink/90">
         <StatNumber value={stats.total} />
       </div>
     </div>
@@ -248,7 +248,7 @@ function StandardCard({
   return (
     <div
       className={cn(
-        "group flex flex-col gap-3.5 rounded-[16px] bg-white px-[18px] pt-[18px] pb-3.5",
+        "group flex flex-col gap-3.5 rounded-[calc(16px*var(--admin-radius-scale,1))] bg-surface px-[18px] pt-[18px] pb-3.5",
         "transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5",
         SHADOW_RING,
         SHADOW_RING_HOVER,

@@ -41,47 +41,47 @@ export function ToolCallsSection({ calls }: ToolCallsSectionProps) {
         type="button"
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
-        className="group/tools flex w-fit items-center gap-1.5 rounded-[8px] py-1 pr-2 pl-1 text-[11.5px] text-black/40 transition-colors duration-150 hover:bg-black/[0.03] hover:text-black/70"
+        className="group/tools flex w-fit items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] py-1 pr-2 pl-1 text-[11.5px] text-ink/40 transition-colors duration-150 hover:bg-ink/[0.03] hover:text-ink/70"
       >
-        <Wrench className="size-3.5 shrink-0 text-black/25 transition-colors group-hover/tools:text-black/45" />
+        <Wrench className="size-3.5 shrink-0 text-ink/25 transition-colors group-hover/tools:text-ink/45" />
         <span className="tabular-nums">
           {calls.length === 1
             ? t("agent.toolCountOne")
             : t("agent.toolCount", { count: calls.length })}
         </span>
         {failed > 0 && (
-          <span className="rounded-[5px] bg-red-50 px-1.5 py-px text-[10.5px] text-red-700 shadow-[0_0_0_1px_rgba(220,38,38,0.15)]">
+          <span className="rounded-[calc(5px*var(--admin-radius-scale,1))] bg-red-50 px-1.5 py-px text-[10.5px] text-red-700 shadow-[0_0_0_1px_rgba(220,38,38,0.15)]">
             {t("agent.toolFailed")}
           </span>
         )}
         {truncated && (
-          <span className="rounded-[5px] bg-black/[0.045] px-1.5 py-px text-[10.5px] text-black/45">
+          <span className="rounded-[calc(5px*var(--admin-radius-scale,1))] bg-ink/[0.045] px-1.5 py-px text-[10.5px] text-ink/45">
             {t("agent.toolTruncated")}
           </span>
         )}
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-black/25 transition-transform duration-150 ease-out",
+            "size-3.5 shrink-0 text-ink/25 transition-transform duration-150 ease-out",
             open && "rotate-90",
           )}
         />
       </button>
 
       {open && (
-        <ul className="flex flex-col gap-px rounded-[12px] bg-white p-1.5 shadow-[0_0_0_1px_rgba(20,18,22,0.05),0_1px_2px_-1px_rgba(20,18,22,0.05)]">
+        <ul className="flex flex-col gap-px rounded-[calc(12px*var(--admin-radius-scale,1))] bg-surface p-1.5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.05),0_1px_2px_-1px_rgba(20,18,22,0.05))]">
           {calls.map((call, index) => (
             <li
               key={`${call.toolName}-${index}`}
-              className="flex items-center gap-2.5 rounded-[8px] px-2 py-1.5"
+              className="flex items-center gap-2.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-2 py-1.5"
             >
               <StatusDot tone={call.ok ? "good" : "draft"} className="shrink-0" />
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] lowercase">
-                <span className="text-black/35">{toolNamespace(call.toolName)}.</span>
-                <span className="text-black/75">{toolLeaf(call.toolName)}</span>
+                <span className="text-ink/35">{toolNamespace(call.toolName)}.</span>
+                <span className="text-ink/75">{toolLeaf(call.toolName)}</span>
               </span>
               {call.truncated && (
-                <span className="shrink-0 text-[10.5px] text-black/35">
+                <span className="shrink-0 text-[10.5px] text-ink/35">
                   {t("agent.toolTruncated")}
                 </span>
               )}

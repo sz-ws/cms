@@ -40,7 +40,7 @@ export function EmailDomainChips({ value, onPick }: EmailDomainChipsProps) {
 
   return (
     <div className="flex flex-col gap-1.5 pt-0.5">
-      <span className="text-[11px] font-medium tracking-[0.02em] text-black/35">
+      <span className="text-[11px] font-medium tracking-[0.02em] text-ink/35">
         {t("settings.emailDomains.title")}
       </span>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -54,7 +54,7 @@ export function EmailDomainChips({ value, onPick }: EmailDomainChipsProps) {
               "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] " +
               (d.verified
                 ? "text-[rgb(18,124,88)] hover:bg-[rgba(16,145,90,0.16)]"
-                : "text-black/45 hover:bg-black/[0.06]")
+                : "text-ink/45 hover:bg-ink/[0.06]")
             }
             style={{
               backgroundColor: d.verified
@@ -67,7 +67,7 @@ export function EmailDomainChips({ value, onPick }: EmailDomainChipsProps) {
           >
             @{d.name}
             {!d.verified && (
-              <span className="text-[10px] font-normal text-black/35">
+              <span className="text-[10px] font-normal text-ink/35">
                 {t("settings.emailDomains.unverified")}
               </span>
             )}

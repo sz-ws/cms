@@ -105,12 +105,12 @@ function ExtensionSheetBody({
 
   return (
     <>
-      <SheetHeader className="border-b border-black/[0.06] pb-5">
-        <SheetTitle className="flex items-center gap-2 text-[16px] font-semibold tracking-[-0.01em] text-black/90">
+      <SheetHeader className="border-b border-ink/[0.06] pb-5">
+        <SheetTitle className="flex items-center gap-2 text-[16px] font-semibold tracking-[-0.01em] text-ink/90">
           {ext.name}
           <KindBadge kind={ext.kind} />
         </SheetTitle>
-        <SheetDescription className="text-[12.5px] text-black/40">
+        <SheetDescription className="text-[12.5px] text-ink/40">
           {ext.description || t("extensions.noDescription")}
         </SheetDescription>
       </SheetHeader>
@@ -119,12 +119,12 @@ function ExtensionSheetBody({
         {/* About:版本 / ID / 類型的安靜清單 */}
         <div className="flex flex-col gap-3.5">
           <SectionLabel>{t("extensions.sheet.about")}</SectionLabel>
-          <div className="flex flex-col rounded-[10px] bg-black/[0.03] px-3.5">
+          <div className="flex flex-col rounded-[calc(10px*var(--admin-radius-scale,1))] bg-ink/[0.03] px-3.5">
             <MetaRow label={t("extensions.version")}>
               <span className="tabular-nums">{ext.version}</span>
             </MetaRow>
             <MetaRow label={t("extensions.sheet.id")}>
-              <code className="font-mono text-[12px] text-black/55">
+              <code className="font-mono text-[12px] text-ink/55">
                 {ext.id}
               </code>
             </MetaRow>
@@ -139,7 +139,7 @@ function ExtensionSheetBody({
         {/* Status:琺瑯 pill + 就地切換 */}
         <div className="flex flex-col gap-3.5">
           <SectionLabel>{t("extensions.status")}</SectionLabel>
-          <div className="flex items-center justify-between rounded-[10px] border border-black/[0.08] px-3.5 py-2.5">
+          <div className="flex items-center justify-between rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/[0.08] px-3.5 py-2.5">
             <StatusPill enabled={ext.enabled} issue={ext.issue} />
             <button
               type="button"
@@ -148,10 +148,10 @@ function ExtensionSheetBody({
                 onAction(ext.id, ext.enabled ? "disable" : "enable", ext.kind)
               }
               className={cn(
-                "flex h-8 items-center gap-1.5 rounded-[8px] px-3 text-[12.5px] font-medium transition-[background-color,transform] active:scale-[0.96]",
+                "flex h-8 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[12.5px] font-medium transition-[background-color,transform] active:scale-[0.96]",
                 ext.enabled
-                  ? "text-black/55 hover:bg-black/[0.05]"
-                  : "bg-black text-white hover:bg-black/85",
+                  ? "text-ink/55 hover:bg-ink/[0.05]"
+                  : "bg-ink text-white hover:bg-ink/85",
                 busy && "cursor-wait opacity-60",
               )}
             >
@@ -168,12 +168,12 @@ function ExtensionSheetBody({
 
         {/* Danger zone */}
         {ext.installed && (
-          <div className="mt-2 flex flex-col gap-2 border-t border-black/[0.06] pt-5">
+          <div className="mt-2 flex flex-col gap-2 border-t border-ink/[0.06] pt-5">
             <SectionLabel tone="danger">
               {t("extensions.sheet.dangerZone")}
             </SectionLabel>
             {confirmUninstall ? (
-              <div className="flex flex-col gap-3 rounded-[10px] border border-red-600/20 bg-red-50 px-3.5 py-3">
+              <div className="flex flex-col gap-3 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-red-600/20 bg-red-50 px-3.5 py-3">
                 <span className="text-[12.5px] font-medium text-red-700">
                   {t("extensions.sheet.uninstallConfirm", { name: ext.name })}
                 </span>
@@ -199,7 +199,7 @@ function ExtensionSheetBody({
                   <button
                     type="button"
                     onClick={() => setConfirmUninstall(false)}
-                    className="rounded-[6px] px-2 py-1 text-[12px] text-black/50 transition-colors hover:bg-black/[0.05]"
+                    className="rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 py-1 text-[12px] text-ink/50 transition-colors hover:bg-ink/[0.05]"
                   >
                     {t("extensions.cancel")}
                   </button>
@@ -209,7 +209,7 @@ function ExtensionSheetBody({
                     onClick={() =>
                       onAction(ext.id, "uninstall", ext.kind, purge)
                     }
-                    className="rounded-[6px] bg-red-600 px-2.5 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+                    className="rounded-[calc(6px*var(--admin-radius-scale,1))] bg-red-600 px-2.5 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
                   >
                     {uninstalling ? "…" : t("extensions.uninstall")}
                   </button>
@@ -219,13 +219,13 @@ function ExtensionSheetBody({
               <button
                 type="button"
                 onClick={() => setConfirmUninstall(true)}
-                className="flex w-fit items-center gap-1.5 rounded-[8px] border border-red-600/20 px-3 py-1.5 text-[12.5px] font-medium text-red-600 transition-[background-color,transform] hover:bg-red-50 active:scale-[0.96]"
+                className="flex w-fit items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/20 px-3 py-1.5 text-[12.5px] font-medium text-red-600 transition-[background-color,transform] hover:bg-red-50 active:scale-[0.96]"
               >
                 <Trash2 className="size-3.5" />
                 {t("extensions.uninstall")}
               </button>
             )}
-            <span className="text-[11px] text-black/30">
+            <span className="text-[11px] text-ink/30">
               {t("extensions.sheet.uninstallDesc")}
             </span>
           </div>
@@ -252,7 +252,7 @@ function RuntimeIssue({ issue }: { issue: NonNullable<ExtensionRow["issue"]> }) 
   return (
     <div
       role="alert"
-      className="flex gap-2 rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-red-700"
+      className="flex gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-red-700"
     >
       <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
       <span className="flex flex-col gap-0.5">
@@ -274,7 +274,7 @@ function SectionLabel({
     <h3
       className={cn(
         "text-[11px] font-semibold tracking-[0.06em] uppercase",
-        tone === "danger" ? "text-red-600/70" : "text-black/35",
+        tone === "danger" ? "text-red-600/70" : "text-ink/35",
       )}
     >
       {children}
@@ -290,8 +290,8 @@ function MetaRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-9 items-center justify-between border-t border-black/[0.05] text-[13px] text-black/60 first:border-t-0">
-      <span className="text-black/40">{label}</span>
+    <div className="flex h-9 items-center justify-between border-t border-ink/[0.05] text-[13px] text-ink/60 first:border-t-0">
+      <span className="text-ink/40">{label}</span>
       {children}
     </div>
   );

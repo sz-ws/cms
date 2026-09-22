@@ -79,6 +79,7 @@ export function AdminShell({
 
   return (
     <SidebarProvider
+      data-admin-surface=""
       // Trim the Intent UI default (17rem/272px) — it ate too much width.
       style={{ "--sidebar-width": "14rem" } as CSSProperties}
     >

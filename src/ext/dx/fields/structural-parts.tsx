@@ -38,7 +38,7 @@ export function IconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex size-7 items-center justify-center rounded-full text-black/45 transition-colors hover:bg-black/[0.06] hover:text-black/70 active:scale-[0.92] disabled:pointer-events-none disabled:opacity-30 motion-reduce:active:scale-100"
+      className="inline-flex size-7 items-center justify-center rounded-full text-black/45 admin:text-ink/45 transition-colors hover:bg-black/[0.06] admin:hover:bg-ink/[0.06] hover:text-black/70 admin:hover:text-ink/70 active:scale-[0.92] disabled:pointer-events-none disabled:opacity-30 motion-reduce:active:scale-100"
     >
       {children}
     </button>
@@ -72,19 +72,19 @@ export function InstanceCard({
   children: ReactNode;
 }) {
   return (
-    <li className="flex flex-col gap-3 rounded-[14px] bg-white p-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_6px_0_rgba(0,0,0,0.03)]">
+    <li className="flex flex-col gap-3 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface p-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_6px_0_rgba(0,0,0,0.03)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_6px_0_rgba(0,0,0,0.03))]">
       <div className="flex items-center gap-2">
-        <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-black/[0.05] text-[11px] tabular-nums text-black/45">
+        <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-black/[0.05] admin:bg-ink/[0.05] text-[11px] tabular-nums text-black/45 admin:text-ink/45">
           {index + 1}
         </span>
         {tag && (
-          <span className="inline-flex items-center rounded-[6px] bg-(--admin-accent)/[0.1] px-1.5 py-0.5 text-[11px] font-medium text-(--admin-accent)">
+          <span className="inline-flex items-center rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] bg-(--admin-accent)/[0.1] px-1.5 py-0.5 text-[11px] font-medium text-(--admin-accent)">
             {tag}
           </span>
         )}
         {summary !== undefined && (
-          <span className="min-w-0 flex-1 truncate text-[13px] text-black/55">
-            {summary || <span className="text-black/25">(empty)</span>}
+          <span className="min-w-0 flex-1 truncate text-[13px] text-black/55 admin:text-ink/55">
+            {summary || <span className="text-black/25 admin:text-ink/25">(empty)</span>}
           </span>
         )}
         <span className={summary === undefined ? "flex-1" : undefined} />
@@ -106,7 +106,7 @@ export function InstanceCard({
           <XIcon className="size-3.5" />
         </IconButton>
       </div>
-      <div className="flex flex-col gap-3 border-t border-black/[0.06] pt-3">
+      <div className="flex flex-col gap-3 border-t border-black/[0.06] admin:border-ink/[0.06] pt-3">
         {children}
       </div>
     </li>
@@ -128,7 +128,7 @@ export function AddButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-10 w-fit items-center gap-1.5 rounded-[10px] bg-white px-3.5 text-[13px] font-medium text-black/75 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] transition-[background-color] outline-none hover:bg-black/[0.03] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 motion-reduce:active:scale-100"
+      className="inline-flex h-10 w-fit items-center gap-1.5 rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-3.5 text-[13px] font-medium text-black/75 admin:text-ink/75 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color] outline-none hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 motion-reduce:active:scale-100"
     >
       {label}
     </button>

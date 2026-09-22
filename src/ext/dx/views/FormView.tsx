@@ -97,9 +97,9 @@ type Messages = ReturnType<typeof getMessages>;
 const MOUNT_GRACE_MS = 600;
 
 const PUBLIC_CARD_SHADOW =
-  "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]";
+  "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]";
 const PUBLIC_SHELL_SHADOW =
-  "shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)]";
+  "shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] admin:shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))]";
 const PUBLIC_FIELD_TYPES = new Set<DeclarativeField["type"]>([
   "text",
   "number",
@@ -194,7 +194,7 @@ function StatusToggle({
       role="radiogroup"
       aria-label={m["extForm.admin.entryStatus"]}
       onKeyDown={onKey}
-      className="inline-flex rounded-[10px] bg-black/[0.04] p-0.5"
+      className="inline-flex rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] p-0.5"
     >
       {options.map((opt) => {
         const active = opt === value;
@@ -207,10 +207,10 @@ function StatusToggle({
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(opt)}
             className={
-              "inline-flex h-8 items-center rounded-[8px] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none " +
+              "inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none " +
               (active
-                ? "bg-white text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
-                : "text-black/55 hover:text-black/85 focus-visible:text-black/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]")
+                ? "bg-white admin:bg-surface text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
+                : "text-black/55 admin:text-ink/55 hover:text-black/85 admin:hover:text-ink/85 focus-visible:text-black/85 admin:focus-visible:text-ink/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]")
             }
           >
             {opt === "draft"
@@ -545,13 +545,13 @@ function FormViewInner(props: FormViewProps) {
     return (
       <main className="mx-auto flex max-w-2xl flex-col px-6 py-12">
         <div
-          className={`rounded-[20px] bg-white/55 p-1.5 backdrop-blur-md ${PUBLIC_SHELL_SHADOW}`}
+          className={`rounded-[20px] admin:rounded-[calc(20px*var(--admin-radius-scale,1))] bg-white/55 admin:bg-surface/55 p-1.5 backdrop-blur-md ${PUBLIC_SHELL_SHADOW}`}
         >
-          <div className={`rounded-[14px] bg-white px-6 py-6 ${PUBLIC_CARD_SHADOW}`}>
-            <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+          <div className={`rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-6 py-6 ${PUBLIC_CARD_SHADOW}`}>
+            <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90 admin:text-ink/90">
               {props.title}
             </h1>
-            <p className="mt-2 text-[14px] leading-relaxed text-black/70">
+            <p className="mt-2 text-[14px] leading-relaxed text-black/70 admin:text-ink/70">
               {props.successMessage ?? m["extForm.public.successDefault"]}
             </p>
           </div>
@@ -564,14 +564,14 @@ function FormViewInner(props: FormViewProps) {
     return (
       <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-12">
         <div
-          className={`rounded-[20px] bg-white/55 p-1.5 backdrop-blur-md ${PUBLIC_SHELL_SHADOW}`}
+          className={`rounded-[20px] admin:rounded-[calc(20px*var(--admin-radius-scale,1))] bg-white/55 admin:bg-surface/55 p-1.5 backdrop-blur-md ${PUBLIC_SHELL_SHADOW}`}
         >
-          <div className={`rounded-[14px] bg-white ${PUBLIC_CARD_SHADOW}`}>
+          <div className={`rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface ${PUBLIC_CARD_SHADOW}`}>
             <div className="px-6 pt-6 pb-5">
-              <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90">
+              <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-black/90 admin:text-ink/90">
                 {props.title}
               </h1>
-              <p className="mt-0.5 text-[13px] text-black/45">
+              <p className="mt-0.5 text-[13px] text-black/45 admin:text-ink/45">
                 {isMultiStep
                   ? format(m["extForm.public.stepOfTotal"], {
                       current: stepIndex + 1,
@@ -634,7 +634,7 @@ function FormViewInner(props: FormViewProps) {
                   {f.type !== "boolean" && (
                     <Label
                       htmlFor={`field-${f.key}`}
-                      className="text-[13px] font-medium text-black/55"
+                      className="text-[13px] font-medium text-black/55 admin:text-ink/55"
                     >
                       {fieldLabel(f, props.locale)}
                       {f.required && <span className="text-destructive"> *</span>}
@@ -656,7 +656,7 @@ function FormViewInner(props: FormViewProps) {
                     <span className="sr-only">{fieldLabel(f, props.locale)}</span>
                   )}
                   {fieldErrors[f.key] && (
-                    <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
+                    <p className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
                       {fieldErrors[f.key]}
                     </p>
                   )}
@@ -664,7 +664,7 @@ function FormViewInner(props: FormViewProps) {
               ))}
 
               {error && (
-                <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+                <p className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700">
                   {error}
                 </p>
               )}
@@ -675,7 +675,7 @@ function FormViewInner(props: FormViewProps) {
                     type="button"
                     onClick={() => goToStep(stepIndex - 1)}
                     disabled={pending}
-                    className="inline-flex h-10 items-center justify-center rounded-[8px] px-4 text-[14px] font-medium text-black/55 transition-colors duration-150 ease-out hover:bg-black/[0.04] hover:text-black/85 disabled:opacity-50"
+                    className="inline-flex h-10 items-center justify-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[14px] font-medium text-black/55 admin:text-ink/55 transition-colors duration-150 ease-out hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/85 admin:hover:text-ink/85 disabled:opacity-50"
                   >
                     {m["extForm.public.back"]}
                   </button>
@@ -690,7 +690,7 @@ function FormViewInner(props: FormViewProps) {
                       background: "var(--ext-accent, #000)",
                       borderRadius: "var(--ext-radius, 8px)",
                     }}
-                    className="inline-flex h-10 items-center justify-center gap-1.5 px-4 text-[14px] font-medium text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:opacity-50"
+                    className="inline-flex h-10 items-center justify-center gap-1.5 px-4 text-[14px] font-medium text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[background-color,transform] duration-150 ease-out active:scale-[0.96] disabled:opacity-50"
                   >
                     {m["extForm.public.next"]}
                   </button>
@@ -735,7 +735,7 @@ function FormViewInner(props: FormViewProps) {
         props,
         body: (
           <div className="col-span-full flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-black/55">
+            <span className="text-[13px] font-medium text-black/55 admin:text-ink/55">
               {m["extForm.admin.status"]}
             </span>
             <div className="flex flex-wrap items-center gap-2">
@@ -761,10 +761,10 @@ function FormViewInner(props: FormViewProps) {
               showBar ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
             ].join(" ")}
           >
-            <div className="pointer-events-auto w-full max-w-3xl rounded-[20px] bg-white/65 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] backdrop-blur-md">
-              <div className="flex items-center justify-between gap-4 rounded-[14px] bg-white px-4 py-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+            <div className="pointer-events-auto w-full max-w-3xl rounded-[20px] admin:rounded-[calc(20px*var(--admin-radius-scale,1))] bg-white/65 admin:bg-surface/65 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)] admin:shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
+              <div className="flex items-center justify-between gap-4 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-4 py-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-[12px] font-medium text-black/45">
+                  <span className="text-[12px] font-medium text-black/45 admin:text-ink/45">
                     {/* 同位置狀態切換 → TextMorph(同 ExtensionsManager StatusPill)。 */}
                     <TextMorph respectReducedMotion>
                       {pending
@@ -778,7 +778,7 @@ function FormViewInner(props: FormViewProps) {
                             : m["extForm.admin.upToDate"]}
                     </TextMorph>
                   </span>
-                  <span className="text-[11px] text-black/35">
+                  <span className="text-[11px] text-black/35 admin:text-ink/35">
                     {error ??
                       (saved
                         ? m["extForm.admin.changesApplied"]
@@ -796,14 +796,14 @@ function FormViewInner(props: FormViewProps) {
                       router.push(props.backHref);
                     }}
                     disabled={!dirty}
-                    className="inline-flex h-9 items-center rounded-[8px] px-3 text-[13px] font-medium text-black/55 transition-colors hover:bg-black/[0.03] hover:text-black/85 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex h-9 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium text-black/55 admin:text-ink/55 transition-colors hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] hover:text-black/85 admin:hover:text-ink/85 disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     {m["extForm.admin.discard"]}
                   </button>
                   <button
                     type="submit"
                     disabled={pending || !dirty}
-                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-black pr-3 pl-3.5 text-[14px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.15)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink pr-3 pl-3.5 text-[14px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 admin:hover:bg-ink/85 active:scale-[0.96] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.15)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <TextMorph respectReducedMotion>
                       {pending ? m["extForm.admin.saving"] : m["extForm.admin.save"]}
@@ -958,7 +958,7 @@ function renderAdminFields(args: RenderAdminFieldsArgs) {
           <span className="sr-only">{fieldLabel(f, props.locale)}</span>
         )}
         {fieldErrors[f.key] && (
-          <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
+          <p className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
             {fieldErrors[f.key]}
           </p>
         )}

@@ -45,9 +45,9 @@ export function AdminNav({ menuTitles, pageSearch = {} }: AdminNavProps) {
     .filter((crumb) => crumb.href !== "/admin/ext");
 
   return (
-    <SidebarNav className="h-14 border-b border-black/[0.07] bg-[#fbfaf9]/80 backdrop-blur-md">
+    <SidebarNav className="h-14 border-b border-ink/[0.07] bg-background/80 backdrop-blur-md">
       <span className="flex items-center gap-x-3">
-        <SidebarTrigger className="-ml-1.5 size-8 rounded-[8px] text-black/50 transition-[background-color,transform] duration-150 ease-out hover:bg-black/[0.03] active:scale-[0.96] lg:ml-0" />
+        <SidebarTrigger className="-ml-1.5 size-8 rounded-[calc(8px*var(--admin-radius-scale,1))] text-ink/50 transition-[background-color,transform] duration-150 ease-out hover:bg-ink/[0.03] active:scale-[0.96] lg:ml-0" />
         <nav
           aria-label={t("admin.breadcrumb")}
           className="hidden items-center gap-2 text-[13px] md:flex"
@@ -57,20 +57,20 @@ export function AdminNav({ menuTitles, pageSearch = {} }: AdminNavProps) {
             return (
               <span key={c.href} className="flex items-center gap-2">
                 {isLast ? (
-                  <span aria-current="page" className="font-medium text-black/85">
+                  <span aria-current="page" className="font-medium text-ink/85">
                     {c.label}
                   </span>
                 ) : (
                   <Link
                     href={c.href}
                     prefetch={false}
-                    className="text-black/45 transition-colors duration-150 hover:text-black/80"
+                    className="text-ink/45 transition-colors duration-150 hover:text-ink/80"
                   >
                     {c.label}
                   </Link>
                 )}
                 {!isLast && (
-                  <ChevronRight aria-hidden className="size-3.5 shrink-0 text-black/25" />
+                  <ChevronRight aria-hidden className="size-3.5 shrink-0 text-ink/25" />
                 )}
               </span>
             );

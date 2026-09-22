@@ -140,8 +140,8 @@ export function Composer({
       <div
         className={cn(
           // 同心圓角:控制項 8px 在 14px 的殼裡(內距 6px)。
-          "flex items-end gap-2 rounded-[14px] bg-white p-1.5 pl-3",
-          "shadow-[0_0_0_1px_rgba(20,18,22,0.06),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08)]",
+          "flex items-end gap-2 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-1.5 pl-3",
+          "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.06),0_1px_2px_-1px_rgba(20,18,22,0.06),0_3px_10px_-4px_rgba(30,20,50,0.08))]",
           "transition-shadow duration-150 ease-out",
           "focus-within:shadow-[0_0_0_1px_rgba(20,18,22,0.10),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_8%,transparent),0_3px_10px_-4px_rgba(30,20,50,0.10)]",
           disabled && "opacity-60",
@@ -163,7 +163,7 @@ export function Composer({
           onKeyDown={onKeyDown}
           onCompositionStart={ime.onCompositionStart}
           onCompositionEnd={ime.onCompositionEnd}
-          className="min-h-9 flex-1 resize-none self-center bg-transparent py-2 text-[14px] leading-relaxed text-black/85 outline-none placeholder:text-black/25"
+          className="min-h-9 flex-1 resize-none self-center bg-transparent py-2 text-[14px] leading-relaxed text-ink/85 outline-none placeholder:text-ink/25"
         />
 
         {/* 送出中:dot-matrix loader(靜態 spinner 的角色;reduced-motion 由元件處理)。 */}
@@ -183,18 +183,18 @@ export function Composer({
           disabled={!canSubmit}
           aria-label={t("agent.send")}
           className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-[8px]",
+            "flex size-9 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))]",
             "transition-[background-color,opacity,transform] duration-150 ease-out active:scale-[0.94]",
             canSubmit
-              ? "bg-black text-white hover:bg-black/85"
-              : "bg-black/[0.06] text-black/25",
+              ? "bg-ink text-white hover:bg-ink/85"
+              : "bg-ink/[0.06] text-ink/25",
           )}
         >
           <ArrowUp className="size-4" />
         </button>
       </div>
 
-      <p className="px-1 text-[11px] text-black/30">
+      <p className="px-1 text-[11px] text-ink/30">
         {lockedNote ?? t("agent.toolsAvailable", { count: tools.length })}
       </p>
     </div>

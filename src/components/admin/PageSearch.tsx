@@ -47,7 +47,7 @@ export function PageSearch(props: PageSearchConfig) {
 }
 
 const DATE_FIELD =
-  "h-8 rounded-[8px] bg-white px-2.5 text-[13px] text-black/80 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] " +
+  "h-8 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-2.5 text-[13px] text-ink/80 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] " +
   "focus:outline-none focus:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]";
 
 function rangeLabel(search: RecordSearch, formatter: DateFormatter): string | null {
@@ -97,7 +97,7 @@ function PageSearchForm({
     <form role="search" onSubmit={onSubmit} className="flex items-center gap-1.5">
       <label className="relative flex items-center">
         <span className="sr-only">搜尋</span>
-        <Search aria-hidden className="pointer-events-none absolute left-2.5 size-3.5 text-black/35" />
+        <Search aria-hidden className="pointer-events-none absolute left-2.5 size-3.5 text-ink/35" />
         <input
           type="search"
           value={q}
@@ -112,8 +112,8 @@ function PageSearchForm({
           placeholder={placeholder}
           maxLength={100}
           className={cn(
-            "h-8 w-44 rounded-[8px] bg-white pr-7 pl-8 text-[13px] text-black/80 sm:w-64",
-            "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)] placeholder:text-black/35",
+            "h-8 w-44 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface pr-7 pl-8 text-[13px] text-ink/80 sm:w-64",
+            "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)] placeholder:text-ink/35",
             "transition-shadow duration-150 focus:outline-none focus:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.3)]",
             "[&::-webkit-search-cancel-button]:hidden",
           )}
@@ -126,7 +126,7 @@ function PageSearchForm({
               setQ("");
               go({ ...current(), q: undefined });
             }}
-            className="absolute right-1.5 flex size-5 items-center justify-center rounded-[5px] text-black/35 hover:bg-black/[0.05] hover:text-black/70"
+            className="absolute right-1.5 flex size-5 items-center justify-center rounded-[calc(5px*var(--admin-radius-scale,1))] text-ink/35 hover:bg-ink/[0.05] hover:text-ink/70"
           >
             <X aria-hidden className="size-3" />
           </button>
@@ -139,9 +139,9 @@ function PageSearchForm({
           <PopoverTrigger
             type="button"
             className={cn(
-              "flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium",
-              "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)] transition-colors duration-150 hover:bg-black/[0.03]",
-              range ? "text-black/80" : "text-black/50",
+              "flex h-8 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[12.5px] font-medium",
+              "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)] transition-colors duration-150 hover:bg-ink/[0.03]",
+              range ? "text-ink/80" : "text-ink/50",
             )}
           >
             <CalendarDays aria-hidden className="size-3.5" />
@@ -156,7 +156,7 @@ function PageSearchForm({
                 onChange={(event) => setFrom(event.target.value)}
                 className={DATE_FIELD}
               />
-              <span aria-hidden className="text-[12px] text-black/35">
+              <span aria-hidden className="text-[12px] text-ink/35">
                 到
               </span>
               <input
@@ -177,7 +177,7 @@ function PageSearchForm({
                     setRangeOpen(false);
                     go({ q: current().q });
                   }}
-                  className="h-8 px-2 text-[12.5px] text-black/50 hover:text-black/80"
+                  className="h-8 px-2 text-[12.5px] text-ink/50 hover:text-ink/80"
                 >
                   清除期間
                 </button>
@@ -188,7 +188,7 @@ function PageSearchForm({
                   setRangeOpen(false);
                   go(current());
                 }}
-                className="h-8 rounded-[8px] bg-black px-3 text-[12.5px] font-medium text-white hover:bg-black/85"
+                className="h-8 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-3 text-[12.5px] font-medium text-white hover:bg-ink/85"
               >
                 套用
               </button>

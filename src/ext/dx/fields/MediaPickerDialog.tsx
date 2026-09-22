@@ -91,7 +91,7 @@ export function MediaPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl rounded-[20px] p-0 shadow-[0_16px_48px_-12px_rgba(30,20,50,0.18)] sm:max-w-2xl">
+      <DialogContent className="max-w-2xl rounded-[20px] admin:rounded-[calc(20px*var(--admin-radius-scale,1))] p-0 shadow-[0_16px_48px_-12px_rgba(30,20,50,0.18)] admin:shadow-[var(--admin-shadow-panel,0_16px_48px_-12px_rgba(30,20,50,0.18))] sm:max-w-2xl">
         <div className="flex flex-col gap-4 p-5">
           <DialogHeader>
             <DialogTitle>Choose media</DialogTitle>
@@ -104,11 +104,11 @@ export function MediaPickerDialog({
             value={tab}
             onValueChange={(v) => setTab(v === "upload" ? "upload" : "library")}
           >
-            <TabsList className="rounded-[10px] bg-black/[0.04] p-1">
-              <TabsTrigger value="library" className="rounded-[8px] text-[13px]">
+            <TabsList className="rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] p-1">
+              <TabsTrigger value="library" className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] text-[13px]">
                 Library
               </TabsTrigger>
-              <TabsTrigger value="upload" className="rounded-[8px] text-[13px]">
+              <TabsTrigger value="upload" className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] text-[13px]">
                 Upload
               </TabsTrigger>
             </TabsList>
@@ -173,11 +173,11 @@ function LibraryGrid({
   if (error) {
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-center">
-        <p className="text-[13px] text-black/55">{error}</p>
+        <p className="text-[13px] text-black/55 admin:text-ink/55">{error}</p>
         <button
           type="button"
           onClick={() => void load()}
-          className="h-10 rounded-[8px] px-3 text-[13px] font-medium text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] transition-[background-color] hover:bg-black/[0.03] active:scale-[0.96]"
+          className="h-10 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color] hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] active:scale-[0.96]"
         >
           Retry
         </button>
@@ -188,10 +188,10 @@ function LibraryGrid({
   if (loaded && files.length === 0) {
     return (
       <div className="flex flex-col items-center gap-1.5 py-12 text-center">
-        <span className="grid size-3 place-items-center rounded-full ring-1 ring-black/25">
-          <span className="size-1 rounded-full bg-black/25" />
+        <span className="grid size-3 place-items-center rounded-full ring-1 ring-black/25 admin:ring-ink/25">
+          <span className="size-1 rounded-full bg-black/25 admin:bg-ink/25" />
         </span>
-        <p className="text-[13px] text-black/45">
+        <p className="text-[13px] text-black/45 admin:text-ink/45">
           Nothing uploaded yet. Use the Upload tab.
         </p>
       </div>
@@ -207,7 +207,7 @@ function LibraryGrid({
               type="button"
               onClick={() => onSelect(file.key)}
               title={file.key}
-              className="group relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] outline-none transition-[box-shadow] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_2px_6px_-2px_rgba(0,0,0,0.12)] active:scale-[0.96] motion-reduce:active:scale-100"
+              className="group relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] outline-none transition-[box-shadow] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_2px_6px_-2px_rgba(0,0,0,0.12)] active:scale-[0.96] motion-reduce:active:scale-100"
             >
               {isImage(file) ? (
                 // Storage-key preview through the shared variant helper: the
@@ -222,8 +222,8 @@ function LibraryGrid({
                 />
               ) : (
                 <span className="flex flex-col items-center gap-1 px-1 text-center">
-                  <FileIcon className="size-5 text-black/35" />
-                  <span className="w-full truncate font-mono text-[10px] lowercase text-black/45">
+                  <FileIcon className="size-5 text-black/35 admin:text-ink/35" />
+                  <span className="w-full truncate font-mono text-[10px] lowercase text-black/45 admin:text-ink/45">
                     {file.key.split("/").pop()}
                   </span>
                 </span>
@@ -237,7 +237,7 @@ function LibraryGrid({
           type="button"
           onClick={() => void load(cursor)}
           disabled={loading}
-          className="mx-auto h-10 rounded-[8px] px-4 text-[13px] font-medium text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] transition-[background-color] hover:bg-black/[0.03] active:scale-[0.96] disabled:opacity-50"
+          className="mx-auto h-10 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color] hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] active:scale-[0.96] disabled:opacity-50"
         >
           {loading ? "Loading…" : "Load more"}
         </button>
@@ -303,20 +303,20 @@ function UploadPane({ onUploaded }: { onUploaded: (key: string) => void }) {
         }}
         disabled={uploading}
         className={cn(
-          "flex min-h-40 flex-col items-center justify-center gap-2 rounded-[14px] bg-white px-6 py-8 text-center outline-none transition-[box-shadow,background-color]",
-          "shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)]",
+          "flex min-h-40 flex-col items-center justify-center gap-2 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-6 py-8 text-center outline-none transition-[box-shadow,background-color]",
+          "shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))]",
           "focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]",
           dragging
             ? "bg-(--admin-accent)/[0.04] shadow-[0_0_0_2px_color-mix(in_srgb,var(--admin-accent)_50%,transparent)]"
-            : "hover:bg-black/[0.02]",
+            : "hover:bg-black/[0.02] admin:hover:bg-ink/[0.02]",
           uploading && "opacity-70",
         )}
       >
-        <UploadCloudIcon className="size-6 text-black/35" />
-        <span className="text-[13px] font-medium text-black/85">
+        <UploadCloudIcon className="size-6 text-black/35 admin:text-ink/35" />
+        <span className="text-[13px] font-medium text-black/85 admin:text-ink/85">
           {uploading ? "Uploading…" : "Drop a file or click to browse"}
         </span>
-        <span className="text-[11px] text-black/35">Images, video, audio, PDF · up to 25MB</span>
+        <span className="text-[11px] text-black/35 admin:text-ink/35">Images, video, audio, PDF · up to 25MB</span>
       </button>
       <input
         ref={inputRef}

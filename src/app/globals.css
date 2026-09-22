@@ -12,10 +12,19 @@
 @source "../../node_modules/streamdown/dist/*.js";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./admin-theme.css";
 
 @custom-variant dark (&:is(.dark *));
+/* 只在存了自訂風格時生效(見 admin-theme.css):紙與墨 = 共用元件原本的 class。 */
+@custom-variant admin {
+  &:where(body:has(#cms-admin-theme[data-themed]) *, [data-admin-theme-preview="custom"], [data-admin-theme-preview="custom"] *):not(:where([data-admin-theme-preview="default"], [data-admin-theme-preview="default"] *)) {
+    @slot;
+  }
+}
 
-:root {
+/* 風格編輯器預覽「紙與墨」時,在預覽區塊重新套一次原本的 token(admin-theme.css)。 */
+:root,
+[data-admin-theme-preview="default"] {
     /* --- "Paper & Ink" design language (docs/admin-design-language.md) ---
        Ground = paper #fbfaf9; surfaces = white; ink = black at opacity steps;
        accent = --admin-accent (default dither blue #5672e4; sites pick their own
@@ -128,6 +137,8 @@
 }
 
 @theme inline {
+    --color-ink: var(--ink);
+    --color-surface: var(--admin-surface, #ffffff);
     /* Latin stays on Geist/Inter (next/font vars on <html>); Han glyphs fall to
        the self-hosted Chiron Hei HK (昭源黑體) TC webfont before system fonts.
        Face declarations + woff2 slices live in

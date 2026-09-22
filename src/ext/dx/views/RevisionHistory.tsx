@@ -108,7 +108,7 @@ export function RevisionHistory({
       sortValue: (r) => r.createdAt,
       render: (r) => (
         <span className="flex items-center gap-2">
-          <span className="text-[13px] tabular-nums text-black/85">
+          <span className="text-[13px] tabular-nums text-black/85 admin:text-ink/85">
             {relativeTimeWords(r.createdAt, now, locale, timeZone)}
           </span>
           {r.id === currentId && (
@@ -124,14 +124,14 @@ export function RevisionHistory({
       label: t("revisions.colWho"),
       // 查無使用者(帳號已刪 / 匿名公開建立)→ 整格留白,絕不落地內部 user id。
       render: (r) => (
-        <span className="text-[13px] text-black/55">{r.actorName ?? ""}</span>
+        <span className="text-[13px] text-black/55 admin:text-ink/55">{r.actorName ?? ""}</span>
       ),
     },
     {
       key: "change",
       label: t("revisions.colChange"),
       render: (r) => (
-        <span className="text-[13px] text-black/55">{reasonLabel(r.reason)}</span>
+        <span className="text-[13px] text-black/55 admin:text-ink/55">{reasonLabel(r.reason)}</span>
       ),
     },
     {
@@ -144,15 +144,15 @@ export function RevisionHistory({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-0.5">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-black/90">
-          <History className="size-4 text-black/35" aria-hidden />
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-black/90 admin:text-ink/90">
+          <History className="size-4 text-black/35 admin:text-ink/35" aria-hidden />
           {t("revisions.title")}
         </h2>
-        <p className="text-[11.5px] text-black/35">{t("revisions.subtitle")}</p>
+        <p className="text-[11.5px] text-black/35 admin:text-ink/35">{t("revisions.subtitle")}</p>
       </div>
 
       {revisions.length === 0 ? (
-        <p className="text-[13px] text-black/35">{t("revisions.empty")}</p>
+        <p className="text-[13px] text-black/35 admin:text-ink/35">{t("revisions.empty")}</p>
       ) : (
         <CoreTable
           columns={columns}
@@ -315,27 +315,27 @@ function RevisionSheetBody({
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6">
         {isCurrent && (
-          <p className="rounded-[8px] bg-black/[0.03] px-3 py-2 text-[12.5px] text-black/55">
+          <p className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] px-3 py-2 text-[12.5px] text-black/55 admin:text-ink/55">
             {t("revisions.isCurrent")}
           </p>
         )}
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12.5px] font-medium text-black/55">
+          <span className="text-[12.5px] font-medium text-black/55 admin:text-ink/55">
             {t("revisions.snapshot")}
           </span>
           {entries.length === 0 ? (
-            <p className="text-[13px] text-black/35">
+            <p className="text-[13px] text-black/35 admin:text-ink/35">
               {t("revisions.emptySnapshot")}
             </p>
           ) : (
-            <dl className="flex flex-col gap-2.5 rounded-[10px] bg-white p-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)]">
+            <dl className="flex flex-col gap-2.5 rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface p-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))]">
               {entries.map(([key, value]) => (
                 <div key={key} className="flex flex-col gap-0.5">
-                  <dt className="font-mono text-[11px] lowercase text-black/35">
+                  <dt className="font-mono text-[11px] lowercase text-black/35 admin:text-ink/35">
                     {key}
                   </dt>
-                  <dd className="text-[13px] break-words text-black/85">
+                  <dd className="text-[13px] break-words text-black/85 admin:text-ink/85">
                     {preview(value)}
                   </dd>
                 </div>
@@ -346,17 +346,17 @@ function RevisionSheetBody({
 
         {summary.slug && (
           <div className="flex flex-col gap-0.5">
-            <span className="text-[12.5px] font-medium text-black/55">
+            <span className="text-[12.5px] font-medium text-black/55 admin:text-ink/55">
               {t("revisions.slugLabel")}
             </span>
-            <span className="font-mono text-[12px] text-black/55">
+            <span className="font-mono text-[12px] text-black/55 admin:text-ink/55">
               {summary.slug}
             </span>
           </div>
         )}
 
         {notice && (
-          <p className="rounded-[8px] bg-black/[0.03] px-3 py-2 text-[12.5px] text-black/55">
+          <p className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] px-3 py-2 text-[12.5px] text-black/55 admin:text-ink/55">
             {notice}
           </p>
         )}

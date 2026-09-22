@@ -58,10 +58,10 @@ function RingCheckbox({
       aria-label={label}
       onClick={onChange}
       className={cn(
-        "inline-flex size-5 items-center justify-center rounded-[6px] transition-[background,box-shadow] active:scale-[0.9]",
+        "inline-flex size-5 items-center justify-center rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] transition-[background,box-shadow] active:scale-[0.9]",
         checked
           ? "bg-(--admin-accent) shadow-[0_0_0_1px_var(--admin-accent)]"
-          : "bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.15)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.3)]",
+          : "bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.15)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.3)]",
       )}
     >
       {checked && (
@@ -118,10 +118,10 @@ export function CollectionTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-x-auto rounded-[14px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+      <div className="overflow-x-auto rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
         <table className="w-full text-left text-[13px]">
           <thead>
-            <tr className="border-b border-black/[0.06]">
+            <tr className="border-b border-black/[0.06] admin:border-ink/[0.06]">
               <th className="w-10 px-3 py-2.5">
                 <RingCheckbox
                   checked={allSelected}
@@ -146,20 +146,20 @@ export function CollectionTable({
                       align={col.align}
                     />
                   ) : (
-                    <span className="text-[12px] font-medium text-black/45">
+                    <span className="text-[12px] font-medium text-black/45 admin:text-ink/45">
                       {col.label}
                     </span>
                   )}
                 </th>
               ))}
               <th className="px-4 py-2.5 text-right">
-                <span className="text-[12px] font-medium text-black/45">
+                <span className="text-[12px] font-medium text-black/45 admin:text-ink/45">
                   Status
                 </span>
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-black/[0.05]">
+          <tbody className="divide-y divide-black/[0.05] admin:divide-ink/[0.05]">
             {shownRows.map((row) => {
               const isSel = selected.has(row.id);
               return (
@@ -168,7 +168,7 @@ export function CollectionTable({
                   aria-busy={row.pending || undefined}
                   className={cn(
                     "transition-[background-color,opacity]",
-                    isSel ? "bg-(--admin-accent)/[0.04]" : "hover:bg-black/[0.02]",
+                    isSel ? "bg-(--admin-accent)/[0.04]" : "hover:bg-black/[0.02] admin:hover:bg-ink/[0.02]",
                     row.pending && "opacity-60",
                   )}
                 >
@@ -190,7 +190,7 @@ export function CollectionTable({
                       {i === 0 ? (
                         <AdminLink
                           href={row.editHref}
-                          className="inline-block rounded-[4px] outline-none transition-colors hover:text-(--admin-accent) focus-visible:text-(--admin-accent)"
+                          className="inline-block rounded-[4px] admin:rounded-[calc(4px*var(--admin-radius-scale,1))] outline-none transition-colors hover:text-(--admin-accent) focus-visible:text-(--admin-accent)"
                         >
                           {cell}
                         </AdminLink>

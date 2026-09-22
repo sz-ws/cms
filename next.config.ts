@@ -85,10 +85,11 @@ const CSP_REPORT_ONLY = {
     // 才不會被每一次沙盒啟動的 wasm-eval 違規灌滿,真正要看的違規才浮得上來。
     // (它只放行 WebAssembly 編譯,不放行 JS 的 eval / new Function。)
     "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
-    "style-src 'self' 'unsafe-inline'",
+    // Google Fonts:後台風格選了非預設字體才會載入(lib/admin-theme.ts 的 ADMIN_FONTS)。
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     // R2 走同源的 /api/files;data: 給 icon/inline SVG;blob: 給上傳預覽。
     "img-src 'self' data: blob:",
-    "font-src 'self'",
+    "font-src 'self' https://fonts.gstatic.com",
     // extension 的 webhook 是伺服器端送出的,不需要在這裡開。
     "connect-src 'self'",
     "object-src 'none'",

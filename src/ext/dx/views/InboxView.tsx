@@ -114,10 +114,10 @@ export async function InboxView({
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-1">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90 admin:text-ink/90">
           {resolvedTitle}
         </h1>
-        <p className="text-[12px] text-black/40">
+        <p className="text-[12px] text-black/40 admin:text-ink/40">
           {t["inbox.subtitle"]}
         </p>
       </header>

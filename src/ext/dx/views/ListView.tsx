@@ -158,11 +158,11 @@ function GridBody({
                 alt=""
                 maxWidth={640}
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
-                className="aspect-[4/3] w-full rounded-[8px] object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
+                className="aspect-[4/3] w-full rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
               />
             ) : (
-              <div className="flex aspect-[4/3] w-full items-center justify-center rounded-[8px] bg-black/[0.03] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
-                <span className="text-[28px] font-semibold text-black/15">
+              <div className="flex aspect-[4/3] w-full items-center justify-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
+                <span className="text-[28px] font-semibold text-black/15 admin:text-ink/15">
                   {title.trim().charAt(0).toUpperCase() || "—"}
                 </span>
               </div>
@@ -187,14 +187,14 @@ function GridBody({
                 href={href}
                 // 1.8.0:card radius token(fallback 為現行 12px)。
                 style={{ borderRadius: "var(--ext-radius, 12px)" }}
-                className="flex flex-col gap-3 bg-white p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] transition-[transform,box-shadow] duration-150 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_28px_-10px_rgba(30,20,50,0.18)]"
+                className="flex flex-col gap-3 bg-white admin:bg-surface p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] transition-[transform,box-shadow] duration-150 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_28px_-10px_rgba(30,20,50,0.18)]"
               >
                 {inner}
               </Link>
             ) : (
               <div
                 style={{ borderRadius: "var(--ext-radius, 12px)" }}
-                className="flex flex-col gap-3 bg-white p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]"
+                className="flex flex-col gap-3 bg-white admin:bg-surface p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]"
               >
                 {inner}
               </div>
@@ -224,9 +224,9 @@ function StackedBody({
     <div
       // 1.8.0:card radius token(fallback 為現行 14px)。
       style={{ borderRadius: "var(--ext-radius, 14px)" }}
-      className="overflow-hidden bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]"
+      className="overflow-hidden bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]"
     >
-      <StackedList className="divide-y divide-black/[0.05]">
+      <StackedList className="divide-y divide-black/[0.05] admin:divide-ink/[0.05]">
         {items.map((entry) => {
           const titleRaw = card.titleKey ? entry.data[card.titleKey] : undefined;
           const title = typeof titleRaw === "string" ? titleRaw : entry.id;
@@ -253,7 +253,7 @@ function StackedBody({
               {href ? (
                 <Link
                   href={href}
-                  className="block transition-colors duration-150 ease-out hover:bg-black/[0.02]"
+                  className="block transition-colors duration-150 ease-out hover:bg-black/[0.02] admin:hover:bg-ink/[0.02]"
                 >
                   {inner}
                 </Link>

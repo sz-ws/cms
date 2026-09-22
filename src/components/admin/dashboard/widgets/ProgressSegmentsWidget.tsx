@@ -21,7 +21,7 @@ export function ProgressSegmentsWidget({
       <WidgetHeader label={data.label} />
       <div className="flex flex-1 flex-col justify-center gap-3">
         {data.valueLabel && (
-          <span className="text-[26px] font-semibold tracking-[-0.02em] tabular-nums text-black/85">
+          <span className="text-[26px] font-semibold tracking-[-0.02em] tabular-nums text-ink/85">
             {data.valueLabel}
           </span>
         )}
@@ -31,7 +31,7 @@ export function ProgressSegmentsWidget({
             return (
               <div
                 key={i}
-                className="relative flex-1 overflow-hidden rounded-full bg-black/[0.05]"
+                className="relative flex-1 overflow-hidden rounded-full bg-ink/[0.05]"
               >
                 <div
                   className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ease-out"

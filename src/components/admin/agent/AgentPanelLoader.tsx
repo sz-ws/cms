@@ -64,7 +64,7 @@ const AgentPanel = dynamic(
     ssr: false,
     // 載入中的佔位:安靜的骨架,不是 kit spinner(admin-design-language.md)。
     loading: () => (
-      <div aria-hidden className={`${PANEL_HEIGHT} rounded-[14px] bg-black/[0.015]`} />
+      <div aria-hidden className={`${PANEL_HEIGHT} rounded-[calc(14px*var(--admin-radius-scale,1))] bg-ink/[0.015]`} />
     ),
   },
 );
@@ -109,7 +109,7 @@ export function AgentPanelLoader({ tools, title, userId }: AgentPanelLoaderProps
           -mr-1 抵掉按鈕自己的 px-1:視覺上要對齊的是**文字**的右緣,不是那塊
           為了好按而留的 padding。 */}
       <div className="mx-auto flex w-full max-w-[46rem] items-center justify-between gap-3">
-        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
+        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-ink/90">
           {title}
         </h1>
         <div className="flex items-center gap-3">
@@ -117,7 +117,7 @@ export function AgentPanelLoader({ tools, title, userId }: AgentPanelLoaderProps
               整個站的紀錄,與這一段對話有沒有內容無關。 */}
           <Link
             href="/admin/agent/audit"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-1 py-1 text-[11.5px] text-black/35 transition-colors duration-150 hover:text-black/70"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-1 py-1 text-[11.5px] text-ink/35 transition-colors duration-150 hover:text-ink/70"
           >
             <ScrollText className="size-3" />
             {t("agent.audit.link")}
@@ -127,7 +127,7 @@ export function AgentPanelLoader({ tools, title, userId }: AgentPanelLoaderProps
             type="button"
             onClick={onNewChat}
             disabled={status.busy}
-            className="-mr-1 inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-1 py-1 text-[11.5px] text-black/35 transition-colors duration-150 hover:text-black/70 disabled:opacity-40"
+            className="-mr-1 inline-flex shrink-0 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-1 py-1 text-[11.5px] text-ink/35 transition-colors duration-150 hover:text-ink/70 disabled:opacity-40"
           >
             <RotateCcw className="size-3" />
             {t("agent.newChat")}

@@ -31,17 +31,17 @@ interface ExtRecentCardProps {
 export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecentCardProps) {
   const entries = card.entries ?? [];
   return (
-    <section className={cn("flex flex-col rounded-[16px] bg-white", SHADOW_RING)}>
+    <section className={cn("flex flex-col rounded-[calc(16px*var(--admin-radius-scale,1))] bg-surface", SHADOW_RING)}>
       <header className="flex items-end justify-between gap-3 px-[18px] pt-[18px] pb-3">
         <div className="flex flex-col gap-px">
-          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
             {card.title}
           </h3>
-          <p className="text-[12px] text-black/40">{card.extName}</p>
+          <p className="text-[12px] text-ink/40">{card.extName}</p>
         </div>
         <AdminLink
           href={card.adminHref}
-          className="shrink-0 text-[12px] font-medium text-black/45 transition-colors duration-150 ease-out hover:text-black/75"
+          className="shrink-0 text-[12px] font-medium text-ink/45 transition-colors duration-150 ease-out hover:text-ink/75"
         >
           {labels.viewAll}
         </AdminLink>
@@ -50,7 +50,7 @@ export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecent
       {entries.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-5 pt-1 pb-7 text-center">
           <RingDot />
-          <p className="text-[12px] text-black/45">{labels.empty}</p>
+          <p className="text-[12px] text-ink/45">{labels.empty}</p>
         </div>
       ) : (
         <StackedList>
@@ -59,18 +59,18 @@ export function ExtRecentCard({ card, now, locale, timeZone, labels }: ExtRecent
               <AdminLink
                 href={e.editHref}
                 className={cn(
-                  "flex items-center gap-3 border-t border-black/[0.08] px-[18px] py-[10px]",
-                  "transition-colors duration-150 ease-out hover:bg-black/[0.02]",
+                  "flex items-center gap-3 border-t border-ink/[0.08] px-[18px] py-[10px]",
+                  "transition-colors duration-150 ease-out hover:bg-ink/[0.02]",
                 )}
               >
                 <StatusDot tone={e.status === "published" ? "good" : "draft"} />
-                <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-black/85">
+                <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink/85">
                   {e.title}
                 </span>
-                <span className="hidden w-[88px] shrink-0 text-[12px] text-black/55 sm:inline">
+                <span className="hidden w-[88px] shrink-0 text-[12px] text-ink/55 sm:inline">
                   {e.status === "published" ? labels.published : labels.draft}
                 </span>
-                <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-black/35">
+                <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-ink/35">
                   {relativeTime(e.updatedAt, now, locale, timeZone)}
                 </span>
               </AdminLink>

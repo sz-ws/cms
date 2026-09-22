@@ -19,7 +19,7 @@ export function ExtStatCard({ card }: ExtStatCardProps) {
     <AdminLink
       href={card.adminHref}
       className={cn(
-        "group flex flex-col gap-3.5 rounded-[16px] bg-white px-[18px] pt-[18px] pb-4",
+        "group flex flex-col gap-3.5 rounded-[calc(16px*var(--admin-radius-scale,1))] bg-surface px-[18px] pt-[18px] pb-4",
         "transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5",
         SHADOW_RING,
         SHADOW_RING_HOVER,
@@ -27,23 +27,23 @@ export function ExtStatCard({ card }: ExtStatCardProps) {
     >
       {/* Title + owning extension. */}
       <div className="flex flex-col gap-px">
-        <div className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
+        <div className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
           {card.title}
         </div>
-        <div className="text-[12px] text-black/40">{card.extName}</div>
+        <div className="text-[12px] text-ink/40">{card.extName}</div>
       </div>
 
       {/* The one focal number. */}
-      <div className="text-[34px] font-semibold leading-[0.9] tabular-nums tracking-[-0.02em] text-black/90">
+      <div className="text-[34px] font-semibold leading-[0.9] tabular-nums tracking-[-0.02em] text-ink/90">
         <StatNumber value={card.count ?? 0} />
       </div>
 
       {/* Affordance — the whole card navigates. */}
-      <div className="mt-0.5 flex items-center gap-1 text-[12px] font-medium text-black/45 transition-colors group-hover:text-black/70">
+      <div className="mt-0.5 flex items-center gap-1 text-[12px] font-medium text-ink/45 transition-colors group-hover:text-ink/70">
         View all
         <span
           aria-hidden
-          className="text-black/30 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+          className="text-ink/30 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
         >
           →
         </span>

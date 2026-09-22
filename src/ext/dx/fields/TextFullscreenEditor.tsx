@@ -70,11 +70,11 @@ export function TextFullscreenEditor({
   } as const;
 
   const compactClass = cn(
-    "min-h-[88px] max-h-[260px] resize-y rounded-[10px] border-black/10 bg-white px-3 py-2 text-[14px] text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-black/25 focus:border-black/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] aria-invalid:border-red-600/40 aria-invalid:shadow-[0_0_0_3px_rgba(185,28,28,0.12)]",
+    "min-h-[88px] max-h-[260px] resize-y rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] border-black/10 admin:border-ink/10 bg-white admin:bg-surface px-3 py-2 text-[14px] text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-black/25 admin:placeholder:text-ink/25 focus:border-black/30 admin:focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] aria-invalid:border-red-600/40 aria-invalid:shadow-[0_0_0_3px_rgba(185,28,28,0.12)]",
   );
 
   const fullscreenClass = cn(
-    "block w-full flex-1 resize-none rounded-[14px] border border-black/10 bg-white px-5 py-4 text-[16px] leading-relaxed text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-black/25 focus:border-black/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] aria-invalid:border-red-600/40",
+    "block w-full flex-1 resize-none rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] border border-black/10 admin:border-ink/10 bg-white admin:bg-surface px-5 py-4 text-[16px] leading-relaxed text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-black/25 admin:placeholder:text-ink/25 focus:border-black/30 admin:focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] aria-invalid:border-red-600/40",
   );
 
   return (
@@ -84,22 +84,22 @@ export function TextFullscreenEditor({
           role="dialog"
           aria-modal="true"
           aria-label={`${label} — expanded editor`}
-          className="fixed inset-0 z-50 flex flex-col bg-[#fbfaf9]/95 backdrop-blur-md p-4 sm:p-8"
+          className="fixed inset-0 z-50 flex flex-col bg-[#fbfaf9]/95 admin:bg-background/95 backdrop-blur-md p-4 sm:p-8"
         >
           <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-3">
             <div className="flex items-center justify-between">
-              <span className="text-[13px] font-medium text-black/55">
+              <span className="text-[13px] font-medium text-black/55 admin:text-ink/55">
                 {label}
               </span>
               <button
                 type="button"
                 aria-label="Collapse editor"
                 onClick={close}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-black/10 bg-white px-3 text-[13px] font-medium text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06)] transition-colors hover:bg-black/[0.03] active:scale-[0.96]"
+                className="inline-flex h-9 items-center gap-1.5 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-black/10 admin:border-ink/10 bg-white admin:bg-surface px-3 text-[13px] font-medium text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))] transition-colors hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] active:scale-[0.96]"
               >
                 <Shrink className="size-3.5" />
                 Collapse
-                <span className="ml-1 hidden text-black/35 sm:inline">esc</span>
+                <span className="ml-1 hidden text-black/35 admin:text-ink/35 sm:inline">esc</span>
               </button>
             </div>
             <Textarea
@@ -109,9 +109,9 @@ export function TextFullscreenEditor({
               }}
               className={fullscreenClass}
             />
-            <p className="text-center text-[11.5px] text-black/35">
-              Press <kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-mono">esc</kbd>{" "}
-              or <kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-mono">⌘ enter</kbd>{" "}
+            <p className="text-center text-[11.5px] text-black/35 admin:text-ink/35">
+              Press <kbd className="rounded bg-black/[0.06] admin:bg-ink/[0.06] px-1.5 py-0.5 font-mono">esc</kbd>{" "}
+              or <kbd className="rounded bg-black/[0.06] admin:bg-ink/[0.06] px-1.5 py-0.5 font-mono">⌘ enter</kbd>{" "}
               to collapse.
             </p>
           </div>
@@ -130,7 +130,7 @@ export function TextFullscreenEditor({
             aria-label="Expand editor"
             onClick={() => setOpen(true)}
             disabled={disabled}
-            className="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-[6px] text-black/45 transition-colors hover:bg-black/[0.04] hover:text-black/85 active:scale-[0.94] disabled:opacity-50"
+            className="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] text-black/45 admin:text-ink/45 transition-colors hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/85 admin:hover:text-ink/85 active:scale-[0.94] disabled:opacity-50"
           >
             <Expand className="size-3.5" />
           </button>

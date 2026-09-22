@@ -89,6 +89,13 @@ export async function getDefaultContentLocale(): Promise<string> {
 // 一半中文一半英文。說明只寫管理者需要知道的事(會影響什麼、留空會怎樣),不寫規格章節。
 export const CORE_SETTINGS: SettingField[] = [
   {
+    key: "core.adminTheme",
+    group: "general",
+    label: { en: "Admin style", "zh-Hant": "後台風格" },
+    type: "textarea",
+    default: null,
+  },
+  {
     key: "core.siteTitle",
     group: "general",
     label: { en: "Site title", "zh-Hant": "網站名稱" },
@@ -176,7 +183,7 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     // 1.40.0:後台主色。選中的項目、連結、勾選、焦點框都用它;淡色與深色由 CSS 的
     // color-mix() 從這一色推(globals.css 的 --admin-accent)。只收 #rrggbb。
-    // 瀏覽器把它快取在 localStorage,有快取就不再讀這裡(lib/admin-accent.ts)。
+    // AdminTheme 的 SSR/sync 讀這個值;保留原 key 供舊站與 API 相容。
     key: "core.adminAccent",
     group: "general",
     label: { en: "Admin accent colour", "zh-Hant": "後台主色" },

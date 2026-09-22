@@ -53,7 +53,7 @@ export function ProgressRing({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span
-          className="font-semibold tabular-nums leading-none text-black/85"
+          className="font-semibold tabular-nums leading-none text-ink/85"
           style={{ fontSize: size >= 90 ? 22 : 15 }}
         >
           {centerLabel ?? `${percent}%`}
@@ -73,13 +73,13 @@ export function ProgressRingWidget({ data }: { data: ProportionWidgetData }) {
 
   return (
     <WidgetShell className="items-center">
-      <span className="self-start text-[13px] font-medium text-black/50">
+      <span className="self-start text-[13px] font-medium text-ink/50">
         {data.label}
       </span>
       <div className="flex flex-1 flex-col items-center justify-center gap-2">
         <ProgressRing value={used} total={total} />
         {data.valueLabel && (
-          <span className="text-[12px] text-black/40">{data.valueLabel}</span>
+          <span className="text-[12px] text-ink/40">{data.valueLabel}</span>
         )}
       </div>
     </WidgetShell>

@@ -56,7 +56,7 @@ export default function RichtextEditor({
       attributes: {
         id: `field-${fieldKey}`,
         class:
-          "tiptap prose-editor min-h-40 max-w-none px-4 py-3 text-[14px] leading-relaxed text-black/85 outline-none",
+          "tiptap prose-editor min-h-40 max-w-none px-4 py-3 text-[14px] leading-relaxed text-black/85 admin:text-ink/85 outline-none",
         "aria-invalid": invalid ? "true" : "false",
       },
     },
@@ -88,13 +88,13 @@ export default function RichtextEditor({
 
   if (!editor) {
     return (
-      <div className="min-h-52 rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
+      <div className="min-h-52 rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))]" />
     );
   }
 
   return (
     <div
-      className="overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] focus-within:shadow-[0_0_0_1px_rgba(0,0,0,0.14),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_15%,transparent)]"
+      className="overflow-hidden rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))] focus-within:shadow-[0_0_0_1px_rgba(0,0,0,0.14),0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_15%,transparent)]"
       data-invalid={invalid ? "true" : undefined}
     >
       <RichtextToolbar

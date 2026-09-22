@@ -9,11 +9,11 @@ import type { OrderStatus } from "./types";
 // 忙碌狀態為靜態文字(無 pulsing / 呼吸動效 —— 專案紅線)。
 
 const BTN =
-  "rounded-[8px] px-2.5 py-1 text-[12px] font-medium shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] " +
-  "text-black/70 hover:bg-black/[0.04] disabled:opacity-50";
+  "rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 py-1 text-[12px] font-medium shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] " +
+  "text-black/70 admin:text-ink/70 hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] disabled:opacity-50";
 const BTN_PRIMARY =
-  "rounded-[8px] bg-black px-2.5 py-1 text-[12px] font-medium text-white " +
-  "hover:bg-black/85 disabled:opacity-50";
+  "rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-2.5 py-1 text-[12px] font-medium text-white " +
+  "hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50";
 
 interface ActionDef {
   label: string;

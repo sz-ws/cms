@@ -31,24 +31,63 @@ import {
   WalletIcon,
   WindowIcon,
 } from "@heroicons/react/16/solid";
+import {
+  Archive,
+  Banknote,
+  BarChart3,
+  Blocks,
+  Bug,
+  ClipboardList,
+  Clock,
+  CreditCard,
+  FileText,
+  Gift,
+  HandCoins,
+  HardDrive,
+  Image as ImageIcon,
+  Landmark,
+  LayoutDashboard,
+  Mail,
+  Megaphone,
+  MessageCircle,
+  Package,
+  PanelsTopLeft,
+  Puzzle,
+  Settings,
+  Settings2,
+  ShoppingBag,
+  ShoppingCart,
+  Sparkles,
+  Store,
+  Ticket,
+  Truck,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isInlineSvgIcon } from "@/ext/admin-icon";
+import type { AdminIconSet } from "@/lib/admin-theme";
+import { useAdminIconSet } from "./admin-icon-set";
 import type { AdminNavItem } from "./AdminSidebar";
 
 /** Any icon component that renders an <svg> and takes a className. */
 export type AdminIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
-// Sidebar icons: Heroicons **16px solid** (the "micro" set — drawn for exactly
-// this size, not scaled down from 24). Filled glyphs were chosen over Lucide's
-// outlines on purpose: at 13px label size a 1.5–2px stroke icon is the look of
-// every Tailwind admin template, and the same seven outline glyphs appear in all
-// of them. Solid shapes carry weight the way SF Symbols do in macOS sidebars,
-// which is the register this admin is after (admin-design-language.md).
+// Sidebar icons come in two sets, picked by the admin style (core.adminTheme.icons):
+//
+// - solid (default): Heroicons **16px solid** (the "micro" set — drawn for exactly
+//   this size, not scaled down from 24). Filled glyphs were chosen over Lucide's
+//   outlines on purpose: at 13px label size a 1.5–2px stroke icon is the look of
+//   every Tailwind admin template, and the same seven outline glyphs appear in all
+//   of them. Solid shapes carry weight the way SF Symbols do in macOS sidebars,
+//   which is the register this admin is after (admin-design-language.md).
+// - outline: Lucide, for sites that want that look. The glyphs follow the usual
+//   Lucide admin picks (dashboard LayoutDashboard, orders ShoppingBag, coupons
+//   Ticket, payouts HandCoins, files HardDrive, settings Settings2 …).
 //
 // Lucide remains the icon library everywhere *else* in the admin (Suko's
-// standing decision, 2026-07-11); this file is the one deliberate exception and
-// the token names below stay library-neutral so a manifest's `icon: "mail"`
-// keeps meaning "an envelope" whichever set renders it.
+// standing decision, 2026-07-11). Every icon has a library-neutral name below, so
+// a manifest's `icon: "mail"` keeps meaning "an envelope" whichever set renders it.
 //
 // Default behavior is still heuristic by kind + route/title, but declarative/code
 // extensions may opt into an explicit icon token via `icon` on the runtime
@@ -74,7 +113,7 @@ export const SUPPORTED_ADMIN_ICON_TOKENS = [
   "store",
   "users",
   // 1.38.0:商務與營運類 extension 用的 token(wallet / inventory / fulfillment /
-  // shop / 金流 / 錯誤追蹤 …)。名稱維持 library-neutral,對應仍是 Heroicons 16 solid。
+  // shop / 金流 / 錯誤追蹤 …)。名稱維持 library-neutral。
   "archive",
   "banknotes",
   "bug",
@@ -92,23 +131,35 @@ export const SUPPORTED_ADMIN_ICON_TOKENS = [
   "wallet",
 ] as const;
 
-const DECLARED_ICONS: Record<(typeof SUPPORTED_ADMIN_ICON_TOKENS)[number], AdminIcon> = {
+type Token = (typeof SUPPORTED_ADMIN_ICON_TOKENS)[number];
+
+/** 兩套圖示共用的名稱:manifest token(去掉同義詞)加上 core 路由與推測用的幾個。 */
+type Glyph =
+  | Exclude<Token, "images" | "file-text" | "layout-template" | "message-circle" | "sliders">
+  | "sparkles"
+  | "media"
+  | "extensions";
+
+const SYNONYMS: Partial<Record<Token, Glyph>> = {
+  images: "image",
+  "file-text": "file",
+  "layout-template": "layout",
+  "message-circle": "message",
+  sliders: "settings",
+};
+
+const SOLID: Record<Glyph, AdminIcon> = {
   clock: ClockIcon,
   dashboard: Squares2X2Icon,
   image: PhotoIcon,
-  images: PhotoIcon,
   file: DocumentTextIcon,
-  "file-text": DocumentTextIcon,
   layout: WindowIcon,
-  "layout-template": WindowIcon,
   mail: EnvelopeIcon,
   message: ChatBubbleLeftIcon,
-  "message-circle": ChatBubbleLeftIcon,
   package: CubeIcon,
   puzzle: PuzzlePieceIcon,
   settings: AdjustmentsHorizontalIcon,
   "settings-2": Cog6ToothIcon,
-  sliders: AdjustmentsHorizontalIcon,
   store: BuildingStorefrontIcon,
   users: UsersIcon,
   archive: ArchiveBoxIcon,
@@ -126,11 +177,52 @@ const DECLARED_ICONS: Record<(typeof SUPPORTED_ADMIN_ICON_TOKENS)[number], Admin
   tag: TagIcon,
   truck: TruckIcon,
   wallet: WalletIcon,
+  sparkles: SparklesIcon,
+  media: FolderIcon,
+  extensions: CubeIcon,
 };
 
-function iconFromToken(token: string | undefined): AdminIcon | null {
+const OUTLINE: Record<Glyph, AdminIcon> = {
+  clock: Clock,
+  dashboard: LayoutDashboard,
+  image: ImageIcon,
+  file: FileText,
+  layout: PanelsTopLeft,
+  mail: Mail,
+  message: MessageCircle,
+  package: Package,
+  puzzle: Puzzle,
+  settings: Settings2,
+  "settings-2": Settings,
+  store: Store,
+  users: Users,
+  archive: Archive,
+  banknotes: Banknote,
+  bug: Bug,
+  chart: BarChart3,
+  clipboard: ClipboardList,
+  "credit-card": CreditCard,
+  gift: Gift,
+  landmark: Landmark,
+  megaphone: Megaphone,
+  receipt: HandCoins,
+  "shopping-bag": ShoppingBag,
+  "shopping-cart": ShoppingCart,
+  tag: Ticket,
+  truck: Truck,
+  wallet: Wallet,
+  sparkles: Sparkles,
+  media: HardDrive,
+  extensions: Blocks,
+};
+
+const ICON_SETS: Record<AdminIconSet, Record<Glyph, AdminIcon>> = { solid: SOLID, outline: OUTLINE };
+
+function glyphFromToken(token: string | undefined): Glyph | null {
   if (!token) return null;
-  return DECLARED_ICONS[token.toLowerCase() as keyof typeof DECLARED_ICONS] ?? null;
+  const key = token.toLowerCase();
+  if (!(SUPPORTED_ADMIN_ICON_TOKENS as readonly string[]).includes(key)) return null;
+  return SYNONYMS[key as Token] ?? (key as Glyph);
 }
 
 export function adminIconManifestHelpText(): string {
@@ -138,20 +230,20 @@ export function adminIconManifestHelpText(): string {
 }
 
 // Core admin routes are a fixed, known set → exact href match.
-const CORE_ICONS: Record<string, AdminIcon> = {
-  "/admin": Squares2X2Icon,
-  // AI 助理(docs/spec-admin-agent.md §5)。走 CORE_ICONS 而不是 manifest token:
+const CORE_GLYPHS: Record<string, Glyph> = {
+  "/admin": "dashboard",
+  // AI 助理(docs/spec-admin-agent.md §5)。走 core 路由而不是 manifest token:
   // 它是 core 的固定路由,不需要讓 extension 有辦法宣告成這個圖示。
-  "/admin/agent": SparklesIcon,
-  "/admin/media": FolderIcon,
-  "/admin/settings": AdjustmentsHorizontalIcon,
-  "/admin/users": UsersIcon,
+  "/admin/agent": "sparkles",
+  "/admin/media": "media",
+  "/admin/settings": "settings",
+  "/admin/users": "users",
 };
 
 // Shop routes (the reframed extensions manager).
-const SHOP_ICONS: Record<string, AdminIcon> = {
-  "/admin/extensions?tab=browse": BuildingStorefrontIcon,
-  "/admin/extensions": CubeIcon,
+const SHOP_GLYPHS: Record<string, Glyph> = {
+  "/admin/extensions?tab=browse": "store",
+  "/admin/extensions": "extensions",
 };
 
 /**
@@ -161,17 +253,25 @@ const SHOP_ICONS: Record<string, AdminIcon> = {
  * localized — 「相片集」 contains no "galler", so every zh-Hant site got the
  * puzzle-piece fallback, which in a sidebar always reads as a placeholder.
  */
-function contentIconFor(href: string, title: string): AdminIcon {
+function contentGlyphFor(href: string, title: string): Glyph {
   const t = `${href} ${title}`.toLowerCase();
-  if (/(galler|photo|image|media|相片|圖片|相簿)/.test(t)) return PhotoIcon;
-  if (/(blog|post|article|news|writ|文章|部落格)/.test(t)) return DocumentTextIcon;
-  if (/(page|showcase|structural|layout|頁面)/.test(t)) return WindowIcon;
-  if (/(contact|message|inbox|mail|聯絡|訊息)/.test(t)) return EnvelopeIcon;
-  if (/(cron|schedule|排程)/.test(t)) return ClockIcon;
-  return PuzzlePieceIcon;
+  if (/(galler|photo|image|media|相片|圖片|相簿)/.test(t)) return "image";
+  if (/(blog|post|article|news|writ|文章|部落格)/.test(t)) return "file";
+  if (/(page|showcase|structural|layout|頁面)/.test(t)) return "layout";
+  if (/(contact|message|inbox|mail|聯絡|訊息)/.test(t)) return "mail";
+  if (/(cron|schedule|排程)/.test(t)) return "clock";
+  return "puzzle";
 }
 
 type NavIconItem = Pick<AdminNavItem, "href" | "title" | "kind" | "icon">;
+
+function glyphForNavItem(item: NavIconItem): Glyph {
+  const declared = glyphFromToken(item.icon);
+  if (declared) return declared;
+  if (item.kind === "shop") return SHOP_GLYPHS[item.href] ?? "extensions";
+  if (item.kind === "extension") return contentGlyphFor(item.href, item.title);
+  return CORE_GLYPHS[item.href] ?? "dashboard";
+}
 
 /**
  * Render a nav item's icon. 1.39.0: `icon` may be an inline `<svg>` (validated by
@@ -182,6 +282,7 @@ type NavIconItem = Pick<AdminNavItem, "href" | "title" | "kind" | "icon">;
  * muted-fg and ignore the active/idle colour set on the wrapper.
  */
 export function NavIcon({ item, className }: { item: NavIconItem; className?: string }) {
+  const set = useAdminIconSet();
   if (item.icon && isInlineSvgIcon(item.icon)) {
     return (
       <span
@@ -195,16 +296,18 @@ export function NavIcon({ item, className }: { item: NavIconItem; className?: st
       />
     );
   }
-  // createElement, not <Icon/>: the component is one of the static Heroicons
-  // above, looked up per item — nothing is created during render.
-  return createElement(iconForNavItem(item), { "aria-hidden": true, className });
+  // createElement, not <Icon/>: the component is one of the static icons above,
+  // looked up per item — nothing is created during render.
+  return createElement(iconForNavItem(item, set), { "aria-hidden": true, className });
+}
+
+/** 用圖示代號畫一個側欄圖示(風格預覽的迷你側欄用),跟著目前的圖示組。 */
+export function AdminTokenIcon({ token, className }: { token: Token; className?: string }) {
+  const set = useAdminIconSet();
+  return createElement(ICON_SETS[set][glyphFromToken(token) ?? "dashboard"], { "aria-hidden": true, className });
 }
 
 /** Resolve the icon for a nav item based on explicit token first, then fallback heuristics. */
-export function iconForNavItem(item: NavIconItem): AdminIcon {
-  const declared = iconFromToken(item.icon);
-  if (declared) return declared;
-  if (item.kind === "shop") return SHOP_ICONS[item.href] ?? CubeIcon;
-  if (item.kind === "extension") return contentIconFor(item.href, item.title);
-  return CORE_ICONS[item.href] ?? Squares2X2Icon;
+export function iconForNavItem(item: NavIconItem, set: AdminIconSet = "solid"): AdminIcon {
+  return ICON_SETS[set][glyphForNavItem(item)];
 }

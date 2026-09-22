@@ -74,10 +74,10 @@ export default async function ExtensionsPage() {
     <div className="flex flex-col gap-6">
       {/* 頁首語彙對齊 users/media/settings:22px h1 + 13px 副標(捨舊 PageTitle)。 */}
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/90">
           {m["extensions.title"]}
         </h1>
-        <p className="text-[13px] leading-relaxed text-black/40">
+        <p className="text-[13px] leading-relaxed text-ink/40">
           {m["extensions.subtitle"]}
         </p>
       </div>

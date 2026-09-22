@@ -36,20 +36,20 @@ export default async function AgentPage() {
   if (!(await isAgentAvailable())) {
     return (
       <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-5">
-        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-black/90">
+        <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-ink/90">
           {m["agent.title"]}
         </h1>
-        <div className="flex flex-col items-start gap-4 rounded-[20px] bg-white p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
-          <Sparkles aria-hidden className="size-5 text-black/30" />
+        <div className="flex flex-col items-start gap-4 rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface p-6 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
+          <Sparkles aria-hidden className="size-5 text-ink/30" />
           <div className="flex flex-col gap-1">
-            <h2 className="text-[15px] font-semibold text-black/85">
+            <h2 className="text-[15px] font-semibold text-ink/85">
               {m["agent.unavailable.title"]}
             </h2>
-            <p className="text-[13px] text-black/50">{m["agent.unavailable.body"]}</p>
+            <p className="text-[13px] text-ink/50">{m["agent.unavailable.body"]}</p>
           </div>
           <Link
             href="/admin/settings#section-core-ai"
-            className="inline-flex h-8 items-center rounded-[8px] bg-black px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.97]"
+            className="inline-flex h-8 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-ink/85 active:scale-[0.97]"
           >
             {m["agent.unavailable.action"]}
           </Link>

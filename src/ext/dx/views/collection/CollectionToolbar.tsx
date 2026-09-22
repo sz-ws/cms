@@ -41,7 +41,7 @@ function StatusSegments({ status }: { status: StatusFilter }) {
     { value: "draft", label: t("collection.filter.draft") },
   ];
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-[10px] bg-black/[0.03] p-0.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]">
+    <div className="inline-flex items-center gap-0.5 rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] p-0.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]">
       {statusTabs.map((tab) => {
         const active = status === tab.value;
         return (
@@ -52,10 +52,10 @@ function StatusSegments({ status }: { status: StatusFilter }) {
               setParam("status", tab.value === "all" ? null : tab.value)
             }
             className={cn(
-              "inline-flex h-8 items-center rounded-[8px] px-3 text-[13px] font-medium transition-[background,color,box-shadow] duration-150 active:scale-[0.96]",
+              "inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium transition-[background,color,box-shadow] duration-150 active:scale-[0.96]",
               active
-                ? "bg-white text-black/90 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)]"
-                : "text-black/45 hover:text-black/70",
+                ? "bg-white admin:bg-surface text-black/90 admin:text-ink/90 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))]"
+                : "text-black/45 admin:text-ink/45 hover:text-black/70 admin:hover:text-ink/70",
             )}
             aria-pressed={active}
           >
@@ -76,7 +76,7 @@ function SelectFilter({ def }: { def: SelectFilterDef }) {
   const t = useT();
   return (
     <div className="inline-flex items-center gap-2">
-      <span className="text-[12px] text-black/45">{def.label}</span>
+      <span className="text-[12px] text-black/45 admin:text-ink/45">{def.label}</span>
       <Select
         value={def.value || ANY_VALUE}
         onValueChange={(next) =>
@@ -141,7 +141,7 @@ function SearchBox({
         placeholder={t("collection.searchPlaceholder", {
           field: inlineLabel(field.label, locale),
         })}
-        className="h-9 w-56 rounded-[8px] bg-white px-3 text-[13px] text-black/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] outline-none transition-[box-shadow] placeholder:text-black/25 focus:shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_0_0_3px_rgba(0,0,0,0.05)]"
+        className="h-9 w-56 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-3 text-[13px] text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] outline-none transition-[box-shadow] placeholder:text-black/25 admin:placeholder:text-ink/25 focus:shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_0_0_3px_rgba(0,0,0,0.05)]"
       />
     </div>
   );

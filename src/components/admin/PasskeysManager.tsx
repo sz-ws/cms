@@ -181,7 +181,7 @@ export function PasskeysManager({ initialPasskeys, now }: PasskeysManagerProps) 
       )}
 
       {supported === false && (
-        <div className="flex items-center gap-2 rounded-[8px] bg-black/[0.03] px-3 py-2 text-[13px] text-black/50">
+        <div className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.03] px-3 py-2 text-[13px] text-ink/50">
           <AlertCircle className="size-4 shrink-0" />
           <span>{t("passkeys.browserUnsupported")}</span>
         </div>
@@ -190,7 +190,7 @@ export function PasskeysManager({ initialPasskeys, now }: PasskeysManagerProps) 
       {error && (
         <div
           role="alert"
-          className="flex items-center gap-2 rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+          className="flex items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
         >
           <AlertCircle className="size-4 shrink-0" />
           <span>{error}</span>
@@ -198,18 +198,18 @@ export function PasskeysManager({ initialPasskeys, now }: PasskeysManagerProps) 
       )}
 
       {passkeys.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-[14px] border border-dashed border-black/15 px-8 py-10 text-center">
-          <FaceIdIcon className="size-9 text-black/20" />
+        <div className="flex flex-col items-center gap-3 rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/15 px-8 py-10 text-center">
+          <FaceIdIcon className="size-9 text-ink/20" />
           <div className="flex flex-col gap-1">
-            <p className="text-[13px] text-black/45">{t("passkeys.noPasskeysYet")}</p>
-            <p className="text-[12px] text-black/35">
+            <p className="text-[13px] text-ink/45">{t("passkeys.noPasskeysYet")}</p>
+            <p className="text-[12px] text-ink/35">
               {t("passkeys.noPasskeysDesc")}
             </p>
           </div>
           {supported && <div className="mt-1">{addButton}</div>}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-[14px] border border-black/10 bg-white">
+        <div className="overflow-hidden rounded-[calc(14px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface">
           <StackedList>
             {passkeys.map((k) => (
               <PasskeyRow

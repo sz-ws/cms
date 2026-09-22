@@ -78,12 +78,12 @@ export function AvatarManager({ name, avatarKey }: AvatarManagerProps) {
   }
 
   const buttonClasses =
-    "inline-flex h-8 items-center rounded-[8px] bg-black/[0.04] px-3 text-[12.5px] font-medium text-black/65 transition-[background-color,transform] duration-150 ease-out hover:bg-black/[0.07] active:scale-[0.96] disabled:opacity-50";
+    "inline-flex h-8 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.04] px-3 text-[12.5px] font-medium text-ink/65 transition-[background-color,transform] duration-150 ease-out hover:bg-ink/[0.07] active:scale-[0.96] disabled:opacity-50";
 
   return (
     <div className="flex items-center gap-4">
       {/* 玻璃質感頭像 tile:與 Browse 的 ExtIcon 同語彙(內光 + ring + sheen)。 */}
-      <div className="relative isolate size-16 shrink-0 overflow-hidden rounded-[16px] bg-gradient-to-b from-white/75 to-white/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.08),0_2px_6px_-2px_rgba(0,0,0,0.14)]">
+      <div className="relative isolate size-16 shrink-0 overflow-hidden rounded-[calc(16px*var(--admin-radius-scale,1))] bg-gradient-to-b from-white/75 to-white/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.08),0_2px_6px_-2px_rgba(0,0,0,0.14)]">
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt={name} className="size-full object-cover" />
@@ -124,7 +124,7 @@ export function AvatarManager({ name, avatarKey }: AvatarManagerProps) {
             </button>
           )}
         </div>
-        <span className="text-[11.5px] text-black/35">
+        <span className="text-[11.5px] text-ink/35">
           {t("account.avatarHint")}
         </span>
         {error && <span className="text-[12px] text-red-600">{error}</span>}

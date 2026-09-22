@@ -204,10 +204,10 @@ export default async function DashboardPage() {
       {/* Page header — 21px title voice, not text-2xl bold. */}
       <div className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink/90">
             {labels.dashboard}
           </h1>
-          <p className="text-[13.5px] text-black/40">
+          <p className="text-[13.5px] text-ink/40">
             {data.hasTypes ? labels.withTypes : labels.empty}
           </p>
         </div>
@@ -290,10 +290,10 @@ export default async function DashboardPage() {
       {extCards.length > 0 && (
         <section className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-black/90">
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-ink/90">
               {labels.fromExtensions}
             </h2>
-            <p className="text-[13px] text-black/40">
+            <p className="text-[13px] text-ink/40">
               {labels.fromExtensionsDesc}
             </p>
           </div>

@@ -1,4 +1,5 @@
 import { normalizeHex } from "./color";
+import { adminThemeSchema } from "./admin-theme";
 
 export type SettingValueField = {
   key: string;
@@ -15,6 +16,7 @@ export type SettingValueErrorCode =
   | "expected_boolean"
   | "invalid_option"
   | "invalid_color"
+  | "invalid_theme"
   | "not_serializable";
 
 export interface SettingValueError {
@@ -40,6 +42,9 @@ export function validateSettingValue(
   field: SettingValueField,
   value: unknown,
 ): SettingValueErrorCode | null {
+  if (field.key === "core.adminTheme") {
+    return value === null || adminThemeSchema.safeParse(value).success ? null : "invalid_theme";
+  }
   const empty =
     value === undefined ||
     value === null ||

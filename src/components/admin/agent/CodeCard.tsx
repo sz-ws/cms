@@ -39,10 +39,10 @@ interface CodeCardProps {
 
 /** 動作列按鈕:同 ProposalCard 的次動作(白底 + shadow 造框)。 */
 const DECLINE_CLASSES = cn(
-  "inline-flex h-9 items-center gap-1.5 rounded-[8px] px-3.5 text-[13px] font-medium",
-  "bg-white text-black/65 shadow-[0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06)]",
+  "inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3.5 text-[13px] font-medium",
+  "bg-surface text-ink/65 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.07),0_1px_2px_-1px_rgba(20,18,22,0.06))]",
   "transition-[background-color,box-shadow,transform,opacity] duration-150 ease-out",
-  "hover:text-black/90 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-45",
+  "hover:text-ink/90 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-45",
 );
 
 /** 等寬區塊:程式碼、結果、輸出三處共用,所以三者的尺度不會各走各的。 */
@@ -50,11 +50,11 @@ function MonoBlock({ children, tone = "ink" }: { children: string; tone?: "ink" 
   return (
     <pre
       className={cn(
-        "max-h-64 overflow-auto rounded-[8px] px-2.5 py-2",
+        "max-h-64 overflow-auto rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 py-2",
         "font-mono text-[11px] leading-[1.65] whitespace-pre-wrap break-words",
         tone === "error"
           ? "bg-red-50 text-red-800"
-          : "bg-black/[0.035] text-black/70",
+          : "bg-ink/[0.035] text-ink/70",
       )}
     >
       {children}
@@ -66,7 +66,7 @@ function MonoBlock({ children, tone = "ink" }: { children: string; tone?: "ink" 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[11.5px] font-medium text-black/45">{label}</p>
+      <p className="text-[11.5px] font-medium text-ink/45">{label}</p>
       {children}
     </div>
   );
@@ -108,11 +108,11 @@ function Outcome({ output }: { output?: AgentCodeOutput }) {
       )}
 
       {output.note && (
-        <p className="text-[11.5px] leading-relaxed text-black/40">{output.note}</p>
+        <p className="text-[11.5px] leading-relaxed text-ink/40">{output.note}</p>
       )}
 
       {!hasResult && !output.error && !output.note && (
-        <p className="text-[12px] text-black/35">{t("agent.code.noResult")}</p>
+        <p className="text-[12px] text-ink/35">{t("agent.code.noResult")}</p>
       )}
 
       {output.logs && output.logs.length > 0 && (
@@ -144,16 +144,16 @@ export function CodeCard({ code, resolution, output, onDecline }: CodeCardProps)
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "w-full max-w-[36rem] rounded-[20px] p-1.5 backdrop-blur-md",
+        "w-full max-w-[36rem] rounded-[calc(20px*var(--admin-radius-scale,1))] p-1.5 backdrop-blur-md",
         pending
-          ? "bg-white/55 shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18)]"
+          ? "bg-surface/55 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))]"
           : "bg-transparent",
       )}
     >
       <div
         className={cn(
-          "flex flex-col gap-3.5 rounded-[14px] bg-white p-4",
-          "shadow-[0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06)]",
+          "flex flex-col gap-3.5 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4",
+          "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(20,18,22,0.055),0_1px_2px_-1px_rgba(20,18,22,0.06))]",
           !pending && "opacity-90",
         )}
       >
@@ -163,14 +163,14 @@ export function CodeCard({ code, resolution, output, onDecline }: CodeCardProps)
           <span
             className={cn(
               "text-[11.5px]",
-              resolution === "ran" && !ok ? "text-red-700" : "text-black/40",
+              resolution === "ran" && !ok ? "text-red-700" : "text-ink/40",
             )}
           >
             {heading}
           </span>
           {resolution === "ran" &&
             (ok ? (
-              <Check className="size-3.5 text-black/45" />
+              <Check className="size-3.5 text-ink/45" />
             ) : (
               <X className="size-3.5 text-red-700" />
             ))}
@@ -178,7 +178,7 @@ export function CodeCard({ code, resolution, output, onDecline }: CodeCardProps)
 
         {/* 模型自己寫的一句話。沒給就不佔一行 —— 程式碼本身才是這張卡的主體。 */}
         {code.reason && (
-          <p className="text-[14px] leading-relaxed text-black/85">{code.reason}</p>
+          <p className="text-[14px] leading-relaxed text-ink/85">{code.reason}</p>
         )}
 
         <Section label={t("agent.code.codeLabel")}>
@@ -187,7 +187,7 @@ export function CodeCard({ code, resolution, output, onDecline }: CodeCardProps)
 
         {pending ? (
           <>
-            <p className="text-[11.5px] leading-relaxed text-black/35">
+            <p className="text-[11.5px] leading-relaxed text-ink/35">
               {t("agent.code.note")}
             </p>
             {/* 表單動作靠右(admin-design-language.md「Controls」)。這裡只有一顆:
@@ -199,7 +199,7 @@ export function CodeCard({ code, resolution, output, onDecline }: CodeCardProps)
             </div>
           </>
         ) : resolution === "declined" ? (
-          <p className="text-[12px] text-black/40">{t("agent.code.declinedNote")}</p>
+          <p className="text-[12px] text-ink/40">{t("agent.code.declinedNote")}</p>
         ) : (
           <Outcome output={output} />
         )}

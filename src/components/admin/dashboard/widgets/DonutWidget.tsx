@@ -8,7 +8,7 @@ import type { ProportionWidgetData } from "./types";
 
 // 佔比家族 · donut——elaborated from watermelon widget-4(Revenue widget)。
 // 原版用 shadcn --primary CSS var 硬編;這裡改吃 dither-blue 色階(palette.ts),
-// tooltip 換成專案自己的 rounded-[10px] + shadow-ring 語言而非 shadcn 預設。
+// tooltip 換成專案自己的 rounded-[calc(10px*var(--admin-radius-scale,1))] + shadow-ring 語言而非 shadcn 預設。
 // 段落數 >5~6 建議改用 bar-list(圓餅圖切太細會失去可讀性)。
 export function DonutWidget({ data }: { data: ProportionWidgetData }) {
   const total = data.total ?? data.segments.reduce((s, x) => s + x.value, 0);
@@ -45,9 +45,9 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
                 if (!active || !payload?.length) return null;
                 const p = payload[0].payload as { label: string; value: number };
                 return (
-                  <div className="rounded-[10px] bg-white px-3 py-2 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_8px_20px_-8px_rgba(30,20,50,0.18)]">
-                    <div className="text-[11px] text-black/40">{p.label}</div>
-                    <div className="text-[13px] font-semibold tabular-nums text-black/85">
+                  <div className="rounded-[calc(10px*var(--admin-radius-scale,1))] bg-surface px-3 py-2 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_8px_20px_-8px_rgba(30,20,50,0.18))]">
+                    <div className="text-[11px] text-ink/40">{p.label}</div>
+                    <div className="text-[13px] font-semibold tabular-nums text-ink/85">
                       {p.value.toLocaleString()}
                     </div>
                   </div>
@@ -56,7 +56,7 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
             />
           </PieChart>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-[15px] font-semibold tabular-nums text-black/85">
+            <span className="text-[15px] font-semibold tabular-nums text-ink/85">
               <StatNumber value={total} />
             </span>
           </div>
@@ -69,11 +69,11 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
                   className="size-2 shrink-0 rounded-full"
                   style={{ backgroundColor: segmentColor(i) }}
                 />
-                <span className="truncate text-[12.5px] text-black/55">
+                <span className="truncate text-[12.5px] text-ink/55">
                   {s.label}
                 </span>
               </div>
-              <span className="shrink-0 text-[12.5px] font-medium tabular-nums text-black/75">
+              <span className="shrink-0 text-[12.5px] font-medium tabular-nums text-ink/75">
                 {s.value.toLocaleString()}
               </span>
             </div>

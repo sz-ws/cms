@@ -55,10 +55,10 @@ export function LeafFieldControl({
         error={error}
       />
       {field.type === "boolean" && !hideLabel && (
-        <span className="text-[13px] text-black/55">{fieldLabel(field, locale)}</span>
+        <span className="text-[13px] text-black/55 admin:text-ink/55">{fieldLabel(field, locale)}</span>
       )}
       {error && (
-        <p className="rounded-[8px] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
+        <p className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-2.5 py-1.5 text-[13px] normal-case text-red-700">
           {error}
         </p>
       )}

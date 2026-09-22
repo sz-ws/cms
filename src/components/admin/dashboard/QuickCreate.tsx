@@ -53,9 +53,9 @@ export function QuickCreate({ options }: QuickCreateProps) {
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          "inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-black px-3.5 text-[13px] font-medium text-white",
+          "inline-flex h-9 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-3.5 text-[13px] font-medium text-white",
           "transition-[background-color,transform] duration-150 ease-out",
-          "hover:bg-black/85 active:scale-[0.96]",
+          "hover:bg-ink/85 active:scale-[0.96]",
         )}
       >
         {t("quickCreate.newEntry")}
@@ -73,8 +73,8 @@ export function QuickCreate({ options }: QuickCreateProps) {
         <div
           role="menu"
           className={cn(
-            "absolute right-0 z-20 mt-1.5 w-56 overflow-hidden rounded-[12px] bg-white p-1.5",
-            "shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_16px_48px_-12px_rgba(30,20,50,0.18)]",
+            "absolute right-0 z-20 mt-1.5 w-56 overflow-hidden rounded-[calc(12px*var(--admin-radius-scale,1))] bg-surface p-1.5",
+            "shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.06),0_16px_48px_-12px_rgba(30,20,50,0.18))]",
           )}
         >
           {options.map((o) => (
@@ -84,14 +84,14 @@ export function QuickCreate({ options }: QuickCreateProps) {
               role="menuitem"
               onClick={() => setOpen(false)}
               className={cn(
-                "flex items-center justify-between gap-3 rounded-[8px] px-3 py-2",
-                "transition-colors duration-150 ease-out hover:bg-black/[0.03]",
+                "flex items-center justify-between gap-3 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-2",
+                "transition-colors duration-150 ease-out hover:bg-ink/[0.03]",
               )}
             >
-              <span className="text-[13px] font-medium text-black/85">
+              <span className="text-[13px] font-medium text-ink/85">
                 {o.label}
               </span>
-              <span className="text-[11px] text-black/35">{o.extName}</span>
+              <span className="text-[11px] text-ink/35">{o.extName}</span>
             </AdminLink>
           ))}
         </div>

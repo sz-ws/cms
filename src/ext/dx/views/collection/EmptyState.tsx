@@ -28,33 +28,33 @@ export function EmptyState({
   const m = getMessages(locale);
   const type = inlineLabel(typeLabel, locale);
   return (
-    <div className="flex flex-col items-center justify-center gap-4 rounded-[14px] bg-white px-6 py-16 text-center shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)]">
+    <div className="flex flex-col items-center justify-center gap-4 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-6 py-16 text-center shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))]">
       <span
-        className="inline-flex size-8 items-center justify-center rounded-full ring-1 ring-black/15"
+        className="inline-flex size-8 items-center justify-center rounded-full ring-1 ring-black/15 admin:ring-ink/15"
         aria-hidden
       >
-        <span className="size-2 rounded-full bg-black/20" />
+        <span className="size-2 rounded-full bg-black/20 admin:bg-ink/20" />
       </span>
       {filtered ? (
         <>
-          <p className="max-w-sm text-[14px] text-black/55">
+          <p className="max-w-sm text-[14px] text-black/55 admin:text-ink/55">
             {format(m["collection.empty.noMatch"], { type })}
           </p>
           <AdminLink
             href={clearHref}
-            className="inline-flex h-10 items-center rounded-[8px] bg-white px-4 text-[14px] font-medium text-black/80 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] transition-[box-shadow,transform] active:scale-[0.96] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.22)]"
+            className="inline-flex h-10 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-4 text-[14px] font-medium text-black/80 admin:text-ink/80 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.1))] transition-[box-shadow,transform] active:scale-[0.96] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.22)]"
           >
             {m["collection.empty.clearFilters"]}
           </AdminLink>
         </>
       ) : (
         <>
-          <p className="max-w-sm text-[14px] text-black/55">
+          <p className="max-w-sm text-[14px] text-black/55 admin:text-ink/55">
             {format(m["collection.empty.none"], { type })}
           </p>
           <AdminLink
             href={createHref}
-            className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-black px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85"
+            className="inline-flex h-10 items-center gap-2 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85 admin:hover:bg-ink/85"
           >
             {format(m["collection.empty.create"], { type })}
             <span className="text-white/70">→</span>

@@ -31,14 +31,14 @@ function FieldShell({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] font-medium text-black/55">{label}</span>
+      <span className="text-[12.5px] font-medium text-ink/55">{label}</span>
       {children}
     </label>
   );
 }
 
 const INPUT_CLS =
-  "h-9 w-full rounded-[8px] border border-black/10 bg-white px-3 text-[13.5px] text-black/85 transition-[border-color,box-shadow] duration-150 outline-none placeholder:text-black/25 focus:border-black/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)]";
+  "h-9 w-full rounded-[calc(8px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface px-3 text-[13.5px] text-ink/85 transition-[border-color,box-shadow] duration-150 outline-none placeholder:text-ink/25 focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)]";
 
 // /admin/users 的編輯/新增 sidebar(core-native「設定從側邊滑出」的體例)。
 // 殼常駐、open 由 mode 是否為 null 驅動 —— 條件式 mount + open=true 會讓 base-ui
@@ -203,11 +203,11 @@ function UserSheetForm({
 
   return (
     <>
-      <SheetHeader className="border-b border-black/[0.06] pb-5">
-          <SheetTitle className="text-[16px] font-semibold tracking-[-0.01em] text-black/90">
+      <SheetHeader className="border-b border-ink/[0.06] pb-5">
+          <SheetTitle className="text-[16px] font-semibold tracking-[-0.01em] text-ink/90">
             {editing ? name || editing.name : t("userSheet.addMember")}
           </SheetTitle>
-          <SheetDescription className="text-[12.5px] text-black/40">
+          <SheetDescription className="text-[12.5px] text-ink/40">
             {editing ? t("userSheet.updateAccess") : t("userSheet.canSignInNow")}
           </SheetDescription>
         </SheetHeader>
@@ -234,7 +234,7 @@ function UserSheetForm({
             </FieldShell>
             {editing ? (
               <div className="flex flex-col gap-1.5">
-                <span className="text-[12.5px] font-medium text-black/55">
+                <span className="text-[12.5px] font-medium text-ink/55">
                   {t("userSheet.email")}
                 </span>
                 <button
@@ -246,16 +246,16 @@ function UserSheetForm({
                       setTimeout(() => setCopied(false), 1200);
                     });
                   }}
-                  className="group/copy flex h-9 items-center justify-between rounded-[8px] bg-black/[0.03] px-3 text-[13.5px] text-black/60 transition-colors hover:bg-black/[0.05]"
+                  className="group/copy flex h-9 items-center justify-between rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.03] px-3 text-[13.5px] text-ink/60 transition-colors hover:bg-ink/[0.05]"
                 >
                   <span className="truncate">{editing.email}</span>
                   {copied ? (
                     <Check className="size-3.5 text-emerald-600" />
                   ) : (
-                    <Copy className="size-3.5 text-black/30 opacity-0 transition-opacity group-hover/copy:opacity-100" />
+                    <Copy className="size-3.5 text-ink/30 opacity-0 transition-opacity group-hover/copy:opacity-100" />
                   )}
                 </button>
-                <span className="text-[11px] text-black/30">
+                <span className="text-[11px] text-ink/30">
                   {t("userSheet.emailCantChange")}
                 </span>
               </div>
@@ -289,20 +289,20 @@ function UserSheetForm({
                     disabled={isSelf}
                     onClick={() => setRole(opt.value)}
                     className={cn(
-                      "flex flex-col gap-0.5 rounded-[10px] border px-3.5 py-2.5 text-left transition-[border-color,box-shadow,transform]",
+                      "flex flex-col gap-0.5 rounded-[calc(10px*var(--admin-radius-scale,1))] border px-3.5 py-2.5 text-left transition-[border-color,box-shadow,transform]",
                       active
-                        ? "border-black/25 shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
-                        : "border-black/[0.08] hover:border-black/20",
+                        ? "border-ink/25 shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
+                        : "border-ink/[0.08] hover:border-ink/20",
                       isSelf
                         ? "cursor-not-allowed opacity-60"
                         : "active:scale-[0.99]",
                     )}
                   >
-                    <span className="flex items-center justify-between text-[13px] font-medium text-black/80">
+                    <span className="flex items-center justify-between text-[13px] font-medium text-ink/80">
                       {opt.title}
-                      {active && <Check className="size-3.5 text-black/55" />}
+                      {active && <Check className="size-3.5 text-ink/55" />}
                     </span>
-                    <span className="text-[11.5px] leading-relaxed text-black/40">
+                    <span className="text-[11.5px] leading-relaxed text-ink/40">
                       {opt.hint}
                     </span>
                   </button>
@@ -310,7 +310,7 @@ function UserSheetForm({
               })}
             </div>
             {isSelf && (
-              <span className="text-[11px] text-black/30">
+              <span className="text-[11px] text-ink/30">
                 {t("userSheet.cantChangeOwnRole")}
               </span>
             )}
@@ -320,9 +320,9 @@ function UserSheetForm({
           <div className="flex flex-col gap-3.5">
             <SectionLabel>{t("userSheet.security")}</SectionLabel>
             {editing && (
-              <div className="flex h-9 items-center justify-between rounded-[8px] bg-black/[0.03] px-3 text-[13px] text-black/60">
+              <div className="flex h-9 items-center justify-between rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink/[0.03] px-3 text-[13px] text-ink/60">
                 <span className="flex items-center gap-2">
-                  <FaceIdIcon className="size-4 text-black/35" />
+                  <FaceIdIcon className="size-4 text-ink/35" />
                   {t("userSheet.passkeys")}
                 </span>
                 <span className="tabular-nums">
@@ -334,7 +334,7 @@ function UserSheetForm({
               <button
                 type="button"
                 onClick={() => setResetOpen(true)}
-                className="w-fit text-[12.5px] text-black/45 underline-offset-2 transition-colors hover:text-black/75 hover:underline"
+                className="w-fit text-[12.5px] text-ink/45 underline-offset-2 transition-colors hover:text-ink/75 hover:underline"
               >
                 {t("userSheet.resetPassword")}
               </button>
@@ -362,10 +362,10 @@ function UserSheetForm({
 
           {/* Danger zone(編他人才有)*/}
           {editing && !isSelf && (
-            <div className="mt-2 flex flex-col gap-2 border-t border-black/[0.06] pt-5">
+            <div className="mt-2 flex flex-col gap-2 border-t border-ink/[0.06] pt-5">
               <SectionLabel tone="danger">{t("userSheet.dangerZone")}</SectionLabel>
               {confirmRemove ? (
-                <div className="flex items-center justify-between rounded-[10px] border border-red-600/20 bg-red-50 px-3.5 py-2.5">
+                <div className="flex items-center justify-between rounded-[calc(10px*var(--admin-radius-scale,1))] border border-red-600/20 bg-red-50 px-3.5 py-2.5">
                   <span className="text-[12.5px] text-red-700">
                     {t("userSheet.removeConfirm", { name: editing.name })}
                   </span>
@@ -373,14 +373,14 @@ function UserSheetForm({
                     <button
                       type="button"
                       onClick={() => setConfirmRemove(false)}
-                      className="rounded-[6px] px-2 py-1 text-[12px] text-black/50 transition-colors hover:bg-black/[0.05]"
+                      className="rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 py-1 text-[12px] text-ink/50 transition-colors hover:bg-ink/[0.05]"
                     >
                       {t("userSheet.cancel")}
                     </button>
                     <button
                       type="button"
                       onClick={() => void removeUser()}
-                      className="rounded-[6px] bg-red-600 px-2.5 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
+                      className="rounded-[calc(6px*var(--admin-radius-scale,1))] bg-red-600 px-2.5 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
                     >
                       {t("userSheet.remove")}
                     </button>
@@ -390,12 +390,12 @@ function UserSheetForm({
                 <button
                   type="button"
                   onClick={() => setConfirmRemove(true)}
-                  className="w-fit rounded-[8px] border border-red-600/20 px-3 py-1.5 text-[12.5px] font-medium text-red-600 transition-[background-color,transform] hover:bg-red-50 active:scale-[0.96]"
+                  className="w-fit rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/20 px-3 py-1.5 text-[12.5px] font-medium text-red-600 transition-[background-color,transform] hover:bg-red-50 active:scale-[0.96]"
                 >
                   {t("userSheet.removeMemberLabel")}
                 </button>
               )}
-              <span className="text-[11px] text-black/30">
+              <span className="text-[11px] text-ink/30">
                 {t("userSheet.sessionsEnd")}
               </span>
             </div>
@@ -404,18 +404,18 @@ function UserSheetForm({
           {error && (
             <p
               role="alert"
-              className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
+              className="rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
             >
               {error}
             </p>
           )}
         </form>
 
-        <SheetFooter className="flex-row justify-end gap-2 border-t border-black/[0.06]">
+        <SheetFooter className="flex-row justify-end gap-2 border-t border-ink/[0.06]">
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 items-center rounded-[8px] px-3.5 text-[13px] font-medium text-black/50 transition-colors hover:bg-black/[0.05] hover:text-black/75"
+            className="flex h-9 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] px-3.5 text-[13px] font-medium text-ink/50 transition-colors hover:bg-ink/[0.05] hover:text-ink/75"
           >
             {t("userSheet.cancel")}
           </button>
@@ -456,7 +456,7 @@ function SectionLabel({
     <h3
       className={cn(
         "text-[11px] font-semibold tracking-[0.06em] uppercase",
-        tone === "danger" ? "text-red-600/70" : "text-black/35",
+        tone === "danger" ? "text-red-600/70" : "text-ink/35",
       )}
     >
       {children}

@@ -8,13 +8,13 @@ import type { Promo, PromoType } from "./promo";
 // 用量(used)只顯示不可編 —— 要重置就刪掉重建(promo.ts upsert 不動 used)。
 
 const FIELD =
-  "h-9 rounded-[8px] bg-white px-2.5 text-[13px] text-black/85 " +
+  "h-9 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-2.5 text-[13px] text-black/85 admin:text-ink/85 " +
   "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)] outline-none " +
   "focus:shadow-[inset_0_0_0_1.5px_rgba(0,0,0,0.6)]";
-const LABEL = "mb-1 block text-[12px] text-black/50";
+const LABEL = "mb-1 block text-[12px] text-black/50 admin:text-ink/50";
 const GHOST_BTN =
-  "rounded-[8px] px-2.5 py-1.5 text-[12.5px] text-black/60 " +
-  "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-black/[0.04] " +
+  "rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 py-1.5 text-[12.5px] text-black/60 admin:text-ink/60 " +
+  "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] " +
   "disabled:opacity-35";
 
 const TYPE_LABEL: Record<PromoType, string> = {
@@ -102,8 +102,8 @@ export function PromosAdmin({
   return (
     <div className="flex flex-col gap-5">
       {/* 建立/編輯 */}
-      <section className="rounded-[14px] bg-white px-5 py-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
-        <h2 className="mb-3 text-[14px] font-semibold text-black/85">
+      <section className="rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-5 py-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
+        <h2 className="mb-3 text-[14px] font-semibold text-black/85 admin:text-ink/85">
           {editing ? `編輯 ${form.code}` : "建立優惠碼"}
         </h2>
         <div className="flex flex-wrap items-end gap-2.5">
@@ -173,7 +173,7 @@ export function PromosAdmin({
               }}
             />
           </div>
-          <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-black/60">
+          <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-black/60 admin:text-ink/60">
             <input
               type="checkbox"
               checked={form.enabled}
@@ -185,7 +185,7 @@ export function PromosAdmin({
             type="button"
             disabled={busy || form.code.trim().length < 2}
             onClick={() => void save()}
-            className="grid h-9 place-items-center rounded-[10px] bg-black px-5 text-[13px] font-medium text-white hover:bg-black/85 disabled:opacity-50"
+            className="grid h-9 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-5 text-[13px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
           >
             {busy ? "…" : editing ? "更新" : "建立"}
           </button>
@@ -202,17 +202,17 @@ export function PromosAdmin({
             </button>
           ) : null}
         </div>
-        {notice ? <p className="mt-2.5 text-[13px] text-black/55">{notice}</p> : null}
+        {notice ? <p className="mt-2.5 text-[13px] text-black/55 admin:text-ink/55">{notice}</p> : null}
       </section>
 
       {/* 列表 */}
       {promos.length === 0 ? (
-        <p className="text-[13px] text-black/45">還沒有優惠碼。</p>
+        <p className="text-[13px] text-black/45 admin:text-ink/45">還沒有優惠碼。</p>
       ) : (
-        <div className="overflow-x-auto rounded-[14px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
+        <div className="overflow-x-auto rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           <table className="w-full min-w-[640px] text-left text-[13px]">
             <thead>
-              <tr className="border-b border-black/[0.08] text-[12px] text-black/45">
+              <tr className="border-b border-black/[0.08] admin:border-ink/[0.08] text-[12px] text-black/45 admin:text-ink/45">
                 <th className="px-4 py-2.5 font-normal">代碼</th>
                 <th className="px-3 py-2.5 font-normal">效果</th>
                 <th className="px-3 py-2.5 font-normal">低消</th>
@@ -223,20 +223,20 @@ export function PromosAdmin({
             </thead>
             <tbody>
               {promos.map((p) => (
-                <tr key={p.code} className="border-b border-black/[0.05] last:border-0">
+                <tr key={p.code} className="border-b border-black/[0.05] admin:border-ink/[0.05] last:border-0">
                   <td className="px-4 py-2.5">
-                    <span className="font-mono text-black/85">{p.code}</span>
+                    <span className="font-mono text-black/85 admin:text-ink/85">{p.code}</span>
                     {p.label ? (
-                      <span className="ml-2 text-[12px] text-black/45">{p.label}</span>
+                      <span className="ml-2 text-[12px] text-black/45 admin:text-ink/45">{p.label}</span>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2.5 text-black/70">
+                  <td className="px-3 py-2.5 text-black/70 admin:text-ink/70">
                     {TYPE_LABEL[p.type]} · {promoEffect(p)}
                   </td>
-                  <td className="px-3 py-2.5 tabular-nums text-black/70">
+                  <td className="px-3 py-2.5 tabular-nums text-black/70 admin:text-ink/70">
                     {p.minSubtotal > 0 ? `NT$ ${p.minSubtotal.toLocaleString("zh-TW")}` : "—"}
                   </td>
-                  <td className="px-3 py-2.5 tabular-nums text-black/70">
+                  <td className="px-3 py-2.5 tabular-nums text-black/70 admin:text-ink/70">
                     {p.used}
                     {p.maxUses !== null ? ` / ${p.maxUses}` : ""}
                   </td>
@@ -245,7 +245,7 @@ export function PromosAdmin({
                       className={
                         p.enabled
                           ? "text-[12px] text-emerald-700"
-                          : "text-[12px] text-black/40"
+                          : "text-[12px] text-black/40 admin:text-ink/40"
                       }
                     >
                       {p.enabled ? "啟用中" : "停用"}

@@ -49,11 +49,11 @@ export function SlashCommandDropdown({
       role="listbox"
       aria-label={t("agent.slash.title")}
       // 同心圓角:列 8px → 面板 14px(內距 6px)。
-      className="absolute bottom-full left-0 z-30 mb-2 w-[min(28rem,100%)] overflow-hidden rounded-[14px] bg-white p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_16px_48px_-12px_rgba(30,20,50,0.18)]"
+      className="absolute bottom-full left-0 z-30 mb-2 w-[min(28rem,100%)] overflow-hidden rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.06),0_16px_48px_-12px_rgba(30,20,50,0.18))]"
     >
       <div ref={listRef} className="max-h-64 overflow-y-auto">
         {matches.length === 0 ? (
-          <p className="px-3 py-6 text-center text-[12.5px] text-black/35">
+          <p className="px-3 py-6 text-center text-[12.5px] text-ink/35">
             {t("agent.slash.empty")}
           </p>
         ) : (
@@ -72,25 +72,25 @@ export function SlashCommandDropdown({
                 onSelect(tool);
               }}
               className={cn(
-                "flex w-full items-start gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition-colors duration-150",
-                index === selectedIndex ? "bg-black/[0.045]" : "hover:bg-black/[0.025]",
+                "flex w-full items-start gap-2.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 py-2 text-left transition-colors duration-150",
+                index === selectedIndex ? "bg-ink/[0.045]" : "hover:bg-ink/[0.025]",
               )}
             >
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-mono text-[11.5px] lowercase">
-                  <span className="text-black/35">{toolNamespace(tool.name)}.</span>
-                  <span className="font-medium text-black/85">{toolLeaf(tool.name)}</span>
+                  <span className="text-ink/35">{toolNamespace(tool.name)}.</span>
+                  <span className="font-medium text-ink/85">{toolLeaf(tool.name)}</span>
                 </span>
-                <span className="mt-0.5 block truncate text-[11.5px] text-black/40">
+                <span className="mt-0.5 block truncate text-[11.5px] text-ink/40">
                   {toolBlurb(tool.description)}
                 </span>
               </span>
               <span
                 className={cn(
-                  "mt-px shrink-0 rounded-[5px] px-1.5 py-px text-[10.5px]",
+                  "mt-px shrink-0 rounded-[calc(5px*var(--admin-radius-scale,1))] px-1.5 py-px text-[10.5px]",
                   tool.kind === "write"
                     ? "bg-(--admin-accent)/[0.10] text-[color-mix(in_srgb,var(--admin-accent)_78%,black)]"
-                    : "bg-black/[0.04] text-black/40",
+                    : "bg-ink/[0.04] text-ink/40",
                 )}
               >
                 {tool.kind === "write"
@@ -101,7 +101,7 @@ export function SlashCommandDropdown({
           ))
         )}
       </div>
-      <p className="px-2.5 pt-1.5 pb-0.5 text-[10.5px] text-black/30">
+      <p className="px-2.5 pt-1.5 pb-0.5 text-[10.5px] text-ink/30">
         {t("agent.slash.hint")}
       </p>
     </div>
