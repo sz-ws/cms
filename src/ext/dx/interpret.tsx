@@ -10,6 +10,7 @@ import { toSettingField } from "./setting-field";
 import type {
   AdminPage,
   Extension,
+  HookHandler,
   HookName,
   PublicRoute,
 } from "../types";
@@ -28,6 +29,9 @@ import { ExtThemeScope } from "./theme-scope";
 import { buildCrudRoutes } from "./crud";
 import { compilePattern, matchSegments } from "./route-matcher";
 import { makeWebhookHandler } from "./webhook";
+import { parseScriptsApproval } from "./scripts";
+import { makeScriptsWidget } from "./scripts-widget";
+import { normalizePublicWidgets } from "../public-widgets";
 import { surfaceIds } from "./surfaces";
 import { overrideRegistry } from "../overrides";
 import { buildScheduleJobs } from "./schedule-jobs";
@@ -70,6 +74,8 @@ export interface DeclarativeRow {
   manifest: string; // JSON 字串
   version: string;
   enabled: number;
+  /** 1.48.0:manifest.scripts 的核准紀錄(declarative_extensions.scripts_approval)。 */
+  scriptsApproval?: string | null;
 }
 
 /**
@@ -339,16 +345,25 @@ function buildApiRoutes(
 function buildHooks(
   extId: string,
   manifest: DeclarativeManifest,
-): Partial<Record<HookName, ReturnType<typeof makeWebhookHandler>>> {
-  const hooks: Partial<Record<string, ReturnType<typeof makeWebhookHandler>>> =
-    {};
+  scriptsApproval: string | null | undefined,
+): Partial<Record<HookName, HookHandler>> {
+  const hooks: Partial<Record<string, HookHandler>> = {};
   for (const [hookName, actions] of Object.entries(manifest.on ?? {})) {
     if (!actions || actions.length === 0) continue;
     hooks[hookName] = makeWebhookHandler(extId, hookName, actions);
   }
-  return hooks as Partial<
-    Record<HookName, ReturnType<typeof makeWebhookHandler>>
-  >;
+  // 1.48.0:核准過的 scripts 掛進公開頁的浮層插槽。沒核准(或已停用)就不掛;
+  // hash 對不對在 widget 渲染時比(要 await,這裡是同步的)。`on` 只收宣告式
+  // hook 名單,不會跟這個 filter 撞名。
+  const approval = parseScriptsApproval(scriptsApproval);
+  if (manifest.scripts && approval) {
+    const Widget = makeScriptsWidget(extId, manifest, approval);
+    hooks["filter:publicWidgets"] = (widgets: unknown) => [
+      ...normalizePublicWidgets(widgets),
+      Widget,
+    ];
+  }
+  return hooks as Partial<Record<HookName, HookHandler>>;
 }
 
 // ---- forms 引擎已撤(declarative 化後,forms/contact 直接走 contentType submission)----
@@ -400,7 +415,7 @@ export function interpretManifest(row: DeclarativeRow): ManifestInterpretation {
       adminPages: buildAdminPages(manifest.id, manifest, types, submissions),
       apiRoutes: buildApiRoutes(manifest.id, manifest, submissions),
       publicRoutes: buildPublicRoutes(manifest.id, manifest, types),
-      hooks: buildHooks(manifest.id, manifest),
+      hooks: buildHooks(manifest.id, manifest, row.scriptsApproval),
       // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth)。
       contentTypes: manifest.contentTypes,
       // roadmap #16:dashboard 卡直接透傳(同 contentTypes;實際查詢與渲染交給

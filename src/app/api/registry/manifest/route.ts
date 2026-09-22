@@ -3,13 +3,18 @@ import { hitRateLimit } from "@/lib/rate-limit";
 import {
   assertKnownRegistrySource,
   fetchManifest,
+  sourceAllowsScripts,
   UnknownRegistrySource,
 } from "@/lib/registry-client";
-import { parseManifest } from "@/ext/dx/manifest";
+import { parseManifest, type DeclarativeManifest } from "@/ext/dx/manifest";
+import { hashScripts, parseScriptsApproval } from "@/ext/dx/scripts";
+import { db } from "@/lib/db";
+import { declarativeExtensions as dxTable } from "@/lib/schema";
+import { eq } from "drizzle-orm";
 
 // GET /api/registry/manifest?source=...&id=...。admin only。
 // 供 install 表單「安裝前預覽」用:抓 manifest 並驗證,回傳 installPrompts(若有)
-// 給前端渲染表單,不做任何寫入 —— 與 POST /api/registry/install 共用 fetch +
+// 給前端渲染表單、scripts 的核准資訊(1.48.0)給核准畫面,不做任何寫入 —— 與 POST /api/registry/install 共用 fetch +
 // parse 邏輯,但完全唯讀。錯誤形狀比照 install route(unknown_source /
 // invalid_manifest / manifest_fetch_failed)方便前端共用 error 文案。
 export async function GET(req: Request): Promise<Response> {
@@ -71,5 +76,32 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  return Response.json({ manifest: result.manifest });
+  return Response.json({
+    manifest: result.manifest,
+    scripts: await scriptsReview(result.manifest, source, id),
+  });
+}
+
+/**
+ * 1.48.0:manifest 帶 scripts 時,安裝前端要知道的三件事 —— 內容 hash(核准時原樣
+ * 送回)、這個來源准不准帶 scripts、已安裝的版本是不是核准過同樣的內容(更新但
+ * scripts 沒變就不必再看一次)。沒有 scripts → null。
+ */
+async function scriptsReview(
+  manifest: DeclarativeManifest,
+  source: string,
+  id: string,
+): Promise<{ hash: string; allowed: boolean; approved: boolean } | null> {
+  if (!manifest.scripts) return null;
+  const [hash, allowed, rows] = await Promise.all([
+    hashScripts(manifest.scripts),
+    sourceAllowsScripts(source),
+    db()
+      .select({ scriptsApproval: dxTable.scriptsApproval })
+      .from(dxTable)
+      .where(eq(dxTable.id, id))
+      .limit(1),
+  ]);
+  const approved = parseScriptsApproval(rows[0]?.scriptsApproval)?.hash === hash;
+  return { hash, allowed, approved };
 }

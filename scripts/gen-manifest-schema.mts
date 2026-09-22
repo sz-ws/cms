@@ -591,6 +591,25 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, scheduleItemPath, { $ref: "#/$defs/scheduleItem" });
 }
 
+// ---- step 12c: scripts (1.48.0, src/ext/dx/scripts.ts). Two refines dropped
+// by z.toJSONSchema: exactly one of src/inline per entry (expressible as oneOf
+// on `required`), and inline must not contain `</script` or `<!--` (zod tests
+// case-insensitively; like migrations, the JSON Schema regex is applied
+// case-sensitively, so only the lowercase spelling is caught here). The
+// {{settings.<key>}} cross-check against settings[] is a superRefine and is
+// documented instead. ----
+{
+  const scriptPath = ["properties", "scripts", "items"];
+  const script = clone(get(root, scriptPath)) as MutableSchema;
+  assert(script.properties?.src && script.properties?.inline, "script entry shape drifted");
+  script.description =
+    "One script for public pages: either `src` (https URL loaded with async; the host is written out, {{settings.<key>}} may appear only in the path or query) or `inline` code. `domains` lists other hosts it talks to, shown on the approval screen.";
+  script.oneOf = [{ required: ["src"] }, { required: ["inline"] }];
+  script.properties.inline.not = { pattern: "</script|<!--" };
+  defs.scriptEntry = script;
+  root = set(root, scriptPath, { $ref: "#/$defs/scriptEntry" });
+}
+
 // ---- step 13: top-level property descriptions that carry cross-field or
 // non-regex-expressible semantics (installPrompts[].key <-> settings[].key,
 // dashboardCards[].contentType <-> contentTypes[].name superRefine checks) ----
@@ -643,6 +662,8 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
     p.loginProvider.properties.button.properties.svg.description =
       "Optional brand icon. Validated by src/ext/dx/svg-guard.ts (allowlist of svg/g/path/circle/rect/ellipse/line/polyline/polygon/defs/linearGradient/radialGradient/stop/clipPath/title; rejects on*= handlers, <script>, javascript:, href/xlink:href, <foreignObject>, <image>, <use>, <style>, <animate*>, external URLs). Rejection fails manifest validation (fail-loud). Not expressible as a JSON Schema constraint beyond maxLength.";
   }
+  p.scripts.description =
+    "1.48.0: scripts added to every public page (never admin pages). Nothing runs until an admin reviews and approves them; the approval is tied to a SHA-256 of this array, so any change needs a new approval. The registry source must also allow scripts. {{settings.<key>}} must name a declared, non-secret setting; values are URL-encoded in src and inserted as escaped JSON literals in inline code. Inline code may also use {{content.<type>}} (published entries of a declared, non-inbox content type, or <extId>.<type> of another extension, which yields titles only) and {{feed.<extId>.<name>}} (a code extension's public feed). These cross-checks are zod superRefine rules, not expressible in JSON Schema. A manifest using this field must declare coreApi \"^1.48.0\".";
   root = { ...(root as MutableSchema), properties: p };
 }
 
@@ -690,15 +711,15 @@ const DEF_ORDER = [
   "installPrompt", "customApiRoute", "requiresEntry",
   "themeColor", "themeRadius", "theme",
   "migrationStatement", "dashboardCard",
-  "scheduleAction", "scheduleItem",
+  "scheduleAction", "scheduleItem", "scriptEntry",
 ];
 
 const PROPERTY_ORDER = [
-  "kind", "id", "name", "version", "coreApi", "description", "icon", "iconUrl", "banner", "screenshots",
+  "kind", "id", "name", "version", "coreApi", "description", "icon", "menu", "iconUrl", "banner", "screenshots",
   "deployment", "files", "installPrompts", "customApiRoutes", "capabilities", "requires",
   "author", "homepage", "repository", "license", "tags", "category", "support",
   "theme", "stylesheet", "contentTypes", "settings", "adminPages", "publicRoutes", "og",
-  "migrations", "on", "dashboardCards", "schedule", "loginProvider",
+  "migrations", "on", "dashboardCards", "schedule", "loginProvider", "scripts",
 ];
 
 function orderedDefs(): Record<string, Json> {

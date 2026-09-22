@@ -6,9 +6,15 @@ import {
   assertKnownRegistrySource,
   fetchManifest,
   fetchExtensionAsset,
+  sourceAllowsScripts,
   UnknownRegistrySource,
 } from "@/lib/registry-client";
 import { parseManifest } from "@/ext/dx/manifest";
+import {
+  hashScripts,
+  parseScriptsApproval,
+  SCRIPTS_HASH_RE,
+} from "@/ext/dx/scripts";
 import { validateStylesheet } from "@/ext/dx/stylesheet-guard";
 import {
   isStaleInstallConflict,
@@ -47,7 +53,7 @@ import {
 import type { BatchItem } from "drizzle-orm/batch";
 
 // core-v2 §3.4:POST /api/registry/install。admin + Origin 檢查。
-// body { id, source, promptValues? }。install 與 update 共用(upsert semantics)。
+// body { id, source, promptValues?, approveScripts? }。install 與 update 共用(upsert semantics)。
 // promptValues:對應 manifest.installPrompts 的使用者填值(見 validatePromptValues);
 // 未宣告 installPrompts 的 manifest 忽略此欄位(空物件驗證一律通過)。
 //
@@ -70,6 +76,8 @@ const bodySchema = z
     // 路徑走同一套驗證,不因為來源不同而放寬。
     manifest: z.unknown().optional(),
     promptValues: z.record(z.string(), z.unknown()).optional(),
+    // 1.48.0:管理員在核准畫面看過的 scripts hash(manifest 帶 scripts 時才需要)。
+    approveScripts: z.string().regex(SCRIPTS_HASH_RE).optional(),
   })
   .strict()
   .refine(
@@ -114,7 +122,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const { id, source, promptValues } = parsed;
+  const { id, source, promptValues, approveScripts } = parsed;
   const inlineManifest = parsed.manifest;
 
   if (inlineManifest !== undefined && !DEV_INSTALL) {
@@ -191,6 +199,7 @@ export async function POST(req: Request): Promise<Response> {
       manifest: dxTable.manifest,
       version: dxTable.version,
       updatedAt: dxTable.updatedAt,
+      scriptsApproval: dxTable.scriptsApproval,
     })
     .from(dxTable)
     .where(eq(dxTable.id, id))
@@ -313,6 +322,36 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  // 1.48.0 scripts:要在公開頁跑的程式,必須有人看過、核准過這一份內容。
+  //   - 來源沒被設成允許 scripts → 403(inline manifest 只存在於開發模式,不看來源)
+  //   - 帶了跟這份內容一致的 approveScripts → 寫入新的核准紀錄
+  //   - 已安裝的版本核准過同樣的內容(更新但 scripts 沒變)→ 沿用
+  //   - 其他 → 409,回 hash 讓前端開核准畫面;hash 對不上代表看過之後內容又變了
+  // undefined = 不動欄位(沿用);null = 清掉(新版 manifest 不再帶 scripts)。
+  let scriptsApproval: string | null | undefined = null;
+  if (manifest.scripts) {
+    if (source !== undefined && !(await sourceAllowsScripts(source))) {
+      return Response.json({ error: "scripts_not_allowed" }, { status: 403 });
+    }
+    const hash = await hashScripts(manifest.scripts);
+    if (approveScripts === hash) {
+      scriptsApproval = JSON.stringify({ hash, by: user.email, at: Date.now() });
+    } else if (parseScriptsApproval(existingRows[0]?.scriptsApproval)?.hash === hash) {
+      scriptsApproval = undefined;
+    } else {
+      return Response.json(
+        {
+          error:
+            approveScripts === undefined
+              ? "scripts_review_required"
+              : "scripts_changed",
+          hash,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   // 1.8.0 stylesheet(可選):manifest 宣告 stylesheet:"style.css" → 抓取並驗證。
   // fetch 或 validate 任一失敗 → 400 invalid_stylesheet,且在「任何 DB 寫入之前」
   // (含 migrations)fail fast —— extension 不安裝/不更新。manifest 未宣告 → NULL
@@ -432,6 +471,7 @@ export async function POST(req: Request): Promise<Response> {
         enabled: 1,
         source: source ?? null,
         stylesheet: validatedStylesheet,
+        scriptsApproval: scriptsApproval ?? null,
         installedAt: now,
         updatedAt: now,
       })
@@ -443,6 +483,7 @@ export async function POST(req: Request): Promise<Response> {
           enabled: 1,
           source: source ?? null,
           stylesheet: validatedStylesheet,
+          ...(scriptsApproval !== undefined ? { scriptsApproval } : {}),
           updatedAt: now,
         },
       }),

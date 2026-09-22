@@ -406,6 +406,43 @@ export const en = {
   "extensions.sheet.purgeHint":
     "Every entry this extension created is deleted with it. This cannot be undone.",
   "extensions.sheet.uninstallConfirm": "Uninstall {name}?",
+  "extensions.sheet.scripts": "Scripts on public pages",
+  "extensions.sheet.scriptsRunning": "Running",
+  "extensions.sheet.scriptsStopped": "Stopped",
+  "extensions.sheet.scriptsStop": "Stop",
+  "extensions.sheet.scriptsReview": "Review and turn on",
+  "extensions.sheet.scriptsDesc":
+    "Stopping takes effect on the next page load. Turning them back on needs a new review.",
+
+  // ScriptReviewDialog
+  "scripts.title": "Review the scripts in {name}",
+  "scripts.lead":
+    "Once approved, this runs on every public page. It can read and change anything there, and act as any admin who is signed in.",
+  "scripts.externalNote": "{host} decides what this contains, and it can change at any time.",
+  "scripts.connects": "Connects to {hosts}",
+  "scripts.inlineSummary": "Code · {size}",
+  "scripts.showCode": "Show",
+  "scripts.hideCode": "Hide",
+  "scripts.reads": "Reads {refs}",
+  "scripts.copy": "Copy for your AI",
+  "scripts.copied": "Copied",
+  "scripts.copyFailed": "Couldn't copy. Select the code instead.",
+  "scripts.ask": "Ask the admin assistant",
+  "scripts.asking": "Checking…",
+  "scripts.aiNotConfigured": "The admin assistant isn't set up. Use copy instead.",
+  "scripts.aiFailed": "The check didn't finish: {error}",
+  "scripts.aiCaveat": "AI can be wrong. Treat this as a second opinion.",
+  "scripts.confirmLead": "Type {id} to approve",
+  "scripts.confirmNote":
+    "Your account and the time are recorded. If the code changes, it stops until someone approves it again.",
+  "scripts.approveInstall": "Approve and install",
+  "scripts.approveEnable": "Approve and turn on",
+  "scripts.next": "Next",
+  "scripts.back": "Back",
+  "scripts.cancel": "Cancel",
+  "scripts.notAllowed":
+    "This source isn't set up for extensions with scripts. Turn it on first under Settings → Core → Registry Sources.",
+  "scripts.changed": "The extension changed after you reviewed it. Review it again.",
 
   // ApiTokensManager
   "apiTokens.notAllowed": "Not allowed.",
@@ -453,6 +490,10 @@ export const en = {
   "registry.testing": "Testing...",
   "registry.testConnection": "Test connection",
   "registry.save": "Save",
+  "registry.allowScripts": "Allow scripts on public pages",
+  "registry.allowScriptsHint":
+    "Extensions from this source can add code to your public pages. Each one still needs a review before it runs.",
+  "registry.scriptsBadge": "Scripts allowed",
 
   // AdminSidebar
   "sidebar.account": "Account",

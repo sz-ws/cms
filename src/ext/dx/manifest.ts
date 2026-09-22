@@ -8,6 +8,15 @@ import {
   extensionMenuSchema,
   type ExtensionMenu,
 } from "../admin-menu";
+import {
+  CONTENT_REF_RE,
+  FEED_REF_RE,
+  SETTING_REF_RE,
+  scriptRefs,
+  scriptsSchema,
+  type DeclarativeScript,
+} from "./scripts";
+import { isSubmissionTypeName } from "./submission";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -737,6 +746,8 @@ export const manifestSchema = z
     // 是 .strict() —— 宣告 loginProvider 的 manifest 在 <1.16.0 的 core 會整包驗證失敗,
     // 故其 coreApi 必須宣告 "^1.16.0"。
     loginProvider: loginProviderSchema.optional(),
+    // 1.48.0:公開頁插入 script。安裝前要管理員核准,核准綁內容 hash(見 ./scripts.ts)。
+    scripts: scriptsSchema.optional(),
   })
   .strict()
   .superRefine((m, ctx) => {
@@ -829,6 +840,48 @@ export const manifestSchema = z
         }
       });
     });
+
+    if (m.scripts) {
+      if (!rangeStartsAtOrAfter(m.coreApi, "1.48.0")) {
+        ctx.addIssue({
+          code: "custom",
+          message: 'scripts requires coreApi "^1.48.0" or newer',
+          path: ["coreApi"],
+        });
+      }
+      // 代入的值都會出現在公開頁的原始碼裡:設定只能是自己宣告的非機密設定;
+      // 內容不能是收件匣(別人寄來的私人訊息);content / feed 只能用在 inline。
+      m.scripts.forEach((script, idx) => {
+        const field = script.src !== undefined ? "src" : "inline";
+        const issue = (message: string) =>
+          ctx.addIssue({ code: "custom", message: `scripts[${idx}] ${message}`, path: ["scripts", idx, field] });
+        for (const ref of scriptRefs(script.src ?? script.inline ?? "")) {
+          if (ref.ns === "settings") {
+            const setting = SETTING_REF_RE.test(ref.name) ? settingsByKey.get(ref.name) : undefined;
+            if (!setting) issue(`uses {{${ref.path}}} but no setting "${ref.name}" is declared`);
+            else if (setting.secret) issue(`cannot use secret setting "${ref.name}"`);
+            continue;
+          }
+          if (field === "src") {
+            issue(`{{${ref.path}}} can only be used in inline scripts`);
+            continue;
+          }
+          if (ref.ns === "feed") {
+            if (!FEED_REF_RE.test(ref.name)) issue(`{{${ref.path}}} must name a feed as <extId>.<name>`);
+            continue;
+          }
+          if (!CONTENT_REF_RE.test(ref.name)) {
+            issue(`{{${ref.path}}} must name a content type (local name or <extId>.<type>)`);
+            continue;
+          }
+          const [head, tail] = ref.name.split(".");
+          const local = tail === undefined ? head : head === m.id ? tail : null;
+          if (local === null) continue;
+          if (!typeNames.has(local)) issue(`uses {{${ref.path}}} but no content type "${local}" is declared`);
+          else if (isSubmissionTypeName(m, local)) issue(`cannot expose inbox content type "${local}"`);
+        }
+      });
+    }
 
     if (
       settings.some((setting) => setting.required) &&
@@ -1162,6 +1215,9 @@ export interface DeclarativeManifest {
    * issuer(discovery 由引擎抓)/ scopes / button 外觀;client id/secret 走 settings[]
    * (secret:true)慣例,引擎按 `ext.<extId>.clientId` / `.clientSecret` key 直接讀。 */
   loginProvider?: DeclarativeLoginProvider;
+  /** 1.48.0:公開頁插入的 script(src 或 inline 擇一)。管理員核准後才會執行,核准綁
+   * 內容 hash;`{{settings.<key>}}` 代入自己的非機密設定值。見 ./scripts.ts。 */
+  scripts?: DeclarativeScript[];
 }
 
 export interface ParseResult {

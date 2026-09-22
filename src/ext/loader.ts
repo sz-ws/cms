@@ -166,6 +166,7 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
         manifest: row.manifest,
         version: row.version,
         enabled: row.enabled,
+        scriptsApproval: row.scriptsApproval,
       });
       if (interpreted.status === "invalid") continue; // interpret 已 log
       if (interpreted.status === "incompatible") {

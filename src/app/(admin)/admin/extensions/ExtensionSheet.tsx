@@ -17,6 +17,7 @@ import {
   type ExtensionRow,
   type Action,
 } from "./ExtensionsManager";
+import { ExtensionScripts } from "./ExtensionScripts";
 
 // /admin/extensions 的詳情 sidebar(core-native「設定從側邊滑出」體例,同 UserSheet)。
 // 殼常駐、open 由 request 是否為 null 驅動 —— 條件式 mount + open=true 會讓 base-ui
@@ -165,6 +166,14 @@ function ExtensionSheetBody({
           </div>
           {ext.issue && <RuntimeIssue issue={ext.issue} />}
         </div>
+
+        {/* 1.48.0:宣告式插件帶的前台 script(執行中 / 已停用) */}
+        {ext.scripts && (
+          <div className="flex flex-col gap-2">
+            <SectionLabel>{t("extensions.sheet.scripts")}</SectionLabel>
+            <ExtensionScripts ext={ext} />
+          </div>
+        )}
 
         {/* Danger zone */}
         {ext.installed && (

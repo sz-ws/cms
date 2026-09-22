@@ -89,7 +89,7 @@ beforeAll(async () => {
     [
       "CREATE TABLE IF NOT EXISTS login_attempts (key TEXT PRIMARY KEY, count INTEGER NOT NULL, window_start INTEGER NOT NULL);",
       "CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, installed_at INTEGER NOT NULL);",
-      "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+      "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);",
       "CREATE TABLE IF NOT EXISTS ext_migrations (id TEXT PRIMARY KEY, ext_id TEXT NOT NULL, applied_at INTEGER NOT NULL);",
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
     ].map((sql) => d1().prepare(sql)),
@@ -177,5 +177,72 @@ describe("POST /api/registry/install — inline manifest (dev only)", () => {
       .run();
     const res = await post({ id: "recipes", manifest: MANIFEST });
     expect(res.status).toBe(409);
+  });
+});
+
+// 1.48.0:manifest 帶 scripts 時,安裝要帶著核准畫面看過的 hash。
+describe("POST /api/registry/install — scripts need an approval", () => {
+  const WITH_SCRIPTS = {
+    ...MANIFEST,
+    coreApi: "^1.48.0",
+    scripts: [{ inline: "window.__recipes = true;" }],
+  };
+
+  async function storedApproval(): Promise<{ hash: string; by: string } | null> {
+    const row = await d1()
+      .prepare("SELECT scripts_approval FROM declarative_extensions WHERE id = ?")
+      .bind("recipes")
+      .first<{ scripts_approval: string | null }>();
+    return row?.scripts_approval ? JSON.parse(row.scripts_approval) : null;
+  }
+
+  it("asks for a review first and installs nothing", async () => {
+    const res = await post({ id: "recipes", manifest: WITH_SCRIPTS });
+    expect(res.status).toBe(409);
+    const body = await res.json<{ error: string; hash: string }>();
+    expect(body.error).toBe("scripts_review_required");
+    expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
+    const row = await d1().prepare("SELECT id FROM declarative_extensions WHERE id = ?").bind("recipes").first();
+    expect(row).toBeNull();
+  });
+
+  it("refuses a hash that is not the one for this content", async () => {
+    const res = await post({ id: "recipes", manifest: WITH_SCRIPTS, approveScripts: "0".repeat(64) });
+    expect(res.status).toBe(409);
+    expect((await res.json<{ error: string }>()).error).toBe("scripts_changed");
+  });
+
+  it("records who approved which content", async () => {
+    const { hash } = await (await post({ id: "recipes", manifest: WITH_SCRIPTS })).json<{ hash: string }>();
+    const res = await post({ id: "recipes", manifest: WITH_SCRIPTS, approveScripts: hash });
+    expect(res.status).toBe(200);
+    expect(await storedApproval()).toMatchObject({ hash, by: "a@t.co" });
+  });
+
+  it("keeps the approval when an update leaves the scripts alone", async () => {
+    const { hash } = await (await post({ id: "recipes", manifest: WITH_SCRIPTS })).json<{ hash: string }>();
+    await post({ id: "recipes", manifest: WITH_SCRIPTS, approveScripts: hash });
+    const res = await post({ id: "recipes", manifest: { ...WITH_SCRIPTS, version: "1.0.1" } });
+    expect(res.status).toBe(200);
+    expect((await storedApproval())?.hash).toBe(hash);
+  });
+
+  it("asks again when an update changes the scripts", async () => {
+    const { hash } = await (await post({ id: "recipes", manifest: WITH_SCRIPTS })).json<{ hash: string }>();
+    await post({ id: "recipes", manifest: WITH_SCRIPTS, approveScripts: hash });
+    const changed = { ...WITH_SCRIPTS, version: "1.0.1", scripts: [{ inline: "window.__recipes = 2;" }] };
+    const res = await post({ id: "recipes", manifest: changed });
+    expect(res.status).toBe(409);
+    expect((await res.json<{ error: string }>()).error).toBe("scripts_review_required");
+    // 舊的核准原封不動,舊版照舊運作。
+    expect((await storedApproval())?.hash).toBe(hash);
+  });
+
+  it("clears the approval when an update drops the scripts", async () => {
+    const { hash } = await (await post({ id: "recipes", manifest: WITH_SCRIPTS })).json<{ hash: string }>();
+    await post({ id: "recipes", manifest: WITH_SCRIPTS, approveScripts: hash });
+    const res = await post({ id: "recipes", manifest: { ...MANIFEST, version: "1.0.1" } });
+    expect(res.status).toBe(200);
+    expect(await storedApproval()).toBeNull();
   });
 });

@@ -56,7 +56,7 @@ beforeAll(async () => {
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
   );
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, version TEXT NOT NULL, manifest TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);",
+    "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, version TEXT NOT NULL, manifest TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, scripts_approval TEXT);",
   );
   // provider 的 create/update 會留版本快照(best-effort,缺表只是 log)。建起來讓
   // 端到端測試走的是完整寫入路徑,而不是一條吞掉一半的降級路徑。

@@ -201,6 +201,13 @@ export interface Extension {
    * 畫;站台用 filter:statusSets 改名或補描述;每一筆可另掛描述(record-status.ts)。
    */
   statusSets?: StatusSetDecl[];
+  /**
+   * 1.48.0:給宣告式插件 script 用的公開資料,名稱 → 載入函式。宣告式 manifest 以
+   * `{{feed.<extId>.<name>}}` 取用,值會以 JSON 字面值嵌進**每個公開頁的原始碼** ——
+   * 只能回本來就可以公開的東西(商品名、時間),不能有姓名、email、電話、地址。
+   * 丟例外或逾時視為 null,不影響頁面。
+   */
+  publicFeeds?: Record<string, () => Promise<unknown>>;
   uninstall?: ExtMigration[]; // 解除安裝時執行(如 DROP TABLE)
 }
 
@@ -516,6 +523,9 @@ const manifestSchema = z
     jobs: jobsSchema,
     agentTools: z.array(agentToolSchema).optional(),
     statusSets: z.array(statusSetSchema).max(10).optional(),
+    publicFeeds: z
+      .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
+      .optional(),
   })
   // 其餘欄位(migrations/settings/adminPages/publicRoutes/hooks/uninstall)含 React
   // 型別與 function,不在 zod 深驗範圍,passthrough 保留。

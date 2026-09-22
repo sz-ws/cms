@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, Trash2, Check, AlertCircle, Loader2, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,8 @@ export interface RegistrySource {
   token?: string;
   /** server 下發的旗標:此 source 已有已儲存(加密)的 token。token 本體絕不下發。 */
   hasToken?: boolean;
+  /** 1.48.0:這個來源的插件可以帶前台 script(安裝時仍要逐一核准)。 */
+  allowScripts?: boolean;
 }
 
 interface RegistrySourcesManagerProps {
@@ -44,6 +47,7 @@ export function RegistrySourcesManager({
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("");
   const [newToken, setNewToken] = useState("");
+  const [newAllowScripts, setNewAllowScripts] = useState(false);
   const [testResult, setTestResult] = useState<TestResult>({ status: "idle" });
 
   async function testConnection(url: string, token?: string): Promise<TestResult> {
@@ -92,6 +96,7 @@ export function RegistrySourcesManager({
     setNewName("");
     setNewIcon("");
     setNewToken("");
+    setNewAllowScripts(false);
     setTestResult({ status: "idle" });
     setDialogOpen(true);
   }
@@ -103,6 +108,7 @@ export function RegistrySourcesManager({
     setNewName(source.name ?? "");
     setNewIcon(source.icon ?? "");
     setNewToken(""); // token 不下發也不預填;留空 = 保留既有 token
+    setNewAllowScripts(source.allowScripts === true);
     setTestResult({ status: "idle" });
     setDialogOpen(true);
   }
@@ -129,6 +135,7 @@ export function RegistrySourcesManager({
       hasToken: newToken
         ? true
         : Boolean(editing?.hasToken && editing.url === newUrl),
+      allowScripts: newAllowScripts || undefined,
     };
 
     let updatedPayload: RegistrySource[];
@@ -259,9 +266,16 @@ export function RegistrySourcesManager({
                   <span className="truncate text-[14px] font-medium text-ink/85">
                     {getDisplayName(source)}
                   </span>
-                  <code className="truncate font-mono text-[11px] text-ink/40">
-                    {getDisplayUrl(source)}
-                  </code>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <code className="truncate font-mono text-[11px] text-ink/40">
+                      {getDisplayUrl(source)}
+                    </code>
+                    {source.allowScripts && (
+                      <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                        {t("registry.scriptsBadge")}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
               <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -355,6 +369,21 @@ export function RegistrySourcesManager({
                   className="font-mono text-[13px]"
                 />
               </div>
+
+              <label className="flex cursor-pointer items-start justify-between gap-3 pt-1">
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-[12px] font-medium text-ink/70">
+                    {t("registry.allowScripts")}
+                  </span>
+                  <span className="text-[11px] leading-relaxed text-ink/40">
+                    {t("registry.allowScriptsHint")}
+                  </span>
+                </span>
+                <Switch
+                  checked={newAllowScripts}
+                  onCheckedChange={setNewAllowScripts}
+                />
+              </label>
             </div>
 
             {testResult.status !== "idle" && (

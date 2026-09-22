@@ -27,6 +27,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { DateTimeProvider } from "@/components/DateTimeProvider";
 import { getSetting } from "@/lib/settings";
 import { getSiteTimeZone } from "@/lib/datetime-server";
+import { getLocale } from "@/lib/i18n/server";
 import { cn } from "@/lib/utils";
 
 // Distinct var names (not --font-sans/--font-heading) so they don't collide with
@@ -77,10 +78,12 @@ export default async function RootLayout({
 }>) {
   // 1.41.0:站台時區給所有 client component(useDateFormatter)。settings 是整包快取,
   // generateMetadata 已經讀過,這裡不會多一趟 D1。
-  const timeZone = await getSiteTimeZone();
+  // 1.48.0:lang 跟著站台語系(core.locale)。原本寫死 "en",中文站的螢幕閱讀器會用
+  // 英文念中文;宣告式插件的 script 也只能從這裡知道頁面是什麼語言。
+  const [timeZone, locale] = await Promise.all([getSiteTimeZone(), getLocale()]);
   return (
     <html
-      lang="en"
+      lang={locale}
       className={cn("font-sans", geist.variable, interHeading.variable)}
     >
       <body>

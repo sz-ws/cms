@@ -786,7 +786,8 @@ export function isValidRegistrySources(value: unknown): boolean {
     if (!validUrl(source.url)) return false;
     return (
       (source.token === undefined || typeof source.token === "string") &&
-      (source.hasToken === undefined || typeof source.hasToken === "boolean")
+      (source.hasToken === undefined || typeof source.hasToken === "boolean") &&
+      (source.allowScripts === undefined || typeof source.allowScripts === "boolean")
     );
   });
 }

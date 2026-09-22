@@ -222,6 +222,9 @@ export const declarativeExtensions = sqliteTable("declarative_extensions", {
   stylesheet: text("stylesheet"),
   installedAt: integer("installed_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
+  // 1.48.0(migrations/0020):manifest.scripts 的核准紀錄 JSON {hash, by, at}。
+  // NULL = 沒核准或已停用;hash 與目前 manifest.scripts 對不上也不執行(ext/dx/scripts.ts)。
+  scriptsApproval: text("scripts_approval"),
 });
 
 // spec-extension-jobs.md:extension 貢獻的週期性 / 一次性任務(engine 見

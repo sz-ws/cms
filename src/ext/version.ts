@@ -785,4 +785,32 @@
 //   SettingTabs gains labelStyle and layout: "list", and ColorSwatchPicker's
 //   labels are translated.
 // Additive for extensions: pages only change if they opt into the tokens.
-export const CORE_API_VERSION = "1.47.0";
+// 1.48.0: declarative manifests can add scripts to public pages (manifest.scripts).
+// - Each entry is either `src` (https, loaded async, host written out in full) or
+//   `inline`, plus the `domains` it talks to. Up to four entries.
+//   `{{settings.<key>}}` fills in one of the extension's own non-secret settings:
+//   URL-encoded in src, a JSON literal (quotes, $, <, /, * escaped) in inline code.
+// - Scripts only run after an admin approves them. The approval is the SHA-256 of
+//   the scripts, stored in declarative_extensions.scripts_approval (migration 0020)
+//   with who and when. Changed content means a new review; the widget re-checks
+//   the hash on every render.
+// - POST /api/registry/install takes approveScripts; without a matching approval it
+//   answers 409 scripts_review_required (or scripts_changed) with the hash.
+//   GET /api/registry/manifest returns scripts: { hash, allowed, approved }.
+//   GET/POST /api/extensions/<id>/scripts shows, stops and re-approves them.
+// - A registry source only offers scripts once allowScripts is set on it
+//   (core.registrySources); installs from other sources get 403 scripts_not_allowed.
+// - Scripts render through filter:publicWidgets, so they never reach admin pages.
+// - Inline scripts can also take data, filled in on the server as JSON literals:
+//   {{content.<type>}} is published content (own types: {id, slug, data}; another
+//   extension's <extId>.<type>: {id, slug, title} only; inbox types never), and
+//   {{feed.<extId>.<name>}} is a code extension's Extension.publicFeeds entry.
+//   Each value is capped at 32,000 characters; a failed source is null. The
+//   approval covers the template, so new data does not need a new approval.
+// - Extension.publicFeeds: name → loader for public data. The shop's
+//   recentPurchases returns product name, other-item count and time only.
+// - <html lang> follows core.locale instead of a fixed "en".
+// - New sidebar icon token "folder".
+// Additive: manifests without scripts are unchanged; ones with scripts need
+// coreApi ^1.48.0.
+export const CORE_API_VERSION = "1.48.0";

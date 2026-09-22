@@ -13,6 +13,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { describeInstallError } from "./useInstallFlow";
+import { ScriptReviewDialog } from "./ScriptReviewDialog";
+import type { DeclarativeScript } from "@/ext/dx/scripts";
 
 // 開發模式的 manifest 撰寫迴圈。
 //
@@ -48,6 +50,24 @@ export function DevInstallDialog({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 1.48.0:manifest 帶 scripts 時 server 回 409 + hash,走同一個核准畫面再送一次。
+  const [review, setReview] = useState<{
+    id: string;
+    name: string;
+    manifest: unknown;
+    scripts: DeclarativeScript[];
+    hash: string;
+  } | null>(null);
+
+  async function post(id: string, manifest: unknown, approveScripts?: string) {
+    const res = await fetch("/api/registry/install", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, manifest, ...(approveScripts ? { approveScripts } : {}) }),
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return { ok: res.ok, body };
+  }
 
   async function install() {
     setError(null);
@@ -70,19 +90,48 @@ export function DevInstallDialog({
 
     setBusy(true);
     try {
-      const res = await fetch("/api/registry/install", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, manifest }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const { ok, body } = await post(id, manifest);
+      if (!ok) {
+        if (body.error === "scripts_review_required" && typeof body.hash === "string") {
+          const m = manifest as { name?: unknown; scripts?: DeclarativeScript[] };
+          setReview({
+            id,
+            name: displayName(m.name) ?? id,
+            manifest,
+            scripts: m.scripts ?? [],
+            hash: body.hash,
+          });
+          return;
+        }
         setError(describeInstallError(body));
         return;
       }
-      onOpenChange(false);
-      setText("");
-      router.refresh();
+      done();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Install failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function done() {
+    onOpenChange(false);
+    setText("");
+    router.refresh();
+  }
+
+  async function approve() {
+    if (!review) return;
+    setBusy(true);
+    try {
+      const { ok, body } = await post(review.id, review.manifest, review.hash);
+      if (ok) {
+        setReview(null);
+        done();
+      } else {
+        setError(describeInstallError(body));
+        setReview(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Install failed.");
     } finally {
@@ -129,8 +178,30 @@ export function DevInstallDialog({
           </Button>
         </div>
       </DialogContent>
+      {review && (
+        <ScriptReviewDialog
+          extensionId={review.id}
+          extensionName={review.name}
+          scripts={review.scripts}
+          confirmLabel="Approve and install"
+          submitting={busy}
+          error={null}
+          onCancel={() => setReview(null)}
+          onConfirm={() => void approve()}
+        />
+      )}
     </Dialog>
   );
+}
+
+/** manifest 的 name 可能是多語系物件({ "zh-Hant", en });先中文、再英文。 */
+function displayName(name: unknown): string | null {
+  if (typeof name === "string") return name;
+  if (name && typeof name === "object") {
+    const n = name as Record<string, unknown>;
+    for (const key of ["zh-Hant", "en"]) if (typeof n[key] === "string") return n[key] as string;
+  }
+  return null;
 }
 
 /** Dev-only 觸發鈕。正式 build 回傳 null(整段連同 Dialog 一起被 DCE 掉)。 */

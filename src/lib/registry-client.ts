@@ -55,6 +55,8 @@ export interface RegistryIndexResult {
 export interface RegistrySourceConfig {
   url: string;
   token?: string;
+  /** 1.48.0:這個來源的宣告式插件可以帶 manifest.scripts。預設不行。 */
+  allowScripts?: boolean;
 }
 
 /**
@@ -82,6 +84,15 @@ export async function getRegistrySources(): Promise<RegistrySourceConfig[]> {
   }
 
   return DEFAULT_SOURCES.map((url) => withToken({ url }));
+}
+
+/**
+ * 1.48.0:這個來源的插件能不能帶 scripts。只認明確設成 true 的來源 —— 管理員加一個
+ * 來源時預設是「只信任它的資料」,要讓它能在前台跑程式得另外打開。
+ */
+export async function sourceAllowsScripts(source: string): Promise<boolean> {
+  const sources = await getRegistrySources();
+  return sources.some((s) => s.url === source && s.allowScripts === true);
 }
 
 /** https-only 基本檢查（SSRF 防線第一層；第二層是「必須完全等於白名單值」）。 */

@@ -1,4 +1,5 @@
 import { shopMigrations } from "./schema";
+import { recentPurchases } from "./public-feeds";
 import { SHOP_CHECKOUT_SETTINGS } from "./checkout-options";
 import { defineExtension } from "@/ext/types";
 import type { ApiCtx } from "@/ext/types";
@@ -65,14 +66,16 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.3.1",
+  version: "0.4.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
   // 實際用到的那一版。
   //
   // ^1.40.0:訂單頁宣告搜尋(頂欄搜尋框、⌘K 找訂單)。
-  coreApi: "^1.40.0",
+  //
+  // ^1.48.0:publicFeeds(給宣告式插件 script 的公開資料)。
+  coreApi: "^1.48.0",
   description:
     "購物車、結帳與訂單管理:讀取 catalog 商品、透過 payment capability 收款(刷卡/匯款)、匯款人工對帳。",
   icon: "shopping-cart",
@@ -206,6 +209,9 @@ export const shop = defineExtension({
   // 描述、核可路徑全在 commerce-kit/agent-tools.ts),這裡照舊只給表名與 settings key。
   // 裝了這個 extension,後台的 AI 面板就會多出 shop.orders.* 四個 tool —— core 一行
   // 都不必改,兩個 write 一律走確認卡(kind:"write",spec §1.2)。
+  // 1.48.0:最近成交(只有商品名、件數、時間),宣告式插件以
+  // {{feed.shop.recentPurchases}} 取用,見 ./public-feeds.ts。
+  publicFeeds: { recentPurchases },
   agentTools: createCommerceAgentTools({
     extId: "shop",
     table: ORDERS_TABLE,

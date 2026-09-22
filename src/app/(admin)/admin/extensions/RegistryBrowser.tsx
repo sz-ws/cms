@@ -39,6 +39,7 @@ import { missingCapabilities } from "@/ext/features";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useInstallFlow, type InstallState } from "./useInstallFlow";
 import { InstallPromptsDialog } from "./InstallPromptsDialog";
+import { ScriptReviewDialog } from "./ScriptReviewDialog";
 
 // Marketplace browse — App Store vibe: hero featured cards, category pills,
 // search, deployment badges, Paper & Ink visual language.
@@ -340,8 +341,17 @@ function FeaturedCard({
   onInstalled: (id: string) => void;
 }) {
   const t = useT();
-  const { state, error, prompts, install, submitPrompts, closePrompts } =
-    useInstallFlow(entry, onInstalled);
+  const {
+    state,
+    error,
+    prompts,
+    install,
+    submitPrompts,
+    closePrompts,
+    review,
+    confirmReview,
+    closeReview,
+  } = useInstallFlow(entry, onInstalled);
   const missing = entryMissingCapabilities(entry);
   const bannerUrl = mediaUrl(entry, entry.banner ?? entry.screenshots?.[0]);
   const [tintA, tintB] = artTint(entry.id);
@@ -478,6 +488,20 @@ function FeaturedCard({
           />
         </div>
       )}
+      {review && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ScriptReviewDialog
+            extensionId={entry.id}
+            extensionName={entry.name}
+            scripts={review.scripts}
+            confirmLabel={t("scripts.approveInstall")}
+            submitting={state === "installing"}
+            error={error}
+            onCancel={closeReview}
+            onConfirm={() => void confirmReview()}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -603,8 +627,17 @@ function StoreCard({
   onInstalled: (id: string) => void;
 }) {
   const t = useT();
-  const { state, error, prompts, install, submitPrompts, closePrompts } =
-    useInstallFlow(entry, onInstalled);
+  const {
+    state,
+    error,
+    prompts,
+    install,
+    submitPrompts,
+    closePrompts,
+    review,
+    confirmReview,
+    closeReview,
+  } = useInstallFlow(entry, onInstalled);
   const missing = entryMissingCapabilities(entry);
 
   const isUpdate =
@@ -704,6 +737,20 @@ function StoreCard({
             error={error}
             onCancel={closePrompts}
             onSubmit={(values) => void submitPrompts(values)}
+          />
+        </div>
+      )}
+      {review && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ScriptReviewDialog
+            extensionId={entry.id}
+            extensionName={entry.name}
+            scripts={review.scripts}
+            confirmLabel={t("scripts.approveInstall")}
+            submitting={state === "installing"}
+            error={error}
+            onCancel={closeReview}
+            onConfirm={() => void confirmReview()}
           />
         </div>
       )}
@@ -984,8 +1031,17 @@ function ExtensionDetail({
   onInstalled: (id: string) => void;
 }) {
   const t = useT();
-  const { state, error, prompts, install, submitPrompts, closePrompts } =
-    useInstallFlow(entry, onInstalled);
+  const {
+    state,
+    error,
+    prompts,
+    install,
+    submitPrompts,
+    closePrompts,
+    review,
+    confirmReview,
+    closeReview,
+  } = useInstallFlow(entry, onInstalled);
   const missing = entryMissingCapabilities(entry);
   const unmetServices = entryUnmetServices(entry, services);
   const bannerUrl = mediaUrl(entry, entry.banner);
@@ -1121,6 +1177,19 @@ function ExtensionDetail({
           error={error}
           onCancel={closePrompts}
           onSubmit={(values) => void submitPrompts(values)}
+        />
+      )}
+
+      {review && (
+        <ScriptReviewDialog
+          extensionId={entry.id}
+          extensionName={entry.name}
+          scripts={review.scripts}
+          confirmLabel={t("scripts.approveInstall")}
+          submitting={state === "installing"}
+          error={error}
+          onCancel={closeReview}
+          onConfirm={() => void confirmReview()}
         />
       )}
 

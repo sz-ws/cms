@@ -6,7 +6,8 @@ import {
 } from "@/lib/schema";
 import { getExtRuntime } from "@/ext/loader";
 import { pendingCodeUpgrades } from "@/ext/manager";
-import { parseManifest } from "@/ext/dx/manifest";
+import { parseManifest, type DeclarativeManifest } from "@/ext/dx/manifest";
+import { hashScripts, parseScriptsApproval } from "@/ext/dx/scripts";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import {
@@ -53,20 +54,23 @@ export default async function ExtensionsPage() {
 
   // declarative extensions:name/description 取自 manifest(驗證後)。
   const dxDbRows = await db().select().from(dxTable);
-  const dxRows: ExtensionRow[] = dxDbRows.map((r) => {
-    const parsed = parseManifest(safeJson(r.manifest));
-    const dm = parsed.manifest;
-    return {
-      id: r.id,
-      name: resolveLocalizedString(dm?.name, locale) ?? r.id,
-      version: r.version,
-      description: resolveLocalizedString(dm?.description, locale),
-      enabled: r.enabled === 1,
-      installed: true,
-      kind: "declarative" as const,
-      issue: r.enabled === 1 ? (rt.unavailableById.get(r.id) ?? null) : null,
-    };
-  });
+  const dxRows: ExtensionRow[] = await Promise.all(
+    dxDbRows.map(async (r) => {
+      const parsed = parseManifest(safeJson(r.manifest));
+      const dm = parsed.manifest;
+      return {
+        id: r.id,
+        name: resolveLocalizedString(dm?.name, locale) ?? r.id,
+        version: r.version,
+        description: resolveLocalizedString(dm?.description, locale),
+        enabled: r.enabled === 1,
+        installed: true,
+        kind: "declarative" as const,
+        issue: r.enabled === 1 ? (rt.unavailableById.get(r.id) ?? null) : null,
+        scripts: await scriptsState(dm, r.scriptsApproval),
+      };
+    }),
+  );
 
   const rows = [...codeRows, ...dxRows];
 
@@ -84,6 +88,17 @@ export default async function ExtensionsPage() {
       <ExtensionsManager extensions={rows} />
     </div>
   );
+}
+
+/** 1.48.0:核准紀錄與目前內容對得上才算執行中(與 scripts-widget 同一個判斷)。 */
+async function scriptsState(
+  manifest: DeclarativeManifest | undefined,
+  rawApproval: string | null,
+): Promise<ExtensionRow["scripts"]> {
+  if (!manifest?.scripts) return null;
+  const approval = parseScriptsApproval(rawApproval);
+  if (!approval) return "stopped";
+  return approval.hash === (await hashScripts(manifest.scripts)) ? "running" : "stopped";
 }
 
 function safeJson(s: string): unknown {

@@ -38,6 +38,8 @@ export interface ExtensionRow {
   issue: ExtensionRuntimeIssue | null;
   /** 1.45.0:已部署新版、但還沒套用(migration 沒跑或資料庫記的是舊版號)。 */
   upgrade?: { from: string; to: string; migrations: string[] } | null;
+  /** 1.48.0:宣告式插件帶前台 script 時的狀態;沒有 script = 不給。 */
+  scripts?: "running" | "stopped" | null;
 }
 
 class EnableStepError extends Error {
