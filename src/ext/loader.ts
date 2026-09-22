@@ -12,7 +12,13 @@ import { satisfies } from "./semver";
 import { interpretManifest } from "./dx/interpret";
 import { runDeclarativeMigrations } from "./dx/declarative-migrate";
 import { missingCapabilities } from "./features";
+import {
+  builtinSignature,
+  builtinWanted,
+  reconcileBuiltinDeclaratives,
+} from "./builtin-declaratives";
 import { getRequestStamps } from "@/lib/request-stamps";
+import { getPlainSetting } from "@/lib/settings";
 import type { Extension, HookName } from "./types";
 
 // manifest.migrations 兜底已成功套用的 extId(install route 是主要套用點;這裡
@@ -43,8 +49,28 @@ let runtimeMemo:
       codeEnabled: Extension[];
       dxEnabled: Extension[];
       unavailableById: ReadonlyMap<string, ExtensionRuntimeIssue>;
+      /** 1.49.0:建 memo 時內建宣告式插件的應有狀態(builtinSignature)。 */
+      builtinSig: string;
     }
   | null = null;
+
+/**
+ * 1.49.0:內建宣告式插件的應有狀態。讀設定失敗回 null —— 讀不到就不對齊、不動資料庫
+ * (否則一次暫態錯誤就可能把管理員關掉的東西重新打開)。
+ */
+async function wantedBuiltins(
+  codeEnabled: readonly Extension[],
+): Promise<Map<string, boolean> | null> {
+  try {
+    return await builtinWanted({
+      codeEnabled: new Set(codeEnabled.map((ext) => ext.id)),
+      setting: (key) => getPlainSetting(key),
+    });
+  } catch (e) {
+    console.error("[loader] reading built-in extension settings failed", e);
+    return null;
+  }
+}
 
 /**
  * 主動失效 memo(belt-and-braces:同 isolate 的 mutation 後立即清,讓下個 request
@@ -113,7 +139,18 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
   let dxEnabled: Extension[];
   let unavailableById: ReadonlyMap<string, ExtensionRuntimeIssue>;
 
-  if (stamp !== null && runtimeMemo !== null && runtimeMemo.stamp === stamp) {
+  // 內建插件的應有狀態跟著設定(不在 extension stamp 裡):設定改了、指紋對不上,就當
+  // memo 失效,走完整載入去對齊。讀不到設定(null)不算改變。
+  let memoUsable =
+    stamp !== null && runtimeMemo !== null && runtimeMemo.stamp === stamp;
+  if (memoUsable && runtimeMemo !== null) {
+    const wanted = await wantedBuiltins(runtimeMemo.codeEnabled);
+    if (wanted !== null && builtinSignature(wanted) !== runtimeMemo.builtinSig) {
+      memoUsable = false;
+    }
+  }
+
+  if (memoUsable && runtimeMemo !== null) {
     // 命中:重用解讀過的陣列,省下兩個 SELECT + 每列 interpretManifest。
     codeEnabled = runtimeMemo.codeEnabled;
     dxEnabled = runtimeMemo.dxEnabled;
@@ -139,6 +176,19 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
         continue;
       }
       codeEnabled.push(ext);
+    }
+
+    // --- 1.49.0:內建宣告式插件(commerce-kit 的商品目錄)先對齊,下面讀到的就是對的列 ---
+    // 有寫入就不寫 memo:這次 request 開頭算的 stamp 已經過時,下一個 request 會重算。
+    const wanted = await wantedBuiltins(codeEnabled);
+    let builtinsSettled = wanted !== null;
+    if (wanted !== null) {
+      try {
+        if (await reconcileBuiltinDeclaratives(wanted)) builtinsSettled = false;
+      } catch (e) {
+        console.error("[loader] reconciling built-in extensions failed", e);
+        builtinsSettled = false;
+      }
     }
 
     // --- declarative extensions(core-v2 §3.3:runtime list = code ∪ interpreted)---
@@ -229,8 +279,19 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
 
     // migration 失敗不能 memo；否則同一個未變的 stamp 會讓下一 request 永遠
     // 命中「已排除」的快取而停止重試。其餘健康／不相容狀態仍可照常 memo。
-    if (stamp !== null && !hasRetryableMigrationFailure) {
-      runtimeMemo = { stamp, codeEnabled, dxEnabled, unavailableById };
+    if (
+      stamp !== null &&
+      !hasRetryableMigrationFailure &&
+      builtinsSettled &&
+      wanted !== null
+    ) {
+      runtimeMemo = {
+        stamp,
+        codeEnabled,
+        dxEnabled,
+        unavailableById,
+        builtinSig: builtinSignature(wanted),
+      };
     }
   }
 

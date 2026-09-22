@@ -535,6 +535,19 @@ export async function getSetting<T = unknown>(
 }
 
 /**
+ * 1.49.0:讀單一**非 secret** setting,不經過 secretKeySetAsync。getSetting 要判斷
+ * secret 會呼叫 getExtRuntime,loader 自己在建 runtime 時就不能用它(會等自己)。
+ * secret 欄位絕不可用這個讀 —— 拿到的是密文。
+ */
+export async function getPlainSetting<T = unknown>(
+  key: string,
+  fallback?: T,
+): Promise<T> {
+  const raw = (await readAll()).get(key);
+  return raw === undefined ? (fallback as T) : (JSON.parse(raw) as T);
+}
+
+/**
  * upsert 多筆 + doAction("settings:saved", keys)(05 §3)。
  * secret key(由 field 定義判定)寫入前 AES-GCM 加密;空字串視為「不變更」由呼叫端過濾。
  */

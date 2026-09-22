@@ -6,7 +6,9 @@ admin 頁組裝、`payment:succeeded` 綁定。設計說明見 `docs/spec-commer
 
 ## 需要的東西
 
-- **商品**:declarative `catalog` extension(`catalog.product`,含 `name` + `price`)。
+- **商品**:commerce-kit 內建的商品目錄(`catalog.product`,含 `name` + `price`;分類
+  `catalog.category`)。core 1.49.0 起商店啟用就有,不用另外安裝;設定 `catalog` 關掉會
+  收起商品目錄,資料保留。
 - **收款**(payment capability,至少一種):
   - 匯款:`extensions/banktransfer`(manual provider,人工對帳)。
   - 刷卡:任一 gateway provider(如 `extensions/newebpay`),
@@ -33,6 +35,7 @@ rebuild + deploy 後在 `/admin/extensions` 啟用,到設定頁填銀行帳戶�
 
 | key | 類型 | 預設 | 作用 | 生效範圍 |
 |---|---|---|---|---|
+| `catalog` | boolean | `true` | 商品目錄(後台商品、分類頁與前台 `/products`)。`false` = 收起來,商品與分類保留;定義在 `commerce-kit/catalog.ts`。 | 兩種模式 |
 | `cardProvider` | text | `""` | 刷卡的 gateway provider id(如 `newebpay`)。空 = 結帳頁不出現刷卡。 | 兩種模式 |
 | `transferProvider` | text | `banktransfer` | 匯款的 manual provider id。空 = 結帳頁不出現匯款。 | 兩種模式 |
 | `shippingConfig` | (JSON) | `""` | 由 `/admin/ext/shop/shipping` 頁維護,不在設定頁手填。空 = 不啟用運費。 | 兩種模式 |
@@ -214,7 +217,7 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 
 ## 商品頁掛加入購物車鈕
 
-`AddToCartButton` 是 client 元件,配 catalog 的 progressive 強化層使用
+`AddToCartButton` 是 client 元件,給站台自己的商品頁使用
 (照 `extensions/gallery-enhance/` 的 override 模式,對
 `public:catalog.product:detail` 註冊自訂 detail,內嵌
 `<AddToCartButton productId={entry.id} name={…} unitPrice={…} />`)。
@@ -243,6 +246,9 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 
 ## 版本
 
+- **0.5.0**:需要 core 1.49.0。商品目錄併進 commerce-kit:商店啟用就有商品與分類
+  (`catalog.product`、`catalog.category`),不再從 registry 安裝。新設定 `catalog` 可以關掉它。
+  已從 registry 裝過商品目錄的站,第一次載入時由底座接手,商品、分類與設定都不動。
 - **0.4.0**:需要 core 1.48.0。提供公開 feed `recentPurchases`(最近 20 筆已付款、已出貨、
   已完成的訂單,每筆只有第一個品項名稱、其他品項數、下單時間),宣告式插件的 script 以
   `{{feed.shop.recentPurchases}}` 取用,例如購買通知浮層。姓名、聯絡方式、地址、金額都不會出去。

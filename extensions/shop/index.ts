@@ -15,6 +15,7 @@ import {
   createTransferReportHandler,
   createTransferVerifyHandler,
   markOrderPaid,
+  CATALOG_SETTINGS,
   ORDER_SEARCH_FIELDS,
   parseShippingConfig,
 } from "@/ext/commerce-kit";
@@ -66,7 +67,7 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.4.0",
+  version: "0.5.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -75,13 +76,17 @@ export const shop = defineExtension({
   // ^1.40.0:訂單頁宣告搜尋(頂欄搜尋框、⌘K 找訂單)。
   //
   // ^1.48.0:publicFeeds(給宣告式插件 script 的公開資料)。
-  coreApi: "^1.48.0",
+  //
+  // ^1.49.0:商品目錄併進 commerce-kit,開關(ext.shop.catalog)在這裡的設定。
+  coreApi: "^1.49.0",
   description:
-    "購物車、結帳與訂單管理:讀取 catalog 商品、透過 payment capability 收款(刷卡/匯款)、匯款人工對帳。",
+    "商品目錄、購物車、結帳與訂單管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",
   // 1.39.0:側欄「商務」一區;付款方式(banktransfer、newebpay)掛在這個資料夾底下。
   menu: { section: "commerce", order: 20 },
   settings: [
+    // 0.5.0:商品目錄開關。定義在 commerce-kit(商店啟用且這個沒關,商品目錄才啟用)。
+    ...CATALOG_SETTINGS,
     {
       key: "cardProvider",
       label: "信用卡付款",

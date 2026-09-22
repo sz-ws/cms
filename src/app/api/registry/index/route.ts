@@ -9,6 +9,7 @@ import { satisfies } from "@/ext/semver";
 import { CORE_API_VERSION } from "@/ext/version";
 import { availableServices } from "@/ext/service-requirements";
 import { getExtRuntime } from "@/ext/loader";
+import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
 
 // core-v2 §3.4:GET /api/registry/index。admin only。
 // 對每個 configured source 抓 registry.json,merge entries,並附上
@@ -29,7 +30,8 @@ export async function GET(): Promise<Response> {
   const codeVersionById = new Map(codeRows.map((r) => [r.id, r.version]));
   const dxVersionById = new Map(dxRows.map((r) => [r.id, r.version]));
 
-  const items = entries.map((entry) => {
+  // 1.49.0:底座自帶的 id(商品目錄)就算某個來源還列著,也不在商店出現。
+  const items = entries.filter((entry) => !isBuiltinDeclarative(entry.id)).map((entry) => {
     const installedVersion =
       entry.kind === "code"
         ? codeVersionById.get(entry.id)

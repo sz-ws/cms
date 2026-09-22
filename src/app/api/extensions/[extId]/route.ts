@@ -1,4 +1,8 @@
 import { ExtensionLifecycleConflict } from "@/ext/code-lifecycle";
+import { eq } from "drizzle-orm";
+import { isBaseManaged, isBuiltinDeclarative } from "@/ext/builtin-declaratives";
+import { db } from "@/lib/db";
+import { declarativeExtensions as dxTable } from "@/lib/schema";
 import { z } from "zod";
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
@@ -74,6 +78,18 @@ export async function PATCH(
       return Response.json({ error: "invalid_input" }, { status: 400 });
     }
     if (parsed.kind === "declarative") {
+      // 1.49.0:底座管的(商品目錄)由商店設定開關,不能在這裡啟停或移除。從 registry
+      // 裝、底座還沒接手的舊列(站上沒有商店)照舊由管理員自己管。
+      if (isBuiltinDeclarative(extId)) {
+        const [row] = await db()
+          .select({ source: dxTable.source })
+          .from(dxTable)
+          .where(eq(dxTable.id, extId))
+          .limit(1);
+        if (row && isBaseManaged(extId, row.source)) {
+          return Response.json({ error: "builtin_extension" }, { status: 409 });
+        }
+      }
       if (parsed.action === "enable") await enableDeclarative(extId);
       else if (parsed.action === "disable") await disableDeclarative(extId);
       else await uninstallDeclarative(extId, parsed.purgeContent === true);

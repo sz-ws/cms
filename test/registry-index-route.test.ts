@@ -196,4 +196,17 @@ describe("GET /api/registry/index", () => {
     expect(Array.isArray(body.services)).toBe(true);
     expect(Array.isArray(body.installedCode)).toBe(true);
   });
+
+  // 1.49.0:某個來源還列著 catalog(舊索引、別人的 registry)也不在商店出現。
+  it("leaves the built-in catalog out of the store", async () => {
+    authState.user = ADMIN;
+    registryState.entries = [
+      { id: "catalog", kind: "declarative", name: "Catalog", version: "0.2.0", coreApi: "^1.25.0", source: "https://example.test" },
+      { id: "blog", kind: "declarative", name: "Blog", version: "1.2.5", coreApi: "^1.0.0", source: "https://example.test" },
+    ];
+    rtState.all = [];
+
+    const body = (await (await GET()).json()) as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["blog"]);
+  });
 });

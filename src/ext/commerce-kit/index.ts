@@ -67,3 +67,5 @@ export {
   createPromoDeleteHandler,
 } from "./promo";
 export type { Promo, PromoType, PromoQuote, PromoRejectReason } from "./promo";
+// 1.49.0:商品目錄(內建宣告式 manifest,開關掛在商店設定)。
+export { CATALOG_SETTINGS } from "./catalog";

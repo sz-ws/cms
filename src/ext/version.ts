@@ -813,4 +813,18 @@
 // - New sidebar icon token "folder".
 // Additive: manifests without scripts are unchanged; ones with scripts need
 // coreApi ^1.48.0.
-export const CORE_API_VERSION = "1.48.0";
+// 1.49.0: the product catalog is part of commerce-kit instead of a registry plugin.
+// - src/ext/builtin-declaratives.ts: declarative manifests the base ships itself. The
+//   row still lives in declarative_extensions (same id, same content types, so every
+//   reader is unchanged); the loader reconciles it on each full load and whenever the
+//   switch changes: created or replaced with the base's manifest when wanted,
+//   disabled (row and content kept) when not.
+// - catalog (catalog.product, catalog.category) is wanted while the shop is enabled
+//   and its new setting ext.shop.catalog is not false. Its version is CORE_API_VERSION.
+// - Built-in ids are refused by POST /api/registry/install (409 builtin_extension)
+//   and by enable/disable/uninstall on /api/extensions/<id>; the store index and the
+//   extensions page leave them out.
+// - lib/settings getPlainSetting(): reads a non-secret setting without building the
+//   extension runtime (the loader uses it).
+// Additive for extensions reading catalog.product; shop 0.5.0 needs coreApi ^1.49.0.
+export const CORE_API_VERSION = "1.49.0";

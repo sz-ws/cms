@@ -14,6 +14,7 @@ import {
   ExtensionsManager,
   type ExtensionRow,
 } from "./ExtensionsManager";
+import { isBaseManaged } from "@/ext/builtin-declaratives";
 
 export const dynamic = "force-dynamic";
 
@@ -53,9 +54,10 @@ export default async function ExtensionsPage() {
   }));
 
   // declarative extensions:name/description 取自 manifest(驗證後)。
+  // 1.49.0:底座管的(商品目錄)不列 —— 它沒有版本、不能在這裡啟停,開關在商店設定。
   const dxDbRows = await db().select().from(dxTable);
   const dxRows: ExtensionRow[] = await Promise.all(
-    dxDbRows.map(async (r) => {
+    dxDbRows.filter((r) => !isBaseManaged(r.id, r.source)).map(async (r) => {
       const parsed = parseManifest(safeJson(r.manifest));
       const dm = parsed.manifest;
       return {

@@ -45,6 +45,7 @@ import {
 } from "@/lib/schema";
 import { desc, eq, like } from "drizzle-orm";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "@/ext/loader";
+import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
 import { revalidateExt } from "@/ext/dx/cache-invalidate";
 import {
   prepareExtensionSettingValues,
@@ -142,6 +143,11 @@ export async function POST(req: Request): Promise<Response> {
       }
       throw e;
     }
+  }
+
+  // 1.49.0:底座自帶的(commerce-kit 的商品目錄)由底座管理,任何來源都不能覆寫。
+  if (isBuiltinDeclarative(id)) {
+    return Response.json({ error: "builtin_extension" }, { status: 409 });
   }
 
   // id collision with an existing code extension → refuse(declarative 永不覆寫 code)。

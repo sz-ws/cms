@@ -178,6 +178,18 @@ describe("POST /api/registry/install — inline manifest (dev only)", () => {
     const res = await post({ id: "recipes", manifest: MANIFEST });
     expect(res.status).toBe(409);
   });
+
+  // 1.49.0:商品目錄是 commerce-kit 自帶的,任何來源都不能拿同一個 id 蓋掉它。
+  it("refuses the built-in catalog id", async () => {
+    const res = await post({ id: "catalog", manifest: { ...MANIFEST, id: "catalog" } });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "builtin_extension" });
+    const row = await d1()
+      .prepare("SELECT id FROM declarative_extensions WHERE id = ?")
+      .bind("catalog")
+      .first();
+    expect(row).toBeNull();
+  });
 });
 
 // 1.48.0:manifest 帶 scripts 時,安裝要帶著核准畫面看過的 hash。
