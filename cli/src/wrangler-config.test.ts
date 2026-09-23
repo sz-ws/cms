@@ -156,7 +156,7 @@ describe("真實的 wrangler.jsonc", () => {
   // 但「設定檔變成 CLI 解析不了的形狀」一定會被抓到。
   //
   // 名稱一律不寫死:`cms setup --site-slug <slug>` 會把 worker 與資料庫改成
-  // slug 衍生的名字(cms → cms-jiangji),寫死的話每個站台 clone 的 CI 都會紅。
+  // slug 衍生的名字(cms → cms-<站台>),寫死的話每個站台 clone 的 CI 都會紅。
   it("解析得動,且 binding 與 migrations_dir 的分佈符合預期", async () => {
     const real = await readFile(
       path.join(process.cwd(), "wrangler.jsonc"),
