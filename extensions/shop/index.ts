@@ -14,15 +14,19 @@ import {
   createShippingConfigHandler,
   createTransferReportHandler,
   createTransferVerifyHandler,
+  createReturnsApiRoutes,
   markOrderPaid,
   CATALOG_SETTINGS,
   ORDER_SEARCH_FIELDS,
+  RETURN_STATUS_SET,
   parseShippingConfig,
 } from "@/ext/commerce-kit";
 import { ShopShippingPage } from "./admin-shipping";
 import { ShopPromosPage } from "./admin-promos";
 import { ShopOrdersPage } from "./admin-orders";
 import { ShopVerifyPage } from "./admin-verify";
+import { ShopReturnsPage } from "./admin-returns";
+import { SHOP_RETURNS, SHOP_RETURNS_SEARCH } from "./returns-config";
 import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 
 // 商店 extension —— commerce-kit 的薄接線層(引擎全部來自 @/ext/commerce-kit,
@@ -44,6 +48,11 @@ import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 // handler 會把整筆結帳交給它的 `commerce:orders` provider(原子庫存、會員查單、
 // 對帳、推薦佣金)。shop 這邊不做判斷、沒有開關 —— 結帳頁只依插件啟用狀態切換
 // 表單(需登入、電話與地址必填、推薦碼欄位)。三個結帳頁開關在 checkout-options.ts。
+//
+// 退貨(0.6.0):已出貨、已完成的訂單可以建立退貨(店家代客人建立)→ 同意/拒絕 →
+// 收到退貨(裝了庫存插件時可放回庫存,和狀態同一個 batch)→ 登記退款 → 結案。引擎在
+// commerce-kit/returns-engine.ts;退款只記錄,錢要店家自己在金流或銀行退。退貨是訂單旁的
+// 獨立紀錄,不改訂單狀態,所以受管訂單(shop-operations)也適用。
 //
 // 不預裝(newebpay 前例):要用的站自行加進 extensions/registry.ts。
 
@@ -67,7 +76,7 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.5.0",
+  version: "0.6.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -78,9 +87,11 @@ export const shop = defineExtension({
   // ^1.48.0:publicFeeds(給宣告式插件 script 的公開資料)。
   //
   // ^1.49.0:商品目錄併進 commerce-kit,開關(ext.shop.catalog)在這裡的設定。
-  coreApi: "^1.49.0",
+  //
+  // ^1.50.0:退貨(commerce-kit 的退貨引擎、API、後台頁與 returns 狀態組)。
+  coreApi: "^1.50.0",
   description:
-    "商品目錄、購物車、結帳與訂單管理：刷卡或匯款收款，匯款由後台人工對帳。",
+    "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",
   // 1.39.0:側欄「商務」一區;付款方式(banktransfer、newebpay)掛在這個資料夾底下。
   menu: { section: "commerce", order: 20 },
@@ -119,6 +130,20 @@ export const shop = defineExtension({
       id: "0002_drop_promos",
       sql: `DROP TABLE IF EXISTS ext_shop_promos`,
     },
+    {
+      // 退貨跟著訂單走:訂單表都刪了,退貨與它的交易收據留著也對不回任何訂單。
+      // 放回庫存的流水帳在庫存插件的表裡,不受影響。
+      id: "0004_drop_returns",
+      sql: `
+        DROP INDEX IF EXISTS idx_ext_shop_return_events_return;
+        DROP INDEX IF EXISTS idx_ext_shop_return_requests_order;
+        DROP INDEX IF EXISTS idx_ext_shop_return_requests_status;
+        DROP INDEX IF EXISTS idx_ext_shop_return_requests_created;
+        DROP TABLE IF EXISTS ext_shop_return_events;
+        DROP TABLE IF EXISTS ext_shop_return_requests;
+        DROP TABLE IF EXISTS ext_shop_return_operations
+      `,
+    },
   ],
   adminPages: [
     {
@@ -140,6 +165,13 @@ export const shop = defineExtension({
       },
     },
     { slug: "verify", title: "對帳佇列", component: ShopVerifyPage },
+    {
+      // 0.6.0:退貨管理。頂欄搜尋與 ⌘K 的宣告在 returns-config.ts。
+      slug: "returns",
+      title: { en: "Returns", "zh-Hant": "退貨管理" },
+      component: ShopReturnsPage,
+      search: SHOP_RETURNS_SEARCH,
+    },
     { slug: "shipping", title: "運費", component: ShopShippingPage },
     { slug: "promos", title: "優惠碼", component: ShopPromosPage },
   ],
@@ -196,7 +228,11 @@ export const shop = defineExtension({
       path: "orders/:orderNo/status",
       handler: createOrderStatusHandler({ table: ORDERS_TABLE }),
     },
+    // 0.6.0:退貨(returns/…,只給 admin;路由表在 commerce-kit/returns-api.ts)。
+    ...createReturnsApiRoutes(SHOP_RETURNS),
   ],
+  // 0.6.0:退貨狀態組 shop:returns(站台可用 filter:statusSets 改名)。
+  statusSets: [RETURN_STATUS_SET],
   publicRoutes: [
     {
       // /shop/cart

@@ -2,6 +2,7 @@ import { createElement, type ComponentType, type SVGProps } from "react";
 import {
   AdjustmentsHorizontalIcon,
   ArchiveBoxIcon,
+  ArrowUturnLeftIcon,
   BanknotesIcon,
   BugAntIcon,
   BuildingLibraryIcon,
@@ -62,6 +63,7 @@ import {
   Store,
   Ticket,
   Truck,
+  Undo2,
   Users,
   Wallet,
 } from "lucide-react";
@@ -127,6 +129,8 @@ export const SUPPORTED_ADMIN_ICON_TOKENS = [
   "landmark",
   "megaphone",
   "receipt",
+  // 1.50.0:退貨(往回的箭頭)。
+  "return",
   "shopping-bag",
   "shopping-cart",
   "tag",
@@ -176,6 +180,7 @@ const SOLID: Record<Glyph, AdminIcon> = {
   landmark: BuildingLibraryIcon,
   megaphone: MegaphoneIcon,
   receipt: ReceiptPercentIcon,
+  return: ArrowUturnLeftIcon,
   "shopping-bag": ShoppingBagIcon,
   "shopping-cart": ShoppingCartIcon,
   tag: TagIcon,
@@ -211,6 +216,7 @@ const OUTLINE: Record<Glyph, AdminIcon> = {
   landmark: Landmark,
   megaphone: Megaphone,
   receipt: HandCoins,
+  return: Undo2,
   "shopping-bag": ShoppingBag,
   "shopping-cart": ShoppingCart,
   tag: Ticket,

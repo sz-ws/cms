@@ -827,4 +827,56 @@
 // - lib/settings getPlainSetting(): reads a non-secret setting without building the
 //   extension runtime (the loader uses it).
 // Additive for extensions reading catalog.product; shop 0.5.0 needs coreApi ^1.49.0.
-export const CORE_API_VERSION = "1.49.0";
+// 1.50.0: returns in commerce-kit (退貨管理).
+// Returns (commerce-kit):
+// - returns.ts: the return lifecycle requested → approved / rejected / cancelled;
+//   approved → received / refunded / cancelled; received → refunded / completed;
+//   refunded → completed (RETURN_TRANSITIONS, no cycles, so "<return_no>:<status>"
+//   is each step's idempotency key). RETURN_STATUS_SET is the status set
+//   "<extId>:returns"; reasons and refund methods are fixed codes with labels in the
+//   dictionaries (returns.reason.*, returns.method.*).
+// - returns-engine.ts: createReturnsEngine(db, { ordersTable, prefix }, stock?). A
+//   return belongs to a shipped or completed order and snapshots its lines; it never
+//   changes the order's own state machine, so managed orders need no new path. Every
+//   write is one ledger-kit transaction: the row, its history event, and on "received"
+//   the restock, with in-batch guards for the status, returnable quantities (open
+//   returns per product never exceed what was ordered) and the refund total (never
+//   above the order total). fullyReturned(orderNos) names the orders whose every item
+//   is already in a return that is not rejected or cancelled (the same rule as the
+//   returnable quantities), so an order screen can drop "start a return"; create()
+//   rejects such an order with qty_exceeds.
+// - Restock goes through the "inventory" capability, provider id "inventory", shaped
+//   as RestockProvider { prepareRestock(sku, qty), getBalance(sku),
+//   getReservation(sku, reservationId) } with SKU = product id. Only what the order
+//   actually took out of stock goes back: the order's reservation
+//   orderStockReservationId(orderNo, productId) = "<orderNo>:<productId>" must be
+//   captured (stock_not_taken otherwise), so orders that never touched stock (legacy
+//   checkout, placed before inventory) cannot create phantom stock. Without the
+//   provider, receiving a return only records; an item with no stock account cannot
+//   be restocked (stock_untracked) rather than silently opening one.
+// - Refunds are recorded only (amount, method, note). Nothing is sent to a gateway.
+//   suggestedRefund(order, items) is the default amount: the items' price scaled by
+//   the order discount, (subtotal − discount) / subtotal, shipping excluded.
+//   refundCap(order, items) is the ceiling for both the requested amount (create) and
+//   the recorded refund (transition): the returned items' unit price × qty plus the
+//   order's shipping, never above total − refunded. orderShipping(order) = total −
+//   (subtotal − discount), the checkout formula read backwards. Items not being
+//   returned don't count, so returning one NT$150 item from an order with NT$150
+//   shipping caps at NT$300, not the order total (amount_exceeds); the suggested
+//   amount stays the items' paid price. The return detail payload's order carries
+//   subtotal and discount so the admin sheet can show the same cap.
+//   orderReturnBlock(status) tells a not-yet-shipped order (order_not_returnable) from
+//   a cancelled or refunded one (order_closed).
+// - returns-api.ts: createReturnsApiRoutes(config) adds GET returns/order/:orderNo,
+//   GET returns/:returnNo, POST returns, POST returns/:returnNo/status. Admin only
+//   (RETURNS_ROLE), stricter than the dispatcher's editor default; errors are
+//   { ok: false, error: <ReturnErrorCode> }, 503 not_ready before the tables exist.
+// - UI: returns-admin.tsx (ReturnsAdminPage, server) renders ReturnsWorkspace (list,
+//   status pills counted under the current search, create sheet, detail sheet with
+//   next step and history; ?open=,
+//   ?order=). StartReturnLink and CommerceOrdersTable's returnsPage prop open
+//   "new return" from an order.
+// - New sidebar icon token "return".
+// Additive. shop 0.6.0 declares it (migration 0004_returns, admin page returns,
+// status set shop:returns) and needs coreApi ^1.50.0.
+export const CORE_API_VERSION = "1.50.0";

@@ -178,7 +178,8 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 - core 不讓你在 shop-operations 啟用中停用 shop(`requiresExtensions` 反查,
   `src/ext/code-lifecycle.ts`):會得到「尚有啟用中的插件依賴此插件」。順序永遠是
   先停用 shop-operations(它自己還有 `canDisable` 守門),再停用 shop。
-- shop 的 `uninstall` 只丟 `ext_shop_orders`、`ext_shop_promos`;受管標記表與事件表
+- shop 的 `uninstall` 只丟 `ext_shop_orders`、`ext_shop_promos` 與三張退貨表
+  (`ext_shop_return_*`;放回庫存的流水帳在庫存插件的表裡,不受影響);受管標記表與事件表
   屬於 shop-operations(`canUninstall: false`,保留金融歷史),所以裝過 shop-operations
   的站實際上也不該卸載 shop。
 
@@ -195,6 +196,55 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 訂單狀態機(`commerce-kit/types.ts` 唯一定義):
 `pending_payment → (awaiting_verify ⇄) → paid → shipped → completed`,
 另 `cancelled`(收款前)與 `refunded`(記帳用;gateway 退款 API 刻意不做)。
+
+## 退貨(0.6.0)
+
+後台 `/admin/ext/shop/returns`「退貨管理」。已出貨、已完成的訂單才能退貨;還沒出貨的訂單
+走取消(舊結帳在訂單頁,商城營運模式在它的訂單管理)。店家代客人建立,客人自己申請的
+表單還沒有。
+
+```
+申請中 → 已同意 → 已收到退貨 → 已退款 → 已完成
+   │         ├→ 已退款(直接退款,不收回商品)
+   │         └→ 已取消
+   ├→ 已拒絕
+   └→ 已取消                已收到退貨 → 已完成(不退款結案,例如換貨)
+```
+
+- **一筆退貨屬於一張訂單**:哪幾項、各幾件、原因、說明、申請退款金額。品項名稱與單價從
+  訂單快照。同一項商品在所有未拒絕、未取消的退貨裡加起來,不會超過訂購件數 —— 兩筆同時
+  建立搶最後一件,只有一筆成立(batch 內再算一次)。
+- **不改訂單狀態**。部分退貨很常見,訂單照樣是「已完成」;要看退了什麼,看它的退貨。
+  受管訂單因此也適用,不必繞過 shop-operations 的狀態規則。
+- **處理紀錄**:建立與每一步都記下誰、什麼時候、備註(`ext_shop_return_events`,
+  人名當下存一份)。
+- **放回庫存**:啟用了提供 `inventory` capability(provider id `inventory`)的庫存插件時,
+  「收到退貨」時勾「放回庫存」再逐項填件數(預設不放回:收回來的不一定能再賣),和狀態
+  變更同一個 D1 batch(ledger-kit)。只放回這張訂單真的從庫存扣走的:訂單的預留
+  `<訂單編號>:<商品 id>`(`orderStockReservationId`)要是已扣下(captured)。舊結帳的
+  訂單、啟用庫存前的訂單沒有扣過庫存,不給放回(放回去會憑空多出庫存)。沒有庫存帳的
+  商品不能放回(不會憑空開始管它的庫存)。沒裝庫存插件就只記錄。
+- **退款只記錄**:金額、方式(原付款方式退回、銀行轉帳、現金、其他)、備註。CMS 不會把錢
+  退回金流或銀行,畫面上照實寫;同一張訂單的退款合計不超過訂單金額。建立退貨時的預設
+  金額是退回件數的實付價格(按訂單折扣比例折算,不含運費)。申請金額與實際退款的上限
+  都是退回這幾件的商品金額(單價 × 件數)加上這張訂單的運費(`refundCap`;運費 =
+  訂單金額 −(商品金額 − 折扣),`orderShipping`),也不超過訂單還沒退的金額:從運費 150
+  的訂單退一件 150 元的商品,最多退 300,不是整張訂單的金額。整張退、或瑕疵品由店家負擔
+  運費時,可以把預設金額改成連運費一起退。
+- **權限**:API 只給 admin(`returns/…`,見 `commerce-kit/returns-api.ts`);後台頁本來就
+  只開給 admin。
+- **搜尋**:頂欄可找退貨編號、訂單編號、姓名、電話與建立期間;⌘K 也找得到。狀態名稱在
+  狀態組 `shop:returns`,站台可用 `filter:statusSets` 改名。
+- **從訂單開退貨**:訂單列表(或商城營運的訂單明細)的「申請退貨」帶著訂單編號打開
+  「新增退貨」(`?order=`)。
+
+表(migration `0004_returns`):`ext_shop_return_requests`(退貨)、`ext_shop_return_events`
+(處理紀錄)、`ext_shop_return_operations`(ledger-kit 交易收據)。
+
+### 升級到 0.6.0
+
+部署後到「擴充功能」按商店的「套用更新」,`0004_returns` 才會建表;在那之前退貨頁會請你
+先套用,API 回 503 `not_ready`。
 
 ## 客製店面前端(這是預期行為)
 
@@ -227,7 +277,8 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 - 伺服器端購物車(localStorage 就夠;結帳時伺服器重新計價,永不信 client)。
 - 庫存與推薦佣金**不在 shop 裡做**:由 shop-operations + inventory + referral 提供
   (見「商城營運模式」);`docs/spec-commerce-kit.md` §7 原本規劃的 meta 欄、
-  `commerce:order:created` hook 與佣金表都沒有建立,migration id 0003 仍保留未用。
+  `commerce:order:created` hook 與佣金表都沒有建立,migration id 0003 仍保留未用
+  (退貨用的是 0004)。
 - 團購(§7.2)未動。
 - 訂單查詢頁:舊結帳沒有(客人記訂單編號即可);商城營運模式由 `/shop/orders` 提供。
 
@@ -246,6 +297,9 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 
 ## 版本
 
+- **0.6.0**:需要 core 1.50.0。退貨管理(見「退貨」一節):migration `0004_returns`、後台頁
+  `returns`、狀態組 `shop:returns`、四個 admin API(`returns/…`);訂單列表的已出貨、已完成
+  訂單多一個「申請退貨」。要按「套用更新」才會建表。
 - **0.5.0**:需要 core 1.49.0。商品目錄併進 commerce-kit:商店啟用就有商品與分類
   (`catalog.product`、`catalog.category`),不再從 registry 安裝。新設定 `catalog` 可以關掉它。
   已從 registry 裝過商品目錄的站,第一次載入時由底座接手,商品、分類與設定都不動。

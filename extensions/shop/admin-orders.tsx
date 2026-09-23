@@ -93,6 +93,7 @@ export async function ShopOrdersPage({
           orders={orders}
           actionsEndpoint="/api/ext/shop"
           transferProvider={transferProvider.trim() || undefined}
+          returnsPage="/admin/ext/shop/returns"
         />
       </section>
     </div>

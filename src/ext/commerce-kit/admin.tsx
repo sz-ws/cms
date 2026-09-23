@@ -11,6 +11,8 @@ import { countByStatus, listOrders } from "./orders";
 import type { CommerceOrder, OrderStatus } from "./types";
 import type { RecordSearch } from "../record-search";
 import { OrderActions } from "./OrderActions";
+import { StartReturnLink } from "./StartReturnLink";
+import { RETURNABLE_ORDER_STATUSES } from "./returns";
 import { DateTimeText } from "@/components/DateTimeProvider";
 
 // commerce-kit:商店 extension adminPage 的共用積木(server 端)。
@@ -83,12 +85,15 @@ export function CommerceOrdersTable({
   orders,
   actionsEndpoint,
   transferProvider,
+  returnsPage,
 }: {
   orders: CommerceOrder[];
   actionsEndpoint?: string;
   /** 匯款 providerId(ext.<id>.transferProvider)。命中的 pending_payment 列會多
    *  「標記已收款」—— 台灣無 open banking,admin 直接切換狀態是常態動線。 */
   transferProvider?: string;
+  /** 1.50.0:退貨管理頁。給了,已出貨、已完成的訂單多一個「申請退貨」。 */
+  returnsPage?: string;
 }) {
   if (orders.length === 0) {
     return <p className="text-[13px] text-black/45 admin:text-ink/45">尚無訂單。</p>;
@@ -138,15 +143,20 @@ export function CommerceOrdersTable({
               </td>
               {actionsEndpoint ? (
                 <td className="py-2.5">
-                  <OrderActions
-                    endpoint={actionsEndpoint}
-                    orderNo={o.orderNo}
-                    status={o.status}
-                    directPaid={
-                      transferProvider !== undefined &&
-                      o.paymentProvider === transferProvider
-                    }
-                  />
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    <OrderActions
+                      endpoint={actionsEndpoint}
+                      orderNo={o.orderNo}
+                      status={o.status}
+                      directPaid={
+                        transferProvider !== undefined &&
+                        o.paymentProvider === transferProvider
+                      }
+                    />
+                    {returnsPage && RETURNABLE_ORDER_STATUSES.includes(o.status) ? (
+                      <StartReturnLink returnsPage={returnsPage} orderNo={o.orderNo} />
+                    ) : null}
+                  </span>
                 </td>
               ) : null}
             </tr>
