@@ -12,6 +12,7 @@ import {
 import type { DeclarativeContentType } from "../manifest";
 import { displayValue, fieldLabel, pickTitleField } from "./field-utils";
 import { InboxTable, type InboxRowDTO, type InboxFieldMeta } from "./InboxTable";
+import { canEditCurrentPage } from "@/lib/access-guards";
 
 // 收件匣的 admin surface。CollectionView 的對照組 —— 差別不在樣式,在語意:
 //
@@ -57,7 +58,12 @@ export async function InboxView({
   contentType,
   searchParams,
 }: InboxViewProps) {
-  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
+  // 1.50.0:只能檢視這一頁的角色讀得到來信,不標已讀、不給動作(API 另外守門)。
+  const [locale, timeZone, canEdit] = await Promise.all([
+    getLocale(),
+    getSiteTimeZone(),
+    canEditCurrentPage(),
+  ]);
   const t = getMessages(locale);
   const fullType = `${extId}.${contentType.name}`;
   const resolvedTitle =
@@ -135,6 +141,7 @@ export async function InboxView({
         perPage={PER_PAGE}
         total={total}
         now={requestTimestamp()}
+        readOnly={!canEdit}
       />
     </div>
   );

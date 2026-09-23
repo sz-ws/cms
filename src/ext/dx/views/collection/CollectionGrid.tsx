@@ -36,6 +36,8 @@ interface CollectionGridProps {
   extId: string;
   typeName: string;
   cards: GridCard[];
+  /** false = 只能檢視這一頁:不畫選取與批次動作列。預設 true。 */
+  selectable?: boolean;
 }
 
 const IMAGE_EXTS = new Set([
@@ -121,7 +123,12 @@ function CardCover({ coverKey, title }: { coverKey: string | null; title: string
   );
 }
 
-export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) {
+export function CollectionGrid({
+  extId,
+  typeName,
+  cards,
+  selectable = true,
+}: CollectionGridProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [shownCards, applyOptimistic] = useOptimistic<GridCard[], BulkAction>(
     cards,
@@ -152,17 +159,19 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between px-0.5">
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-[12px] font-medium text-black/45 admin:text-ink/45 transition-colors hover:text-black/70 admin:hover:text-ink/70"
-        >
-          {allSelected
-            ? t("collection.deselectAll")
-            : t("collection.selectAll")}
-        </button>
-      </div>
+      {selectable && (
+        <div className="flex items-center justify-between px-0.5">
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="text-[12px] font-medium text-black/45 admin:text-ink/45 transition-colors hover:text-black/70 admin:hover:text-ink/70"
+          >
+            {allSelected
+              ? t("collection.deselectAll")
+              : t("collection.selectAll")}
+          </button>
+        </div>
+      )}
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {shownCards.map((card) => {
@@ -176,11 +185,13 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
                 card.pending && "opacity-60",
               )}
             >
-              <CornerCheckbox
-                checked={isSel}
-                onChange={() => toggle(card.id)}
-                label={`Select ${card.title || card.id}`}
-              />
+              {selectable && (
+                <CornerCheckbox
+                  checked={isSel}
+                  onChange={() => toggle(card.id)}
+                  label={`Select ${card.title || card.id}`}
+                />
+              )}
               <AdminLink
                 href={card.editHref}
                 className={cn(
@@ -211,13 +222,15 @@ export function CollectionGrid({ extId, typeName, cards }: CollectionGridProps) 
         })}
       </ul>
 
-      <BulkActionBar
-        extId={extId}
-        typeName={typeName}
-        ids={[...selected]}
-        onDone={clearSelection}
-        onOptimistic={applyOptimistic}
-      />
+      {selectable && (
+        <BulkActionBar
+          extId={extId}
+          typeName={typeName}
+          ids={[...selected]}
+          onDone={clearSelection}
+          onOptimistic={applyOptimistic}
+        />
+      )}
     </div>
   );
 }

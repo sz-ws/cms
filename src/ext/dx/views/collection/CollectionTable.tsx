@@ -39,6 +39,8 @@ interface CollectionTableProps {
   columns: ColumnMeta[];
   rows: RowData[];
   activeSort?: { field: string; dir: "asc" | "desc" };
+  /** false = 只能檢視這一頁:不畫選取欄與批次動作列。預設 true。 */
+  selectable?: boolean;
 }
 
 function RingCheckbox({
@@ -86,6 +88,7 @@ export function CollectionTable({
   columns,
   rows,
   activeSort,
+  selectable = true,
 }: CollectionTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [shownRows, applyOptimistic] = useOptimistic<RowData[], BulkAction>(
@@ -122,13 +125,15 @@ export function CollectionTable({
         <table className="w-full text-left text-[13px]">
           <thead>
             <tr className="border-b border-black/[0.06] admin:border-ink/[0.06]">
-              <th className="w-10 px-3 py-2.5">
-                <RingCheckbox
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  label={t("collection.selectAllRows")}
-                />
-              </th>
+              {selectable && (
+                <th className="w-10 px-3 py-2.5">
+                  <RingCheckbox
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    label={t("collection.selectAllRows")}
+                  />
+                </th>
+              )}
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -172,13 +177,15 @@ export function CollectionTable({
                     row.pending && "opacity-60",
                   )}
                 >
-                  <td className="px-3 py-2.5 align-middle">
-                    <RingCheckbox
-                      checked={isSel}
-                      onChange={() => toggle(row.id)}
-                      label={`Select row ${row.id}`}
-                    />
-                  </td>
+                  {selectable && (
+                    <td className="px-3 py-2.5 align-middle">
+                      <RingCheckbox
+                        checked={isSel}
+                        onChange={() => toggle(row.id)}
+                        label={`Select row ${row.id}`}
+                      />
+                    </td>
+                  )}
                   {row.cells.map((cell, i) => (
                     <td
                       key={columns[i]?.key ?? i}
@@ -209,13 +216,15 @@ export function CollectionTable({
         </table>
       </div>
 
-      <BulkActionBar
-        extId={extId}
-        typeName={typeName}
-        ids={[...selected]}
-        onDone={clearSelection}
-        onOptimistic={applyOptimistic}
-      />
+      {selectable && (
+        <BulkActionBar
+          extId={extId}
+          typeName={typeName}
+          ids={[...selected]}
+          onDone={clearSelection}
+          onOptimistic={applyOptimistic}
+        />
+      )}
     </div>
   );
 }

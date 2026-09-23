@@ -22,6 +22,9 @@ vi.mock("@/lib/auth", async (importActual) => {
       }
       return authState.user;
     },
+    // 1.50.0:媒體 API 的門先看有沒有自訂角色(lib/access-api.ts);這裡都是預設角色。
+    getSessionAccess: async () =>
+      authState.user ? { user: authState.user, access: null } : null,
   };
 });
 

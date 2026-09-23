@@ -21,7 +21,8 @@ export function SaveBar({
 }: {
   visible: boolean;
   title: string;
-  note: string;
+  /** 標題下的一行小字;沒有要說的就不給。 */
+  note?: string;
   /** 儲存失敗:讀屏立刻念,不等 polite。 */
   alert?: boolean;
   children: ReactNode;
@@ -43,7 +44,7 @@ export function SaveBar({
         <div className="flex items-center justify-between gap-4 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-4 py-3 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
           <div role={alert ? "alert" : "status"} aria-live={alert ? "assertive" : "polite"} className="flex min-w-0 flex-col gap-0.5">
             <span className="text-[12px] font-medium text-ink/45">{title}</span>
-            <span className="text-[11px] text-ink/35">{note}</span>
+            {note ? <span className="text-[11px] text-ink/35">{note}</span> : null}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">{children}</div>
         </div>

@@ -2,8 +2,10 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "./db";
-import { sessions, users } from "./schema";
+import { sessions, staffRoles, users } from "./schema";
 import { getEnv } from "./cf";
+import { currentAccessScope } from "./access-scope";
+import { atLeast, parseStoredAccess, type AccessMap } from "@/ext/admin-access";
 import {
   PBKDF2_ITERATIONS,
   PBKDF2_ROUNDS,
@@ -15,13 +17,31 @@ import {
 // spec-login-providers.md §3:新增 "guest"(訪客)。層級 admin > editor > guest。
 export type UserRole = "admin" | "editor" | "guest";
 
+/** 1.50.0:自訂角色(staff_roles)。 */
+export interface StaffRoleRef {
+  id: string;
+  name: string;
+}
+
 export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  /**
+   * 預設角色的使用者:就是 users.role。
+   * 1.50.0 自訂角色的使用者:在被授權的後台頁 / API 裡是 "admin",其餘地方是 "editor"
+   * (見 getSessionUser 與 lib/access-scope.ts)。要問「是不是真正的管理者」用 isFullAdmin()。
+   */
   role: UserRole;
   // 0008:使用者頭像 storage key(lib/storage.ts scope "avatars");NULL = 未設定。
   avatarKey: string | null;
+  /** 1.50.0:有自訂角色時才有。 */
+  staffRole?: StaffRoleRef | null;
+}
+
+/** 1.50.0:預設的管理者角色(不是在授權範圍內暫時以管理者身分執行的自訂角色)。 */
+export function isFullAdmin(user: Pick<SessionUser, "role" | "staffRole"> | null | undefined): boolean {
+  return user?.role === "admin" && !user.staffRole;
 }
 
 export class AuthError extends Error {
@@ -359,29 +379,93 @@ export function sessionCookieOptions() {
 }
 export { SESSION_COOKIE };
 
+const sessionBaseColumns = {
+  userId: users.id,
+  email: users.email,
+  name: users.name,
+  role: users.role,
+  avatarKey: users.avatarKey,
+  expiresAt: sessions.expiresAt,
+};
+
+function sessionRows(id: string) {
+  return db()
+    .select({
+      ...sessionBaseColumns,
+      staffRoleId: staffRoles.id,
+      staffRoleName: staffRoles.name,
+      staffRoleAccess: staffRoles.access,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .leftJoin(staffRoles, eq(users.staffRoleId, staffRoles.id))
+    .where(eq(sessions.id, id))
+    .limit(1);
+}
+
 /**
- * 讀 cookie → 查 D1(JOIN users)→ 過期回 null + 順手刪列。
- * React cache() 包裝:同一 request 多處呼叫只查一次。
+ * migration 0021 還沒套用時的查法(先部署了 Worker、後跑 db:migrate:remote):不碰
+ * staff_roles,每個人都照 users.role。少了這條,那段空檔裡所有登入的 request(包括
+ * 管理者)都會 500。
  */
-export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
+async function presetSessionRows(id: string) {
+  const rows = await db()
+    .select(sessionBaseColumns)
+    .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(eq(sessions.id, id))
+    .limit(1);
+  return rows.map((row) => ({
+    ...row,
+    staffRoleId: null,
+    staffRoleName: null,
+    staffRoleAccess: null,
+  }));
+}
+
+/** staff_roles 表或 users.staff_role_id 欄不在(D1 的錯誤包在 drizzle 的 cause 裡)。 */
+export function isMissingStaffRoles(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 4; depth++) {
+    if (/no such (table|column):?\s*\S*staff_role/i.test(current.message)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+let warnedMissingStaffRoles = false;
+function warnMissingStaffRoles(): void {
+  if (warnedMissingStaffRoles) return;
+  warnedMissingStaffRoles = true;
+  console.error("[auth] staff_roles is missing: apply migration 0021 (pnpm db:migrate:remote). Custom roles are ignored until then.");
+}
+
+/** 1.50.0:session 查到的人 + 自訂角色的授權(沒有自訂角色 = null)。 */
+export interface SessionAccess {
+  /** 自訂角色的使用者在這裡是 "editor"(授權範圍外的身分)。 */
+  user: SessionUser;
+  access: AccessMap | null;
+}
+
+/**
+ * 讀 cookie → 查 D1(JOIN users,LEFT JOIN staff_roles)→ 過期回 null + 順手刪列。
+ * React cache() 包裝:同一 request 多處呼叫只查一次。
+ *
+ * 自訂角色:users.role 存的是 "guest"(角色列消失時退回最低權限),角色還在時
+ * 授權範圍外的身分是 "editor" —— 進得了後台、管得了自己的帳戶,requireAuth("admin")
+ * 一律不過。
+ */
+export const getSessionAccess = cache(async (): Promise<SessionAccess | null> => {
   const store = await cookies();
   const raw = store.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
   const id = await hashToken(raw);
   const now = Date.now();
-  const rows = await db()
-    .select({
-      userId: users.id,
-      email: users.email,
-      name: users.name,
-      role: users.role,
-      avatarKey: users.avatarKey,
-      expiresAt: sessions.expiresAt,
-    })
-    .from(sessions)
-    .innerJoin(users, eq(sessions.userId, users.id))
-    .where(eq(sessions.id, id))
-    .limit(1);
+  const rows = await sessionRows(id).catch((error: unknown) => {
+    if (!isMissingStaffRoles(error)) throw error;
+    warnMissingStaffRoles();
+    return presetSessionRows(id);
+  });
   const row = rows[0];
   if (!row) return null;
   if (row.expiresAt <= now) {
@@ -389,14 +473,37 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     await db().delete(sessions).where(eq(sessions.id, id));
     return null;
   }
-  return {
+  const base = {
     id: row.userId,
     email: row.email,
     name: row.name,
-    role: row.role,
     avatarKey: row.avatarKey,
   };
+  if (row.staffRoleId === null || row.staffRoleName === null) {
+    return { user: { ...base, role: row.role }, access: null };
+  }
+  return {
+    user: {
+      ...base,
+      role: "editor",
+      staffRole: { id: row.staffRoleId, name: row.staffRoleName },
+    },
+    access: parseStoredAccess(row.staffRoleAccess),
+  };
 });
+
+/**
+ * 目前登入的人。自訂角色:目前的後台頁 / API 有開門(lib/access-scope.ts)且角色的
+ * 權限夠 → "admin";否則 "editor"。預設角色原樣回傳 users.role。
+ */
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const session = await getSessionAccess();
+  if (!session) return null;
+  if (!session.access) return session.user;
+  const scope = currentAccessScope();
+  const granted = scope !== null && atLeast(scope.levelOf(session.access), scope.needed);
+  return granted ? { ...session.user, role: "admin" } : session.user;
+}
 
 /** 刪 D1 列 + 清 cookie(04 §2)。 */
 export async function destroySession(): Promise<void> {
@@ -431,7 +538,14 @@ const ROLE_RANK: Record<UserRole, number> = { guest: 1, editor: 2, admin: 3 };
 export async function requireAuth(
   minRole: UserRole = "editor",
 ): Promise<SessionUser> {
-  const user = await getSessionUser();
+  return assertMinRole(await getSessionUser(), minRole);
+}
+
+/**
+ * requireAuth 的判斷本身:手上已經有使用者時用它,免得在 route handler 裡再查一次
+ * session(route handler 沒有 React cache,每次 getSessionUser 都是一趟 D1)。
+ */
+export function assertMinRole(user: SessionUser | null, minRole: UserRole): SessionUser {
   if (!user) throw new AuthError(401);
   if (ROLE_RANK[user.role] < ROLE_RANK[minRole]) throw new AuthError(403);
   return user;

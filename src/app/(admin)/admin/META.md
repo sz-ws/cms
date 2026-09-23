@@ -2,5 +2,5 @@
 
 - Post-auth dashboard surfaces.
 - Sidebar menu + topbar come from this layout.
-- Subdirs are functional groups: `ext` (per-extension admin), `extensions` (extension registry), `media` (R2 library), `settings` (ext settings), `users` (admin user mgmt).
+- Subdirs are functional groups: `ext` (per-extension admin), `extensions` (extension registry), `media` (R2 library), `settings` (ext settings), `users` (admin user mgmt), `roles` (1.50.0: roles and access — presets read-only, custom roles as a per-page None / View / Edit matrix).
 - Extension-specific dashboard tiles come from `extensions/<id>/admin/` (code extensions) or `adminPages` in declarative manifests.

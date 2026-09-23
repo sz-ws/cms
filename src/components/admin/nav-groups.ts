@@ -40,7 +40,7 @@ function isShopHref(href: string): boolean {
 
 /** 系統管理面(人與站台設定)—— sidebar 底部自成一組,和日常工作區分開。 */
 function isSystemHref(href: string): boolean {
-  return href === "/admin/users" || href === "/admin/settings";
+  return href === "/admin/users" || href === "/admin/roles" || href === "/admin/settings";
 }
 
 function toNavItem(item: AdminMenuItem): AdminNavItem {
@@ -76,8 +76,9 @@ function sectionOf(item: AdminMenuItem, nav: AdminNavItem): string {
 
 function systemRank(href: string): number {
   if (href === "/admin/users") return 0;
-  if (href === "/admin/settings") return 2;
-  return 1;
+  if (href === "/admin/roles") return 1;
+  if (href === "/admin/settings") return 3;
+  return 2;
 }
 
 /**
@@ -125,8 +126,8 @@ export function buildAdminNavGroups(
     put("shop", { href: "/admin/extensions", title: shopLabels.installed, kind: "shop" });
   }
 
-  // Users 在前、extension 的系統項居中、Settings 恆為最後一項(最深的設定錨點
-  // 放最底,慣例)。sort 是 stable,同 rank 維持 menu 順序。
+  // Users 在前、角色與權限緊跟著(1.50.0)、extension 的系統項居中、Settings 恆為
+  // 最後一項(最深的設定錨點放最底,慣例)。sort 是 stable,同 rank 維持 menu 順序。
   const system = buckets.get("system");
   if (system) {
     buckets.set(

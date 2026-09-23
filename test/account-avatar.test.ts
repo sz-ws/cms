@@ -87,8 +87,12 @@ function pngFile(name = "avatar.png", size = 1024): File {
 
 beforeAll(async () => {
   // schema 對齊 migrations/0008_user_avatar.sql 之後的 users 表。
+  // 1.50.0:getSessionUser LEFT JOIN staff_roles(自訂角色)。
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'editor', created_at INTEGER NOT NULL, avatar_key TEXT);",
+    "CREATE TABLE IF NOT EXISTS staff_roles (id TEXT PRIMARY KEY, name TEXT NOT NULL, access TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+  );
+  await d1().exec(
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'editor', created_at INTEGER NOT NULL, avatar_key TEXT, staff_role_id TEXT);",
   );
   // hitRateLimit 沿用 login_attempts 計數表(見 test/passkey.test.ts / search.test.ts)。
   await d1().exec(

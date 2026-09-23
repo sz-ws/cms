@@ -42,6 +42,7 @@ export function AdminFormSurface(props: AdminFormSurfaceProps) {
       initialPublishAt={props.initialPublishAt}
       layout={props.contentType?.layout}
       locale={props.locale}
+      readOnly={props.readOnly}
     />
   );
 }

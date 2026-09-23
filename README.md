@@ -101,7 +101,7 @@ manifest can use uploads, email or AI without knowing what's behind them.
 
 | | |
 |---|---|
-| **Auth** | Password, passkey (WebAuthn), and third-party OIDC sign-in declared in a manifest. Roles: admin / editor / guest. |
+| **Auth** | Password, passkey (WebAuthn), and third-party OIDC sign-in declared in a manifest. Preset roles (admin / staff / guest) plus custom staff roles that grant None, View or Edit per admin page. |
 | **Content** | JSON document model, no runtime DDL. Text, richtext, media, relations, and nested group / repeater / block fields for page building. Draft and scheduled publish. |
 | **Admin** | Auto-generated editors and settings forms, composable dashboard, ⌘K search over your content (D1 FTS5). English and 繁體中文. |
 | **Public site** | Generic list / detail / form views driven by your manifest, tagged edge caching, robots / sitemap / feed. |

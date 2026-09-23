@@ -25,8 +25,10 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -52,10 +54,37 @@ export interface UserRecord {
   email: string;
   name: string;
   role: "admin" | "editor" | "guest";
+  /** 1.50.0:自訂角色;有值時實際權限看角色(role 存的是 guest)。 */
+  staffRoleId: string | null;
   createdAt: number;
   passkeys: number;
   /** 最近一次登入(sessions MAX(created_at));從未登入 = null。 */
   lastActiveAt: number | null;
+}
+
+/** 1.50.0:角色與權限頁建的自訂角色(成員的角色選單用)。 */
+export interface RoleOption {
+  id: string;
+  name: string;
+  /** 打得開的後台頁數。 */
+  pages: number;
+}
+
+type RoleChoice = "admin" | "editor" | "guest" | `role:${string}`;
+
+function choiceOf(user: Pick<UserRecord, "role" | "staffRoleId">): RoleChoice {
+  return user.staffRoleId ? `role:${user.staffRoleId}` : user.role;
+}
+
+/** 選單的值 → 要寫回列表與 API 的兩個欄位。 */
+export function applyRoleChoice(choice: RoleChoice): Pick<UserRecord, "role" | "staffRoleId"> {
+  return choice.startsWith("role:")
+    ? { role: "guest", staffRoleId: choice.slice(5) }
+    : { role: choice as UserRecord["role"], staffRoleId: null };
+}
+
+export function roleChoiceBody(choice: RoleChoice): { role: UserRecord["role"] } | { staffRoleId: string } {
+  return choice.startsWith("role:") ? { staffRoleId: choice.slice(5) } : { role: choice as UserRecord["role"] };
 }
 
 // ---- 欄位定義(資料驅動;這是 core-native surface 的延伸點)----
@@ -76,6 +105,8 @@ interface ColumnCtx {
   locale: Locale;
   /** 站台時區的日期(1.41.0)。 */
   dates: DateFormatter;
+  /** 1.50.0:自訂角色。 */
+  roles: RoleOption[];
 }
 
 interface ColumnDef {
@@ -138,16 +169,20 @@ function Avatar({ user }: { user: UserRecord }) {
 export function RolePill({
   role,
   label,
+  custom,
 }: {
   role: "admin" | "editor" | "guest";
   label?: string;
+  /** 1.50.0:自訂角色 —— 名稱照站台取的寫,不轉大寫。 */
+  custom?: boolean;
 }) {
-  const admin = role === "admin";
-  const guest = role === "guest";
+  const admin = role === "admin" && !custom;
+  const guest = role === "guest" && !custom;
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold tracking-[0.04em] uppercase",
+        "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+        custom ? "text-[11px]" : "tracking-[0.04em] uppercase",
         admin ? "text-[color-mix(in_srgb,var(--admin-accent)_88%,black)]" : guest ? "text-ink/35" : "text-ink/50",
       )}
       style={{
@@ -169,11 +204,15 @@ export function RolePill({
 }
 
 function roleLabel(
-  role: "admin" | "editor" | "guest",
+  user: Pick<UserRecord, "role" | "staffRoleId">,
   t: ReturnType<typeof useT>,
+  roles: readonly RoleOption[],
 ): string {
-  if (role === "admin") return t("usersTable.roleAdmin");
-  if (role === "guest") return t("usersTable.roleGuest");
+  if (user.staffRoleId) {
+    return roles.find((r) => r.id === user.staffRoleId)?.name ?? t("usersTable.roleGuest");
+  }
+  if (user.role === "admin") return t("usersTable.roleAdmin");
+  if (user.role === "guest") return t("usersTable.roleGuest");
   return t("usersTable.roleEditor");
 }
 
@@ -214,13 +253,14 @@ const COLUMNS: ColumnDef[] = [
     label: "usersTable.role",
     defaultVisible: true,
     sortable: true,
-    sortValue: (u) => u.role,
+    sortValue: (u) => (u.staffRoleId ? `z:${u.staffRoleId}` : u.role),
     render: (u, ctx) => (
       <RoleCell
         user={u}
         self={u.id === ctx.selfId}
         onChanged={ctx.onUserChanged}
         t={ctx.t}
+        roles={ctx.roles}
       />
     ),
   },
@@ -357,36 +397,42 @@ function RoleCell({
   self,
   onChanged,
   t,
+  roles,
 }: {
   user: UserRecord;
   self: boolean;
   onChanged: (u: UserRecord) => void;
   t: ReturnType<typeof useT>;
+  roles: readonly RoleOption[];
 }) {
   const router = useRouter();
   const [failed, setFailed] = useState(false);
   // role 的真相住在父層 users 列表(user prop),這裡不留分身 ——
   // 否則就地切換後馬上開編輯 sheet 會拿到舊 role。
   const role = user.role;
+  const choice = choiceOf(user);
+  const pill = (
+    <RolePill role={role} custom={user.staffRoleId !== null} label={roleLabel(user, t, roles)} />
+  );
 
   if (self) {
     // 自己的 role 後端擋(cannot_change_own_role),前端直接不給選單。
     return (
       <span title={t("usersTable.cantChangeOwnRole")} className="cursor-not-allowed">
-        <RolePill role={role} label={roleLabel(role, t)} />
+        {pill}
       </span>
     );
   }
 
-  function switchRole(next: "admin" | "editor" | "guest") {
-    if (next === role) return;
+  function switchRole(next: RoleChoice) {
+    if (next === choice) return;
     setFailed(false);
     startTransition(async () => {
-      onChanged({ ...user, role: next }); // 樂觀:server 回來之前列表先顯示新 role
+      onChanged({ ...user, ...applyRoleChoice(next) }); // 樂觀:server 回來之前列表先顯示新 role
       const res = await fetch(`/api/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: next }),
+        body: JSON.stringify(roleChoiceBody(next)),
       }).catch(() => null);
       // 成功:同一個 transition 裡刷新,新資料到之前維持樂觀的樣子。
       // 失敗:transition 結束時列表自己退回原本的 role,不必手動回滾。
@@ -402,18 +448,30 @@ function RoleCell({
           className="group/role flex items-center gap-1 rounded-full transition-shadow hover:shadow-[0_0_0_3px_rgba(0,0,0,0.04)] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none"
           title={t("usersTable.changeRole")}
         >
-          <RolePill role={role} label={roleLabel(role, t)} />
+          {pill}
           <ChevronDown className="size-3 text-ink/30 opacity-0 transition-opacity group-hover/role:opacity-100" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[9rem]">
+        <DropdownMenuContent align="start" className="min-w-[10rem]">
           <DropdownMenuRadioGroup
-            value={role}
-            onValueChange={(v) => switchRole(v as "admin" | "editor" | "guest")}
+            value={choice}
+            onValueChange={(v) => switchRole(v as RoleChoice)}
           >
-            <DropdownMenuRadioItem value="admin">{t("usersTable.roleAdmin")}</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="editor">{t("usersTable.roleEditor")}</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="guest">{t("usersTable.roleGuest")}</DropdownMenuRadioItem>
+            {/* Base UI 的單選項目預設點了不關選單;換角色是一次就完成的動作,選完就收起。 */}
+            <DropdownMenuRadioItem closeOnClick value="admin">{t("usersTable.roleAdmin")}</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem closeOnClick value="editor">{t("usersTable.roleEditor")}</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem closeOnClick value="guest">{t("usersTable.roleGuest")}</DropdownMenuRadioItem>
+            {/* 1.50.0:自訂角色 */}
+            {roles.length > 0 && <DropdownMenuSeparator />}
+            {roles.map((r) => (
+              <DropdownMenuRadioItem key={r.id} closeOnClick value={`role:${r.id}`}>
+                {r.name}
+              </DropdownMenuRadioItem>
+            ))}
           </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => router.push("/admin/roles")}>
+            {t("usersTable.manageRoles")}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       {failed && <span className="text-[11px] text-red-600">{t("usersTable.failed")}</span>}
@@ -429,10 +487,13 @@ const reduceUsers = stableReducer<UserRecord[], UsersAction>(applyUsersAction);
 
 export function UsersTable({
   initialUsers,
+  roles,
   selfId,
   now,
 }: {
   initialUsers: UserRecord[];
+  /** 1.50.0:自訂角色。 */
+  roles: RoleOption[];
   selfId: string;
   now: number;
 }) {
@@ -459,6 +520,7 @@ export function UsersTable({
     t,
     locale,
     dates,
+    roles,
     onUserChanged: (u) => applyOptimistic({ kind: "upsert", user: u }),
   };
 
@@ -575,6 +637,7 @@ export function UsersTable({
       {/* 常駐 mount:open 切換才有進退場動畫(見 UserSheet 註解)。 */}
       <UserSheet
         mode={sheet}
+        roles={roles}
         selfId={selfId}
         onClose={() => setSheet(null)}
         // sheet 已經自己打完 API;這裡只負責讓列表在 refresh 回來之前就是新的樣子。

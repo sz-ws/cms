@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { getExtRuntime } from "@/ext/loader";
+import { staffRoleExists } from "@/lib/staff-roles";
 
 // GET /api/users → { users: SessionUser[] }(不含 password_hash)。
 export async function GET(): Promise<Response> {
@@ -29,16 +30,20 @@ export async function GET(): Promise<Response> {
       name: users.name,
       role: users.role,
       avatarKey: users.avatarKey,
+      // 1.50.0:自訂角色(有值時 role 是 guest,實際權限看角色)。
+      staffRoleId: users.staffRoleId,
     })
     .from(users);
-  const list: SessionUser[] = rows;
+  const list: (SessionUser & { staffRoleId: string | null })[] = rows;
   return Response.json({ users: list });
 }
 
+// 1.50.0:staffRoleId 給了就是自訂角色(role 寫成 guest,見 migrations/0021)。
 const createSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
   role: z.enum(["admin", "editor", "guest"]),
+  staffRoleId: z.string().min(1).max(64).optional(),
   password: z.string().min(8),
 });
 
@@ -67,6 +72,11 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
 
+  if (parsed.staffRoleId !== undefined && !(await staffRoleExists(parsed.staffRoleId))) {
+    return Response.json({ error: "role_not_found" }, { status: 400 });
+  }
+  const role = parsed.staffRoleId !== undefined ? "guest" : parsed.role;
+
   const email = parsed.email.toLowerCase();
   const existing = await db()
     .select({ id: users.id })
@@ -84,7 +94,8 @@ export async function POST(req: Request): Promise<Response> {
     email,
     passwordHash,
     name: parsed.name,
-    role: parsed.role,
+    role,
+    staffRoleId: parsed.staffRoleId ?? null,
     createdAt: Date.now(),
   });
 
@@ -93,7 +104,7 @@ export async function POST(req: Request): Promise<Response> {
     id,
     email,
     name: parsed.name,
-    role: parsed.role,
+    role,
     avatarKey: null,
   };
   const rt = await getExtRuntime();

@@ -84,6 +84,13 @@ export interface AdminPage {
    * 例:商城營運的訂單管理取代商店的訂單頁(replaces: ["shop"])。
    */
   replaces?: string[];
+  /**
+   * 1.50.0:這一頁跟著哪一頁的權限(角色與權限):"<extId>" 是那個 extension 的主頁,
+   * "<extId>/<slug>" 是子頁。給不在側欄的明細頁、編輯頁用 —— 能看列表的人就能開明細。
+   * 沒宣告 = 看這一頁自己的授權(不在側欄的頁,自訂角色就打不開)。
+   * 例:declarative 的編輯頁自動跟著它的列表頁。
+   */
+  accessAs?: string;
   component: ComponentType<{
     params: Record<string, string>; // 至少含 { extId }
     searchParams: Record<string, string>; // URL query(如 ?id=xxx)
@@ -107,6 +114,12 @@ export interface ApiRoute {
    * handler 收到的 ctx.user 是 anonymous placeholder(同 declarative public POST)。
    */
   public?: boolean;
+  /**
+   * 1.50.0:這條 API 跟著哪一頁的權限(格式同 AdminPage.accessAs)。自訂角色讀(GET)
+   * 要那一頁的「檢視」,寫要「編輯」。沒宣告 = 看這個 extension 所有頁裡最高的一級。
+   * 預設角色(admin / editor / guest)不看這個欄位。
+   */
+  accessAs?: string;
   handler: (
     req: Request,
     params: Record<string, string>,
@@ -272,6 +285,9 @@ const fn = z.custom<(...a: never[]) => unknown>(
   { message: "expected function" },
 );
 
+// 後台頁參照 "<extId>" / "<extId>/<slug>"(AdminPage.replaces、accessAs 共用的格式)。
+const PAGE_REF_RE = /^[a-z][a-z0-9-]{1,30}(\/[a-z0-9][a-z0-9-]*)*$/;
+
 const apiRouteSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
   // path:segment 字串,允許 :param;禁止 regex 特殊語意(僅 [a-z0-9:/-])。
@@ -280,6 +296,7 @@ const apiRouteSchema = z.object({
     .min(1)
     .regex(/^[a-z0-9:/-]+$/i, "invalid route path"),
   public: z.boolean().optional(), // 1.28.0:免登入端點(見 ApiRoute.public)
+  accessAs: z.string().regex(PAGE_REF_RE, "accessAs must be <extId> or <extId>/<slug>").optional(), // 1.50.0
   handler: fn,
 });
 
@@ -436,6 +453,7 @@ const adminPageSchema = z.object({
   slug: z.string(),
   title: localizedStringSchema,
   showInMenu: z.boolean().optional(),
+  accessAs: z.string().regex(PAGE_REF_RE, "accessAs must be <extId> or <extId>/<slug>").optional(), // 1.50.0
   search: adminPageSearchSchema.optional(),
   component: fn,
 });

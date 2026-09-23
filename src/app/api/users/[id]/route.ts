@@ -9,15 +9,22 @@ import {
   type SessionUser,
 } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
+import { staffRoleExists } from "@/lib/staff-roles";
 
+// 1.50.0:staffRoleId 指派自訂角色(users.role 同時寫成 guest,見 migrations/0021);
+// role 指派預設角色(同時清掉自訂角色)。兩個不能同時給。
 const patchSchema = z
   .object({
     name: z.string().min(1).optional(),
     role: z.enum(["admin", "editor", "guest"]).optional(),
+    staffRoleId: z.string().min(1).max(64).optional(),
     password: z.string().min(8).optional(),
   })
   .strict()
-  .refine((o) => Object.keys(o).length > 0, { message: "empty_patch" });
+  .refine((o) => Object.keys(o).length > 0, { message: "empty_patch" })
+  .refine((o) => o.role === undefined || o.staffRoleId === undefined, {
+    message: "role_or_staff_role",
+  });
 
 // PATCH /api/users/[id]:更新 name / role / password(email 是身分,不可改)。
 // 自己的 role 不可改(cannot_change_own_role)—— 防止把自己降權後鎖死管理面;
@@ -52,8 +59,14 @@ export async function PATCH(
   }
 
   const { id } = await ctx.params;
-  if (parsed.role !== undefined && id === self.id && parsed.role !== self.role) {
+  const changesRole =
+    (parsed.role !== undefined && parsed.role !== self.role) ||
+    parsed.staffRoleId !== undefined;
+  if (id === self.id && changesRole) {
     return Response.json({ error: "cannot_change_own_role" }, { status: 400 });
+  }
+  if (parsed.staffRoleId !== undefined && !(await staffRoleExists(parsed.staffRoleId))) {
+    return Response.json({ error: "role_not_found" }, { status: 400 });
   }
 
   const existing = await db()
@@ -68,10 +81,18 @@ export async function PATCH(
   const patch: Partial<{
     name: string;
     role: "admin" | "editor" | "guest";
+    staffRoleId: string | null;
     passwordHash: string;
   }> = {};
   if (parsed.name !== undefined) patch.name = parsed.name;
-  if (parsed.role !== undefined) patch.role = parsed.role;
+  if (parsed.role !== undefined) {
+    patch.role = parsed.role;
+    patch.staffRoleId = null;
+  }
+  if (parsed.staffRoleId !== undefined) {
+    patch.role = "guest";
+    patch.staffRoleId = parsed.staffRoleId;
+  }
   if (parsed.password !== undefined)
     patch.passwordHash = await hashPassword(parsed.password);
 
@@ -84,11 +105,12 @@ export async function PATCH(
       name: users.name,
       role: users.role,
       avatarKey: users.avatarKey,
+      staffRoleId: users.staffRoleId,
     })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
-  const user: SessionUser = row;
+  const user: SessionUser & { staffRoleId: string | null } = row;
   return Response.json({ user });
 }
 

@@ -360,7 +360,7 @@ export function AdminSidebar({
                   {user.name}
                 </div>
                 <div className="truncate text-[11px] text-ink/40">
-                  {user.role}
+                  {user.staffRole?.name ?? user.role}
                 </div>
               </div>
             </div>
@@ -384,11 +384,13 @@ export function AdminSidebar({
                     ? t("account.noEmail")
                     : user.email}
                   {" · "}
-                  {user.role === "admin"
-                    ? t("account.roleAdmin")
-                    : user.role === "guest"
-                      ? t("account.roleGuest")
-                      : t("account.roleEditor")}
+                  {user.staffRole
+                    ? user.staffRole.name
+                    : user.role === "admin"
+                      ? t("account.roleAdmin")
+                      : user.role === "guest"
+                        ? t("account.roleGuest")
+                        : t("account.roleEditor")}
                 </span>
               </MenuHeader>
             </MenuSection>

@@ -1,6 +1,17 @@
 import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 import { eq, isNotNull } from "drizzle-orm";
 
+// migrations/0021_staff_roles.sql:站台自己取名的角色(會計、訂單管理人……)。
+// access = JSON 物件 { "<後台頁路徑>": "view" | "edit" },沒列的頁 = 無權限;規則與
+// 解讀在 src/ext/admin-access.ts,讀寫在 src/lib/staff-roles.ts。
+export const staffRoles = sqliteTable("staff_roles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  access: text("access").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
@@ -14,7 +25,12 @@ export const users = sqliteTable("users", {
   // (lib/storage.ts scope "avatars")。NULL = 未設定頭像。序列化路徑經
   // /api/files/<key>(見 src/app/api/files/[[...key]]/route.ts)。
   avatarKey: text("avatar_key"),
-});
+  // migrations/0021_staff_roles.sql:自訂角色。有值時 role 一律是 "guest"(角色列消失
+  // 時退回最低權限),實際權限由 staff_roles.access 決定(見 src/lib/auth.ts)。
+  staffRoleId: text("staff_role_id").references(() => staffRoles.id, {
+    onDelete: "set null",
+  }),
+}, (t) => [index("users_staff_role_idx").on(t.staffRoleId)]);
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),

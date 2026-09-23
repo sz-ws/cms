@@ -22,6 +22,7 @@ import {
   PhotoIcon,
   PuzzlePieceIcon,
   ReceiptPercentIcon,
+  ShieldCheckIcon,
   ShoppingBagIcon,
   ShoppingCartIcon,
   SparklesIcon,
@@ -57,6 +58,7 @@ import {
   Puzzle,
   Settings,
   Settings2,
+  ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Sparkles,
@@ -145,7 +147,8 @@ type Glyph =
   | Exclude<Token, "images" | "file-text" | "layout-template" | "message-circle" | "sliders">
   | "sparkles"
   | "media"
-  | "extensions";
+  | "extensions"
+  | "roles";
 
 const SYNONYMS: Partial<Record<Token, Glyph>> = {
   images: "image",
@@ -189,6 +192,7 @@ const SOLID: Record<Glyph, AdminIcon> = {
   sparkles: SparklesIcon,
   media: FolderIcon,
   extensions: CubeIcon,
+  roles: ShieldCheckIcon,
 };
 
 const OUTLINE: Record<Glyph, AdminIcon> = {
@@ -225,6 +229,7 @@ const OUTLINE: Record<Glyph, AdminIcon> = {
   sparkles: Sparkles,
   media: HardDrive,
   extensions: Blocks,
+  roles: ShieldCheck,
 };
 
 const ICON_SETS: Record<AdminIconSet, Record<Glyph, AdminIcon>> = { solid: SOLID, outline: OUTLINE };
@@ -249,6 +254,8 @@ const CORE_GLYPHS: Record<string, Glyph> = {
   "/admin/media": "media",
   "/admin/settings": "settings",
   "/admin/users": "users",
+  // 1.50.0:角色與權限。
+  "/admin/roles": "roles",
 };
 
 // Shop routes (the reframed extensions manager).

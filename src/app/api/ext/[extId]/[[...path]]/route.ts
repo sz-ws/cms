@@ -1,7 +1,14 @@
-import { requireAuth, authErrorResponse } from "@/lib/auth";
+import {
+  AuthError,
+  authErrorResponse,
+  getSessionAccess,
+  requireAuth,
+} from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
+import { runWithAccessScope, type AccessScope } from "@/lib/access-scope";
 import { getExtRuntime } from "@/ext/loader";
 import { createServices } from "@/ext/services";
+import { apiRouteLevel, atLeast, neededFor } from "@/ext/admin-access";
 import type { ApiRoute } from "@/ext/types";
 
 // 03 §6b:Extension API dispatch。Next.js 15 簽名:params 是 Promise,要 await。
@@ -76,10 +83,25 @@ async function dispatch(
   // 由 handler 自理(ApiRoute.public 的 doc comment 明定)。
   const isPublicRoute = matched.route.public === true;
 
+  // 1.50.0:自訂角色的門。這條 route 看哪一頁的權限:宣告了 accessAs 就是那一頁,
+  // 否則是這個 extension 所有頁裡最高的一級(ext/admin-access.ts)。讀要檢視、寫要編輯。
+  const scope: AccessScope = {
+    needed: neededFor(req.method),
+    levelOf: (access) => apiRouteLevel(access, extId, matched.route),
+  };
+
   if (!isPublicPost && !isPublicRoute) {
-    // 預設路徑:requireAuth(編輯者及以上)。
+    // 預設路徑:requireAuth(編輯者及以上)。自訂角色另外要這條 route 的權限夠,
+    // 不夠 403;夠的話 handler 看到的是管理者(它可能自己再 requireAuth("admin"))。
     try {
       user = await requireAuth();
+      if (user.staffRole) {
+        const session = await getSessionAccess();
+        if (!session?.access || !atLeast(scope.levelOf(session.access), scope.needed)) {
+          throw new AuthError(403);
+        }
+        user = { ...user, role: "admin" };
+      }
     } catch (e) {
       const r = authErrorResponse(e);
       if (r) return r;
@@ -98,7 +120,11 @@ async function dispatch(
     role: "editor" as const,
     avatarKey: null,
   };
-  return matched.route.handler(req, matched.params, { user: ctxUser, services });
+  // handler 在門裡跑:公開 route(結帳、會員的訂單頁)裡自訂角色預設是一般登入者,
+  // 權限夠時 requireAuth / getSessionUser 才回管理者。預設角色不受影響。
+  return runWithAccessScope(scope, () =>
+    matched.route.handler(req, matched.params, { user: ctxUser, services }),
+  );
 }
 
 export const GET = dispatch;

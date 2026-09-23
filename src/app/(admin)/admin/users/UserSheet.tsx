@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Fragment, useState } from "react";
+import { Check, ChevronRight, Copy } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -12,8 +12,15 @@ import {
 } from "@/components/ui/sheet";
 import { StatusButton } from "@/components/ui/status-button";
 import { FaceIdIcon } from "@/components/ui/face-id-icon";
+import { AdminLink } from "@/components/admin/AdminLink";
 import { cn } from "@/lib/utils";
-import { RolePill, type UserRecord } from "./UsersTable";
+import {
+  RolePill,
+  applyRoleChoice,
+  roleChoiceBody,
+  type RoleOption,
+  type UserRecord,
+} from "./UsersTable";
 import { useT } from "@/lib/i18n/I18nProvider";
 
 export type SheetMode =
@@ -21,6 +28,7 @@ export type SheetMode =
   | { mode: "edit"; user: UserRecord };
 
 type Role = "admin" | "editor" | "guest";
+type RoleChoice = Role | `role:${string}`;
 
 function FieldShell({
   label,
@@ -47,12 +55,15 @@ const INPUT_CLS =
 // 重新打開時表單 state 全新(避免 effect+setState 重置)。
 export function UserSheet({
   mode,
+  roles,
   selfId,
   onClose,
   onSaved,
   onDeleted,
 }: {
   mode: SheetMode | null;
+  /** 1.50.0:自訂角色。 */
+  roles: RoleOption[];
   selfId: string;
   onClose: () => void;
   onSaved: (u: UserRecord) => void;
@@ -77,6 +88,7 @@ export function UserSheet({
           <UserSheetForm
             key={session}
             mode={held}
+            roles={roles}
             selfId={selfId}
             onClose={onClose}
             onSaved={onSaved}
@@ -92,12 +104,14 @@ export function UserSheet({
 // password 收在「Reset password」下,danger zone 只在編他人時出現。
 function UserSheetForm({
   mode,
+  roles,
   selfId,
   onClose,
   onSaved,
   onDeleted,
 }: {
   mode: SheetMode;
+  roles: RoleOption[];
   selfId: string;
   onClose: () => void;
   onSaved: (u: UserRecord) => void;
@@ -107,7 +121,7 @@ function UserSheetForm({
   const editing = mode.mode === "edit" ? mode.user : null;
   const isSelf = editing?.id === selfId;
 
-  const roleOptions: { value: Role; title: string; hint: string }[] = [
+  const roleOptions: { value: RoleChoice; title: string; hint: string }[] = [
     {
       value: "admin",
       title: t("userSheet.roleAdmin"),
@@ -127,7 +141,26 @@ function UserSheetForm({
 
   const [name, setName] = useState(editing?.name ?? "");
   const [email, setEmail] = useState(editing?.email ?? "");
-  const [role, setRole] = useState<Role>(editing?.role ?? "editor");
+  const [choice, setChoice] = useState<RoleChoice>(
+    editing ? (editing.staffRoleId ? `role:${editing.staffRoleId}` : editing.role) : "editor",
+  );
+  const initialChoice: RoleChoice | null = editing
+    ? editing.staffRoleId
+      ? `role:${editing.staffRoleId}`
+      : editing.role
+    : null;
+  // 1.50.0:自訂角色排在預設角色後面,說明寫它打得開幾個後台頁。
+  const customOptions: { value: RoleChoice; title: string; hint: string }[] = roles.map((r) => ({
+    value: `role:${r.id}`,
+    title: r.name,
+    hint:
+      r.pages === 0
+        ? t("userSheet.pagesNone")
+        : r.pages === 1
+          ? t("userSheet.pagesCount.one")
+          : t("userSheet.pagesCount.other", { n: r.pages }),
+  }));
+  const picked = applyRoleChoice(choice);
   const [password, setPassword] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -136,7 +169,7 @@ function UserSheetForm({
   const [copied, setCopied] = useState(false);
 
   const dirty = editing
-    ? name !== editing.name || role !== editing.role || password.length > 0
+    ? name !== editing.name || choice !== initialChoice || password.length > 0
     : true;
   const valid = editing
     ? name.trim().length > 0 && (password.length === 0 || password.length >= 8)
@@ -152,7 +185,7 @@ function UserSheetForm({
       if (editing) {
         const patch: Record<string, unknown> = {};
         if (name !== editing.name) patch.name = name.trim();
-        if (role !== editing.role) patch.role = role;
+        if (choice !== initialChoice) Object.assign(patch, roleChoiceBody(choice));
         if (password.length > 0) patch.password = password;
         const res = await fetch(`/api/users/${editing.id}`, {
           method: "PATCH",
@@ -160,12 +193,19 @@ function UserSheetForm({
           body: JSON.stringify(patch),
         });
         if (!res.ok) throw new Error(await errCode(res));
-        onSaved({ ...editing, name: name.trim(), role });
+        onSaved({ ...editing, name: name.trim(), ...picked });
       } else {
         const res = await fetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, name: name.trim(), role, password }),
+          body: JSON.stringify({
+            email,
+            name: name.trim(),
+            // 自訂角色也要帶 role(schema 必填);server 看到 staffRoleId 會寫成 guest。
+            role: picked.role,
+            ...(picked.staffRoleId ? { staffRoleId: picked.staffRoleId } : {}),
+            password,
+          }),
         });
         if (!res.ok) throw new Error(await errCode(res));
         const body = (await res.json()) as { user: { id: string; email: string } };
@@ -173,7 +213,7 @@ function UserSheetForm({
           id: body.user.id,
           email: body.user.email,
           name: name.trim(),
-          role,
+          ...picked,
           createdAt: Date.now(),
           passkeys: 0,
           lastActiveAt: null,
@@ -278,34 +318,41 @@ function UserSheetForm({
           <div className="flex flex-col gap-3.5">
             <SectionLabel>{t("userSheet.access")}</SectionLabel>
             <div role="radiogroup" className="flex flex-col gap-2">
-              {roleOptions.map((opt) => {
-                const active = role === opt.value;
+              {[...roleOptions, ...customOptions].map((opt, index) => {
+                const active = choice === opt.value;
                 return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    disabled={isSelf}
-                    onClick={() => setRole(opt.value)}
-                    className={cn(
-                      "flex flex-col gap-0.5 rounded-[calc(10px*var(--admin-radius-scale,1))] border px-3.5 py-2.5 text-left transition-[border-color,box-shadow,transform]",
-                      active
-                        ? "border-ink/25 shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
-                        : "border-ink/[0.08] hover:border-ink/20",
-                      isSelf
-                        ? "cursor-not-allowed opacity-60"
-                        : "active:scale-[0.99]",
+                  <Fragment key={opt.value}>
+                    {/* 1.50.0:自訂角色接在預設角色後面,前面一行小標。 */}
+                    {index === roleOptions.length && (
+                      <span className="mt-2 text-[11.5px] font-medium text-ink/40">
+                        {t("userSheet.customRoles")}
+                      </span>
                     )}
-                  >
-                    <span className="flex items-center justify-between text-[13px] font-medium text-ink/80">
-                      {opt.title}
-                      {active && <Check className="size-3.5 text-ink/55" />}
-                    </span>
-                    <span className="text-[11.5px] leading-relaxed text-ink/40">
-                      {opt.hint}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={isSelf}
+                      onClick={() => setChoice(opt.value)}
+                      className={cn(
+                        "flex flex-col gap-0.5 rounded-[calc(10px*var(--admin-radius-scale,1))] border px-3.5 py-2.5 text-left transition-[border-color,box-shadow,transform]",
+                        active
+                          ? "border-ink/25 shadow-[0_0_0_3px_rgba(0,0,0,0.04)]"
+                          : "border-ink/[0.08] hover:border-ink/20",
+                        isSelf
+                          ? "cursor-not-allowed opacity-60"
+                          : "active:scale-[0.99]",
+                      )}
+                    >
+                      <span className="flex items-center justify-between text-[13px] font-medium text-ink/80">
+                        {opt.title}
+                        {active && <Check className="size-3.5 text-ink/55" />}
+                      </span>
+                      <span className="text-[11.5px] leading-relaxed text-ink/40">
+                        {opt.hint}
+                      </span>
+                    </button>
+                  </Fragment>
                 );
               })}
             </div>
@@ -314,6 +361,13 @@ function UserSheetForm({
                 {t("userSheet.cantChangeOwnRole")}
               </span>
             )}
+            <AdminLink
+              href="/admin/roles"
+              className="inline-flex w-fit items-center gap-0.5 text-[12.5px] text-ink/55 underline decoration-ink/20 underline-offset-4 transition-colors hover:text-ink/85 hover:decoration-ink/40"
+            >
+              {t("userSheet.manageRoles")}
+              <ChevronRight aria-hidden className="size-3.5" />
+            </AdminLink>
           </div>
 
           {/* Security */}
@@ -432,11 +486,16 @@ function UserSheetForm({
       {editing && (
         <span className="pointer-events-none absolute top-[3.75rem] right-6">
           <RolePill
-            role={role}
+            role={picked.role}
+            custom={picked.staffRoleId !== null}
             label={
-              role === "admin"
-                ? t("userSheet.roleAdmin")
-                : t("userSheet.roleEditor")
+              picked.staffRoleId
+                ? (roles.find((r) => r.id === picked.staffRoleId)?.name ?? t("userSheet.roleGuest"))
+                : picked.role === "admin"
+                  ? t("userSheet.roleAdmin")
+                  : picked.role === "guest"
+                    ? t("userSheet.roleGuest")
+                    : t("userSheet.roleEditor")
             }
           />
         </span>
@@ -478,6 +537,8 @@ function describeError(code: string, t: ReturnType<typeof useT>): string {
       return t("userSheet.error.cantChangeOwnRole");
     case "invalid_input":
       return t("userSheet.error.invalidFields");
+    case "role_not_found":
+      return t("userSheet.error.roleNotFound");
     default:
       return t("userSheet.error.generic");
   }

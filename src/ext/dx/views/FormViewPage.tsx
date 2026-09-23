@@ -10,6 +10,7 @@ import { getLocale, getMessages } from "@/lib/i18n/server";
 import { format } from "@/lib/i18n/index";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import { canEditCurrentPage } from "@/lib/access-guards";
 
 // admin create/edit 頁(server component)。edit 模式(?id=…)先載入既有 entry,
 // 再交給 client surface。Surface 先嘗試固定入口 layout.tsx 註冊的元件,
@@ -39,7 +40,8 @@ export async function FormViewPage({
   contentType,
   entryId,
 }: FormViewPageProps) {
-  const locale = await getLocale();
+  // 1.50.0:只能檢視這一頁的角色看得到內容,改不了(API 另外守門)。
+  const [locale, canEdit] = await Promise.all([getLocale(), canEditCurrentPage()]);
   const m = getMessages(locale);
   const resolvedTitle = resolveLocalizedString(title, locale) ?? contentType.name;
   const def = toTypeDef(extId, contentType);
@@ -100,6 +102,7 @@ export async function FormViewPage({
         initialPublishAt={initialPublishAt}
         contentType={contentType}
         locale={locale}
+        readOnly={!canEdit}
       />
       {/* 版本紀錄只在編輯既有 entry 時出現(新建頁沒有 id,自然沒有歷史)。放在表單
           之後、留出下緣間距,避免被 FormView 那條 fixed 底部儲存列蓋住。 */}
@@ -111,6 +114,7 @@ export async function FormViewPage({
             entryId={entryId}
             revisions={revisions}
             now={requestTimestamp()}
+            readOnly={!canEdit}
           />
         </div>
       )}

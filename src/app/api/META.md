@@ -8,6 +8,7 @@
 - `files/*`: R2-backed file streaming.
 - `media/*`: media library (upload/list/delete).
 - `registry/*`: registry install endpoints.
+- `roles/*`: custom staff roles (admin only; 1.50.0).
 - `settings/*`: extension settings persistence.
 - `users/*`: admin user CRUD.
 - `setup`: first-run bootstrap.

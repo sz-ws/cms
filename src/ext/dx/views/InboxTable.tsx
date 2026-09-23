@@ -65,6 +65,8 @@ export interface InboxTableProps {
   total: number;
   /** server 端的「現在」;相對時間 SSR/CSR 一致的前提(同 RevisionHistory)。 */
   now: number;
+  /** 1.50.0:只能檢視這一頁的角色 —— 打開不標已讀,明細不給動作。 */
+  readOnly?: boolean;
 }
 
 // 狀態變更與刪除先畫到列上(見 ./inbox-optimistic.ts);server 資料回來就被取代。
@@ -85,6 +87,7 @@ export function InboxTable({
   perPage,
   total,
   now,
+  readOnly = false,
 }: InboxTableProps) {
   const t = useT();
   const locale = useLocale();
@@ -244,7 +247,7 @@ export function InboxTable({
             setOpenId(r.id);
             // 開啟即視為已讀 —— 這是收件匣唯一該自動發生的狀態轉換。
             // 失敗只顯示錯誤(mutate 已處理),這裡不必再接。
-            if (r.state === "unread") {
+            if (r.state === "unread" && !readOnly) {
               patch(r.id, { state: "read" }).catch(() => {});
             }
           }}
@@ -263,6 +266,7 @@ export function InboxTable({
         fields={detailFields}
         now={now}
         error={error}
+        readOnly={readOnly}
         onClose={() => setOpenId(null)}
         onPatch={patch}
         onRemove={(id) => {
@@ -370,6 +374,7 @@ function InboxSheet({
   fields,
   now,
   error,
+  readOnly,
   onClose,
   onPatch,
   onRemove,
@@ -377,6 +382,7 @@ function InboxSheet({
   row: InboxRowDTO | null;
   fields: InboxFieldMeta[];
   now: number;
+  readOnly: boolean;
   /** 上一個動作的錯誤。按下去的那顆鈕可能已因樂觀更新換成另一顆,所以另外顯示。 */
   error: string | null;
   onClose: () => void;
@@ -435,7 +441,7 @@ function InboxSheet({
               {error}
             </p>
           )}
-          {shown && (
+          {shown && !readOnly && (
             <div className="flex flex-wrap gap-2">
               <ActionButton
                 label={

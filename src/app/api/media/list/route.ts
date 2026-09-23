@@ -1,4 +1,5 @@
-import { requireAuth, authErrorResponse } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth";
+import { requireMediaAccess } from "@/lib/access-api";
 import { listFiles } from "@/lib/storage";
 
 // C.5b §2: admin media library listing. GET /api/media/list?cursor= →
@@ -14,7 +15,7 @@ import { listFiles } from "@/lib/storage";
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireAuth("admin");
+    await requireMediaAccess("browse");
   } catch (e) {
     const r = authErrorResponse(e);
     if (r) return r;

@@ -73,6 +73,11 @@ export interface AdminFormViewProps extends FormViewBaseProps {
   initialPublishAt?: number | null;
   /** Progressive layout declaration from the manifest. Falls back to auto2col. */
   layout?: DeclarativeContentType["layout"];
+  /**
+   * 1.50.0:只能檢視這一頁的角色 —— 欄位停用、不給儲存列,表單上方一句說明。
+   * 真正的門在 CRUD API(沒有「編輯」一律 403)。
+   */
+  readOnly?: boolean;
 }
 
 interface PublicFormModeProps extends FormViewBaseProps {
@@ -165,15 +170,19 @@ function StatusToggle({
   value,
   onChange,
   m,
+  disabled = false,
 }: {
   value: EntryStatus;
   onChange: (next: EntryStatus) => void;
   m: Messages;
+  /** 1.50.0:只能檢視時停用(不能切換、不能聚焦到另一個選項)。 */
+  disabled?: boolean;
 }) {
   const options: EntryStatus[] = ["draft", "published"];
   const selectedIndex = options.indexOf(value);
 
   function onKey(e: KeyboardEvent<HTMLDivElement>) {
+    if (disabled) return;
     if (e.key === "ArrowRight" || e.key === "ArrowDown") {
       e.preventDefault();
       onChange(options[(selectedIndex + 1) % options.length]);
@@ -205,9 +214,10 @@ function StatusToggle({
             role="radio"
             aria-checked={active}
             tabIndex={active ? 0 : -1}
+            disabled={disabled}
             onClick={() => onChange(opt)}
             className={
-              "inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none " +
+              "inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none disabled:cursor-not-allowed disabled:opacity-60 " +
               (active
                 ? "bg-white admin:bg-surface text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
                 : "text-black/55 admin:text-ink/55 hover:text-black/85 admin:hover:text-ink/85 focus-visible:text-black/85 admin:focus-visible:text-ink/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]")
@@ -250,6 +260,7 @@ export function FormView(props: FormViewProps) {
 function FormViewInner(props: FormViewProps) {
   const router = useRouter();
   const isPublic = props.mode === "public";
+  const readOnly = props.mode !== "public" && props.readOnly === true;
   // 字典查表(public 頁無 I18nProvider,故不能用 useT();locale 由 prop 傳入)。
   const m = useMemo(() => getMessages(props.locale), [props.locale]);
   const fields = isPublic ? publicRenderableFields(props.fields) : props.fields;
@@ -341,6 +352,7 @@ function FormViewInner(props: FormViewProps) {
   }
 
   function setField(key: string, value: unknown) {
+    if (readOnly) return;
     setValues((prev) => {
       const next = { ...prev, [key]: value };
       if (!isPublic) setDirty(recomputeDirty(next, entryStatus, publishAt));
@@ -425,6 +437,7 @@ function FormViewInner(props: FormViewProps) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (readOnly) return;
     // Stepped public forms: a native Enter-to-submit (or any submit before the
     // final step) re-runs the same required-fields gate as the Next button
     // instead of posting a partial payload (mirrors InstallPromptsDialog, where
@@ -724,6 +737,11 @@ function FormViewInner(props: FormViewProps) {
       onSubmit={onSubmit}
       className="grid max-w-3xl grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2"
     >
+      {readOnly && (
+        <p className="col-span-full rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] px-3 py-2 text-[13px] text-black/60 admin:text-ink/60">
+          {m["extForm.admin.viewOnly"]}
+        </p>
+      )}
       {renderAdminFields({
         fields,
         layout: props.layout,
@@ -731,7 +749,8 @@ function FormViewInner(props: FormViewProps) {
         setField,
         fieldErrors,
         firstErrorKey,
-        pending,
+        // 只能檢視:欄位跟送出中一樣停用。
+        pending: pending || readOnly,
         props,
         body: (
           <div className="col-span-full flex flex-col gap-1.5">
@@ -743,18 +762,19 @@ function FormViewInner(props: FormViewProps) {
                 value={entryStatus}
                 onChange={setEntryStatusDirty}
                 m={m}
+                disabled={readOnly}
               />
               {entryStatus === "draft" && (
                 <PublishScheduleControl
                   value={publishAt}
                   onChange={setPublishAtDirty}
-                  disabled={pending}
+                  disabled={pending || readOnly}
                 />
               )}
             </div>
           </div>
         ),
-        saveBar: (
+        saveBar: readOnly ? null : (
           <div
             className={[
               "pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4 transition-[opacity,transform] duration-220 ease-out",

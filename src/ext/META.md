@@ -14,3 +14,5 @@
   - `hooks.ts`: typed action/filter bus.
   - `semver.ts`: coreApi ↔ CORE_API_VERSION range comparison.
   - `version.ts`: CORE_API_VERSION constant.
+  - `admin-menu.ts`: sidebar data model; `admin-access.ts` (1.50.0): custom-role rules —
+    grantable pages, levels, `accessAs`, the roles matrix derived from the sidebar.

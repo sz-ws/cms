@@ -26,6 +26,7 @@ import { CollectionToolbar } from "./collection/CollectionToolbar";
 import { CollectionPagination } from "./collection/CollectionPagination";
 import { CollectionHeader } from "./collection/CollectionHeader";
 import { EmptyState } from "./collection/EmptyState";
+import { canEditCurrentPage } from "@/lib/access-guards";
 
 // core-v2 §3.3:generic admin collection view。分頁·排序·filter 全部住在 URL
 // searchParams;此 server component 讀取後餵給 provider.query(),互動控制件(toolbar /
@@ -51,7 +52,12 @@ export async function CollectionView({
   searchParams,
   layout = "table",
 }: CollectionViewProps) {
-  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
+  const [locale, timeZone, canEdit] = await Promise.all([
+    getLocale(),
+    getSiteTimeZone(),
+    // 1.50.0:只能檢視這一頁的角色不給新增與批次動作(API 另外守門)。
+    canEditCurrentPage(),
+  ]);
   const def = toTypeDef(extId, contentType);
   const fields = contentType.fields;
   const typeLabel = resolveLocalizedString(contentType.label, locale) ?? contentType.name;
@@ -142,7 +148,7 @@ export async function CollectionView({
         title={resolvedTitle}
         typeLabel={typeLabel}
         total={total}
-        createHref={editHref()}
+        createHref={canEdit ? editHref() : undefined}
       />
 
       <CollectionToolbar
@@ -164,7 +170,7 @@ export async function CollectionView({
       {total === 0 ? (
         <EmptyState
           typeLabel={typeLabel}
-          createHref={editHref()}
+          createHref={canEdit ? editHref() : undefined}
           filtered={hasFilters}
           clearHref={base}
           locale={locale}
@@ -176,6 +182,7 @@ export async function CollectionView({
               extId={extId}
               typeName={contentType.name}
               cards={cards}
+              selectable={canEdit}
             />
           ) : isStacked ? (
             <CollectionStackedList columns={columnMeta} rows={rows} />
@@ -186,6 +193,7 @@ export async function CollectionView({
               columns={columnMeta}
               rows={rows}
               activeSort={state.sort}
+              selectable={canEdit}
             />
           )}
           <CollectionPagination

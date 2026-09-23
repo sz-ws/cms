@@ -2,8 +2,10 @@ import { count, max } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users, passkeys, sessions } from "@/lib/schema";
-import { UsersTable, type UserRecord } from "./UsersTable";
+import { UsersTable, type UserRecord, type RoleOption } from "./UsersTable";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { listStaffRoles } from "@/lib/staff-roles";
+import { openablePageCount } from "@/ext/admin-access";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +25,14 @@ export default async function UsersPage() {
   const title = m["users.title"];
   const subtitle = m["users.subtitle"];
 
-  const [rows, pkCounts, lastSeen] = await Promise.all([
+  const [rows, pkCounts, lastSeen, staffRoles] = await Promise.all([
     db()
       .select({
         id: users.id,
         email: users.email,
         name: users.name,
         role: users.role,
+        staffRoleId: users.staffRoleId,
         createdAt: users.createdAt,
       })
       .from(users),
@@ -43,7 +46,14 @@ export default async function UsersPage() {
       .select({ userId: sessions.userId, last: max(sessions.createdAt) })
       .from(sessions)
       .groupBy(sessions.userId),
+    // 1.50.0:自訂角色(角色與權限頁建的),給每一列的角色選單。
+    listStaffRoles(),
   ]);
+  const roleOptions: RoleOption[] = staffRoles.map((role) => ({
+    id: role.id,
+    name: role.name,
+    pages: openablePageCount(role.access),
+  }));
   const pkByUser = new Map(pkCounts.map((r) => [r.userId, r.n]));
   const seenByUser = new Map(lastSeen.map((r) => [r.userId, r.last]));
   const list: UserRecord[] = rows.map((r) => ({
@@ -64,7 +74,7 @@ export default async function UsersPage() {
       </div>
 
       {/* 表格不包卡 —— 直接坐在畫布上,列 hover 時自己浮起(見 UsersTable)。 */}
-      <UsersTable initialUsers={list} selfId={self.id} now={now} />
+      <UsersTable initialUsers={list} roles={roleOptions} selfId={self.id} now={now} />
     </div>
   );
 }

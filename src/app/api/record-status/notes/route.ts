@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { requireAuth, authErrorResponse } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth";
+import { requireExtensionAccess } from "@/lib/access-api";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { readBoundedJsonObject } from "@/lib/body-limit";
 import {
@@ -30,9 +31,11 @@ async function declaredSets(): Promise<Map<string, Set<string>>> {
   );
 }
 
-async function admin(): Promise<{ id: string } | Response> {
+// 1.50.0:狀態組 `<extId>:<setId>` —— 自訂角色看那個 extension 任一頁的權限(讀要檢視、
+// 寫要編輯);預設角色照舊只有管理者(lib/access-api.ts)。
+async function admin(set: string, needed: "view" | "edit"): Promise<{ id: string } | Response> {
   try {
-    return await requireAuth("admin");
+    return await requireExtensionAccess(set.split(":", 1)[0] ?? "", needed);
   } catch (e) {
     const r = authErrorResponse(e);
     if (r) return r;
@@ -44,10 +47,10 @@ const unknownSet = () => Response.json({ error: "unknown_status_set" }, { status
 const invalid = () => Response.json({ error: "invalid_input" }, { status: 400 });
 
 export async function GET(req: Request): Promise<Response> {
-  const actor = await admin();
-  if (actor instanceof Response) return actor;
   const params = new URL(req.url).searchParams;
   const set = params.get("set") ?? "";
+  const actor = await admin(set, "view");
+  if (actor instanceof Response) return actor;
   const ids = (params.get("ids") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
   if (!(await declaredSets()).has(set)) return unknownSet();
   try {
@@ -75,9 +78,8 @@ export async function PUT(req: Request): Promise<Response> {
     if (r) return r;
     throw e;
   }
-  const actor = await admin();
-  if (actor instanceof Response) return actor;
-
+  // 1.50.0:要看的是哪個 extension 的狀態組,所以先讀 body(4KB 上限)再驗權限;
+  // 驗權限仍在載入 extension runtime 之前。
   const raw = await readBoundedJsonObject(req, 4096, "record-status-notes");
   if (!raw.ok) {
     return Response.json({ error: "invalid_input" }, { status: raw.reason === "too_large" ? 413 : 400 });
@@ -85,6 +87,8 @@ export async function PUT(req: Request): Promise<Response> {
   const body = bodySchema.safeParse(raw.value);
   if (!body.success) return invalid();
   const { set, id, status, note } = body.data;
+  const actor = await admin(set, "edit");
+  if (actor instanceof Response) return actor;
   const statuses = (await declaredSets()).get(set);
   if (!statuses) return unknownSet();
   if (!statuses.has(status)) return Response.json({ error: "unknown_status" }, { status: 400 });

@@ -178,13 +178,16 @@ export default async function AccountPage({
             </IdentityRow>
             <IdentityRow label={m["account.role"]}>
               <RoleBadge
-                role={user.role}
+                role={user.staffRole ? "editor" : user.role}
                 label={
-                  user.role === "admin"
-                    ? m["account.roleAdmin"]
-                    : user.role === "guest"
-                      ? m["account.roleGuest"]
-                      : m["account.roleEditor"]
+                  // 1.50.0:自訂角色顯示角色名稱。
+                  user.staffRole
+                    ? user.staffRole.name
+                    : user.role === "admin"
+                      ? m["account.roleAdmin"]
+                      : user.role === "guest"
+                        ? m["account.roleGuest"]
+                        : m["account.roleEditor"]
                 }
               />
             </IdentityRow>

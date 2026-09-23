@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth";
+import { guardMediaPage } from "@/lib/access-guards";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { listFiles } from "@/lib/storage";
 import { MediaLibrary } from "./MediaLibrary";
@@ -12,8 +12,9 @@ export const dynamic = "force-dynamic";
 // pagination/delete. requireAuth("admin") matches the other admin-only pages
 // (Users, Settings write actions); the (admin) layout already gates session
 // auth for every route under it.
+// 1.50.0:自訂角色看媒體庫的授權(lib/access-guards.ts);預設角色照舊只有管理者。
 export default async function MediaPage() {
-  await requireAuth("admin");
+  await guardMediaPage();
 
   const locale = await getLocale();
   const m = getMessages(locale);

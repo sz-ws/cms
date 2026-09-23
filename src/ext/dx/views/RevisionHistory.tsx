@@ -55,6 +55,8 @@ export interface RevisionHistoryProps {
   revisions: RevisionRowDTO[];
   /** server 端的「現在」,供相對時間顯示;SSR/CSR 一致的前提。 */
   now: number;
+  /** 1.50.0:只能檢視這一頁的角色看得到版本,不給還原。 */
+  readOnly?: boolean;
 }
 
 /** 任意快照值 → 一行可讀預覽(物件/陣列走 JSON,過長截斷)。 */
@@ -83,6 +85,7 @@ export function RevisionHistory({
   entryId,
   revisions,
   now,
+  readOnly = false,
 }: RevisionHistoryProps) {
   const t = useT();
   const locale = useLocale();
@@ -170,6 +173,7 @@ export function RevisionHistory({
         summary={open}
         now={now}
         isCurrent={open !== null && open.id === currentId}
+        readOnly={readOnly}
         onClose={() => setOpen(null)}
         onRestored={() => {
           setOpen(null);
@@ -188,6 +192,7 @@ function RevisionSheet({
   summary,
   now,
   isCurrent,
+  readOnly,
   onClose,
   onRestored,
 }: {
@@ -195,6 +200,7 @@ function RevisionSheet({
   summary: RevisionRowDTO | null;
   now: number;
   isCurrent: boolean;
+  readOnly: boolean;
   onClose: () => void;
   onRestored: () => void;
 }) {
@@ -220,6 +226,7 @@ function RevisionSheet({
             summary={held}
             now={now}
             isCurrent={isCurrent}
+            readOnly={readOnly}
             onRestored={onRestored}
           />
         )}
@@ -233,12 +240,14 @@ function RevisionSheetBody({
   summary,
   now,
   isCurrent,
+  readOnly,
   onRestored,
 }: {
   base: string;
   summary: RevisionRowDTO;
   now: number;
   isCurrent: boolean;
+  readOnly: boolean;
   onRestored: () => void;
 }) {
   const t = useT();
@@ -362,22 +371,24 @@ function RevisionSheetBody({
         )}
       </div>
 
-      <SheetFooter>
-        <StatusButton
-          status={
-            state === "busy" ? "loading" : state === "error" ? "error" : "idle"
-          }
-          idleIcon={<RotateCcw className="size-4" aria-hidden />}
-          label={
-            state === "busy"
-              ? t("revisions.restoring")
-              : state === "confirm"
-                ? t("revisions.restoreConfirm")
-                : t("revisions.restore")
-          }
-          onClick={() => void restore()}
-        />
-      </SheetFooter>
+      {!readOnly && (
+        <SheetFooter>
+          <StatusButton
+            status={
+              state === "busy" ? "loading" : state === "error" ? "error" : "idle"
+            }
+            idleIcon={<RotateCcw className="size-4" aria-hidden />}
+            label={
+              state === "busy"
+                ? t("revisions.restoring")
+                : state === "confirm"
+                  ? t("revisions.restoreConfirm")
+                  : t("revisions.restore")
+            }
+            onClick={() => void restore()}
+          />
+        </SheetFooter>
+      )}
     </>
   );
 }

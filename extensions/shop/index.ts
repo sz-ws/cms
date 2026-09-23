@@ -88,7 +88,8 @@ export const shop = defineExtension({
   //
   // ^1.49.0:商品目錄併進 commerce-kit,開關(ext.shop.catalog)在這裡的設定。
   //
-  // ^1.50.0:退貨(commerce-kit 的退貨引擎、API、後台頁與 returns 狀態組)。
+  // ^1.50.0:退貨(commerce-kit 的退貨引擎、API、後台頁與 returns 狀態組);
+  // 各 API 以 accessAs 跟著對應後台頁的角色權限。
   coreApi: "^1.50.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
@@ -197,16 +198,19 @@ export const shop = defineExtension({
     {
       method: "POST",
       path: "shipping-config",
+      accessAs: "shop/shipping", // 1.50.0:角色與權限跟著運費頁
       handler: createShippingConfigHandler({ settingsKey: SHIPPING_KEY }),
     },
     {
       method: "POST",
       path: "promos/save",
+      accessAs: "shop/promos",
       handler: createPromoSaveHandler({ table: PROMOS_TABLE }),
     },
     {
       method: "POST",
       path: "promos/delete",
+      accessAs: "shop/promos",
       handler: createPromoDeleteHandler({ table: PROMOS_TABLE }),
     },
     {
@@ -218,6 +222,7 @@ export const shop = defineExtension({
     {
       method: "POST",
       path: "orders/:orderNo/verify",
+      accessAs: "shop/verify",
       handler: createTransferVerifyHandler({
         table: ORDERS_TABLE,
         resolveTransferProvider: (ctx) => resolveProvider(ctx, "transfer"),
@@ -226,10 +231,12 @@ export const shop = defineExtension({
     {
       method: "POST",
       path: "orders/:orderNo/status",
+      accessAs: "shop",
       handler: createOrderStatusHandler({ table: ORDERS_TABLE }),
     },
     // 0.6.0:退貨(returns/…,只給 admin;路由表在 commerce-kit/returns-api.ts)。
-    ...createReturnsApiRoutes(SHOP_RETURNS),
+    // 角色與權限跟著退貨管理頁。
+    ...createReturnsApiRoutes(SHOP_RETURNS).map((route) => ({ ...route, accessAs: "shop/returns" })),
   ],
   // 0.6.0:退貨狀態組 shop:returns(站台可用 filter:statusSets 改名)。
   statusSets: [RETURN_STATUS_SET],

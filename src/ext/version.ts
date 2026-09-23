@@ -827,7 +827,8 @@
 // - lib/settings getPlainSetting(): reads a non-secret setting without building the
 //   extension runtime (the loader uses it).
 // Additive for extensions reading catalog.product; shop 0.5.0 needs coreApi ^1.49.0.
-// 1.50.0: returns in commerce-kit (退貨管理).
+// 1.50.0: one release — returns in commerce-kit (退貨管理) and custom staff roles
+// (角色與權限).
 // Returns (commerce-kit):
 // - returns.ts: the return lifecycle requested → approved / rejected / cancelled;
 //   approved → received / refunded / cancelled; received → refunded / completed;
@@ -871,6 +872,8 @@
 //   GET returns/:returnNo, POST returns, POST returns/:returnNo/status. Admin only
 //   (RETURNS_ROLE), stricter than the dispatcher's editor default; errors are
 //   { ok: false, error: <ReturnErrorCode> }, 503 not_ready before the tables exist.
+//   shop maps the four routes to its returns page (accessAs "shop/returns"), so a
+//   custom role needs 退貨管理 to read (View) or change (Edit) returns.
 // - UI: returns-admin.tsx (ReturnsAdminPage, server) renders ReturnsWorkspace (list,
 //   status pills counted under the current search, create sheet, detail sheet with
 //   next step and history; ?open=,
@@ -879,4 +882,65 @@
 // - New sidebar icon token "return".
 // Additive. shop 0.6.0 declares it (migration 0004_returns, admin page returns,
 // status set shop:returns) and needs coreApi ^1.50.0.
+// Staff roles (/admin/roles, System section):
+// - admin / editor / guest stay as the three presets and behave exactly as in 1.49.0.
+//   A site can add its own roles (accounting, order desk, marketing…): each grants
+//   None / View / Edit per admin page. The rows come from the admin sidebar itself
+//   (core + enabled extensions + filter:adminMenu), grouped by sidebar section, so a
+//   new extension's pages show up on their own and start at None. Settings, users,
+//   roles, extensions and the assistant stay admin-only.
+// - Storage: staff_roles (migration 0021) with access = { "<admin path>": "view" |
+//   "edit" }; users.staff_role_id points at one. Assigning a custom role writes
+//   users.role = "guest", so a missing role falls back to the lowest access.
+//   DELETE /api/roles/<id> turns its members into guests in the same batch.
+// - A custom role only narrows: inside the pages and APIs it is granted it runs as
+//   an admin (SessionUser.role === "admin", so extension handlers that call
+//   requireAuth("admin") keep working); everywhere else it is a signed-in editor-level
+//   user and requireAuth("admin") fails. SessionUser.staffRole ({ id, name }) marks
+//   it; isFullAdmin(user) asks for a real admin. getSessionAccess() returns the
+//   out-of-scope user plus the access map.
+// - Doors (lib/access-scope.ts): /admin/ext/<id>/<slug> and /admin/media check View
+//   (404 otherwise); /api/ext/<id>/... checks View for GET and Edit for writes (403
+//   otherwise) and runs the handler in that scope, public routes included (a custom
+//   role without access is an ordinary member there); /api/media browse/upload need
+//   View/Edit on Media or Edit anywhere, alt/delete need Edit on Media;
+//   /api/record-status/notes follows the status set's extension (any of its pages);
+//   ⌘K search only returns pages the role can view; the dashboard sends a role
+//   without it to its first page. Headers are never trusted for this.
+// - AdminPage.accessAs / ApiRoute.accessAs: "<extId>" or "<extId>/<slug>" — which
+//   page's access a hidden detail page or an API route follows. Declarative edit pages
+//   follow their collection page and each content type's CRUD follows the page that
+//   shows it (the relation picker's options route excepted). A route without accessAs
+//   follows the highest level on any page of its extension.
+// - The sidebar only lists what the user can open: editors see the dashboard (the
+//   only page their requireAuth allowed), custom roles see their granted pages.
+// - lib/admin-nav.ts: buildAdminMenu / buildAdminSections / getFullAdminNavGroups,
+//   moved out of admin/layout.tsx so the roles page shares the sidebar's menu.
+// - Users page: a role picker per member lists the presets and the custom roles;
+//   /api/users takes staffRoleId (PATCH, POST) and returns it (GET).
+// - withinAdminPage(pageRef, fn) (lib/access-scope.ts): narrows the current door to
+//   one page for the code inside fn — for a route that serves several pages (one
+//   actions route that verifies payments and ships orders) and for a provider that
+//   re-derives its actor with requireAuth("admin"). Only narrows: the role needs the
+//   outer door's level on that page too; without an outer door it is closed; presets
+//   are unaffected. Example: an order plugin whose order page and payment page share
+//   one API maps each action to its page, so the two pages stay separately grantable,
+//   and narrows its commerce:orders transition() to its order page.
+// - adminPageLevels(user, { name: pageRef }) (lib/access-api.ts): the caller's level
+//   per page, so an API can tell its screen which write buttons to draw.
+// - canEditCurrentPage() (lib/access-guards.ts): false for a custom role with only
+//   View on the page being rendered. Declarative collection, form and inbox pages use
+//   it: no create / bulk / save / restore / inbox actions for view-only roles.
+// - Rollout: apply migration 0021 before deploying this Worker. Until it is applied
+//   the session lookup ignores custom roles (everyone gets users.role, logged once)
+//   instead of failing every signed-in request; the users and roles pages still need
+//   the migration.
+// Known limits: a grant covers everything the handler does, including calls into
+// another extension's provider that authorizes with requireAuth("admin") — such a
+// provider runs as admin for the calling route's grant unless it narrows itself with
+// withinAdminPage (longer term: pass the actor to providers explicitly). Code
+// extensions' own admin screens still draw their write buttons for view-only roles
+// (the API answers 403) until they read canEditCurrentPage() or return their levels.
+// Additive: extensions without accessAs behave as before for presets; custom roles
+// fall back to the extension-wide level.
 export const CORE_API_VERSION = "1.50.0";

@@ -22,7 +22,8 @@ import { resolveDashboardCards } from "@/ext/dx/dashboard-cards";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { getSiteTimeZone } from "@/lib/datetime-server";
 import { getSetting } from "@/lib/settings";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionAccess, isFullAdmin } from "@/lib/auth";
+import { guardDashboard } from "@/lib/access-guards";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,8 @@ export const dynamic = "force-dynamic";
 // the composable-dashboard direction; drag / resize / edit-mode / the card
 // palette are a later phase and deliberately not built here.
 export default async function DashboardPage() {
+  // 1.50.0:沒有儀表板權限的自訂角色,送到它打得開的第一頁。
+  await guardDashboard();
   const data = await getDashboardData();
   const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const m = getMessages(locale);
@@ -177,9 +180,9 @@ export default async function DashboardPage() {
 
   // 洞察區的編輯模式寫的是 core.dashboard.insights,而 PUT /api/settings 是
   // requireAuth("admin")。editor 進得來這頁(layout 只擋 guest),所以權限要在這裡
-  // 判,不然按下編輯只會走到一個必定 403 的死路。getSessionUser 有 React cache(),
-  // layout 這個 request 已經呼叫過,這裡不會多一次查詢。
-  const canEditInsights = (await getSessionUser())?.role === "admin";
+  // 判,不然按下編輯只會走到一個必定 403 的死路。getSessionAccess 有 React cache(),
+  // layout 這個 request 已經呼叫過,這裡不會多一次查詢。1.50.0:自訂角色不算。
+  const canEditInsights = isFullAdmin((await getSessionAccess())?.user);
 
   const distributionData: ProportionWidgetData | null = data.hasTypes
     ? {

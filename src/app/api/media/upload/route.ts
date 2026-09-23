@@ -1,4 +1,5 @@
-import { requireAuth, authErrorResponse } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth";
+import { requireMediaAccess } from "@/lib/access-api";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { createServices } from "@/ext/services";
@@ -23,7 +24,7 @@ export async function POST(req: Request): Promise<Response> {
 
   let user;
   try {
-    user = await requireAuth("admin");
+    user = await requireMediaAccess("upload");
   } catch (e) {
     const r = authErrorResponse(e);
     if (r) return r;

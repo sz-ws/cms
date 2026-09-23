@@ -6,13 +6,14 @@ import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { inlineLabel } from "../field-utils";
 
 // Collection 頁首:標題(Paper & Ink 標題級距,非 text-2xl)+ 計數 + 右對齊主要
-// 「New」按鈕。計數走 NumberFlow(隨 filter 變動)。
+// 「New」按鈕。計數走 NumberFlow(隨 filter 變動)。沒有 createHref(只能檢視這一頁)
+// 就不畫按鈕。
 
 interface CollectionHeaderProps {
   title: string;
   typeLabel: string;
   total: number;
-  createHref: string;
+  createHref?: string;
 }
 
 export function CollectionHeader({
@@ -36,13 +37,15 @@ export function CollectionHeader({
           </span>
         </p>
       </div>
-      <AdminLink
-        href={createHref}
-        className="inline-flex h-10 items-center gap-2 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85 admin:hover:bg-ink/85"
-      >
-        {t("collection.new", { type: inlineLabel(typeLabel, locale) })}
-        <span className="text-white/70">→</span>
-      </AdminLink>
+      {createHref && (
+        <AdminLink
+          href={createHref}
+          className="inline-flex h-10 items-center gap-2 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85 admin:hover:bg-ink/85"
+        >
+          {t("collection.new", { type: inlineLabel(typeLabel, locale) })}
+          <span className="text-white/70">→</span>
+        </AdminLink>
+      )}
     </div>
   );
 }

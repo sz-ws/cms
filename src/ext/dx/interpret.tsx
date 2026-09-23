@@ -32,6 +32,7 @@ import { makeWebhookHandler } from "./webhook";
 import { parseScriptsApproval } from "./scripts";
 import { makeScriptsWidget } from "./scripts-widget";
 import { normalizePublicWidgets } from "../public-widgets";
+import { declarativeRouteAccess } from "../admin-access";
 import { surfaceIds } from "./surfaces";
 import { overrideRegistry } from "../overrides";
 import { buildScheduleJobs } from "./schedule-jobs";
@@ -174,6 +175,8 @@ function buildAdminPages(
       slug: editSlug,
       title: ap.title,
       showInMenu: false,
+      // 1.50.0:能開列表的人就能開編輯頁(能不能存檔看 CRUD API 的「編輯」)。
+      accessAs: slug ? `${extId}/${slug}` : extId,
       component: ({ searchParams }) => (
         <Form
           extId={extId}
@@ -335,8 +338,14 @@ function buildApiRoutes(
   manifest: DeclarativeManifest,
   submissions: Set<string>,
 ) {
+  // 1.50.0:每個 content type 的 CRUD 跟著顯示它的那一頁的權限(角色與權限;規則在
+  // ext/admin-access.ts declarativeRouteAccess)。
+  const accessFor = declarativeRouteAccess(extId, manifest.adminPages ?? []);
   return (manifest.contentTypes ?? []).flatMap((ct) =>
-    buildCrudRoutes(extId, ct, submissions.has(ct.name)),
+    buildCrudRoutes(extId, ct, submissions.has(ct.name)).map((route) => {
+      const accessAs = accessFor(ct.name, route.path);
+      return accessAs ? { ...route, accessAs } : route;
+    }),
   );
 }
 

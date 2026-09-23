@@ -5,14 +5,15 @@ import type { Locale } from "@/lib/i18n/index";
 import { inlineLabel } from "../field-utils";
 
 // 設計過的空狀態:ring-dot 記號 + 一句話 + 一顆主要 CTA。無空表格、無 kit spinner。
-// 兩種語境:完全沒有資料(showCreate)vs filter 無命中(引導清除)。
+// 兩種語境:完全沒有資料(showCreate)vs filter 無命中(引導清除)。沒有 createHref
+// (只能檢視這一頁)時只說沒有資料,不給新增。
 //
 // server component:locale 由 CollectionView 的 getLocale() 傳下來(與 fieldLabel /
 // typeLabel 同一個 resolve 點),字典直接以 getMessages(locale) 取,不依賴 I18nProvider。
 
 interface EmptyStateProps {
   typeLabel: string;
-  createHref: string;
+  createHref?: string;
   filtered: boolean;
   clearHref: string;
   locale: Locale;
@@ -52,13 +53,15 @@ export function EmptyState({
           <p className="max-w-sm text-[14px] text-black/55 admin:text-ink/55">
             {format(m["collection.empty.none"], { type })}
           </p>
-          <AdminLink
-            href={createHref}
-            className="inline-flex h-10 items-center gap-2 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85 admin:hover:bg-ink/85"
-          >
-            {format(m["collection.empty.create"], { type })}
-            <span className="text-white/70">→</span>
-          </AdminLink>
+          {createHref && (
+            <AdminLink
+              href={createHref}
+              className="inline-flex h-10 items-center gap-2 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[14px] font-medium text-white transition-[background,transform] active:scale-[0.96] hover:bg-black/85 admin:hover:bg-ink/85"
+            >
+              {format(m["collection.empty.create"], { type })}
+              <span className="text-white/70">→</span>
+            </AdminLink>
+          )}
         </>
       )}
     </div>

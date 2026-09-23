@@ -22,6 +22,9 @@ vi.mock("@/lib/auth", async (importActual) => {
       if (role && authState.user.role !== role) throw new actual.AuthError(403);
       return authState.user;
     },
+    // 1.50.0:門先看有沒有自訂角色(lib/access-api.ts);這裡都是預設角色。
+    getSessionAccess: async () =>
+      authState.user ? { user: authState.user, access: null } : null,
   };
 });
 

@@ -1,4 +1,5 @@
-import { requireAuth, authErrorResponse } from "@/lib/auth";
+import { requireAuth, authErrorResponse, getSessionAccess } from "@/lib/auth";
+import { atLeast, levelOf, type AccessMap } from "@/ext/admin-access";
 import { hitRateLimit } from "@/lib/rate-limit";
 import {
   searchContent,
@@ -52,12 +53,18 @@ export async function GET(req: Request): Promise<Response> {
     ? Math.min(Math.max(1, rawLimit), MAX_SEARCH_LIMIT)
     : DEFAULT_SEARCH_LIMIT;
 
+  // 1.50.0:自訂角色只搜得到它看得到的頁 —— 內容看該 type 的列表頁,插件紀錄看宣告
+  // 來源的那一頁(檢視以上)。這條 API 沒有門,所以 user.role 對自訂角色永遠是 editor。
+  const access = user.staffRole ? ((await getSessionAccess())?.access ?? {}) : null;
+  const canSee = (href: string | undefined) =>
+    access === null || (href !== undefined && atLeast(levelOf(access, href), "view"));
+
   const locale = await getLocale();
   // 1.40.0:extension 宣告的資料表來源(訂單、客戶…)只給 admin,與全文索引並行查。
   const [results, records] = await Promise.all([
     searchContent(q, limit),
-    user.role === "admin" && q.length >= MIN_QUERY_LENGTH
-      ? searchRecords(q, locale)
+    (user.role === "admin" || access !== null) && q.length >= MIN_QUERY_LENGTH
+      ? searchRecords(q, locale, access)
       : Promise.resolve([]),
   ]);
 
@@ -66,7 +73,8 @@ export async function GET(req: Request): Promise<Response> {
   // 前端呈現為不可點的列。
   const types = await listDeclarativeTypes(locale);
   const byKey = new Map(types.map((t) => [t.typeKey, t]));
-  const enriched = results.map((r) => {
+  const visible = results.filter((r) => canSee(byKey.get(r.typeKey)?.collectionHref));
+  const enriched = visible.map((r) => {
     const t = byKey.get(r.typeKey);
     return {
       ...r,
@@ -86,13 +94,18 @@ export async function GET(req: Request): Promise<Response> {
 async function searchRecords(
   q: string,
   locale: Awaited<ReturnType<typeof getLocale>>,
+  access: AccessMap | null,
 ): Promise<RecordSearchHit[]> {
   try {
     const { getExtRuntime } = await import("@/ext/loader");
     const rt = await getExtRuntime();
+    const sources = activeSearchSources(rt.enabled).filter(
+      (source) => access === null || atLeast(levelOf(access, source.pageHref), "view"),
+    );
+    if (sources.length === 0) return [];
     return await searchRecordSources(
       getDB(),
-      activeSearchSources(rt.enabled),
+      sources,
       q,
       (value) => resolveLocalizedString(value, locale) ?? "",
     );
