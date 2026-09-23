@@ -53,6 +53,7 @@ export const en = {
   "dashboard.subtitle.empty": "Your content overview",
   "dashboard.fromExtensions": "From your extensions",
   "dashboard.fromExtensionsDesc": "Cards contributed by your installed extensions.",
+  "dashboard.extStat.view": "View",
 
   // OverviewBand
   "overview.totalContent": "Total content",

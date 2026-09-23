@@ -85,6 +85,9 @@ export default async function DashboardPage() {
       published: m["contentType.published"],
       draft: m["contentType.draft"],
     },
+    extStat: {
+      view: m["dashboard.extStat.view"],
+    },
     extRecent: {
       viewAll: m["contentType.viewAll"],
       empty: m["recent.empty"],
@@ -146,11 +149,14 @@ export default async function DashboardPage() {
   // enabled extensions (getExtRuntime is React-cached per request — getDashboardData
   // already warmed it). Split by kind so stat tiles and recent feeds each get a
   // fitting responsive grid. Rendered only when non-empty.
-  // 1.52.0:卡片連到列出那個類型的頁(hrefs),自訂角色打不開那一頁就不顯示。
+  // 1.52.0:卡片連到列出那個類型的頁(hrefs),自訂角色打不開那一頁就不顯示。code extension
+  // 自己的數字(dashboardStats)也在這裡,「今天」照站台時區算。
   const rt = await getExtRuntime();
   const extCards = await resolveDashboardCards(rt.enabled, locale, {
     hrefs: data.collectionHrefs,
     canOpen: viewer?.canOpen,
+    now: data.now,
+    timeZone,
   });
   const extStatCards = extCards.filter((c) => c.kind === "stat");
   const extRecentCards = extCards.filter((c) => c.kind === "recent");
@@ -335,7 +341,12 @@ export default async function DashboardPage() {
               }}
             >
               {extStatCards.map((c, i) => (
-                <ExtStatCard key={`${c.contentType}-${i}`} card={c} />
+                <ExtStatCard
+                  key={`${c.extId}:${c.statId ?? c.contentType}-${i}`}
+                  card={c}
+                  locale={locale}
+                  labels={labels.extStat}
+                />
               ))}
             </div>
           )}

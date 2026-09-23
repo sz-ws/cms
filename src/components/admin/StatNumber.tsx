@@ -9,10 +9,12 @@ import NumberFlow from "@number-flow/react";
 interface StatNumberProps {
   value: number;
   className?: string;
+  /** Locale for grouping and decimals; omitted = the runtime's default. */
+  locales?: Intl.LocalesArgument;
 }
 
-export function StatNumber({ value, className }: StatNumberProps) {
+export function StatNumber({ value, className, locales }: StatNumberProps) {
   return (
-    <NumberFlow value={value} className={className} style={{ fontVariantNumeric: "tabular-nums" }} />
+    <NumberFlow value={value} locales={locales} className={className} style={{ fontVariantNumeric: "tabular-nums" }} />
   );
 }

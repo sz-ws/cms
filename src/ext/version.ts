@@ -1019,7 +1019,7 @@
 //   only install from the store, and declare coreApi ^1.51.0.
 // Additive: manifests and sites without the layer behave as in 1.50.0.
 // 1.52.0: paid extensions, stage 1 (registry protocol 1: prices shown, no payments),
-// and screens that follow the viewer's access.
+// screens that follow the viewer's access, and plugin numbers on the dashboard.
 // Paid extensions (registry protocol 1):
 // - Every registry request from core and the CLI carries X-Registry-Protocol: 1. A registry
 //   that sees it lists extensions this key has not been given and answers 402 for their
@@ -1079,5 +1079,23 @@
 //   Presets have no access map and see every screen as in 1.51.0. On the dashboard the
 //   preset editor (工作人員) is filtered like a role that can open only the dashboard
 //   (dashboardViewerFor), so it no longer sees cards or numbers from pages it can't open.
-// Additive: registries and roles without the new fields behave as in 1.51.0.
+// Plugin numbers on the dashboard:
+// - Extension.dashboardStats(ctx) => Promise<DashboardStat[]> (types.ts). ctx: { now,
+//   timeZone (core.timeZone via getSiteTimeZone, Asia/Taipei when unset), locale, canOpen
+//   (dashboardViewer's; presets allow every href) }. DashboardStat: { id
+//   ^[a-z0-9][a-z0-9-]{0,40}$, title: LocalizedString ≤ 60, href: an /admin path with an
+//   optional query, value: finite number, display?: string ≤ 24, hint?: LocalizedString
+//   ≤ 80 }. defineExtension checks it is a function.
+// - dx/dashboard-stats.ts collectDashboardStats: each extension's call is isolated — a
+//   throw, a non-array answer or no answer within 2 s (DASHBOARD_STATS_TIMEOUT_MS) drops
+//   that extension's numbers with one console.error; the dashboard still renders. Entries
+//   are checked one by one: a bad one is dropped with a log line, a repeated id keeps the
+//   first, at most 12 per extension, and an href canOpen refuses is dropped silently.
+// - resolveDashboardCards(exts, locale, { ..., now, timeZone, statsTimeoutMs }) turns them
+//   into kind "stat" cards after that extension's dashboardCards: count = value, plus
+//   statId, display and hint; contentType is absent on these (now optional).
+// - ExtStatCard shows display when given, else the value through StatNumber with the
+//   admin locale (StatNumber takes locales); the hint replaces the extension name; the
+//   link reads dashboard.extStat.view (View / 查看) instead of a hard-coded "View all".
+// Additive: registries, extensions and roles without the new fields behave as in 1.51.0.
 export const CORE_API_VERSION = "1.52.0";

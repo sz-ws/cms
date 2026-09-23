@@ -3,9 +3,11 @@ import { db } from "@/lib/db";
 import { contents } from "@/lib/schema";
 import { displayValue, pickTitleField } from "./views/field-utils";
 import type { DeclarativeDashboardCard } from "./manifest";
-import type { Extension } from "../types";
+import type { DashboardStatsContext, Extension } from "../types";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { Locale } from "@/lib/i18n/index";
+import { normalizeTimeZone } from "@/lib/datetime";
+import { collectDashboardStats } from "./dashboard-stats";
 
 // roadmap #16:把 enabled extensions 宣告的 dashboardCards 解析成可渲染的資料。
 //   stat   → 對共用 contents 表做 count(*)(可選 status filter)。
@@ -24,6 +26,11 @@ import type { Locale } from "@/lib/i18n/index";
 //
 // 1.52.0:canOpen(自訂角色,dashboard/viewer.ts)—— 卡片的來源頁(adminHref)打不開就
 // 整張略過,連查詢都不發。預設角色不給,照舊全部。
+//
+// 1.52.0:code extension 的 dashboardStats(插件自己的數字,dashboard-stats.ts)也在這裡收:
+// 每個插件一份 ctx(now、站台時區、語言、canOpen;預設角色的 canOpen 全部放行),驗過的數字
+// 變成 kind "stat" 的卡(count = value,另有 display / hint / statId,沒有 contentType),
+// 排在同一個插件的 dashboardCards 之後。
 
 const DEFAULT_RECENT_LIMIT = 5;
 
@@ -42,12 +49,18 @@ export interface ResolvedDashboardCard {
   extName: string;
   kind: "stat" | "recent";
   title: string;
-  /** 完整 content type key "<extId>.<name>"(查 contents 表用)。 */
-  contentType: string;
-  /** 列出這個類型的後台頁(見檔頭決策)。 */
+  /** 完整 content type key "<extId>.<name>"(查 contents 表用);插件自己的數字沒有。 */
+  contentType?: string;
+  /** 1.52.0:插件自己的數字(dashboardStats)的 id;內容類型的卡沒有。 */
+  statId?: string;
+  /** 列出這個類型的後台頁(見檔頭決策);插件的數字是它給的 href。 */
   adminHref: string;
-  /** stat 專用:符合條件的 entry 總數。 */
+  /** stat 專用:卡片上的數字 —— 內容類型卡是符合條件的 entry 總數,插件的數字是它的 value。 */
   count?: number;
+  /** 1.52.0 插件的數字:格式化好的顯示字串,有就取代 count 的語系格式。 */
+  display?: string;
+  /** 1.52.0 插件的數字:標題下的小字,取代插件名稱。 */
+  hint?: string;
   /** recent 專用:最近更新的 entry 列。 */
   entries?: ResolvedRecentEntry[];
 }
@@ -58,6 +71,12 @@ export interface DashboardCardOptions {
   hrefs?: Readonly<Record<string, string>>;
   /** 這個人打不打得開卡片的來源頁;省略 = 全部顯示(預設角色)。 */
   canOpen?: (href: string) => boolean;
+  /** dashboardStats 的「現在」;省略 = Date.now()。 */
+  now?: number;
+  /** 站台時區(getSiteTimeZone);省略或壞值 = 台北(lib/datetime DEFAULT_TIME_ZONE)。 */
+  timeZone?: string;
+  /** 每個插件 dashboardStats 的時限;省略 = DASHBOARD_STATS_TIMEOUT_MS。 */
+  statsTimeoutMs?: number;
 }
 
 /** 解析單張卡;任何失敗都吞成 null(呼叫端過濾),不 throw。 */
@@ -165,12 +184,41 @@ export async function resolveDashboardCards(
   locale: Locale = "en",
   opts: DashboardCardOptions = {},
 ): Promise<ResolvedDashboardCard[]> {
-  const jobs: Promise<ResolvedDashboardCard | null>[] = [];
+  const statsCtx: DashboardStatsContext = {
+    now: opts.now ?? Date.now(),
+    timeZone: normalizeTimeZone(opts.timeZone),
+    locale,
+    canOpen: opts.canOpen ?? (() => true),
+  };
+  const jobs: Promise<ResolvedDashboardCard[]>[] = [];
   for (const ext of exts) {
     for (const card of ext.dashboardCards ?? []) {
-      jobs.push(resolveCard(ext, card, locale, opts));
+      jobs.push(resolveCard(ext, card, locale, opts).then((c) => (c ? [c] : [])));
     }
+    if (ext.dashboardStats) jobs.push(resolveStats(ext, locale, statsCtx, opts.statsTimeoutMs));
   }
-  const settled = await Promise.all(jobs);
-  return settled.filter((c): c is ResolvedDashboardCard => c !== null);
+  return (await Promise.all(jobs)).flat();
+}
+
+/** 一個插件的 dashboardStats → 數字卡(驗證與隔離在 dashboard-stats.ts)。 */
+async function resolveStats(
+  ext: Extension,
+  locale: Locale,
+  ctx: DashboardStatsContext,
+  timeoutMs: number | undefined,
+): Promise<ResolvedDashboardCard[]> {
+  const stats = await collectDashboardStats(ext, ctx, timeoutMs);
+  if (stats.length === 0) return [];
+  const extName = resolveLocalizedString(ext.name, locale) ?? ext.id;
+  return stats.map((stat) => ({
+    extId: ext.id,
+    extName,
+    kind: "stat",
+    title: stat.title,
+    statId: stat.id,
+    adminHref: stat.href,
+    count: stat.value,
+    ...(stat.display !== undefined ? { display: stat.display } : {}),
+    ...(stat.hint !== undefined ? { hint: stat.hint } : {}),
+  }));
 }

@@ -52,6 +52,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "dashboard.subtitle.empty": "您的內容總覽",
   "dashboard.fromExtensions": "來自擴充功能",
   "dashboard.fromExtensionsDesc": "已安裝擴充功能所提供的卡片。",
+  "dashboard.extStat.view": "查看",
 
   // OverviewBand
   "overview.totalContent": "內容總數",

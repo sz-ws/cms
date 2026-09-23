@@ -10,6 +10,7 @@ import type {
   DeclarativeDashboardCard,
 } from "./dx/manifest";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import type { Locale } from "@/lib/i18n";
 import { isSqlIdentifier, type AdminPageSearch } from "./record-search";
 import {
   STATUS_KEY_RE,
@@ -153,6 +154,37 @@ export interface ExtJobRegistration {
   run: (services: CoreServices, payload: unknown, now: number) => Promise<void>;
 }
 
+/**
+ * 1.52.0:插件放在儀表板上的一個數字(Extension.dashboardStats)。卡片跟 dashboardCards 的
+ * 數字卡同一個樣子:標題、一行小字、數字,整張連到 href。規則見 dx/dashboard-stats.ts,
+ * 不合規則的那一筆不顯示(伺服器記一行)。
+ */
+export interface DashboardStat {
+  /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
+  id: string;
+  title: LocalizedString;
+  /** 處理這件事的後台頁:`/admin` 開頭的站內路徑,可帶 query。看的人打不開就不顯示。 */
+  href: string;
+  /** 有限數字;沒給 display 時照後台語言格式化顯示。 */
+  value: number;
+  /** 插件自己格式化好的顯示字串(例如金額、帶小數的單位),最多 24 字。 */
+  display?: string;
+  /** 標題下的一行小字(最多 80 字);沒給是插件名稱。 */
+  hint?: LocalizedString;
+}
+
+/** 1.52.0:dashboardStats 收到的內容。 */
+export interface DashboardStatsContext {
+  /** 這次儀表板的時間(ms)。 */
+  now: number;
+  /** 站台時區(settings 的 core.timeZone,預設台北),「今天」照這個算。 */
+  timeZone: string;
+  /** 後台語言。 */
+  locale: Locale;
+  /** 看的人打不打得開這個後台連結;打不開的數字 core 會丟掉,插件可以先不查。 */
+  canOpen: (href: string) => boolean;
+}
+
 export interface Extension {
   id: string; // ^[a-z][a-z0-9-]{1,30}$
   /** 1.50.0:跨來源的全域名字 `<publisher>/<name>`(見 ./plugin-ref.ts)。商店用它分辨
@@ -196,6 +228,11 @@ export interface Extension {
   // roadmap #16:extension 貢獻的 dashboard 卡(stat/recent)。declarative 由 interpret
   // 從 manifest.dashboardCards 直接帶入;code extension 之後也可自行設定同欄位。
   dashboardCards?: DeclarativeDashboardCard[];
+  /**
+   * 1.52.0:插件自己的儀表板數字(DashboardStat)。每次打開儀表板呼叫一次;丟例外、
+   * 回傳不是陣列、或 2 秒內沒回來,這個插件的數字就不顯示,其他照常。
+   */
+  dashboardStats?: (ctx: DashboardStatsContext) => Promise<DashboardStat[]>;
   hooks?: Partial<Record<HookName, HookHandler>>;
   provides?: ProviderRegistration[]; // core-v2 §2.2:選填
   jobs?: ExtJobRegistration[]; // spec-extension-jobs.md:週期性 / 一次性任務宣告
@@ -549,6 +586,7 @@ const manifestSchema = z
     publicFeeds: z
       .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
       .optional(),
+    dashboardStats: fn.optional(),
   })
   // 其餘欄位(migrations/settings/adminPages/publicRoutes/hooks/uninstall)含 React
   // 型別與 function,不在 zod 深驗範圍,passthrough 保留。
