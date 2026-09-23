@@ -5,6 +5,7 @@ import {
   type UnmetRequirement,
 } from "@/ext/plugin-ref";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import type { RegistryAccess, RegistryOffer } from "@/lib/registry-offer";
 
 // 商店(RegistryBrowser)與相依畫面(PluginRequirements)共用的資料形狀,
 // 對應 GET /api/registry/index 的回應。
@@ -32,7 +33,7 @@ export interface RegistryEntry {
   installedVersion: string | null;
   /**
    * 1.50.0:同 id 已經裝了別的插件。identity / kind = 不能互相更新,要先移除;
-   * source = 舊版沒有 identity、從別的來源裝的,管理員確認後可以改用這個來源。
+   * source = 從別的來源裝的(1.52.0 起 identity 相同也算),管理員確認後可以改用這個來源。
    */
   conflict?: "identity" | "source" | "kind" | null;
   /** conflict 為 source 時:目前那一個當初的來源。 */
@@ -49,6 +50,7 @@ export interface RegistryEntry {
   homepage?: string;
   repository?: string;
   supportUrl?: string;
+  supportEmail?: string;
   capabilities?: string[];
   /** manifest.requires passthrough:服務需求(對照 IndexResponse.services 判定)。 */
   requires?: { capability: string; optional?: boolean; reason?: string }[];
@@ -56,6 +58,10 @@ export interface RegistryEntry {
   requiresExtensions?: RequiredPlugin[];
   /** 1.51.0:這個站把它的前台編進了網站 —— 安裝不用核准 script。 */
   scriptsCompiled?: boolean;
+  /** 1.52.0 付費插件:這把金鑰對它的開通狀態(閘道產生)。沒有 = 免費。 */
+  access?: RegistryAccess;
+  /** 價格與說明;只有同時有 access 時才會出現(伺服器已驗證、消毒)。 */
+  offer?: RegistryOffer;
 }
 
 /** 站上已安裝的插件(name 可能是多語物件,畫面依語系解析)。 */
@@ -66,6 +72,8 @@ export interface InstalledPluginRef extends InstalledPlugin {
 export interface SourceFetchError {
   source: string;
   error: string;
+  /** registry 回的 http 狀態碼;401 / 403 = 這個來源的金鑰不能用。 */
+  status?: number;
 }
 
 export interface IndexResponse {
@@ -77,6 +85,20 @@ export interface IndexResponse {
   installedCode?: { id: string; version: string; enabled: boolean }[];
   /** 1.50.0:站上所有已安裝的插件(判斷相依用)。 */
   installedPlugins?: InstalledPluginRef[];
+}
+
+/** 來源的顯示名稱:去掉 https:// 與結尾的斜線(路徑保留,同一台主機上的兩個來源分得開)。 */
+export function sourceLabel(source: string): string {
+  return source.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}
+
+/** 來源的主機名(「提供者」、「已從 <主機> 安裝」)。 */
+export function sourceHost(source: string): string {
+  try {
+    return new URL(source).host;
+  } catch {
+    return sourceLabel(source);
+  }
 }
 
 /** 這個插件的必要插件裡,還沒裝好、啟用的(空陣列 = 可以裝)。 */

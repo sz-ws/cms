@@ -1,9 +1,12 @@
 // Registry 讀取 —— 獨立小版,不 import cms core(避免拖 next/navigation 鏈)。
 // 演算法對齊 src/lib/registry-client.ts:多源平行、size cap、同 host redirect、
 // 逾時重試。支援 file://(本機測試)+ http(s)。private repo 用 token(Authorization: token <t>)。
+// 付費插件協定 1:每個請求帶 X-Registry-Protocol;索引條目帶 access;402 not_entitled 的
+// message 與條目名稱都先消毒(registry-text.ts)才會印出。
 
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { REGISTRY_MESSAGE_MAX, sanitizeRegistryText } from "./registry-text.js";
 
 export const DEFAULT_SOURCE =
   "https://raw.githubusercontent.com/sz-ws/registry/main";
@@ -11,6 +14,15 @@ export const DEFAULT_SOURCE =
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_BYTES = 1024 * 1024; // 1 MB / 檔(code extension files/ 通常 KB 級)
 const MAX_REDIRECTS = 3;
+
+/**
+ * 付費插件協定的版本(同 core 的 REGISTRY_PROTOCOL)。閘道看到它才列出這把金鑰沒開通的
+ * 付費插件(access: "locked")、才對它們的檔案回 402;沒帶的舊 CLI 照舊看到 404。
+ */
+export const REGISTRY_PROTOCOL = "1";
+
+export type RegistryAccess = "granted" | "locked" | "requested" | "expired";
+const ACCESS_STATES: readonly RegistryAccess[] = ["granted", "locked", "requested", "expired"];
 
 export interface IndexEntry {
   id: string;
@@ -22,6 +34,8 @@ export interface IndexEntry {
   files?: string[];
   /** 標記此 entry 來自哪個 source(多源衝突時列印用)。 */
   source: string;
+  /** 付費插件:閘道依金鑰加上的開通狀態。沒有 = 免費;不是 granted 就不去抓檔。 */
+  access?: RegistryAccess;
 }
 
 export interface SourceConfig {
@@ -43,10 +57,38 @@ export interface IndexResult {
 
 export class RegistryFetchError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  /** 錯誤回應 body 的 `error`(例如 not_entitled)。 */
+  code?: string;
+  /** 錯誤回應 body 的 `message`,已消毒、截到 200 字 —— 可以直接印。 */
+  detail?: string;
+  constructor(message: string, status?: number, code?: string, detail?: string) {
     super(message);
     this.name = "RegistryFetchError";
     this.status = status;
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+/** 402:這把金鑰沒開通這個插件。重試、換 token 格式都沒用,要提供者那邊開通。 */
+export function isNotEntitled(e: unknown): e is RegistryFetchError {
+  return e instanceof RegistryFetchError && e.status === 402;
+}
+
+const ERROR_BODY_MAX = 4 * 1024;
+const ERROR_CODE_RE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** 錯誤回應只讀前 4 KB,解析得出 `{ error, message }` 才用。 */
+async function readErrorBody(res: Response): Promise<{ code?: string; detail?: string }> {
+  try {
+    const text = (await res.text()).slice(0, ERROR_BODY_MAX);
+    const body = JSON.parse(text) as { error?: unknown; message?: unknown } | null;
+    const code = typeof body?.error === "string" && ERROR_CODE_RE.test(body.error) ? body.error : undefined;
+    const detail =
+      typeof body?.message === "string" ? sanitizeRegistryText(body.message, REGISTRY_MESSAGE_MAX) || undefined : undefined;
+    return { code, detail };
+  } catch {
+    return {};
   }
 }
 
@@ -61,7 +103,7 @@ async function followRedirects(
   token: string | undefined,
   signal: AbortSignal,
 ): Promise<Response> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { "X-Registry-Protocol": REGISTRY_PROTOCOL };
   if (token) headers["Authorization"] = `token ${token}`;
   const originHost = new URL(url).host;
   let current = url;
@@ -80,7 +122,10 @@ async function followRedirects(
     current = next.toString();
   }
   if (!res) throw new RegistryFetchError("too many redirects");
-  if (!res.ok) throw new RegistryFetchError(`HTTP ${res.status}`, res.status);
+  if (!res.ok) {
+    const { code, detail } = await readErrorBody(res);
+    throw new RegistryFetchError(`HTTP ${res.status}`, res.status, code, detail);
+  }
   return res;
 }
 
@@ -189,6 +234,7 @@ interface RawEntry {
   version?: unknown;
   coreApi?: unknown;
   files?: unknown;
+  access?: unknown;
 }
 
 function parseIndex(json: unknown, source: string): IndexEntry[] {
@@ -204,16 +250,18 @@ function parseIndex(json: unknown, source: string): IndexEntry[] {
       typeof raw.version === "string" &&
       typeof raw.coreApi === "string"
     ) {
+      // 會印到終端機的欄位先消毒(合法的值原樣不變)。
       out.push({
         id: raw.id,
         kind: raw.kind,
-        name: raw.name,
-        version: raw.version,
-        coreApi: raw.coreApi,
+        name: sanitizeRegistryText(raw.name, 100),
+        version: sanitizeRegistryText(raw.version, 64),
+        coreApi: sanitizeRegistryText(raw.coreApi, 64),
         files: Array.isArray(raw.files)
           ? raw.files.filter((f): f is string => typeof f === "string")
           : undefined,
         source,
+        access: ACCESS_STATES.includes(raw.access as RegistryAccess) ? (raw.access as RegistryAccess) : undefined,
       });
     }
   }
@@ -238,6 +286,9 @@ export async function fetchIndex(sources: SourceConfig[]): Promise<IndexResult> 
             e instanceof RegistryFetchError
               ? e
               : new RegistryFetchError(String(e));
+          // 只有 404 代表「這個格式沒有這個檔」;401 / 403 / 5xx 就是答案,再試下去,後面
+          // 格式的 404 會蓋掉真正的原因(例如金鑰失效變成「找不到」)。
+          if (lastError.status !== undefined && lastError.status !== 404) break;
         }
       }
       if (text === null) {

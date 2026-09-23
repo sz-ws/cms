@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,12 +10,16 @@ import {
   fetchAndWriteFiles,
   heuristicWarnings,
 } from "./install.js";
-import type { IndexEntry } from "./registry.js";
+import { isNotEntitled, type IndexEntry, type RegistryFetchError } from "./registry.js";
 
 describe("isSafeRelPath", () => {
   it("accepts nested relative paths", () => {
     expect(isSafeRelPath("index.ts")).toBe(true);
     expect(isSafeRelPath("worker/index.js")).toBe(true);
+  });
+  it("rejects control characters (file names get printed to the terminal)", () => {
+    expect(isSafeRelPath("index\u001b[2J.ts")).toBe(false);
+    expect(isSafeRelPath("a\nb.ts")).toBe(false);
   });
   it("rejects traversal / absolute", () => {
     expect(isSafeRelPath("../secret")).toBe(false);
@@ -99,6 +103,26 @@ describe("resolveFiles", () => {
     const warnings = heuristicWarnings("cron", r.files).join("\n");
     expect(warnings).toContain("does not recurse into subdirectories");
     expect(warnings).toContain("files[]");
+  });
+
+  // 付費插件:402 不是「猜錯檔名」也不是抓檔失敗,是這把金鑰沒開通 —— 原樣往上丟。
+  it("a 402 while probing says the key has not been given the extension", async () => {
+    const source = "https://registry.example.com";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) =>
+        String(input).endsWith("/files/index.ts")
+          ? new Response("export const demoext = 1;", { status: 200 })
+          : new Response(JSON.stringify({ error: "not_entitled", message: "請聯絡提供者。" }), { status: 402 }),
+      ),
+    );
+    try {
+      const error = await resolveFiles(source, { ...codeEntry(), source }, undefined).catch((e: unknown) => e);
+      expect(isNotEntitled(error)).toBe(true);
+      expect((error as RegistryFetchError).detail).toBe("請聯絡提供者。");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("probe 遇到非 404 的錯誤時中止(不靜默少抓檔)", async () => {

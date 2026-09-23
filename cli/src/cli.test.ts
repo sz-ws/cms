@@ -50,6 +50,13 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
     path.join(progDir, "index.ts"),
     `overrideRegistry.register("progext", "public:progext.thing:list", Card);\n`,
   );
+  // 付費插件:這把金鑰沒開通(access: "locked")。檔案其實抓得到 —— 證明 CLI 根本沒去抓。
+  const paidDir = path.join(dir, "extensions", "paidext", "files");
+  await mkdir(paidDir, { recursive: true });
+  await writeFile(
+    path.join(paidDir, "index.ts"),
+    `export const paidext = defineExtension({ id: "paidext" });\n`,
+  );
   const registryJson = {
     extensions: [
       {
@@ -85,6 +92,15 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
         version: "1.0.0",
         coreApi: "^1.0.0",
         files: ["index.ts", "manifest.json"],
+      },
+      {
+        id: "paidext",
+        kind: "code",
+        name: "Paid",
+        version: "1.0.0",
+        coreApi: "^1.0.0",
+        files: ["index.ts"],
+        access: "locked",
       },
       {
         id: "declme",
@@ -702,5 +718,49 @@ describe("run — create --deploy 的 slug 前置檢查", () => {
     const code = await run(["create", "ab-c", "--deploy", "--dry-run", "--non-interactive"], repoDir);
     expect(code).toBe(EXIT.OK);
     expect(out()).not.toContain("cannot be used as the Cloudflare site slug");
+  });
+});
+
+describe("run add — paid extensions", () => {
+  it("access other than granted → exit 11 before fetching anything", async () => {
+    const code = await run(["add", "paidext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.NOT_ENTITLED);
+    expect(errOut()).toContain('"paidext" is not activated for this registry key');
+    await expect(stat(path.join(repoDir, "extensions", "paidext"))).rejects.toThrow();
+    expect(await readFile(path.join(repoDir, "extensions", "registry.ts"), "utf8")).toBe(emptyRegistry);
+  });
+
+  it("a 402 while fetching files → exit 11 with the provider's message, cleaned", async () => {
+    const source = "https://registry.example.com";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url === `${source}/registry.json`) {
+          return new Response(
+            JSON.stringify({
+              extensions: [{ id: "replay", kind: "code", name: "Replay", version: "1.0.0", coreApi: "^1.0.0", files: ["index.ts"] }],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ error: "not_entitled", message: "\u001b[2J\u001b]0;pwned\u0007請聯絡提供者開通。" }),
+          { status: 402 },
+        );
+      }),
+    );
+    try {
+      const code = await run(["add", "replay", "--source", source], repoDir);
+      expect(code).toBe(EXIT.NOT_ENTITLED);
+      const output = errOut();
+      expect(output).toContain('"replay" is not activated for this registry key');
+      expect(output).toContain("  請聯絡提供者開通。");
+      expect(output).not.toContain("\u001b");
+      expect(output).not.toContain("pwned");
+      await expect(stat(path.join(repoDir, "extensions", "replay", "index.ts"))).rejects.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

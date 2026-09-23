@@ -199,6 +199,19 @@ describe("GET /api/registry/index", () => {
     expect(Array.isArray(body.installedCode)).toBe(true);
   });
 
+  // 1.52.0:付費插件的 access / offer 與來源錯誤的狀態碼原樣帶給商店。
+  it("passes access, offer and the source error status through", async () => {
+    authState.user = ADMIN;
+    const offer = { price: { amount: 25000, currency: "TWD", period: "year" } };
+    registryState.entries = [
+      { id: "replay", kind: "declarative", name: "Replay", version: "0.1.0", coreApi: "^1.0.0", source: "https://registry.example.com", access: "locked", offer },
+    ];
+    registryState.errors = [{ source: "https://other.example.com", error: "http 403", status: 403 }];
+    const body = (await (await GET()).json()) as { entries: { access?: string; offer?: unknown }[]; errors: unknown[] };
+    expect(body.entries[0]).toMatchObject({ access: "locked", offer });
+    expect(body.errors).toEqual([{ source: "https://other.example.com", error: "http 403", status: 403 }]);
+  });
+
   // 1.49.0:某個來源還列著 catalog(舊索引、別人的 registry)也不在商店出現。
   it("leaves the built-in catalog out of the store", async () => {
     authState.user = ADMIN;
@@ -231,7 +244,8 @@ describe("GET /api/registry/index", () => {
   });
 });
 
-// 1.50.0:「已安裝」= 裝的就是這一個(identity,舊安裝則看來源)。
+// 1.50.0:「已安裝」= 裝的就是這一個。1.52.0 起以 (來源, id) 為準:identity 不同是
+// identity 衝突,別的來源一律是 source 衝突(沒有更新鈕)。
 describe("GET /api/registry/index — plugin identity", () => {
   const A = "https://registry-a.test";
   const B = "https://registry-b.test";
@@ -259,15 +273,15 @@ describe("GET /api/registry/index — plugin identity", () => {
     installedPlugins: { id: string; kind: string; enabled: boolean; identity: string | null; name: unknown }[];
   };
 
-  it("an entry with a different identity is a conflict, the same identity from any source is installed", async () => {
+  it("an entry with a different identity is a conflict, the same identity from another source is a source conflict", async () => {
     authState.user = ADMIN;
     await insertDx("reviews", A, "acme/reviews");
     registryState.entries = [entry(A, "acme/reviews"), entry(B, "other/reviews"), entry(B + "/mirror", "acme/reviews")];
     const body = (await (await GET()).json()) as Body;
-    expect(body.entries.map((e) => [e.installed, e.installedVersion, e.conflict])).toEqual([
-      [true, "1.0.0", null],
-      [false, null, "identity"],
-      [true, "1.0.0", null],
+    expect(body.entries.map((e) => [e.installed, e.installedVersion, e.conflict, e.installedSource])).toEqual([
+      [true, "1.0.0", null, null],
+      [false, null, "identity", null],
+      [false, null, "source", A],
     ]);
   });
 

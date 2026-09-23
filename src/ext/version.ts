@@ -1018,4 +1018,33 @@
 //   Component) guarded by has(), keep the scripts as the fallback for sites that
 //   only install from the store, and declare coreApi ^1.51.0.
 // Additive: manifests and sites without the layer behave as in 1.50.0.
-export const CORE_API_VERSION = "1.51.0";
+// 1.52.0: paid extensions, stage 1 (registry protocol 1: prices shown, no payments).
+// Paid extensions (registry protocol 1):
+// - Every registry request from core and the CLI carries X-Registry-Protocol: 1. A registry
+//   that sees it lists extensions this key has not been given and answers 402 for their
+//   manifests and files; requests without it get the old behaviour.
+// - Index entries: access ("granted" | "locked" | "requested" | "expired", set per key by the
+//   registry) and offer ({ price?: { amount, currency, period: once|month|year }, note? ≤ 40
+//   characters, action?: request|link, url?, termsUrl? }, https URLs only). An offer counts
+//   only next to access; one that breaks any rule is dropped whole. lib/registry-offer.ts
+//   parses and formats (en locale: NT$25,000, $12.50). lib/registry-text.ts strips ANSI,
+//   control and bidi characters from registry text; cli/src/registry-text.ts is the same
+//   function, held equal by a test. support.url must be https; support.email is read.
+// - lib/registry-client: RegistryHttpError { status, code, detail } for non-2xx answers
+//   (detail = the body's message, sanitised, ≤ 200 characters). Path-variant loops stop at
+//   the first answer that is not 404 and try the variant that worked for a source first.
+//   SourceFetchError carries status. registryErrorResponse(e) maps 402 to 402
+//   { error: "not_entitled", message? } and 401/403 to 502 source_key_invalid; GET
+//   /api/registry/manifest and POST /api/registry/install use it instead of 502
+//   manifest_fetch_failed.
+// - (source, id): installVerdict / listingVerdict treat another source as source_changed even
+//   when identities match, so an update from another source needs confirmSource and GET
+//   /api/registry/index marks such listings conflict "source".
+// - Store: an entry this key has not been given shows its price and "Contact provider"
+//   (support.url, else mailto:support.email) instead of Get; installed ones show Installed with
+//   no update; the detail page adds Provider (source host) and Terms. Source errors read in
+//   plain words. Entries without access render exactly as before.
+// - CLI: add exits 11 (NOT_ENTITLED) when access is not granted or a file answers 402.
+// Not yet: in-site requests, action "link", expiry display, notices.
+// Additive: registries without the new fields behave as in 1.51.0.
+export const CORE_API_VERSION = "1.52.0";

@@ -114,13 +114,15 @@ export function requirementTargets(
 }
 
 /**
- * 安裝或更新一個宣告式插件之前:同 id 已經裝了東西時,它是不是同一個插件。
+ * 安裝或更新一個宣告式插件之前:同 id 已經裝了東西時,它是不是同一個插件、能不能直接換。
  *
- *   - 已安裝的有 identity:新來的必須一模一樣(少了也不行)。來源換了沒關係 ——
- *     identity 正是讓插件能換來源(registry 搬家)而不被誤認的東西。
- *   - 已安裝的沒有 identity(1.50.0 之前裝的):唯一的線索是當初的來源。同一個來源
- *     照舊更新(新版帶了 identity 就從此記下);不同來源 → 分不出是不是同一個,
- *     不自動覆蓋,要管理員明確確認(confirmedSource 等於當初的來源)。
+ *   - 已安裝的有 identity:新來的必須一模一樣(少了也不行),確認也繞不過。
+ *   - 來源不同 → 不自動覆蓋,要管理員明確確認(confirmedSource 等於當初的來源)。
+ *     1.50.0 時 identity 相同就放行(registry 搬家);1.52.0 起一律要確認:identity 沒有
+ *     簽章、誰都能照抄,付費插件出現之後,第二個 registry 列出同 id、同 identity、版本
+ *     較高的東西,就能靜悄悄換掉一個付費插件。搬家的 registry 只是多按一次確認。
+ *   - 已安裝的沒有 identity(1.50.0 之前裝的):同一個來源照舊更新(新版帶了 identity 就
+ *     從此記下)。
  *   - 開發模式的 inline 安裝(source 為 null)或當初沒有記來源:不比來源。
  */
 export type InstallVerdict =
@@ -134,10 +136,8 @@ export function installVerdict(
   confirmedSource?: string,
 ): InstallVerdict {
   if (!installed) return { ok: true };
-  if (installed.identity) {
-    return incoming.identity === installed.identity
-      ? { ok: true }
-      : { ok: false, error: "identity_mismatch", installed: installed.identity, incoming: incoming.identity ?? null };
+  if (installed.identity && incoming.identity !== installed.identity) {
+    return { ok: false, error: "identity_mismatch", installed: installed.identity, incoming: incoming.identity ?? null };
   }
   if (incoming.source === null || installed.source === null) return { ok: true };
   if (installed.source === incoming.source || confirmedSource === installed.source) return { ok: true };
@@ -146,23 +146,23 @@ export function installVerdict(
 
 /**
  * 商店索引裡的一個項目是不是已安裝的那一個(index route 與商店畫面的「已安裝 / 衝突」)。
+ * 1.52.0 起以 (來源, id) 為準:別的來源列出的同 id 項目一律是 source 衝突(卡片「已從
+ * <主機> 安裝」、沒有更新鈕),就算 identity 相同 —— 規則同 installVerdict。
  *
  * 與 installVerdict 的差別只有一點:索引項目沒寫 identity,不代表那個插件沒有 ——
  * 索引常常落後 manifest(registry 的索引建置還沒帶這個欄位、第三方來源自己產的索引)。
  * 把「索引沒寫」當成「沒有」,作者一在 manifest 加上 identity,裝好之後商店就會說它跟
  * 自己衝突、叫管理員先移除。所以這裡只在兩邊都有 identity 時比 identity;缺一邊就當作
- * 不知道,退回比來源(identity 出現之前的規則)。真正安裝時 install route 拿實際的
- * manifest 用 installVerdict 再判一次,這裡放過的不會變成覆蓋別人的插件。
+ * 不知道,只比來源。真正安裝時 install route 拿實際的 manifest 用 installVerdict 再判
+ * 一次,這裡放過的不會變成覆蓋別人的插件。
  */
 export function listingVerdict(
   installed: { identity?: string | null; source: string | null } | null,
   listing: { identity?: string | null; source: string | null },
 ): InstallVerdict {
   if (!installed) return { ok: true };
-  if (installed.identity && listing.identity) {
-    return listing.identity === installed.identity
-      ? { ok: true }
-      : { ok: false, error: "identity_mismatch", installed: installed.identity, incoming: listing.identity };
+  if (installed.identity && listing.identity && listing.identity !== installed.identity) {
+    return { ok: false, error: "identity_mismatch", installed: installed.identity, incoming: listing.identity };
   }
   return installVerdict({ identity: null, source: installed.source }, { identity: null, source: listing.source });
 }

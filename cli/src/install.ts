@@ -2,7 +2,7 @@
 
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { fetchText, RegistryFetchError, type IndexEntry } from "./registry.js";
+import { fetchText, isNotEntitled, RegistryFetchError, type IndexEntry } from "./registry.js";
 import { camelCaseId } from "./patch.js";
 
 // registry index 無 files[] 時的啟發式檔名清單(spec §registry schema 配合:
@@ -22,9 +22,13 @@ export const HEURISTIC_FILENAMES = [
   "README.md",
 ];
 
-/** 拒絕 path traversal / 絕對路徑的 rel;只允許 extensions/<id>/ 內的相對子路徑。 */
+/**
+ * 拒絕 path traversal / 絕對路徑的 rel;只允許 extensions/<id>/ 內的相對子路徑。
+ * 控制字元也不收:檔名來自 registry,會被印到終端機(dry-run、猜檔名的警告)。
+ */
 export function isSafeRelPath(rel: string): boolean {
   if (rel.length === 0) return false;
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(rel)) return false;
   if (path.isAbsolute(rel)) return false;
   const normalized = path.normalize(rel);
   if (normalized.startsWith("..") || normalized.includes(`..${path.sep}`)) {
@@ -64,12 +68,19 @@ export async function resolveFiles(
 
   const found: string[] = [];
   const probeErrors: string[] = [];
+  let notEntitled: RegistryFetchError | null = null;
   await Promise.all(
     HEURISTIC_FILENAMES.map(async (name) => {
       try {
         await fetchText(fileUrl(source, entry.id, name), token);
         found.push(name);
       } catch (e) {
+        // 402 不是「猜錯檔名」也不是抓檔失敗:這把金鑰沒開通這個插件。原樣往上丟,
+        // 呼叫端印「尚未開通」。
+        if (isNotEntitled(e)) {
+          notEntitled = e;
+          return;
+        }
         // 與 spec 失敗模式表(「抓檔途中某檔 404 → 中止 exit 2」)刻意不同:probe 階段的
         // 404 就是「這個猜的檔名不存在」,是正常結果,不該中止。
         // 但**只有 404** 能當成不存在 —— 逾時 / 網路錯誤 / 401 / size cap 若也被吞掉,
@@ -82,6 +93,7 @@ export async function resolveFiles(
       }
     }),
   );
+  if (notEntitled) throw notEntitled;
   if (probeErrors.length > 0) {
     throw new Error(
       `probing extensions/${entry.id}/files/ found fetch failures other than 404, cannot determine file list` +

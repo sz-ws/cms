@@ -150,6 +150,11 @@ cms add <id>                            # If globally installed
 | 4 | `extensions/registry.ts` patch failed (not in CMS repo root / format unrecognized) |
 | 5 | Unknown error |
 | 6 | Extension `coreApi` incompatible with local core (see next section; `--skip-core-check` overrides) |
+| 11 | Not activated for this registry key: the index lists the extension with `access` other than `granted`, or a file answers 402. No files are fetched; the provider's message is printed with control characters removed |
+
+## Paid extensions
+
+Every registry request carries `X-Registry-Protocol: 1`. A registry that sells extensions lists the ones your key has not been given with `access: "locked"` and answers 402 `not_entitled` for their files. `add` checks `access` before fetching anything and stops with exit 11; the price and the provider's contact are on the site's admin Store page. The CLI does not check licences after install: once files are in the site repo they are the site's code.
 
 ## coreApi compatibility check
 

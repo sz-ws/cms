@@ -13,6 +13,7 @@ import {
 } from "@/ext/plugin-ref";
 import {
   entryUnmetPlugins,
+  sourceLabel,
   type InstalledPluginRef,
   type RegistryEntry,
   type RequiredPlugin,
@@ -189,14 +190,10 @@ export function UsedBySection({
   );
 }
 
-function sourceLabel(source: string): string {
-  return source.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-}
-
 /**
  * 右欄:這個宣告式插件現在為什麼不能裝。沒有擋的理由就回 null,由呼叫端畫安裝鈕。
  *   - 同 id 已經是別的插件(identity / kind)→ 要先移除
- *   - 舊版從別的來源裝的(source)→ 可以確認後改用這個來源(onReplaceSource)
+ *   - 從別的來源裝的(source)→ 可以確認後改用這個來源(onReplaceSource)
  *   - 必要插件沒裝或停用 → 列出來,提供前往
  */
 export function InstallGate({

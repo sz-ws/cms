@@ -155,7 +155,7 @@ describe("installVerdict", () => {
 
   it("an installed identity is fixed, whatever the source", () => {
     const now = { identity: "acme/reviews", source: A };
-    expect(installVerdict(now, { identity: "acme/reviews", source: B })).toEqual({ ok: true });
+    expect(installVerdict(now, { identity: "acme/reviews", source: A })).toEqual({ ok: true });
     expect(installVerdict(now, { identity: "other/reviews", source: A })).toEqual({
       ok: false,
       error: "identity_mismatch",
@@ -165,6 +165,18 @@ describe("installVerdict", () => {
     expect(installVerdict(now, { identity: null, source: A })).toMatchObject({ ok: false, error: "identity_mismatch", incoming: null });
     // 確認換來源不能拿來繞過 identity。
     expect(installVerdict(now, { identity: "other/reviews", source: A }, A).ok).toBe(false);
+  });
+
+  // 1.52.0:(來源, id) —— identity 相同、來源不同,也要管理員確認。
+  it("the same identity from another source still needs the admin to confirm", () => {
+    const now = { identity: "acme/reviews", source: A };
+    expect(installVerdict(now, { identity: "acme/reviews", source: B })).toEqual({
+      ok: false,
+      error: "source_changed",
+      installedSource: A,
+    });
+    expect(installVerdict(now, { identity: "acme/reviews", source: B }, B).ok).toBe(false);
+    expect(installVerdict(now, { identity: "acme/reviews", source: B }, A)).toEqual({ ok: true });
   });
 
   it("an install from before identities is bound to its source until confirmed", () => {
@@ -192,8 +204,18 @@ describe("listingVerdict", () => {
 
   it("compares identities only when both sides have one", () => {
     const now = { identity: "acme/reviews", source: A };
-    expect(listingVerdict(now, { identity: "acme/reviews", source: B })).toEqual({ ok: true });
+    expect(listingVerdict(now, { identity: "acme/reviews", source: A })).toEqual({ ok: true });
     expect(listingVerdict(now, { identity: "other/reviews", source: A })).toMatchObject({ ok: false, error: "identity_mismatch" });
+  });
+
+  // 1.52.0:商店以 (來源, id) 為準 —— 別的來源的同 identity 項目不是「已安裝」,沒有更新鈕。
+  it("the same identity listed by another source is a source conflict", () => {
+    const now = { identity: "acme/reviews", source: A };
+    expect(listingVerdict(now, { identity: "acme/reviews", source: B })).toEqual({
+      ok: false,
+      error: "source_changed",
+      installedSource: A,
+    });
   });
 
   it("a listing without an identity falls back to the source, like an install from before identities", () => {

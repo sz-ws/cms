@@ -23,6 +23,11 @@ export const EXIT = {
   // 獨立一碼:predeploy 掛的是這支,而「必填設定沒填」跟「wrangler 掛了」在 CI 裡
   // 要分得開 —— 前者是使用者要去填東西,後者是環境問題。
   PREFLIGHT_BLOCKED: 10, // --gate 下有必填設定確認為空
+
+  // ---- 付費插件 ----
+  // 獨立一碼:「這把 registry 金鑰沒開通這個插件」跟抓檔失敗(2)在 CI 裡要分得開 ——
+  // 重試沒用,要的是提供者那邊開通。
+  NOT_ENTITLED: 11, // 索引的 access 不是 granted,或抓檔回 402
 } as const;
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];

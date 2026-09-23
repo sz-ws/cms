@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n/I18nProvider";
 import type { DeclarativeScript } from "@/ext/dx/scripts";
+import { sourceLabel } from "./registry-types";
 
 // 共用 install 流程:FeaturedCard / StoreCard / ExtensionDetail 原本各自複製一份
 // install() fetch 邏輯(見 git history);抽出這支 hook 後三處都改成呼叫它,行為
@@ -16,6 +17,8 @@ import type { DeclarativeScript } from "@/ext/dx/scripts";
 // 1.48.0:manifest 帶 scripts 且這份內容還沒核准過 → 在 POST 之前(表單之後)開
 //   ScriptReviewDialog,核准後帶 approveScripts(預覽回來的 hash)。來源沒開放 scripts
 //   就在預覽這一步停下。
+// 1.52.0:付費插件沒開通(402 not_entitled)或來源金鑰不能用(source_key_invalid),
+//   預覽與安裝兩步都講白話(「尚未開通」+ 提供者的說明),不露出代碼。
 
 export type InstallState = "idle" | "installing" | "installed" | "failed";
 
@@ -108,6 +111,10 @@ export function describeInstallError(body: Record<string, unknown>): string {
       return message ?? "A different extension with this id is already installed.";
     case "source_changed":
       return message ?? "This extension was installed from another source.";
+    case "not_entitled":
+      return message ? `Not activated for this site: ${message}` : "Not activated for this site.";
+    case "source_key_invalid":
+      return "The key for this registry source no longer works.";
     case "missing_extensions":
       return message ?? "Required extensions are not installed and enabled.";
     case "rate_limited":
@@ -173,6 +180,28 @@ export function useInstallFlow(
     return null;
   }
 
+  // 1.52.0:message 是閘道寫的一句話,伺服器已消毒、截到 200 字。
+  function registryErrorMessage(body: Record<string, unknown>): string | null {
+    if (body.error === "not_entitled") {
+      return typeof body.message === "string" && body.message
+        ? t("registryBrowser.error.notEntitledWith", { message: body.message })
+        : t("registryBrowser.error.notEntitled");
+    }
+    if (body.error === "source_key_invalid") {
+      return t("registryBrowser.error.keyInvalid", { source: sourceLabel(entry.source) });
+    }
+    return null;
+  }
+
+  function errorMessage(body: Record<string, unknown>): string {
+    return (
+      registryErrorMessage(body) ??
+      scriptErrorMessage(body) ??
+      pluginErrorMessage(body) ??
+      describeInstallError(body)
+    );
+  }
+
   async function postInstall(
     promptValues?: Record<string, unknown>,
     approveScripts?: string,
@@ -199,8 +228,7 @@ export function useInstallFlow(
         router.refresh();
         return true;
       }
-      const body = await parseErrorBody(res);
-      setError(scriptErrorMessage(body) ?? pluginErrorMessage(body) ?? describeInstallError(body));
+      setError(errorMessage(await parseErrorBody(res)));
       setState("failed");
       return false;
     } catch {
@@ -243,7 +271,7 @@ export function useInstallFlow(
     }
     if (!res.ok) {
       setState("failed");
-      setError(describeInstallError(await parseErrorBody(res)));
+      setError(errorMessage(await parseErrorBody(res)));
       return;
     }
     const json = (await res.json().catch(() => ({}))) as {

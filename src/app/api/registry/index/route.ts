@@ -16,14 +16,16 @@ import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 // 1.50.0:「已安裝」改成「裝的就是這一個」。同 id 裝的是別的插件時 installed 為
 // false、conflict 說明是哪一種:
 //   identity —— 兩邊都有 identity 而且不同,不能互相更新
-//   source   —— 有一邊沒寫 identity(舊安裝,或索引落後 manifest),而已安裝的是從別的
-//               來源裝的;管理員確認後才能改用這個來源(install route 再拿實際的
-//               manifest 比一次 identity)
+//   source   —— 已安裝的是從別的來源裝的(1.52.0 起 identity 相同也算:安裝狀態、更新、
+//               付費插件的 access 都以 (來源, id) 為準);管理員確認後才能改用這個來源
+//               (install route 再拿實際的 manifest 比一次 identity)
 // 規則見 @/ext/plugin-ref 的 listingVerdict。
 //   kind     —— 同 id 是另一種插件(程式碼 vs 宣告式)
 // installedPlugins 給商店畫面判斷相依(需要的插件裝了沒、啟用了沒)與「誰用了它」。
 // 1.51.0:scriptsCompiled —— 這個站把宣告式插件的前台編進了網站,安裝不會要求核准
 // script,商店詳情改顯示一句說明(見 @/ext/dx/scripts-compiled)。只在 true 時帶。
+// 1.52.0:付費插件的 access / offer 由 registry-client 解析,原樣帶給商店;errors 帶上
+// registry 回的 http 狀態碼(401 / 403 = 金鑰不能用),商店據此換成白話。
 export async function GET(): Promise<Response> {
   try {
     await requireAuth("admin");

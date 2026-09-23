@@ -19,9 +19,11 @@ import { parseArgs, ID_RE, type ParsedArgs } from "./args.js";
 import {
   DEFAULT_SOURCE,
   fetchIndex,
+  isNotEntitled,
   type IndexEntry,
   type SourceConfig,
 } from "./registry.js";
+import { sanitizeRegistryText } from "./registry-text.js";
 import {
   resolveFiles,
   fetchAndWriteFiles,
@@ -493,6 +495,17 @@ async function runPreflightCommand(args: ParsedArgs, cwd: string): Promise<numbe
   });
 }
 
+/**
+ * 付費插件:這把 registry 金鑰沒開通這個插件(索引的 access 不是 granted,或抓檔回 402)。
+ * 一行固定訊息 + 提供者寫的 message(已消毒、≤ 200 字)+ 去哪裡處理。
+ */
+function notEntitled(id: string, source: string, detail?: string): number {
+  err(`✗ "${id}" is not activated for this registry key (${source}).`);
+  if (detail) err(`  ${detail}`);
+  err("  the provider has to activate it for your key first; the site's admin Store shows the price and how to reach them.");
+  return EXIT.NOT_ENTITLED;
+}
+
 async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const id = args.id;
   if (!id) {
@@ -557,7 +570,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     }
     err(`✗ id "${id}" not found in registry index.`);
     if (entries.length > 0) {
-      const ids = [...new Set(entries.map((e) => e.id))].sort();
+      const ids = [...new Set(entries.map((e) => sanitizeRegistryText(e.id, 64)))].sort();
       err(`  available ids: ${ids.join(", ")}`);
     }
     return EXIT.NOT_FOUND;
@@ -573,6 +586,11 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
 
   const entry: IndexEntry = matches[0];
   const source = entry.source;
+
+  // 付費插件:索引說這把金鑰沒開通(locked / requested / expired)→ 不去抓檔、不猜檔名。
+  if (entry.access !== undefined && entry.access !== "granted") {
+    return notEntitled(id, source);
+  }
 
   // 宣告式 extension 本體一律走 admin UI 熱安裝 —— 這支 CLI 不碰它。
   //
@@ -662,6 +680,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   try {
     resolved = await resolveFiles(source, entry, token);
   } catch (e) {
+    if (isNotEntitled(e)) return notEntitled(id, source, e.detail);
     err(`✗ could not determine which files to fetch: ${e instanceof Error ? e.message : String(e)}`);
     return EXIT.FETCH_FAILED;
   }
@@ -728,6 +747,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
       dryRun: false,
     });
   } catch (e) {
+    if (isNotEntitled(e)) return notEntitled(id, source, e.detail);
     err(
       `✗ failed to fetch files: ${e instanceof Error ? e.message : String(e)}`,
     );

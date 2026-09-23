@@ -3,8 +3,9 @@ import { env } from "cloudflare:test";
 import type { Extension } from "../src/ext/types";
 
 // 1.50.0:POST /api/registry/install 的插件身分與相依。
-//   - identity 裝上之後不能換(identity_mismatch),換來源不影響
-//   - 沒有 identity 的舊安裝:換來源要確認(source_changed + confirmSource)
+//   - identity 裝上之後不能換(identity_mismatch)
+//   - 換來源要確認(source_changed + confirmSource)。1.50.0 只對沒有 identity 的舊安裝;
+//     1.52.0 起 identity 相同也要(付費插件:第二個 registry 不能靜悄悄換掉已裝的插件)
 //   - 必要插件沒裝或停用 → 409 missing_extensions,回 id
 // 來源抓取以 mock 的 registry-client 代替(不打網路);其餘走真的 D1。
 
@@ -147,13 +148,30 @@ describe("install: identity is fixed once installed", () => {
     expect((await res.json<{ error: string }>()).error).toBe("identity_mismatch");
   });
 
-  it("the same identity may come from another source (a registry that moved)", async () => {
+  // 1.52.0:identity 沒有簽章,誰都能照抄 —— 另一個來源列出同 identity、版本較高的東西,
+  // 不能靜悄悄換掉已裝的(可能是付費)插件。registry 搬家的話,管理員確認一次。
+  it("the same identity from another source needs the admin to confirm (a registry that moved)", async () => {
     publish(SOURCE_A, manifest({ identity: "acme/reviews" }));
     await post({ id: "reviews", source: SOURCE_A });
     publish(SOURCE_B, manifest({ identity: "acme/reviews", version: "1.1.0" }));
-    expect((await post({ id: "reviews", source: SOURCE_B })).status).toBe(200);
+
+    const refused = await post({ id: "reviews", source: SOURCE_B });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: "source_changed", installedSource: SOURCE_A });
+    expect(await row()).toMatchObject({ version: "1.0.0", source: SOURCE_A });
+
+    expect((await post({ id: "reviews", source: SOURCE_B, confirmSource: SOURCE_B })).status).toBe(409);
+    expect((await post({ id: "reviews", source: SOURCE_B, confirmSource: SOURCE_A })).status).toBe(200);
     expect(await row()).toMatchObject({ version: "1.1.0", source: SOURCE_B });
     expect(JSON.parse((await row())!.manifest).identity).toBe("acme/reviews");
+  });
+
+  it("updates from the source it was installed from need no confirmation", async () => {
+    publish(SOURCE_A, manifest({ identity: "acme/reviews" }));
+    await post({ id: "reviews", source: SOURCE_A });
+    publish(SOURCE_A, manifest({ identity: "acme/reviews", version: "1.2.0" }));
+    expect((await post({ id: "reviews", source: SOURCE_A })).status).toBe(200);
+    expect(await row()).toMatchObject({ version: "1.2.0", source: SOURCE_A });
   });
 });
 

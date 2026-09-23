@@ -44,11 +44,15 @@ import { ScriptReviewDialog } from "./ScriptReviewDialog";
 import {
   entryUnmetPlugins,
   markInstalled,
+  sourceHost,
+  sourceLabel,
   type IndexResponse,
   type InstalledPluginRef,
   type RegistryEntry,
+  type SourceFetchError,
 } from "./registry-types";
 import { InstallGate, RequiredPluginItems, UsedBySection, requiredPluginName } from "./PluginRequirements";
+import { ContactProvider, OfferBlock, OfferLine, isLocked, showsOffer } from "./PaidOffer";
 
 // Marketplace browse — App Store vibe: hero featured cards, category pills,
 // search, deployment badges, Paper & Ink visual language.
@@ -216,18 +220,22 @@ function entryUnmetServices(
   return unmet;
 }
 
-// 1.50.0:卡片上不能直接裝的理由(同 id 已是別的插件、舊版從別的來源裝、缺必要插件)。
+// 1.50.0:卡片上不能直接裝的理由(同 id 已是別的插件、從別的來源裝的、缺必要插件)。
 // 卡片只給一句短的,完整說明與「前往」在詳情頁。null = 可以畫安裝鈕。
-function cardBlockLabel(
+export function cardBlockLabel(
   t: Translator,
   entry: RegistryEntry,
   installed: ReadonlyMap<string, InstalledPluginRef>,
 ): string | null {
   if (entry.kind !== "declarative") return null;
   if (entry.conflict === "identity" || entry.conflict === "kind") return t("registryBrowser.plugins.conflictShort");
-  if (entry.conflict === "source") return t("registryBrowser.plugins.otherSourceShort");
-  // 已經裝好、沒有新版:卡片照舊顯示「已安裝」,缺的插件在詳情頁與已安裝列表上說。
-  if (entry.installed && entry.installedVersion === entry.version) return null;
+  // 1.52.0:以 (來源, id) 為準 —— 別的來源列出的同 id,卡片寫從哪裡裝的,沒有更新鈕。
+  if (entry.conflict === "source") {
+    return t("registryBrowser.plugins.otherSourceShort", { source: sourceHost(entry.installedSource ?? "") });
+  }
+  // 已經裝好、沒有新版(或有新版但這把金鑰沒開通,更新不了):卡片照舊顯示「已安裝」,
+  // 缺的插件在詳情頁與已安裝列表上說。
+  if (entry.installed && (entry.installedVersion === entry.version || isLocked(entry))) return null;
   if (entryUnmetPlugins(entry, installed).length > 0) return t("registryBrowser.plugins.needsShort");
   return null;
 }
@@ -236,10 +244,11 @@ function cardBlockLabel(
 // (extensions 表比對),UI 過去一律渲染死的「手動安裝」——這裡接上:
 // 未裝 → 灰「開發者安裝」(管理員自己裝不了,詳情頁底下再一句話說誰來做);
 // 已裝同版 → 綠「已安裝」;已裝舊版 → 琥珀「可更新」。
+// 1.52.0:這把金鑰沒開通的付費插件,已裝的不論版本都是「已安裝」(拿不到新版)。
 type CodeState = "none" | "installed" | "update";
 function codeEntryState(entry: RegistryEntry): CodeState {
   if (!entry.installed) return "none";
-  return entry.installedVersion === entry.version ? "installed" : "update";
+  return entry.installedVersion === entry.version || isLocked(entry) ? "installed" : "update";
 }
 
 function CodeStateChip({
@@ -309,7 +318,7 @@ function statusFromInstall(state: InstallState): StatusButtonStatus {
   return "idle";
 }
 
-function FeaturedCard({
+export function FeaturedCard({
   entry,
   blocked,
   nameOf,
@@ -404,8 +413,12 @@ function FeaturedCard({
               )}
             </span>
           </div>
+          {/* 1.52.0:沒開通的付費插件,按鈕左邊多一行價格(glass bar 本身有 gap-3)。 */}
+          {showsOffer(entry) && <OfferLine entry={entry} className="max-w-[12rem] shrink-0 text-[12px]" />}
           <div className="shrink-0">
-            {entry.kind === "code" ? (
+            {entry.kind === "code" && isLocked(entry) && !entry.installed ? (
+              <ContactProvider entry={entry} size="md" />
+            ) : entry.kind === "code" ? (
               <CodeStateChip
                 entry={entry}
                 t={t}
@@ -443,6 +456,12 @@ function FeaturedCard({
               </div>
             ) : blocked ? (
               <span className="text-[12px] text-ink/50">{blocked}</span>
+            ) : isLocked(entry) ? (
+              entry.installed ? (
+                <StatusButton size="md" status="success" label={t("registryBrowser.install.installed")} />
+              ) : (
+                <ContactProvider entry={entry} size="md" />
+              )
             ) : (
               // stopPropagation:卡片本身 onClick 會開 detail 頁,包一層擋住冒泡,
               // 讓 Install 按鈕只做安裝、不順帶開頁(沿用原 FeaturedCard 行為)。
@@ -603,7 +622,7 @@ function categoryLabel(t: Translator, category: string): string {
   return category.charAt(0).toUpperCase() + category.slice(1);
 }
 
-function StoreCard({
+export function StoreCard({
   entry,
   blocked,
   nameOf,
@@ -631,8 +650,10 @@ function StoreCard({
     closeReview,
   } = useInstallFlow(entry, onInstalled, nameOf);
   const missing = entryMissingCapabilities(entry);
+  const locked = isLocked(entry);
 
   const isUpdate =
+    !locked &&
     entry.installed &&
     entry.installedVersion !== null &&
     entry.installedVersion !== entry.version;
@@ -676,15 +697,20 @@ function StoreCard({
         )}
       </div>
       {/* action */}
-      <div className="flex items-center justify-between pt-1">
-        {error && (
+      {/* gap-3 只在多了價格那一行時加:免費插件的卡片一個 class 都不變。 */}
+      <div className={cn("flex items-center justify-between pt-1", showsOffer(entry) && "gap-3")}>
+        {error ? (
           <span className="flex items-center gap-1 text-[11px] text-red-600">
             <AlertCircle className="size-3" />
             {error}
           </span>
-        )}
+        ) : showsOffer(entry) ? (
+          <OfferLine entry={entry} className="min-w-0 text-[12px]" />
+        ) : null}
         <div className="ml-auto">
-          {entry.kind === "code" ? (
+          {entry.kind === "code" && locked && !entry.installed ? (
+            <ContactProvider entry={entry} size="sm" />
+          ) : entry.kind === "code" ? (
             <CodeStateChip
               entry={entry}
               t={t}
@@ -704,6 +730,12 @@ function StoreCard({
             </span>
           ) : blocked ? (
             <span className="text-[11px] text-ink/50">{blocked}</span>
+          ) : locked ? (
+            entry.installed ? (
+              <StatusButton size="sm" status="success" label={t("registryBrowser.install.installed")} />
+            ) : (
+              <ContactProvider entry={entry} size="sm" />
+            )
           ) : (
             // stopPropagation:同 FeaturedCard —— 卡片 onClick 會開 detail 頁,
             // 少了這層的話按 Get/Update 會順帶切頁,安裝流程看起來像沒觸發。
@@ -896,7 +928,7 @@ export function RegistryBrowser() {
         <div className="flex flex-col gap-1 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-4 py-3">
           {data.errors.map((e) => (
             <p key={e.source} className="text-[12px] text-red-700">
-              {e.source}: {e.error}
+              {sourceErrorText(t, e)}
             </p>
           ))}
         </div>
@@ -1020,6 +1052,15 @@ export function RegistryBrowser() {
   );
 }
 
+// 1.52.0:來源讀不到時講白話,不露出 http 代碼。401 / 403 是金鑰本身不能用(沒帶、不認得、
+// 已撤銷),要找的是提供者;其他(連不上、壞掉的 JSON、5xx)只說讀不到。
+export function sourceErrorText(t: Translator, e: SourceFetchError): string {
+  const source = sourceLabel(e.source);
+  return e.status === 401 || e.status === 403
+    ? t("registryBrowser.error.keyInvalid", { source })
+    : t("registryBrowser.error.sourceUnreachable", { source });
+}
+
 // 公開 registry(CLI 的預設來源):從這裡來的不必加 --source。
 const PUBLIC_REGISTRY = "https://raw.githubusercontent.com/sz-ws/registry/main";
 
@@ -1078,7 +1119,7 @@ function DevInstall({ entry, update }: { entry: RegistryEntry; update: boolean }
   );
 }
 
-function ExtensionDetail({
+export function ExtensionDetail({
   entry,
   entries,
   installed,
@@ -1118,15 +1159,23 @@ function ExtensionDetail({
     .map((s) => mediaUrl(entry, s))
     .filter((u): u is string => u !== null);
 
+  // 1.52.0:這把金鑰沒開通的付費插件不能裝、不能更新(閘道對 manifest 與檔案回 402)。
+  const locked = isLocked(entry);
   const isUpdate =
+    !locked &&
     entry.installed &&
     entry.installedVersion !== null &&
     entry.installedVersion !== entry.version;
+  // 已裝、有新版、但沒開通:說清楚更新要先開通,舊版照常運作。
+  const lockedUpdate =
+    locked && entry.installed && entry.installedVersion !== null && entry.installedVersion !== entry.version;
 
-  // 程式碼插件管理員自己裝不了:按鈕位置放狀態,底下一句話說誰來做。
+  // 程式碼插件管理員自己裝不了:按鈕位置放狀態,底下一句話說誰來做。沒開通時先開通,
+  // 誰來裝是之後的事。
   const codeState = entry.kind === "code" ? codeEntryState(entry) : null;
-  const codeNote =
-    codeState === "none"
+  const codeNote = locked
+    ? null
+    : codeState === "none"
       ? t("registryBrowser.detail.codeNote")
       : codeState === "update"
         ? t("registryBrowser.detail.codeUpdateNote")
@@ -1313,7 +1362,7 @@ function ExtensionDetail({
             className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}
           />
 
-          {entry.kind === "code" && codeState !== "installed" && (
+          {entry.kind === "code" && codeState !== "installed" && !locked && (
             <DevInstall entry={entry} update={codeState === "update"} />
           )}
         </div>
@@ -1322,7 +1371,10 @@ function ExtensionDetail({
           className={`order-first flex flex-col gap-4 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-5 lg:sticky lg:top-6 lg:order-none ${CARD}`}
         >
           <div className="flex flex-col gap-2">
-            {entry.kind === "code" ? (
+            {showsOffer(entry) && <OfferBlock entry={entry} />}
+            {entry.kind === "code" && locked && !entry.installed ? (
+              <ContactProvider entry={entry} size="lg" />
+            ) : entry.kind === "code" ? (
               <CodeStateChip
                 entry={entry}
                 t={t}
@@ -1340,6 +1392,10 @@ function ExtensionDetail({
               <span className="text-[12.5px] text-red-600/80">
                 {t("registryBrowser.install.needsServices", { services: unmetServices.join(", ") })}
               </span>
+            ) : locked && entry.installed ? (
+              <StatusButton size="lg" status="success" label={t("registryBrowser.install.installed")} />
+            ) : locked ? (
+              <ContactProvider entry={entry} size="lg" />
             ) : gated ? (
               gate
             ) : (
@@ -1355,6 +1411,14 @@ function ExtensionDetail({
             {codeNote && (
               <p className="text-[12.5px] leading-relaxed text-ink/50">{codeNote}</p>
             )}
+            {lockedUpdate && (
+              <>
+                <p className="text-[12.5px] leading-relaxed text-ink/50">
+                  {t("registryBrowser.paid.updateNeedsAccess", { host: sourceHost(entry.source) })}
+                </p>
+                <ContactProvider entry={entry} size="lg" />
+              </>
+            )}
             {entry.kind === "declarative" && entry.scriptsCompiled && (
               <p className="text-[12.5px] leading-relaxed text-ink/50">{t("scripts.compiled")}</p>
             )}
@@ -1363,12 +1427,26 @@ function ExtensionDetail({
           <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 border-t border-ink/[0.06] pt-4 text-[13px]">
             <dt className="text-ink/45">{t("registryBrowser.detail.version")}</dt>
             <dd className="tabular-nums text-ink/80">
-              {isUpdate ? `v${entry.installedVersion} → v${entry.version}` : `v${entry.version}`}
+              {isUpdate
+                ? `v${entry.installedVersion} → v${entry.version}`
+                : lockedUpdate
+                  ? `v${entry.installedVersion}`
+                  : `v${entry.version}`}
             </dd>
             {entry.author && (
               <>
-                <dt className="text-ink/45">{t("registryBrowser.detail.author")}</dt>
+                {/* 1.52.0:付費插件多一列「提供者」(來源主機,在跟誰買),作者那列就改叫「作者」;
+                    免費插件照舊,畫面一個字都不變。 */}
+                <dt className="text-ink/45">
+                  {t(entry.offer ? "registryBrowser.detail.madeBy" : "registryBrowser.detail.author")}
+                </dt>
                 <dd className="truncate text-ink/80">{entry.author}</dd>
+              </>
+            )}
+            {entry.offer && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.provider")}</dt>
+                <dd className="truncate text-ink/80">{sourceHost(entry.source)}</dd>
               </>
             )}
             {entry.category && (
@@ -1381,6 +1459,21 @@ function ExtensionDetail({
               <>
                 <dt className="text-ink/45">{t("registryBrowser.detail.license")}</dt>
                 <dd className="text-ink/80">{entry.license}</dd>
+              </>
+            )}
+            {entry.offer?.termsUrl && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.terms")}</dt>
+                <dd className="min-w-0">
+                  <a
+                    href={entry.offer.termsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block truncate text-(--admin-accent) hover:underline"
+                  >
+                    {entry.offer.termsUrl.replace(/^https:\/\//, "")}
+                  </a>
+                </dd>
               </>
             )}
             {!entry.compatible && (

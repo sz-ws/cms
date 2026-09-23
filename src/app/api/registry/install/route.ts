@@ -6,6 +6,7 @@ import {
   assertKnownRegistrySource,
   fetchManifest,
   fetchExtensionAsset,
+  registryErrorResponse,
   sourceAllowsScripts,
   UnknownRegistrySource,
 } from "@/lib/registry-client";
@@ -82,8 +83,9 @@ const bodySchema = z
     promptValues: z.record(z.string(), z.unknown()).optional(),
     // 1.48.0:管理員在核准畫面看過的 scripts hash(manifest 帶 scripts 時才需要)。
     approveScripts: z.string().regex(SCRIPTS_HASH_RE).optional(),
-    // 1.50.0:已安裝的版本沒有 identity、又是從別的來源裝的 —— 管理員確認要改用這個
-    // 來源時,把當初的來源原樣送回(證明看過是誰被取代)。見 @/ext/plugin-ref。
+    // 1.50.0:已安裝的版本是從別的來源裝的 —— 管理員確認要改用這個來源時,把當初的來源
+    // 原樣送回(證明看過是誰被取代)。1.52.0 起 identity 相同也要確認(付費插件:第二個
+    // registry 不能靜悄悄換掉已裝的插件)。見 @/ext/plugin-ref 的 installVerdict。
     confirmSource: z.string().min(1).max(2048).optional(),
   })
   .strict()
@@ -176,6 +178,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     rawManifest = await fetchManifest(source as string, id);
   } catch (e) {
+    // 付費插件:這把金鑰沒開通 → 402 not_entitled;金鑰本身不能用 → 502 source_key_invalid。
+    // 商店通常在按鈕之前就擋掉了(索引的 access),這裡接的是畫面資料過時、或直接打 API。
+    const known = registryErrorResponse(e);
+    if (known) return known;
     return Response.json(
       {
         error: "manifest_fetch_failed",
@@ -237,7 +243,7 @@ export async function POST(req: Request): Promise<Response> {
     }
     previousManifest = previousResult.manifest;
     // 1.50.0:同 id 已經裝了東西 —— 先確定是同一個插件,再談版本相容。identity 一旦
-    // 裝上就不能換;舊安裝沒有 identity 時,換來源要管理員確認(見 installVerdict)。
+    // 裝上就不能換;換來源要管理員確認(1.52.0 起不論有沒有 identity,見 installVerdict)。
     const verdict = installVerdict(
       { identity: previousManifest.identity ?? null, source: existingRows[0].source },
       { identity: manifest.identity ?? null, source: source ?? null },
@@ -435,6 +441,8 @@ export async function POST(req: Request): Promise<Response> {
     try {
       rawCss = await fetchExtensionAsset(source, id, manifest.stylesheet);
     } catch (e) {
+      const known = registryErrorResponse(e);
+      if (known) return known;
       return Response.json(
         {
           error: "invalid_stylesheet",

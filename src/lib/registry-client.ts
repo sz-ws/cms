@@ -3,6 +3,14 @@ import { EXTENSION_ID_RE, isValidAssetFile } from "./registry-asset";
 import type { ServiceRequirement } from "@/ext/service-requirements";
 import { isIdentity, type PluginRequirement } from "@/ext/plugin-ref";
 import type { LocalizedString } from "@/lib/i18n/localized";
+import {
+  httpsUrl,
+  parseAccess,
+  parseOffer,
+  type RegistryAccess,
+  type RegistryOffer,
+} from "./registry-offer";
+import { REGISTRY_MESSAGE_MAX, sanitizeRegistryText } from "./registry-text";
 
 // core-v2 §3.4 / §5:registry client — 只信任 core.registrySources 白名單內的來源,
 // https only、1 MB response cap、8s timeout、單一來源失敗不得中斷其他來源。
@@ -37,7 +45,10 @@ export interface RegistryIndexEntry {
   deployment?: "instant" | "progressive" | "code-only";
   homepage?: string;
   repository?: string;
+  /** support.url(https 才收)。 */
   supportUrl?: string;
+  /** support.email。商店的「聯絡提供者」沒有 supportUrl 時用它。 */
+  supportEmail?: string;
   // roadmap #17:manifest.capabilities passthrough(RegistryBrowser 用 missingCapabilities
   // 客戶端算出哪些「這個 core 不支援」,disable 安裝按鈕 + 顯示標籤)。
   capabilities?: string[];
@@ -47,11 +58,17 @@ export interface RegistryIndexEntry {
   /** 1.50.0:需要的其他插件。宣告式來自 manifest.requiresExtensions;程式碼插件的
    * registry.json 可以直接寫 Extension.requiresExtensions 的 id 陣列。 */
   requiresExtensions?: PluginRequirement[];
+  /** 付費插件協定 1:閘道依金鑰加上的開通狀態。沒有 = 免費(或靜態 registry)。 */
+  access?: RegistryAccess;
+  /** 價格與說明。只有同時有 access 時才會有(見 parseIndexEntries)。 */
+  offer?: RegistryOffer;
 }
 
 export interface SourceFetchError {
   source: string;
   error: string;
+  /** registry 回的 http 狀態碼;401 / 403 = 金鑰不能用,商店據此換成白話。 */
+  status?: number;
 }
 
 export interface RegistryIndexResult {
@@ -114,6 +131,72 @@ function isHttpsUrl(url: string): boolean {
 const MAX_REDIRECTS = 3;
 
 /**
+ * 付費插件協定的版本,每個 registry 請求都帶(X-Registry-Protocol)。閘道看到它才列出
+ * 未開通的付費插件、才回 402;沒帶的請求(舊 core、舊 CLI)照舊:不列、回 404 —— 舊 core
+ * 因此不會看到一顆按下去才失敗的安裝鈕。
+ */
+const REGISTRY_PROTOCOL = "1";
+
+/**
+ * registry 回了非 2xx。除了 status,再帶上 body 裡的 `{ error, message }`(閘道的錯誤形狀):
+ *   401 / 403 —— 金鑰本身不能用(沒帶、不認得、已撤銷),整個來源都讀不到
+ *   402 not_entitled —— 這把金鑰沒開通這個插件,只影響這一個
+ * detail 是消毒過、截到 200 字的 message;Error.message 維持 `http <status>`。
+ */
+export class RegistryHttpError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly detail?: string;
+  constructor(status: number, code?: string, detail?: string) {
+    super(`http ${status}`);
+    this.name = "RegistryHttpError";
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+const ERROR_BODY_MAX = 4 * 1024;
+const ERROR_CODE_RE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** 錯誤回應的 body 只讀前 4 KB,解析得出 `{ error, message }` 才用,否則當作沒有。 */
+async function readErrorBody(res: Response): Promise<{ code?: string; detail?: string }> {
+  try {
+    let text: string;
+    if (!res.body) {
+      text = (await res.text()).slice(0, ERROR_BODY_MAX);
+    } else {
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (total < ERROR_BODY_MAX) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          total += value.byteLength;
+        }
+      }
+      await reader.cancel().catch(() => {});
+      const combined = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      text = new TextDecoder().decode(combined.slice(0, ERROR_BODY_MAX));
+    }
+    const body = JSON.parse(text) as { error?: unknown; message?: unknown } | null;
+    const code = typeof body?.error === "string" && ERROR_CODE_RE.test(body.error) ? body.error : undefined;
+    const detail =
+      typeof body?.message === "string" ? sanitizeRegistryText(body.message, REGISTRY_MESSAGE_MAX) || undefined : undefined;
+    return { code, detail };
+  } catch {
+    return {};
+  }
+}
+
+/**
  * 帶 timeout + size cap 的 fetch，回傳原始文字（呼叫端自行 JSON.parse + try/catch）。
  * 任何失敗（逾時、非 2xx、超過大小上限、network error）一律 throw Error（可讀訊息）。
  *
@@ -137,7 +220,7 @@ async function followRedirects(
   token: string | undefined,
   signal: AbortSignal,
 ): Promise<Response> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { "X-Registry-Protocol": REGISTRY_PROTOCOL };
   if (token) {
     headers["Authorization"] = `token ${token}`;
   }
@@ -163,7 +246,8 @@ async function followRedirects(
   }
   if (!res) throw new Error("too many redirects");
   if (!res.ok) {
-    throw new Error(`http ${res.status}`);
+    const { code, detail } = await readErrorBody(res);
+    throw new RegistryHttpError(res.status, code, detail);
   }
   return res;
 }
@@ -267,6 +351,38 @@ async function boundedFetchBytes(
   }
 }
 
+// 各種 Git 服務的 raw URL 格式:GitHub / Gitea / Bitbucket 標準格式、GitLab、某些 Gitea /
+// GitLab 變體。依序試,成功的那一個按來源記下來(同一個 isolate 內),之後先試它。
+const PATH_PREFIXES = ["", "/-/raw/main", "/raw/main"] as const;
+const workingPrefix = new Map<string, string>();
+
+/**
+ * 在 `<source><前綴><path>` 的各種前綴上抓同一個檔。只有 404 代表「這個格式沒有這個檔」、
+ * 換下一個試;其他回應(401 / 403 金鑰不能用、402 沒開通、5xx)就是答案,立刻丟出 ——
+ * 繼續試下去的話,後面格式的 404 會蓋掉真正的原因(402 變成「找不到」)。網路錯誤、
+ * 逾時沒有回應可看,照舊往下試。
+ */
+async function fetchFromVariants<T>(
+  source: string,
+  path: string,
+  fetchOne: (url: string) => Promise<T>,
+): Promise<T> {
+  const known = workingPrefix.get(source);
+  const prefixes = known === undefined ? PATH_PREFIXES : [known, ...PATH_PREFIXES.filter((p) => p !== known)];
+  let lastError: Error | null = null;
+  for (const prefix of prefixes) {
+    try {
+      const result = await fetchOne(`${source}${prefix}${path}`);
+      workingPrefix.set(source, prefix);
+      return result;
+    } catch (e) {
+      if (e instanceof RegistryHttpError && e.status !== 404) throw e;
+      lastError = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastError ?? new Error(`failed to fetch ${path} from ${source}`);
+}
+
 interface RawIndexEntry {
   id?: unknown;
   identity?: unknown;
@@ -290,6 +406,8 @@ interface RawIndexEntry {
   capabilities?: unknown;
   requires?: unknown;
   requiresExtensions?: unknown;
+  access?: unknown;
+  offer?: unknown;
 }
 
 /** raw requires 陣列 → 正規化的 ServiceRequirement[](非法項直接丟棄)。 */
@@ -353,6 +471,13 @@ function parseAuthor(raw: unknown): string | undefined {
   return undefined;
 }
 
+// 只收一般的商務信箱形狀;不收 ? & % 等字元,mailto: 連結就帶不進額外的標頭或內文。
+const EMAIL_RE = /^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+
+function parseEmail(raw: unknown): string | undefined {
+  return typeof raw === "string" && raw.length <= 254 && EMAIL_RE.test(raw) ? raw : undefined;
+}
+
 function parseStringArray(raw: unknown): string[] | undefined {
   return Array.isArray(raw)
     ? raw.filter((s): s is string => typeof s === "string")
@@ -372,6 +497,9 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
       typeof raw.version === "string" &&
       typeof raw.coreApi === "string"
     ) {
+      const support =
+        raw.support && typeof raw.support === "object" ? (raw.support as { url?: unknown; email?: unknown }) : undefined;
+      const access = parseAccess(raw.access);
       out.push({
         id: raw.id,
         identity: isIdentity(raw.identity) ? raw.identity : undefined,
@@ -396,15 +524,15 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
         homepage: typeof raw.homepage === "string" ? raw.homepage : undefined,
         repository:
           typeof raw.repository === "string" ? raw.repository : undefined,
-        supportUrl:
-          raw.support && typeof raw.support === "object"
-            ? typeof (raw.support as { url?: unknown }).url === "string"
-              ? ((raw.support as { url: string }).url)
-              : undefined
-            : undefined,
+        supportUrl: httpsUrl(support?.url),
+        supportEmail: parseEmail(support?.email),
         capabilities: parseStringArray(raw.capabilities),
         requires: parseRequires(raw.requires),
         requiresExtensions: parseRequiredExtensions(raw.requiresExtensions),
+        access,
+        // offer 只有閘道同時給了 access 才算數:靜態 registry(GitHub raw)給不出 access,
+        // 它寫的 offer 忽略、卡片照免費顯示 —— 不會出現「看起來要錢、按下去卻能裝」。
+        offer: access ? parseOffer(raw.offer) : undefined,
       });
     }
   }
@@ -430,29 +558,7 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
           throw new Error("source must be an https URL");
         }
 
-        // 多路徑嘗試（支援不同 Git 服務的 raw URL 格式）
-        const registryPathVariants = [
-          `/registry.json`,
-          `/-/raw/main/registry.json`,
-          `/raw/main/registry.json`,
-        ];
-
-        let text: string | null = null;
-        let lastError: Error | null = null;
-
-        for (const variant of registryPathVariants) {
-          try {
-            const url = `${source}${variant}`;
-            text = await boundedFetchText(url, token);
-            break;
-          } catch (e) {
-            lastError = e instanceof Error ? e : new Error(String(e));
-          }
-        }
-
-        if (!text) {
-          throw lastError ?? new Error("failed to fetch registry.json");
-        }
+        const text = await fetchFromVariants(source, "/registry.json", (url) => boundedFetchText(url, token));
 
         let json: unknown;
         try {
@@ -465,6 +571,7 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
         errors.push({
           source,
           error: e instanceof Error ? e.message : "unknown error",
+          ...(e instanceof RegistryHttpError ? { status: e.status } : {}),
         });
       }
     }),
@@ -500,10 +607,7 @@ export async function assertKnownRegistrySource(source: string): Promise<void> {
 // （如 "../../secret"）或注入額外路徑段。單一事實來源：registry-asset.ts。
 const ID_RE = EXTENSION_ID_RE;
 
-/**
- * 嘗試多種 Git 服務的 raw URL 格式，找到第一個能成功抓取 manifest.json 的路徑。
- * 支援：GitHub、Gitea、GitLab、Bitbucket 等常見格式。
- */
+/** 在各種 raw URL 格式上找 manifest.json(見 fetchFromVariants)。 */
 async function tryFetchManifest(source: string, id: string, token?: string): Promise<string> {
   if (!isHttpsUrl(source)) {
     throw new Error("source must be an https URL");
@@ -512,27 +616,7 @@ async function tryFetchManifest(source: string, id: string, token?: string): Pro
     throw new Error("invalid extension id");
   }
 
-  // 常見的 raw URL 路徑格式（依序嘗試）
-  const pathVariants = [
-    `/extensions/${id}/manifest.json`,           // GitHub / Gitea / Bitbucket 標準格式
-    `/-/raw/main/extensions/${id}/manifest.json`, // GitLab 格式
-    `/raw/main/extensions/${id}/manifest.json`,   // 某些 Gitea / GitLab 變體
-  ];
-
-  let lastError: Error | null = null;
-
-  for (const variant of pathVariants) {
-    try {
-      const url = `${source}${variant}`;
-      const text = await boundedFetchText(url, token);
-      return text;
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      // 繼續嘗試下一個路徑
-    }
-  }
-
-  throw lastError ?? new Error(`failed to fetch manifest for ${id} from ${source}`);
+  return fetchFromVariants(source, `/extensions/${id}/manifest.json`, (url) => boundedFetchText(url, token));
 }
 
 export async function fetchManifest(source: string, id: string): Promise<unknown> {
@@ -581,21 +665,7 @@ export async function fetchExtensionAsset(
   const config = sourceConfigs.find((c) => c.url === source);
   const token = config?.token;
 
-  const pathVariants = [
-    `/extensions/${id}/${filename}`, // GitHub / Gitea / Bitbucket 標準格式
-    `/-/raw/main/extensions/${id}/${filename}`, // GitLab 格式
-    `/raw/main/extensions/${id}/${filename}`, // 某些 Gitea / GitLab 變體
-  ];
-
-  let lastError: Error | null = null;
-  for (const variant of pathVariants) {
-    try {
-      return await boundedFetchText(`${source}${variant}`, token);
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-    }
-  }
-  throw lastError ?? new Error(`failed to fetch ${filename} for ${id} from ${source}`);
+  return fetchFromVariants(source, `/extensions/${id}/${filename}`, (url) => boundedFetchText(url, token));
 }
 
 /**
@@ -631,19 +701,24 @@ export async function fetchExtensionAssetBytes(
   const config = sourceConfigs.find((c) => c.url === source);
   const token = config?.token;
 
-  const pathVariants = [
-    `/extensions/${id}/${filename}`, // GitHub / Gitea / Bitbucket 標準格式
-    `/-/raw/main/extensions/${id}/${filename}`, // GitLab 格式
-    `/raw/main/extensions/${id}/${filename}`, // 某些 Gitea / GitLab 變體
-  ];
+  return fetchFromVariants(source, `/extensions/${id}/${filename}`, (url) =>
+    boundedFetchBytes(url, token, MAX_ASSET_BYTES),
+  );
+}
 
-  let lastError: Error | null = null;
-  for (const variant of pathVariants) {
-    try {
-      return await boundedFetchBytes(`${source}${variant}`, token, MAX_ASSET_BYTES);
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-    }
+/**
+ * 抓 manifest 或插件檔案失敗時,registry 講得出原因的兩種情況,給 manifest 與 install route
+ * 共用(其餘失敗由呼叫端照舊回 manifest_fetch_failed):
+ *   402 → 402 not_entitled(+ 閘道消毒過的 message)—— 商店與安裝流程顯示「尚未開通」
+ *   401 / 403 → 502 source_key_invalid —— 這個來源的金鑰不能用,不是這個插件的問題
+ */
+export function registryErrorResponse(e: unknown): Response | null {
+  if (!(e instanceof RegistryHttpError)) return null;
+  if (e.status === 402) {
+    return Response.json({ error: "not_entitled", ...(e.detail ? { message: e.detail } : {}) }, { status: 402 });
   }
-  throw lastError ?? new Error(`failed to fetch ${filename} for ${id} from ${source}`);
+  if (e.status === 401 || e.status === 403) {
+    return Response.json({ error: "source_key_invalid" }, { status: 502 });
+  }
+  return null;
 }

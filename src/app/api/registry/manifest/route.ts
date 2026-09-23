@@ -3,6 +3,7 @@ import { hitRateLimit } from "@/lib/rate-limit";
 import {
   assertKnownRegistrySource,
   fetchManifest,
+  registryErrorResponse,
   sourceAllowsScripts,
   UnknownRegistrySource,
 } from "@/lib/registry-client";
@@ -21,6 +22,8 @@ import { eq } from "drizzle-orm";
 // 給前端渲染表單、scripts 的核准資訊(1.48.0)給核准畫面,不做任何寫入 —— 與 POST /api/registry/install 共用 fetch +
 // parse 邏輯,但完全唯讀。錯誤形狀比照 install route(unknown_source /
 // invalid_manifest / manifest_fetch_failed)方便前端共用 error 文案。
+// 付費插件:registry 回 402 → 402 not_entitled(+ 消毒過的 message);401 / 403 →
+// 502 source_key_invalid。其他失敗照舊 502 manifest_fetch_failed。
 export async function GET(req: Request): Promise<Response> {
   let user;
   try {
@@ -63,6 +66,8 @@ export async function GET(req: Request): Promise<Response> {
   try {
     rawManifest = await fetchManifest(source, id);
   } catch (e) {
+    const known = registryErrorResponse(e);
+    if (known) return known;
     return Response.json(
       {
         error: "manifest_fetch_failed",
