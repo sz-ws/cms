@@ -14,6 +14,7 @@ import {
   getDashboardContentSnapshot,
   type DashboardRecentRow,
 } from "./snapshot";
+import type { DashboardViewer } from "./viewer";
 
 // Task #4: server-side aggregation for the content-aware dashboard. Everything
 // here is driven by the enabled declarative extensions + the ContentProvider,
@@ -37,6 +38,8 @@ export interface DashboardTypeStats extends DashboardType {
   total: number;
   published: number;
   drafts: number;
+  /** 1.52.0:這個人能不能在列表頁新增(自訂角色要那一頁的編輯;預設角色一律可以)。 */
+  canCreate: boolean;
 }
 
 export interface RecentEntry {
@@ -56,9 +59,15 @@ export interface DashboardData {
   totalPublished: number;
   totalDrafts: number;
   typeCount: number;
+  /** 1.52.0:看不到成員頁的人(自訂角色)不查,是 0;畫面照 viewer.users 決定顯不顯示。 */
   userCount: number;
   hasTypes: boolean;
   now: number; // server timestamp captured at aggregation time (for relative times)
+  /**
+   * 1.52.0:每個內容類型(包括這個人看不到的)的列表頁,typeKey → href。插件的儀表板卡用它
+   * 連到真正列出那個類型的頁,也照那一頁判斷打不打得開。
+   */
+  collectionHrefs: Record<string, string>;
 }
 
 /** 轉呼叫 type-directory(見上方註解)。type label / ext name 依 locale resolve。 */
@@ -109,17 +118,27 @@ function recentFromSnapshot(
  * Query count:content counts + recent 固定走一次 D1 batch(兩條 statement)，不再隨
  * content type 數量線性成長；user count 保留一條即時查詢，避免 user mutation 還要
  * 多維護一套 dashboard cache invalidation。
+ *
+ * 1.52.0:給了 viewer(自訂角色)就只算它打得開的內容類型 —— 卡片、最近更新、總數、
+ * 分佈都從同一份清單來,看不到的類型連數字也不進來。null = 預設角色,照舊全部。
  */
-export async function getDashboardData(): Promise<DashboardData> {
+export async function getDashboardData(
+  viewer: DashboardViewer | null = null,
+): Promise<DashboardData> {
   // Ensure the extension runtime is warm (hooks/registry) — harmless, and keeps
   // the provider consistent with the CRUD/collection code paths.
   await getExtRuntime();
 
   const locale = await getLocale();
-  const [types, userRows] = await Promise.all([
+  const [allTypes, userRows] = await Promise.all([
     listDashboardTypes(locale),
-    db().select({ n: sql<number>`count(*)` }).from(users),
+    viewer && !viewer.users
+      ? Promise.resolve([] as { n: number }[])
+      : db().select({ n: sql<number>`count(*)` }).from(users),
   ]);
+  const types = viewer
+    ? allTypes.filter((type) => viewer.canOpen(type.collectionHref))
+    : allTypes;
 
   const userCount = userRows[0]?.n ?? 0;
   // 一起把標題欄位 key 交給 snapshot:recent 卡片只讀得到這一格,讓查詢端當場把
@@ -142,6 +161,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       total,
       published,
       drafts: Math.max(0, total - published),
+      canCreate: viewer ? viewer.canCreate(type.collectionHref) : true,
     };
   });
   const recent = snapshot.recent
@@ -171,5 +191,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     userCount,
     hasTypes: types.length > 0,
     now: Date.now(),
+    collectionHrefs: Object.fromEntries(
+      allTypes.map((type) => [type.typeKey, type.collectionHref]),
+    ),
   };
 }

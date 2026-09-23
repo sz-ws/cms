@@ -81,6 +81,7 @@ export const en = {
   "dashboardEmpty.title": "No content types yet",
   "dashboardEmpty.desc": "Install an extension to start managing content. Once enabled, its content types appear here with live counts and quick actions.",
   "dashboardEmpty.browseExtensions": "Browse extensions",
+  "dashboardEmpty.noAccess": "Your role can't see anything here yet. Ask an admin to adjust it.",
 
   // Dashboard widgets (preset library — content distribution / activity / storage)
   "dashboard.widgets.title": "Insights",

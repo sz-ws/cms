@@ -14,7 +14,8 @@ interface OverviewBandProps {
   totalPublished: number;
   totalDrafts: number;
   typeCount: number;
-  userCount: number;
+  /** 1.52.0:省略 = 不顯示成員數(看不到成員頁的自訂角色)。 */
+  userCount?: number;
   labels: {
     totalContent: string;
     published: string;
@@ -80,7 +81,9 @@ export function OverviewBand({
       <div className="flex flex-wrap items-center gap-x-9 gap-y-4 sm:pl-7">
         <OverviewStat value={totalPublished} label={labels.published} accent />
         <OverviewStat value={typeCount} label={labels.contentTypes} />
-        <OverviewStat value={userCount} label={labels.users} />
+        {userCount === undefined ? null : (
+          <OverviewStat value={userCount} label={labels.users} />
+        )}
       </div>
     </section>
   );

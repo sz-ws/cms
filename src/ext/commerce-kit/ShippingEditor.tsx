@@ -62,12 +62,18 @@ export function ShippingEditor({
   endpoint,
   initial,
   emptyText = "還沒有配送方式。沒有配送方式時，結帳不會出現運費；數位商品或自取的店家可以留空。",
+  readOnly = false,
 }: {
   /** extension API base(如 "/api/ext/shop")。 */
   endpoint: string;
   initial: ShippingConfig | null;
   /** 沒有配送方式時的說明。沒設就沿用商店運費的地方(例如插件自己的運費設定)要換掉預設那句。 */
   emptyText?: string;
+  /**
+   * 1.52.0:只能看的角色(這一頁只有「檢視」,canEditCurrentPage())。欄位照樣顯示但不能改,
+   * 新增、刪除、排序與儲存都不畫;右側試算照常可用(只是算,不寫)。
+   */
+  readOnly?: boolean;
 }) {
   const [methods, setMethods] = useState<ShippingMethod[]>(initial?.methods ?? []);
   const [rules, setRules] = useState<ShippingRule[]>(initial?.rules ?? []);
@@ -132,23 +138,26 @@ export function ShippingEditor({
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
-      <div className="flex min-w-0 flex-col gap-5">
+      {/* 唯讀時整組欄位 disabled(fieldset),寫入的按鈕另外不畫。 */}
+      <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-5">
         {/* 配送方式 */}
         <section className={CARD_CLS}>
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">配送方式</h2>
-            <button
-              type="button"
-              className={GHOST_BTN}
-              onClick={() =>
-                setMethods((prev) => [
-                  ...prev,
-                  { id: `m${prev.length + 1}`, name: "", base: 0, enabled: true },
-                ])
-              }
-            >
-              + 新增方式
-            </button>
+            {readOnly ? null : (
+              <button
+                type="button"
+                className={GHOST_BTN}
+                onClick={() =>
+                  setMethods((prev) => [
+                    ...prev,
+                    { id: `m${prev.length + 1}`, name: "", base: 0, enabled: true },
+                  ])
+                }
+              >
+                + 新增方式
+              </button>
+            )}
           </div>
           {methods.length === 0 ? (
             <p className="text-[13px] text-black/45 admin:text-ink/45">
@@ -195,13 +204,15 @@ export function ShippingEditor({
                     />
                     啟用
                   </label>
-                  <button
-                    type="button"
-                    className={GHOST_BTN}
-                    onClick={() => setMethods((prev) => prev.filter((_, j) => j !== i))}
-                  >
-                    刪除
-                  </button>
+                  {readOnly ? null : (
+                    <button
+                      type="button"
+                      className={GHOST_BTN}
+                      onClick={() => setMethods((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      刪除
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -212,18 +223,20 @@ export function ShippingEditor({
         <section className={CARD_CLS}>
           <div className="mb-1 flex items-baseline justify-between">
             <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">運費規則</h2>
-            <button
-              type="button"
-              className={GHOST_BTN}
-              onClick={() =>
-                setRules((prev) => [
-                  ...prev,
-                  { name: "", enabled: true, when: {}, effect: { type: "free" } },
-                ])
-              }
-            >
-              + 新增規則
-            </button>
+            {readOnly ? null : (
+              <button
+                type="button"
+                className={GHOST_BTN}
+                onClick={() =>
+                  setRules((prev) => [
+                    ...prev,
+                    { name: "", enabled: true, when: {}, effect: { type: "free" } },
+                  ])
+                }
+              >
+                + 新增規則
+              </button>
+            )}
           </div>
           <p className="mb-3 text-[12px] leading-relaxed text-black/45 admin:text-ink/45">
             由上往下逐條套用，順序就是優先序；「免運」命中後不再套用後面的規則。條件留空表示不限。
@@ -244,17 +257,21 @@ export function ShippingEditor({
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-black/75 admin:text-ink/75">
                       {ruleSummary(r)}
                     </span>
-                    <button type="button" className={GHOST_BTN} disabled={i === 0} onClick={() => moveRule(i, -1)}>
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className={GHOST_BTN}
-                      disabled={i === rules.length - 1}
-                      onClick={() => moveRule(i, 1)}
-                    >
-                      ↓
-                    </button>
+                    {readOnly ? null : (
+                      <>
+                        <button type="button" className={GHOST_BTN} disabled={i === 0} onClick={() => moveRule(i, -1)}>
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className={GHOST_BTN}
+                          disabled={i === rules.length - 1}
+                          onClick={() => moveRule(i, 1)}
+                        >
+                          ↓
+                        </button>
+                      </>
+                    )}
                     <label className="flex items-center gap-1.5 text-[12.5px] text-black/60 admin:text-ink/60">
                       <input
                         type="checkbox"
@@ -263,13 +280,15 @@ export function ShippingEditor({
                       />
                       啟用
                     </label>
-                    <button
-                      type="button"
-                      className={GHOST_BTN}
-                      onClick={() => setRules((prev) => prev.filter((_, j) => j !== i))}
-                    >
-                      刪除
-                    </button>
+                    {readOnly ? null : (
+                      <button
+                        type="button"
+                        className={GHOST_BTN}
+                        onClick={() => setRules((prev) => prev.filter((_, j) => j !== i))}
+                      >
+                        刪除
+                      </button>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-end gap-2.5">
                     <div className="w-40">
@@ -388,24 +407,28 @@ export function ShippingEditor({
           )}
         </section>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save()}
-            className="grid h-10 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-6 text-[13.5px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
-          >
-            {busy ? "儲存中…" : "儲存運費設定"}
-          </button>
-          {notice ? <p className="text-[13px] text-black/55 admin:text-ink/55">{notice}</p> : null}
-        </div>
-      </div>
+        {readOnly ? null : (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save()}
+              className="grid h-10 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-6 text-[13.5px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
+            >
+              {busy ? "儲存中…" : "儲存運費設定"}
+            </button>
+            {notice ? <p className="text-[13px] text-black/55 admin:text-ink/55">{notice}</p> : null}
+          </div>
+        )}
+      </fieldset>
 
       {/* 即時試算 —— 與結帳同一個純函式,所見即所得。 */}
       <aside className={`${CARD_CLS} h-fit lg:sticky lg:top-6`}>
         <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">試算</h2>
         <p className="mt-0.5 text-[12px] text-black/45 admin:text-ink/45">
-          改左邊任何欄位，這裡立刻重算，和結帳頁用同一套規則。
+          {readOnly
+            ? "照目前的運費設定試算，和結帳頁用同一套規則。"
+            : "改左邊任何欄位，這裡立刻重算，和結帳頁用同一套規則。"}
         </p>
         <div className="mt-3 space-y-2.5">
           <div>

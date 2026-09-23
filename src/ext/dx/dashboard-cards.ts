@@ -15,11 +15,15 @@ import type { Locale } from "@/lib/i18n/index";
 //   每張卡各自 try/catch —— 單卡的 contentType 未宣告、或 DB 查詢失敗 → console.error
 //   並「略過該卡」回 null,絕不 throw。resolveDashboardCards 過濾掉 null。
 //
-// adminHref 決策:連到該 extension 的 admin 根頁 `/admin/ext/<extId>`(即 aggregate.ts
-// resolveCollectionSlug 的 fallback 目標——當 content type 的 collection adminPage 用
-// 預設 slug ""(seed 皆如此)時,此 URL 正好就是該 type 的 collection 列表,edit 頁則為
-// `/admin/ext/<extId>/edit?id=`)。此處刻意只依賴 Extension.id,不重讀 manifest/DB,讓資料
+// adminHref 決策:連到列出這個 content type 的後台頁。1.52.0 起呼叫端可以給 hrefs
+// (typeKey → 列表頁,儀表板從 type-directory 拿到的 collectionHrefs),declarative 的類型
+// 列在子頁(例如商品目錄的分類在 /admin/ext/catalog/categories)時卡片才會連對、編輯連結
+// 才會是那一頁的 `<列表頁>/edit?id=`。沒給(或不在表裡,例如 code extension 自己宣告的
+// 類型)就退回 extension 的 admin 根頁 `/admin/ext/<extId>`。此處不重讀 manifest/DB,讓資料
 // 層與 declarative_extensions 表解耦(單元測試僅需 contents 表即可覆蓋)。
+//
+// 1.52.0:canOpen(自訂角色,dashboard/viewer.ts)—— 卡片的來源頁(adminHref)打不開就
+// 整張略過,連查詢都不發。預設角色不給,照舊全部。
 
 const DEFAULT_RECENT_LIMIT = 5;
 
@@ -40,7 +44,7 @@ export interface ResolvedDashboardCard {
   title: string;
   /** 完整 content type key "<extId>.<name>"(查 contents 表用)。 */
   contentType: string;
-  /** 該 extension 的 admin 根頁(見檔頭決策)。 */
+  /** 列出這個類型的後台頁(見檔頭決策)。 */
   adminHref: string;
   /** stat 專用:符合條件的 entry 總數。 */
   count?: number;
@@ -48,11 +52,20 @@ export interface ResolvedDashboardCard {
   entries?: ResolvedRecentEntry[];
 }
 
+/** 解析的選項(1.52.0)。 */
+export interface DashboardCardOptions {
+  /** typeKey → 列出那個類型的後台頁;沒有的退回 `/admin/ext/<extId>`。 */
+  hrefs?: Readonly<Record<string, string>>;
+  /** 這個人打不打得開卡片的來源頁;省略 = 全部顯示(預設角色)。 */
+  canOpen?: (href: string) => boolean;
+}
+
 /** 解析單張卡;任何失敗都吞成 null(呼叫端過濾),不 throw。 */
 async function resolveCard(
   ext: Extension,
   card: DeclarativeDashboardCard,
   locale: Locale,
+  opts: DashboardCardOptions,
 ): Promise<ResolvedDashboardCard | null> {
   const ct = (ext.contentTypes ?? []).find((c) => c.name === card.contentType);
   if (!ct) {
@@ -65,7 +78,8 @@ async function resolveCard(
   }
 
   const typeKey = `${ext.id}.${card.contentType}`;
-  const adminHref = `/admin/ext/${ext.id}`;
+  const adminHref = opts.hrefs?.[typeKey] ?? `/admin/ext/${ext.id}`;
+  if (opts.canOpen && !opts.canOpen(adminHref)) return null;
   // §1 #13 → #3 → name:card.title 優先,退 ct.label,再退 ct.name(全走 resolve)。
   const title =
     resolveLocalizedString(card.title, locale) ??
@@ -149,11 +163,12 @@ async function resolveCard(
 export async function resolveDashboardCards(
   exts: Extension[],
   locale: Locale = "en",
+  opts: DashboardCardOptions = {},
 ): Promise<ResolvedDashboardCard[]> {
   const jobs: Promise<ResolvedDashboardCard | null>[] = [];
   for (const ext of exts) {
     for (const card of ext.dashboardCards ?? []) {
-      jobs.push(resolveCard(ext, card, locale));
+      jobs.push(resolveCard(ext, card, locale, opts));
     }
   }
   const settled = await Promise.all(jobs);

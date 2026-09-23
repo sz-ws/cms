@@ -40,6 +40,11 @@ export interface ReturnsWorkspaceProps {
   statusRef: string;
   openNo: string | null;
   orderNo: string | null;
+  /**
+   * 1.52.0:這個人能不能改這一頁(canEditCurrentPage())。false = 只能看:沒有「新增退貨」,
+   * 明細沒有下一步。省略視同可以(伺服器另外守門)。
+   */
+  canEdit?: boolean;
 }
 
 /** 「申請退貨」帶來的 ?order= 用過一次就拿掉:重新整理不會再打開一張已經處理過的新增表單。 */
@@ -61,6 +66,7 @@ function useFilterHref(pageHref: string, search: string) {
 
 export function ReturnsWorkspace(props: ReturnsWorkspaceProps) {
   const { rows, counts, status, search, ready, limit, endpoint, pageHref, ordersPage, statusRef } = props;
+  const canEdit = props.canEdit ?? true;
   const t = useT();
   const router = useRouter();
   const dates = useDateFormatter();
@@ -148,14 +154,16 @@ export function ReturnsWorkspace(props: ReturnsWorkspaceProps) {
     <div className="flex max-w-6xl flex-col gap-4 text-black/85 admin:text-ink/85 antialiased">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-black/85 admin:text-ink/85">{title}</h1>
-        <button
-          type="button"
-          disabled={!ready}
-          onClick={() => setCreate((prev) => ({ open: true, orderNo: null, key: prev.key + 1 }))}
-          className={cls.primary}
-        >
-          {t("returns.new")}
-        </button>
+        {canEdit ? (
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => setCreate((prev) => ({ open: true, orderNo: null, key: prev.key + 1 }))}
+            className={cls.primary}
+          >
+            {t("returns.new")}
+          </button>
+        ) : null}
       </header>
 
       {!ready ? (
@@ -217,13 +225,14 @@ export function ReturnsWorkspace(props: ReturnsWorkspaceProps) {
         returnNo={openNo}
         statusRef={statusRef}
         ordersPage={ordersPage}
+        canEdit={canEdit}
         onClose={() => setOpenNo(null)}
         onChanged={() => router.refresh()}
       />
       <ReturnCreateSheet
         key={create.key}
         endpoint={endpoint}
-        open={create.open}
+        open={canEdit && create.open}
         initialOrderNo={create.orderNo}
         statusRef={statusRef}
         onClose={() => {

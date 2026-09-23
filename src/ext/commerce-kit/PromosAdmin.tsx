@@ -52,10 +52,13 @@ const EMPTY_FORM: FormState = {
 export function PromosAdmin({
   endpoint,
   promos,
+  readOnly = false,
 }: {
   /** extension API base(如 "/api/ext/shop")。 */
   endpoint: string;
   promos: Promo[];
+  /** 1.52.0:只能看的角色(canEditCurrentPage())—— 只列優惠碼,不畫建立表單與編輯、刪除。 */
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -102,108 +105,110 @@ export function PromosAdmin({
   return (
     <div className="flex flex-col gap-5">
       {/* 建立/編輯 */}
-      <section className="rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-5 py-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
-        <h2 className="mb-3 text-[14px] font-semibold text-black/85 admin:text-ink/85">
-          {editing ? `編輯 ${form.code}` : "建立優惠碼"}
-        </h2>
-        <div className="flex flex-wrap items-end gap-2.5">
-          <div className="w-40">
-            <label className={LABEL}>代碼(大寫英數)</label>
-            <input
-              className={`${FIELD} w-full font-mono uppercase`}
-              value={form.code}
-              maxLength={40}
-              disabled={editing}
-              placeholder="WELCOME10"
-              onChange={(e) => patch({ code: e.target.value.toUpperCase() })}
-            />
-          </div>
-          <div className="w-36">
-            <label className={LABEL}>名稱(給自己看)</label>
-            <input
-              className={`${FIELD} w-full`}
-              value={form.label}
-              maxLength={60}
-              onChange={(e) => patch({ label: e.target.value })}
-            />
-          </div>
-          <div className="w-28">
-            <label className={LABEL}>類型</label>
-            <select
-              className={`${FIELD} w-full`}
-              value={form.type}
-              onChange={(e) => patch({ type: e.target.value as PromoType })}
-            >
-              <option value="percent">打折(%)</option>
-              <option value="flat">折抵(元)</option>
-              <option value="freeship">免運</option>
-            </select>
-          </div>
-          {form.type !== "freeship" ? (
+      {readOnly ? null : (
+        <section className="rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-5 py-4 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
+          <h2 className="mb-3 text-[14px] font-semibold text-black/85 admin:text-ink/85">
+            {editing ? `編輯 ${form.code}` : "建立優惠碼"}
+          </h2>
+          <div className="flex flex-wrap items-end gap-2.5">
+            <div className="w-40">
+              <label className={LABEL}>代碼(大寫英數)</label>
+              <input
+                className={`${FIELD} w-full font-mono uppercase`}
+                value={form.code}
+                maxLength={40}
+                disabled={editing}
+                placeholder="WELCOME10"
+                onChange={(e) => patch({ code: e.target.value.toUpperCase() })}
+              />
+            </div>
+            <div className="w-36">
+              <label className={LABEL}>名稱(給自己看)</label>
+              <input
+                className={`${FIELD} w-full`}
+                value={form.label}
+                maxLength={60}
+                onChange={(e) => patch({ label: e.target.value })}
+              />
+            </div>
+            <div className="w-28">
+              <label className={LABEL}>類型</label>
+              <select
+                className={`${FIELD} w-full`}
+                value={form.type}
+                onChange={(e) => patch({ type: e.target.value as PromoType })}
+              >
+                <option value="percent">打折(%)</option>
+                <option value="flat">折抵(元)</option>
+                <option value="freeship">免運</option>
+              </select>
+            </div>
+            {form.type !== "freeship" ? (
+              <div className="w-24">
+                <label className={LABEL}>
+                  {form.type === "percent" ? "折扣 %(1–100)" : "折抵金額"}
+                </label>
+                <input
+                  className={`${FIELD} w-full tabular-nums`}
+                  inputMode="numeric"
+                  value={String(form.value)}
+                  onChange={(e) => patch({ value: Number(e.target.value) || 0 })}
+                />
+              </div>
+            ) : null}
             <div className="w-24">
-              <label className={LABEL}>
-                {form.type === "percent" ? "折扣 %(1–100)" : "折抵金額"}
-              </label>
+              <label className={LABEL}>低消(0 = 不限)</label>
               <input
                 className={`${FIELD} w-full tabular-nums`}
                 inputMode="numeric"
-                value={String(form.value)}
-                onChange={(e) => patch({ value: Number(e.target.value) || 0 })}
+                value={String(form.minSubtotal)}
+                onChange={(e) => patch({ minSubtotal: Number(e.target.value) || 0 })}
               />
             </div>
-          ) : null}
-          <div className="w-24">
-            <label className={LABEL}>低消(0 = 不限)</label>
-            <input
-              className={`${FIELD} w-full tabular-nums`}
-              inputMode="numeric"
-              value={String(form.minSubtotal)}
-              onChange={(e) => patch({ minSubtotal: Number(e.target.value) || 0 })}
-            />
-          </div>
-          <div className="w-28">
-            <label className={LABEL}>次數上限(空 = 不限)</label>
-            <input
-              className={`${FIELD} w-full tabular-nums`}
-              inputMode="numeric"
-              value={form.maxUses === null ? "" : String(form.maxUses)}
-              onChange={(e) => {
-                const v = e.target.value.trim();
-                patch({ maxUses: v === "" ? null : Math.max(1, Number(v) || 1) });
-              }}
-            />
-          </div>
-          <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-black/60 admin:text-ink/60">
-            <input
-              type="checkbox"
-              checked={form.enabled}
-              onChange={(e) => patch({ enabled: e.target.checked })}
-            />
-            啟用
-          </label>
-          <button
-            type="button"
-            disabled={busy || form.code.trim().length < 2}
-            onClick={() => void save()}
-            className="grid h-9 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-5 text-[13px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
-          >
-            {busy ? "…" : editing ? "更新" : "建立"}
-          </button>
-          {editing ? (
+            <div className="w-28">
+              <label className={LABEL}>次數上限(空 = 不限)</label>
+              <input
+                className={`${FIELD} w-full tabular-nums`}
+                inputMode="numeric"
+                value={form.maxUses === null ? "" : String(form.maxUses)}
+                onChange={(e) => {
+                  const v = e.target.value.trim();
+                  patch({ maxUses: v === "" ? null : Math.max(1, Number(v) || 1) });
+                }}
+              />
+            </div>
+            <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-black/60 admin:text-ink/60">
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                onChange={(e) => patch({ enabled: e.target.checked })}
+              />
+              啟用
+            </label>
             <button
               type="button"
-              className={GHOST_BTN}
-              onClick={() => {
-                setForm(EMPTY_FORM);
-                setEditing(false);
-              }}
+              disabled={busy || form.code.trim().length < 2}
+              onClick={() => void save()}
+              className="grid h-9 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-5 text-[13px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
             >
-              取消
+              {busy ? "…" : editing ? "更新" : "建立"}
             </button>
-          ) : null}
-        </div>
-        {notice ? <p className="mt-2.5 text-[13px] text-black/55 admin:text-ink/55">{notice}</p> : null}
-      </section>
+            {editing ? (
+              <button
+                type="button"
+                className={GHOST_BTN}
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setEditing(false);
+                }}
+              >
+                取消
+              </button>
+            ) : null}
+          </div>
+          {notice ? <p className="mt-2.5 text-[13px] text-black/55 admin:text-ink/55">{notice}</p> : null}
+        </section>
+      )}
 
       {/* 列表 */}
       {promos.length === 0 ? (
@@ -218,7 +223,7 @@ export function PromosAdmin({
                 <th className="px-3 py-2.5 font-normal">低消</th>
                 <th className="px-3 py-2.5 font-normal">用量</th>
                 <th className="px-3 py-2.5 font-normal">狀態</th>
-                <th className="px-3 py-2.5 font-normal" />
+                {readOnly ? null : <th className="px-3 py-2.5 font-normal" />}
               </tr>
             </thead>
             <tbody>
@@ -251,41 +256,43 @@ export function PromosAdmin({
                       {p.enabled ? "啟用中" : "停用"}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        className={GHOST_BTN}
-                        onClick={() => {
-                          setForm({
-                            code: p.code,
-                            label: p.label,
-                            type: p.type,
-                            value: p.value,
-                            minSubtotal: p.minSubtotal,
-                            maxUses: p.maxUses,
-                            enabled: p.enabled,
-                          });
-                          setEditing(true);
-                          window.scrollTo({ top: 0 });
-                        }}
-                      >
-                        編輯
-                      </button>
-                      <button
-                        type="button"
-                        className={GHOST_BTN}
-                        disabled={busy}
-                        onClick={() => {
-                          if (window.confirm(`刪除優惠碼 ${p.code}?`)) {
-                            void post("promos/delete", { code: p.code });
-                          }
-                        }}
-                      >
-                        刪除
-                      </button>
-                    </div>
-                  </td>
+                  {readOnly ? null : (
+                    <td className="px-3 py-2.5">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className={GHOST_BTN}
+                          onClick={() => {
+                            setForm({
+                              code: p.code,
+                              label: p.label,
+                              type: p.type,
+                              value: p.value,
+                              minSubtotal: p.minSubtotal,
+                              maxUses: p.maxUses,
+                              enabled: p.enabled,
+                            });
+                            setEditing(true);
+                            window.scrollTo({ top: 0 });
+                          }}
+                        >
+                          編輯
+                        </button>
+                        <button
+                          type="button"
+                          className={GHOST_BTN}
+                          disabled={busy}
+                          onClick={() => {
+                            if (window.confirm(`刪除優惠碼 ${p.code}?`)) {
+                              void post("promos/delete", { code: p.code });
+                            }
+                          }}
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -295,6 +295,7 @@ export function ReturnDetailSheet({
   returnNo,
   statusRef,
   ordersPage,
+  canEdit = true,
   onClose,
   onChanged,
 }: {
@@ -305,6 +306,8 @@ export function ReturnDetailSheet({
   statusRef: string;
   /** 訂單後台頁(帶 ?q=訂單編號 搜尋)。 */
   ordersPage: string;
+  /** 1.52.0:false = 只能看(沒有下一步的表單)。 */
+  canEdit?: boolean;
   onClose: () => void;
   onChanged: (updated: ShopReturn) => void;
 }) {
@@ -379,7 +382,7 @@ export function ReturnDetailSheet({
           {shown ? (
             <>
               <Summary detail={shown} ordersPage={ordersPage} />
-              <ActionForm detail={shown} busy={busy} onSubmit={(a, f) => void submit(a, f)} />
+              {canEdit ? <ActionForm detail={shown} busy={busy} onSubmit={(a, f) => void submit(a, f)} /> : null}
               <div className={cls.section}>
                 <p className={cls.heading}>{t("returns.timeline")}</p>
                 <Timeline items={toTimeline(t, shown.events)} empty={t("returns.timelineEmpty")} />

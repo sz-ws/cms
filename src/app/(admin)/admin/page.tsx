@@ -24,6 +24,7 @@ import { getSiteTimeZone } from "@/lib/datetime-server";
 import { getSetting } from "@/lib/settings";
 import { getSessionAccess, isFullAdmin } from "@/lib/auth";
 import { guardDashboard } from "@/lib/access-guards";
+import { dashboardViewerFor } from "@/components/admin/dashboard/viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,12 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   // 1.50.0:沒有儀表板權限的自訂角色,送到它打得開的第一頁。
   await guardDashboard();
-  const data = await getDashboardData();
+  // 1.52.0:自訂角色與工作人員只看得到它打得開的頁的卡片與數字(dashboard/viewer.ts);
+  // 管理員照舊全部顯示。getSessionAccess 有 React cache(),layout 與守門已經查過,這裡不會
+  // 多一次查詢。
+  const session = await getSessionAccess();
+  const viewer = dashboardViewerFor(session);
+  const data = await getDashboardData(viewer);
   const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const m = getMessages(locale);
 
@@ -90,6 +96,7 @@ export default async function DashboardPage() {
       desc: m["dashboardEmpty.desc"],
       browseExtensions: m["dashboardEmpty.browseExtensions"],
     },
+    noAccess: m["dashboardEmpty.noAccess"],
     widgets: {
       title: m["dashboard.widgets.title"],
       subtitle: m["dashboard.widgets.subtitle"],
@@ -139,8 +146,12 @@ export default async function DashboardPage() {
   // enabled extensions (getExtRuntime is React-cached per request — getDashboardData
   // already warmed it). Split by kind so stat tiles and recent feeds each get a
   // fitting responsive grid. Rendered only when non-empty.
+  // 1.52.0:卡片連到列出那個類型的頁(hrefs),自訂角色打不開那一頁就不顯示。
   const rt = await getExtRuntime();
-  const extCards = await resolveDashboardCards(rt.enabled, locale);
+  const extCards = await resolveDashboardCards(rt.enabled, locale, {
+    hrefs: data.collectionHrefs,
+    canOpen: viewer?.canOpen,
+  });
   const extStatCards = extCards.filter((c) => c.kind === "stat");
   const extRecentCards = extCards.filter((c) => c.kind === "recent");
 
@@ -165,14 +176,20 @@ export default async function DashboardPage() {
   const insightEnabled = (id: (typeof insightConfig)[number]["id"]) =>
     insightConfig.some((entry) => entry.id === id && entry.enabled);
 
+  // 1.52.0:自訂角色的活躍度只算它看得到的類型;儲存空間跟著媒體庫;資料庫用量只有管理者。
+  const showStorage = insightEnabled("storage") && (!viewer || viewer.storage);
+  const showDatabase = insightEnabled("database") && (!viewer || viewer.database);
   const [weeklyActivity, storageStats, dbStats, d1PlanRaw] = data.hasTypes
     ? await Promise.all([
-        insightEnabled("activity") ? getWeeklyActivity(data.now) : null,
-        insightEnabled("storage") ? getStorageStats() : null,
-        insightEnabled("database") ? getDatabaseStats() : null,
-        insightEnabled("database")
-          ? getSetting<string>("core.d1.plan", "free")
-          : "free",
+        insightEnabled("activity")
+          ? getWeeklyActivity(
+              data.now,
+              viewer ? data.types.map((t) => t.typeKey) : undefined,
+            )
+          : null,
+        showStorage ? getStorageStats() : null,
+        showDatabase ? getDatabaseStats() : null,
+        showDatabase ? getSetting<string>("core.d1.plan", "free") : "free",
       ])
     : [null, null, null, "free"];
   const d1Plan: D1Plan = d1PlanRaw === "paid" ? "paid" : "free";
@@ -182,7 +199,7 @@ export default async function DashboardPage() {
   // requireAuth("admin")。editor 進得來這頁(layout 只擋 guest),所以權限要在這裡
   // 判,不然按下編輯只會走到一個必定 403 的死路。getSessionAccess 有 React cache(),
   // layout 這個 request 已經呼叫過,這裡不會多一次查詢。1.50.0:自訂角色不算。
-  const canEditInsights = isFullAdmin((await getSessionAccess())?.user);
+  const canEditInsights = isFullAdmin(session?.user);
 
   const distributionData: ProportionWidgetData | null = data.hasTypes
     ? {
@@ -196,11 +213,14 @@ export default async function DashboardPage() {
     : null;
   const distributionPreset = data.types.length > 4 ? "bar-list" : "donut";
 
-  const quickOptions = data.types.map((t) => ({
-    label: t.typeLabel,
-    extName: t.extName,
-    href: t.newHref,
-  }));
+  // 只列這個人能新增的類型(自訂角色要那一頁的編輯)。
+  const quickOptions = data.types
+    .filter((t) => t.canCreate)
+    .map((t) => ({
+      label: t.typeLabel,
+      extName: t.extName,
+      href: t.newHref,
+    }));
 
   return (
     <div className="flex flex-col gap-5">
@@ -215,7 +235,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         {/* Create menu only when there's more than one type to choose from. */}
-        {data.types.length > 1 && <QuickCreate options={quickOptions} />}
+        {quickOptions.length > 1 && <QuickCreate options={quickOptions} />}
       </div>
 
       {data.hasTypes ? (
@@ -230,7 +250,7 @@ export default async function DashboardPage() {
             totalPublished={data.totalPublished}
             totalDrafts={data.totalDrafts}
             typeCount={data.typeCount}
-            userCount={data.userCount}
+            userCount={!viewer || viewer.users ? data.userCount : undefined}
             labels={labels.overview}
           />
 
@@ -282,6 +302,11 @@ export default async function DashboardPage() {
             labels={labels.recent}
           />
         </div>
+      ) : viewer ? (
+        // 自訂角色看不到任何內容類型:不是「還沒安裝」,不給擴充功能的入口。
+        extCards.length === 0 && (
+          <p className="text-[13.5px] text-ink/45">{labels.noAccess}</p>
+        )
       ) : (
         <DashboardEmpty labels={labels.dashboardEmpty} />
       )}

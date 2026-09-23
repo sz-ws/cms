@@ -1,4 +1,4 @@
-import { gte } from "drizzle-orm";
+import { and, gte, inArray } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { getDB } from "@/lib/cf";
@@ -17,14 +17,22 @@ const STORAGE_PAGE_CAP = 5; // 5 頁 × 100 = 上限 500 檔案(dashboard tile,�
  * (WHERE createdAt >= cutoff)取回窗內全部 createdAt,JS 端 bucket——比對每天
  * 發一次 COUNT query 便宜,且避開 D1 SQL 日期函式的方言差異。
  */
-export async function getWeeklyActivity(now: number): Promise<TrendWidgetData> {
+export async function getWeeklyActivity(
+  now: number,
+  /** 1.52.0:只算這些內容類型(自訂角色打得開的);省略 = 全部。空陣列 = 不查,全是 0。 */
+  typeKeys?: readonly string[],
+): Promise<TrendWidgetData> {
   const windowStart = now - TREND_DAYS * DAY_MS;
   const prevWindowStart = windowStart - TREND_DAYS * DAY_MS;
 
-  const rows = await db()
-    .select({ createdAt: contents.createdAt })
-    .from(contents)
-    .where(gte(contents.createdAt, prevWindowStart));
+  const since = gte(contents.createdAt, prevWindowStart);
+  const rows =
+    typeKeys?.length === 0
+      ? []
+      : await db()
+          .select({ createdAt: contents.createdAt })
+          .from(contents)
+          .where(typeKeys ? and(since, inArray(contents.type, [...typeKeys])) : since);
 
   const series = Array.from({ length: TREND_DAYS }, () => 0);
   let currentTotal = 0;

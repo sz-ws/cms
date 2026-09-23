@@ -1018,7 +1018,8 @@
 //   Component) guarded by has(), keep the scripts as the fallback for sites that
 //   only install from the store, and declare coreApi ^1.51.0.
 // Additive: manifests and sites without the layer behave as in 1.50.0.
-// 1.52.0: paid extensions, stage 1 (registry protocol 1: prices shown, no payments).
+// 1.52.0: paid extensions, stage 1 (registry protocol 1: prices shown, no payments),
+// and screens that follow the viewer's access.
 // Paid extensions (registry protocol 1):
 // - Every registry request from core and the CLI carries X-Registry-Protocol: 1. A registry
 //   that sees it lists extensions this key has not been given and answers 402 for their
@@ -1046,5 +1047,37 @@
 //   plain words. Entries without access render exactly as before.
 // - CLI: add exits 11 (NOT_ENTITLED) when access is not granted or a file answers 402.
 // Not yet: in-site requests, action "link", expiry display, notices.
-// Additive: registries without the new fields behave as in 1.51.0.
+// Screens follow the viewer's access:
+// - commerce-kit screens no longer draw buttons the API answers with 403: ShippingEditor
+//   and PromosAdmin take readOnly (fields disabled; no add, delete, reorder or save; the
+//   shipping preview still runs); TransferVerifyQueue and CommerceOrdersTable draw no
+//   order actions without actionsEndpoint (the table's action column shows while it has
+//   actions or returnsPage); ReturnsAdminPage reads canEditCurrentPage() and passes
+//   canEdit to ReturnsWorkspace and ReturnDetailSheet: no 新增退貨, no ?order= create
+//   sheet and no next-step form for a role with View only.
+// - commerce-kit/admin loadFullyReturned(config, orders): the shipped or completed orders
+//   whose every item is already in a return that is not rejected or cancelled (returns
+//   engine fullyReturned; a returns table that is not applied yet counts as none).
+//   CommerceOrdersTable's returned prop shows 商品都已申請退貨 for them instead of
+//   StartReturnLink. Callers pass returnsPage only to roles with Edit on the returns page
+//   (adminPageLevels), as shop 0.6.1 does.
+// - Dashboard (components/admin/dashboard/viewer.ts, dashboardViewer(access)): a custom
+//   role sees only the cards and numbers whose source page it can open.
+//   getDashboardData(viewer) keeps the declarative types whose list page is viewable
+//   (type cards, recent entries, totals, distribution); DashboardTypeStats.canCreate
+//   (Edit on that page) gates 新增 and quick create; the user count is not queried and
+//   not shown; getWeeklyActivity(now, typeKeys) counts only visible types; storage
+//   follows the media library; database usage stays admin-only; a role that sees nothing
+//   gets dashboardEmpty.noAccess instead of the install-an-extension empty state.
+// - resolveDashboardCards(exts, locale, { hrefs, canOpen }): extension cards (declarative
+//   and code) link to the page that lists their type (DashboardData.collectionHrefs from
+//   the type directory; a type not in it falls back to /admin/ext/<extId>), so edit links
+//   for types listed on a sub-page are right, and a card whose page canOpen refuses is
+//   skipped before its query.
+// - Code extensions close the 1.50.0 known limit by reading canEditCurrentPage() or
+//   returning their levels from adminPageLevels, and declaring accessAs on every route.
+//   Presets have no access map and see every screen as in 1.51.0. On the dashboard the
+//   preset editor (工作人員) is filtered like a role that can open only the dashboard
+//   (dashboardViewerFor), so it no longer sees cards or numbers from pages it can't open.
+// Additive: registries and roles without the new fields behave as in 1.51.0.
 export const CORE_API_VERSION = "1.52.0";

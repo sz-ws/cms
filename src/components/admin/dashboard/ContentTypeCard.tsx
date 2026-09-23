@@ -71,7 +71,8 @@ function SplitStat({
   );
 }
 
-/** New (ghost) + View all (primary) — always right-aligned per the design doc. */
+/** New (ghost) + View all (primary) — always right-aligned per the design doc.
+ * 1.52.0:只能看這一頁的自訂角色沒有「新增」。 */
 function CardActions({
   stats,
   labels,
@@ -81,17 +82,19 @@ function CardActions({
 }) {
   return (
     <div className="mt-0.5 flex justify-end gap-2">
-      <AdminLink
-        href={stats.newHref}
-        className={cn(
-          "inline-flex h-8 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-3 text-[12.5px] font-semibold text-ink/70",
-          "transition-[color,box-shadow] duration-150 ease-out active:scale-[0.96]",
-          "hover:text-ink/90",
-          SHADOW_RING,
-        )}
-      >
-        {labels.new}
-      </AdminLink>
+      {stats.canCreate ? (
+        <AdminLink
+          href={stats.newHref}
+          className={cn(
+            "inline-flex h-8 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-surface px-3 text-[12.5px] font-semibold text-ink/70",
+            "transition-[color,box-shadow] duration-150 ease-out active:scale-[0.96]",
+            "hover:text-ink/90",
+            SHADOW_RING,
+          )}
+        >
+          {labels.new}
+        </AdminLink>
+      ) : null}
       <AdminLink
         href={stats.collectionHref}
         className={cn(

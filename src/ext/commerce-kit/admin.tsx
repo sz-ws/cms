@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getDB } from "@/lib/cf";
 import {
   CARD,
   PILL,
@@ -13,6 +14,7 @@ import type { RecordSearch } from "../record-search";
 import { OrderActions } from "./OrderActions";
 import { StartReturnLink } from "./StartReturnLink";
 import { RETURNABLE_ORDER_STATUSES } from "./returns";
+import { createReturnsEngine, isMissingTableError, type ReturnsConfig } from "./returns-engine";
 import { DateTimeText } from "@/components/DateTimeProvider";
 
 // commerce-kit:商店 extension adminPage 的共用積木(server 端)。
@@ -32,6 +34,27 @@ export async function loadOrders(
     return await listOrders({ db: db() }, table, opts);
   } catch {
     return [];
+  }
+}
+
+/**
+ * 1.52.0:這一頁已出貨、已完成的訂單裡,商品都已經申請退貨的(退貨引擎的 fullyReturned,
+ * 規則同可退件數)。訂單列表拿它收起「申請退貨」。退貨表還沒建(商店還沒套用 0.6.0 的
+ * 更新)→ 當作沒有。
+ */
+export async function loadFullyReturned(
+  config: ReturnsConfig,
+  orders: readonly CommerceOrder[],
+): Promise<string[]> {
+  const candidates = orders
+    .filter((o) => RETURNABLE_ORDER_STATUSES.includes(o.status))
+    .map((o) => o.orderNo);
+  if (candidates.length === 0) return [];
+  try {
+    return await createReturnsEngine(getDB(), config).fullyReturned(candidates);
+  } catch (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
   }
 }
 
@@ -79,25 +102,33 @@ function linesSummary(order: CommerceOrder): string {
 
 /**
  * 訂單一覽表。actionsEndpoint = 該 extension 的 API base
- * (如 "/api/ext/shop"),給動作按鈕組 POST URL;省略 = 唯讀表。
+ * (如 "/api/ext/shop"),給動作按鈕組 POST URL;省略 = 沒有動作按鈕(只能看這一頁的
+ * 角色,1.52.0)。動作欄在有動作按鈕或「申請退貨」時才畫。
  */
 export function CommerceOrdersTable({
   orders,
   actionsEndpoint,
   transferProvider,
   returnsPage,
+  returned,
 }: {
   orders: CommerceOrder[];
   actionsEndpoint?: string;
   /** 匯款 providerId(ext.<id>.transferProvider)。命中的 pending_payment 列會多
    *  「標記已收款」—— 台灣無 open banking,admin 直接切換狀態是常態動線。 */
   transferProvider?: string;
-  /** 1.50.0:退貨管理頁。給了,已出貨、已完成的訂單多一個「申請退貨」。 */
+  /**
+   * 1.50.0:退貨管理頁。給了,已出貨、已完成的訂單多一個「申請退貨」。只給能在那一頁建立
+   * 退貨的人(1.52.0,呼叫端用 adminPageLevels 判斷)。
+   */
   returnsPage?: string;
+  /** 1.52.0:商品都已經申請退貨的訂單編號(loadFullyReturned):不給連結,改說一句。 */
+  returned?: readonly string[];
 }) {
   if (orders.length === 0) {
     return <p className="text-[13px] text-black/45 admin:text-ink/45">尚無訂單。</p>;
   }
+  const actionColumn = actionsEndpoint !== undefined || returnsPage !== undefined;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-[13px]">
@@ -110,7 +141,7 @@ export function CommerceOrdersTable({
             <th className="pb-2 pr-4 font-medium">訂購人</th>
             <th className="pb-2 pr-4 font-medium">付款方式</th>
             <th className="pb-2 pr-4 font-medium">建立時間</th>
-            {actionsEndpoint ? <th className="pb-2 font-medium">動作</th> : null}
+            {actionColumn ? <th className="pb-2 font-medium">動作</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -141,20 +172,28 @@ export function CommerceOrdersTable({
               <td className="py-2.5 pr-4 tabular-nums text-[12px] text-black/50 admin:text-ink/50">
                 <DateTimeText at={o.createdAt} locale="zh-Hant" />
               </td>
-              {actionsEndpoint ? (
+              {actionColumn ? (
                 <td className="py-2.5">
                   <span className="inline-flex flex-wrap items-center gap-1.5">
-                    <OrderActions
-                      endpoint={actionsEndpoint}
-                      orderNo={o.orderNo}
-                      status={o.status}
-                      directPaid={
-                        transferProvider !== undefined &&
-                        o.paymentProvider === transferProvider
-                      }
-                    />
+                    {actionsEndpoint ? (
+                      <OrderActions
+                        endpoint={actionsEndpoint}
+                        orderNo={o.orderNo}
+                        status={o.status}
+                        directPaid={
+                          transferProvider !== undefined &&
+                          o.paymentProvider === transferProvider
+                        }
+                      />
+                    ) : null}
                     {returnsPage && RETURNABLE_ORDER_STATUSES.includes(o.status) ? (
-                      <StartReturnLink returnsPage={returnsPage} orderNo={o.orderNo} />
+                      returned?.includes(o.orderNo) ? (
+                        <span className="text-[12px] text-black/40 admin:text-ink/40">
+                          商品都已申請退貨
+                        </span>
+                      ) : (
+                        <StartReturnLink returnsPage={returnsPage} orderNo={o.orderNo} />
+                      )
                     ) : null}
                   </span>
                 </td>
@@ -171,6 +210,7 @@ export function CommerceOrdersTable({
  * 對帳佇列:匯款訂單列表 + 回報末五碼 + 動作。
  * 兩種用法:awaiting_verify(核可/退回)與 pending_payment + directPaid
  * (等待匯款、客人未回報 —— admin 對到帳直接「標記已收款」)。
+ * 1.52.0:actionsEndpoint 省略 = 只列出來,沒有動作按鈕(只能看這一頁的角色)。
  */
 export function TransferVerifyQueue({
   orders,
@@ -179,7 +219,7 @@ export function TransferVerifyQueue({
   emptyText = "目前沒有待對帳的匯款。",
 }: {
   orders: CommerceOrder[];
-  actionsEndpoint: string;
+  actionsEndpoint?: string;
   directPaid?: boolean;
   emptyText?: string;
 }) {
@@ -216,12 +256,14 @@ export function TransferVerifyQueue({
                 ) : null}
               </p>
             </div>
-            <OrderActions
-              endpoint={actionsEndpoint}
-              orderNo={o.orderNo}
-              status={o.status}
-              directPaid={directPaid}
-            />
+            {actionsEndpoint ? (
+              <OrderActions
+                endpoint={actionsEndpoint}
+                orderNo={o.orderNo}
+                status={o.status}
+                directPaid={directPaid}
+              />
+            ) : null}
           </div>
         </li>
       ))}

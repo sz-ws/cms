@@ -80,6 +80,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "dashboardEmpty.title": "尚無內容類型",
   "dashboardEmpty.desc": "安裝擴充功能以開始管理內容。啟用後，內容類型將連同即時計數與快捷操作一併顯示於此。",
   "dashboardEmpty.browseExtensions": "瀏覽擴充功能",
+  "dashboardEmpty.noAccess": "你的角色目前看不到這裡的內容。需要的話，請找管理者調整角色。",
 
   // Dashboard widgets(preset 元件庫 —— 內容分佈 / 活躍度 / 儲存空間)
   "dashboard.widgets.title": "深入洞察",
