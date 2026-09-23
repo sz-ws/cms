@@ -673,7 +673,11 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   const ident = camelCaseId(id);
 
   if (args.dryRun) {
-    log(`[dry-run] will install code extension "${id}" (${entry.name} v${entry.version})`);
+    log(
+      isEnhancement
+        ? `[dry-run] will install the code layer of declarative extension "${id}" (${entry.name} v${entry.version})`
+        : `[dry-run] will install code extension "${id}" (${entry.name} v${entry.version})`,
+    );
     log(`[dry-run] source: ${source}`);
     if (verdict.status === "ok") {
       log(
@@ -691,16 +695,19 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     for (const f of resolved.files) log(`             extensions/${id}/${f}`);
     // 預覽 patch(不寫檔)。
     const original = await readFile(registryPath, "utf8");
-    const patch = patchRegistryContent(original, id);
+    // 和正式執行同一個 mode:強化層只加 side-effect import,不進 registry 陣列。
+    const patch = patchRegistryContent(original, id, isEnhancement ? "enhancement" : "extension");
     if (!patch.ok) {
       log(`[dry-run] registry.ts patch would fail (${patch.reason}), manual insertion needed:`);
       log(`             ${patch.importLine}`);
-      log(`             add to registry array: ${patch.ident}`);
+      if (!isEnhancement) log(`             add to registry array: ${patch.ident}`);
     } else if (patch.alreadyUpToDate) {
       log("[dry-run] registry.ts already contains this extension (idempotent, no changes).");
     } else {
       log("[dry-run] will patch extensions/registry.ts:");
-      if (patch.importAdded) log(`             + import { ${ident} } from "./${id}";`);
+      if (patch.importAdded) {
+        log(isEnhancement ? `             + import "./${id}";` : `             + import { ${ident} } from "./${id}";`);
+      }
       if (patch.arrayAdded) log(`             + add ${ident} to registry array`);
     }
     return EXIT.OK;

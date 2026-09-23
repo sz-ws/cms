@@ -193,6 +193,17 @@ describe("run — dry-run", () => {
       readFile(path.join(repoDir, "extensions", "demoext", "index.ts")),
     ).rejects.toThrow();
   });
+
+  it("previews an enhancement layer as a side-effect import, not a registry entry", async () => {
+    const code = await run(
+      ["add", "progext", "--source", regUrl, "--dry-run"],
+      repoDir,
+    );
+    expect(code).toBe(EXIT.OK);
+    expect(out()).toContain(`+ import "./progext";`);
+    expect(out()).not.toContain("registry array");
+    expect(out()).not.toContain("import { progext }");
+  });
 });
 
 describe("run — dest exists (exit 3) and --force idempotent", () => {
