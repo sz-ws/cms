@@ -13,7 +13,13 @@
 - `staff-roles.ts`: custom roles in D1 (`staff_roles`, `users.staff_role_id`).
 - `cf.ts`: Cloudflare env accessors (`getEnv`, `getDB`, `getStorage`).
 - `db.ts`: drizzle wrapper (uses `getDB()`).
-- `security.ts`: origin check + nonce helpers (CSP).
+- `security.ts`: origin check + timing-safe compare.
+- `csp.ts`: every Content-Security-Policy string (zero deps: `next.config.ts` and the
+  middleware both load it). Public pages enforce script-src with a per-request nonce;
+  admin/API stay Report-Only.
+- `public-csp.ts`: script hosts of approved declarative scripts, read straight from the
+  D1 binding (runs in the edge middleware, so no drizzle / zod). The middleware uses
+  `cachedApprovedScriptHosts`, memoised per isolate behind a version stamp.
 - `rate-limit.ts`: shared `hitRateLimit` (D1 KV-style table).
 - `utils.ts`: `cn(...)` etc.
 - `observe/`: error reporting (GlitchTip / Sentry protocol). `sentry-options.ts` is

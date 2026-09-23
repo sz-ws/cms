@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REPORT_ONLY_PATHS, reportOnlyPolicy } from "./src/lib/csp";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -9,8 +10,8 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 // 這一段的價值在於它是**上游**:每一個從這個 scaffold 長出來的站都自動拿到,
 // 而下游幾乎不會自己補。所以寧可放在這裡,也不要寫成「部署後記得設定」。
 //
-// 分兩級:下面這組是無風險的,一律 enforce。CSP 因為會真的擋掉東西,只送
-// Report-Only(理由與升級方式見下方 CSP_REPORT_ONLY 的註解)。
+// 分兩級:下面這組是無風險的,一律 enforce。CSP 因為會真的擋掉東西,公開頁只 enforce
+// 執行程式的那幾條、其餘仍是 Report-Only(見下方 CSP_REPORT_ONLY 的註解)。
 const SECURITY_HEADERS = [
   // MIME sniffing:瀏覽器不得無視 Content-Type 自行猜測。
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -54,59 +55,26 @@ const SECURITY_HEADERS = [
   },
 ];
 
-// CSP 只送 Report-Only,**刻意不 enforce**。
+// CSP(1.50.0 起分兩種頁面,組法與理由都在 src/lib/csp.ts):
 //
-// 為什麼不直接開:這個 app 有兩個真實的 inline 來源 ——
-//   1. declarative extension 的 `theme` design tokens 會 render 成 inline style
-//      (src/ext/dx/theme-scope.tsx),以及泛用 view 裡大量的 style={{...}}
-//   2. Next.js 自己會注入 inline script 做 hydration/route announcer
-// 要真正收緊需要 nonce 化,那是一個獨立的工程(且 OpenNext 下要驗證 nonce
-// 能不能穿過 edge render)。在那之前開 enforce 只會讓站台白畫面。
+//   - 公開頁:middleware 逐請求產生 nonce,送 enforce 的 Content-Security-Policy
+//     (只管執行程式的指令:script-src 帶 nonce 與核准過的宣告式 script 主機)與完整的
+//     Report-Only。這裡**不能**再對公開頁送 CSP 標頭 —— OpenNext 合併標頭時
+//     next.config 的蓋過 middleware 的,`next dev` 則相反,同一份設定會在兩個環境
+//     送出不同的 policy。
+//   - 後台、登入、首次設定、/api、Next 靜態檔:維持 Report-Only,由這裡送(路徑見
+//     REPORT_ONLY_PATHS)。後台有 QuickJS 沙盒('wasm-unsafe-eval')、後台字體與大量
+//     inline style;要 enforce,先看 /api/csp-report 的收件確認乾淨。
 //
-// 怎麼升級成 enforce:讓站台跑一陣子,收 /api/csp-report 進來的違規(見下方
-// report-uri),把真正需要的來源加進來,確認乾淨後把下面這行的 key 改成
-// "Content-Security-Policy" 即可。
-//
-// `'wasm-unsafe-eval'` 已經在 script-src 裡(2026-09-02;理由見該行)—— 後台助理的
-// JS 沙盒(QuickJS)是執行期從 bytes 編譯 wasm 的,少了它一 enforce 沙盒就死。
-// ⚠️ enforce 前還剩一件要**實測**的:worker-src。沙盒的 Worker 走 `new URL(...)`
+// ⚠️ 後台 enforce 前還剩一件要**實測**的:worker-src。沙盒的 Worker 走 `new URL(...)`
 // 同源打包產物,理論上吃 default-src 'self' 的 fallback,但要在 Report-Only 的
 // 收件裡確認真的沒有 worker-src 違規,而不是推論。
+//
+// 相對路徑 import:next.config.ts 由 Node 在建置期載入,不經過 bundler 的 `@/` alias;
+// src/lib/csp.ts 零依賴,正是為了讓這裡能直接載入。
 const CSP_REPORT_ONLY = {
   key: "Content-Security-Policy-Report-Only",
-  value: [
-    "default-src 'self'",
-    // 'unsafe-inline' 是目前的現實(見上方說明),留在 Report-Only 裡當作
-    // 「我們知道這裡還沒收乾淨」的紀錄,而不是假裝已經安全。
-    //
-    // 'wasm-unsafe-eval' 是**必要的**,不是妥協:後台助理的 JS 沙盒(QuickJS,
-    // src/components/admin/agent/code-sandbox.worker.ts)在執行期從 bytes 編譯
-    // wasm,沒有這一項的 policy 一 enforce 沙盒就死。先放進 Report-Only,收件端
-    // 才不會被每一次沙盒啟動的 wasm-eval 違規灌滿,真正要看的違規才浮得上來。
-    // (它只放行 WebAssembly 編譯,不放行 JS 的 eval / new Function。)
-    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
-    // Google Fonts:後台風格選了非預設字體才會載入(lib/admin-theme.ts 的 ADMIN_FONTS)。
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    // R2 走同源的 /api/files;data: 給 icon/inline SVG;blob: 給上傳預覽。
-    "img-src 'self' data: blob:",
-    "font-src 'self' https://fonts.gstatic.com",
-    // extension 的 webhook 是伺服器端送出的,不需要在這裡開。
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "upgrade-insecure-requests",
-    // 沒有這一行的 Report-Only 等於沒有開:違規只會出現在**打開 devtools 的那個人**
-    // 的 console 裡,而升級成 enforce 的前提正是「先確定真實流量上沒有東西會被擋」。
-    // 端點見 src/app/api/csp-report/route.ts(公開、限流、不落庫,轉給錯誤回報層)。
-    //
-    // 用 report-uri 而不是新的 report-to:report-to 需要另外送 `Reporting-Endpoints`
-    // 標頭,而那個標頭的值必須是**絕對網址** —— next.config 是建置期產物,這裡不
-    // 可能知道每個下游站的 origin。report-uri 雖然標為 deprecated,但相對路徑可用,
-    // 且 Chrome/Firefox/Safari 現行版本都還照送。
-    "report-uri /api/csp-report",
-  ].join("; "),
+  value: reportOnlyPolicy(),
 };
 
 const nextConfig: NextConfig = {
@@ -173,7 +141,8 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      { source: "/:path*", headers: [...SECURITY_HEADERS, CSP_REPORT_ONLY] },
+      { source: "/:path*", headers: SECURITY_HEADERS },
+      ...REPORT_ONLY_PATHS.map((source) => ({ source, headers: [CSP_REPORT_ONLY] })),
     ];
   },
   // Optional isolated build dir so a second dev server can run alongside the

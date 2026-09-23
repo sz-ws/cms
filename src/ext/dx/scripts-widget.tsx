@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { headers } from "next/headers";
 import { and, eq } from "drizzle-orm";
 import { getSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
@@ -108,6 +109,10 @@ export function makeScriptsWidget(
 
   async function DeclarativeScripts() {
     if ((await hashScripts(scripts)) !== approval.hash) return null;
+    // 1.50.0:公開頁 enforce CSP(見 src/middleware.ts)。inline 靠這個請求的 nonce
+    // 執行;外部 script **不**給 nonce —— 它由 policy 裡核准過的主機放行,這樣白名單
+    // 才是真的在管事(給了 nonce,主機寫什麼都會被放行)。
+    const nonce = (await headers()).get("x-nonce") ?? undefined;
 
     const refs = allScriptRefs(scripts);
     const settings: Record<string, unknown> = {};
@@ -130,9 +135,13 @@ export function makeScriptsWidget(
             return src ? <script key={i} async src={src} data-ext={extId} /> : null;
           }
           return (
+            // 瀏覽器解析後會把 nonce 屬性清成空字串(防止頁面讀走),hydration 比對時
+            // server 的值和 DOM 對不上;script 本身已經跑過,這個差異是預期的。
             <script
               key={i}
               data-ext={extId}
+              nonce={nonce}
+              suppressHydrationWarning
               dangerouslySetInnerHTML={{
                 __html: renderInlineScript(script.inline ?? "", settings, data),
               }}

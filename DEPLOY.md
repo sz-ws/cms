@@ -172,6 +172,23 @@ stored in the R2 object's `customMetadata` (`w` / `h`), next to the alt text.
 Files uploaded before this existed simply have no dimensions recorded; they keep
 serving normally, just without `width`/`height` attributes in the markup.
 
+## Content-Security-Policy on public pages
+
+Public pages send an enforced `Content-Security-Policy` that only covers script
+execution: scripts from the site itself, inline scripts carrying the page's
+per-request nonce, and the hosts of declarative-extension scripts an admin has
+approved. Everything else (images, fonts, connections, form targets) stays in
+`Content-Security-Policy-Report-Only` and is reported to `/api/csp-report`.
+Admin, login and `/api` keep the Report-Only policy only.
+
+Cloudflare zone features that inject their own scripts into HTML are blocked by
+that policy unless they carry the nonce: Rocket Loader, Zaraz, and Web Analytics
+set to install automatically. Turn those off, or add Web Analytics as an
+approved declarative script instead. If something is blocked and you cannot
+change it right away, set the Worker variable `CMS_CSP` to `report-only`
+(Dashboard → Workers → your Worker → Settings → Variables, or `vars` in
+`wrangler.jsonc`); the policy is then only reported, with no rebuild.
+
 ## Notes
 
 - The project pins `pnpm@9.4.0` and requires Node **22.12+** (see `.node-version`);

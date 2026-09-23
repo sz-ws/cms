@@ -828,7 +828,8 @@
 //   extension runtime (the loader uses it).
 // Additive for extensions reading catalog.product; shop 0.5.0 needs coreApi ^1.49.0.
 // 1.50.0: one release — returns in commerce-kit (退貨管理), custom staff roles
-// (角色與權限), and plugin identity with plugins that require plugins.
+// (角色與權限), plugin identity with plugins that require plugins, and an enforced
+// CSP on public pages.
 // Returns (commerce-kit):
 // - returns.ts: the return lifecycle requested → approved / rejected / cancelled;
 //   approved → received / refunded / cancelled; received → refunded / completed;
@@ -976,4 +977,16 @@
 //   button while something is missing. The installed list flags plugins whose
 //   required plugins are missing or disabled.
 // Additive: manifests without the new fields are unchanged.
+// CSP on public pages:
+// - CSP: public pages get an enforced Content-Security-Policy from src/middleware.ts
+//   with a per-request nonce (Next picks it up from the request header, the scripts
+//   widget puts it on approved inline scripts) and script-src hosts from approved
+//   declarative scripts (src hosts + domains; lib/public-csp.ts). Only script-src,
+//   object-src, base-uri and frame-ancestors are enforced; the full policy stays
+//   Report-Only. Admin, login, setup and /api keep the old Report-Only policy, and
+//   so do files the middleware sees (a known extension such as .txt, .xml, .svg;
+//   a page path may contain a dot). The allowlist is memoised per isolate behind a
+//   version stamp of declarative_extensions. The Worker variable
+//   CMS_CSP=report-only turns enforcement off. lib/csp.ts builds every policy;
+//   ext/dx/scripts-core.ts holds the zod-free script helpers.
 export const CORE_API_VERSION = "1.50.0";
