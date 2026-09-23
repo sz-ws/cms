@@ -86,10 +86,18 @@ export default async function AdminLayout({
 
   // 1.40.0:宣告了 search 的插件頁 → 頂欄搜尋框(components/admin/PageSearch.tsx)。
   const pageSearch: Record<string, PageSearchConfig> = {};
+  // 不在 sidebar、但有自己標題的頁。少了這裡,麵包屑會退回把路徑段首字大寫(「Audit」、
+  // 「Shipping」),與整個後台的本地化脫節。插件不在側欄的頁用它宣告的標題。
+  const crumbTitles: Record<string, string> = { "/admin/agent/audit": messages["agent.audit.title"] };
   for (const ext of rt.enabled) {
     for (const page of ext.adminPages ?? []) {
+      const href = `/admin/ext/${ext.id}${page.slug ? `/${page.slug}` : ""}`;
+      if (page.showInMenu === false) {
+        const title = resolveLocalizedString(page.title, locale);
+        if (title) crumbTitles[href] = title;
+      }
       if (!page.search) continue;
-      pageSearch[`/admin/ext/${ext.id}${page.slug ? `/${page.slug}` : ""}`] = {
+      pageSearch[href] = {
         placeholder: resolveLocalizedString(page.search.placeholder, locale) ?? "",
         dates: Boolean(page.search.fields.date),
       };
@@ -167,9 +175,7 @@ export default async function AdminLayout({
             browse: messages["nav.browse"],
             installed: messages["nav.installed"],
           }}
-          // 不在 sidebar、但有自己標題的 core 子頁。少了這裡,麵包屑會退回把路徑段
-          // 首字大寫(「Audit」),與整個後台的本地化脫節。
-          crumbTitles={{ "/admin/agent/audit": messages["agent.audit.title"] }}
+          crumbTitles={crumbTitles}
         >
           {children}
         </AdminShell>

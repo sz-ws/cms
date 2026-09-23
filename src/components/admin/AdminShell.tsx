@@ -59,8 +59,10 @@ export function AdminShell({
   // instead of a capitalised path segment.
   const menuTitles: Record<string, string> = { ...crumbTitles };
   // 資料夾的 href 指向第一個子項:先寫資料夾、再寫子項,麵包屑顯示的是頁面標題。
+  const folderTitles: Record<string, string> = {};
   for (const item of menu) {
     menuTitles[item.href] = item.title;
+    if (item.children?.length) folderTitles[item.href] = item.title;
     for (const child of item.children ?? []) menuTitles[child.href] = child.title;
   }
 
@@ -93,7 +95,7 @@ export function AdminShell({
         groups={groups}
       />
       <SidebarInset>
-        <AdminNav menuTitles={menuTitles} pageSearch={pageSearch} />
+        <AdminNav menuTitles={menuTitles} folderTitles={folderTitles} pageSearch={pageSearch} />
         <main className="flex-1 p-4 lg:p-6">
           {/* 頁面標題跟側欄同名(站台改名後也一致),見 admin-titles.tsx。 */}
           <AdminTitlesProvider titles={menuTitles}>

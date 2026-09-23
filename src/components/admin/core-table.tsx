@@ -93,7 +93,12 @@ export function CoreTable<T>({
                   <button
                     type="button"
                     onClick={() => toggleSort(col.key)}
-                    className="group/th relative -my-1 flex items-center gap-0.5 py-1 transition-colors hover:text-black/60 admin:hover:text-ink/60"
+                    // inline-flex:th 的 text-right 才推得動它。靠右的欄把箭頭放到左邊,
+                    // 標題的右緣才會和底下的數字對齊。
+                    className={cn(
+                      "group/th relative -my-1 inline-flex items-center gap-0.5 py-1 transition-colors hover:text-black/60 admin:hover:text-ink/60",
+                      col.thClass?.includes("text-right") && "flex-row-reverse",
+                    )}
                   >
                     {col.label}
                     <span className="flex w-3 justify-center">

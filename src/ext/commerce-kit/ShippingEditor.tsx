@@ -45,7 +45,7 @@ function ruleSummary(rule: ShippingRule): string {
   if (w.minQty !== undefined) conds.push(`≥ ${w.minQty} 件`);
   if (w.maxQty !== undefined) conds.push(`≤ ${w.maxQty} 件`);
   if (w.regions?.length) conds.push(`寄往 ${w.regions.join("、")}`);
-  const scope = w.methods?.length ? `限 ${w.methods.join("、")}:` : "";
+  const scope = w.methods?.length ? `限 ${w.methods.join("、")}：` : "";
   const cond = conds.length > 0 ? `當 ${conds.join(" 且 ")}` : "所有訂單";
   const effect =
     rule.effect.type === "free"
@@ -61,10 +61,13 @@ function ruleSummary(rule: ShippingRule): string {
 export function ShippingEditor({
   endpoint,
   initial,
+  emptyText = "還沒有配送方式。沒有配送方式時，結帳不會出現運費；數位商品或自取的店家可以留空。",
 }: {
   /** extension API base(如 "/api/ext/shop")。 */
   endpoint: string;
   initial: ShippingConfig | null;
+  /** 沒有配送方式時的說明。沒設就沿用商店運費的地方(例如插件自己的運費設定)要換掉預設那句。 */
+  emptyText?: string;
 }) {
   const [methods, setMethods] = useState<ShippingMethod[]>(initial?.methods ?? []);
   const [rules, setRules] = useState<ShippingRule[]>(initial?.rules ?? []);
@@ -119,9 +122,9 @@ export function ShippingEditor({
         body: JSON.stringify(config),
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
-      setNotice(data.ok ? "已儲存。" : `儲存失敗:${data.error ?? res.status}`);
+      setNotice(data.ok ? "已儲存。" : `儲存失敗：${data.error ?? res.status}`);
     } catch {
-      setNotice("網路錯誤,請重試。");
+      setNotice("網路錯誤，請重試。");
     } finally {
       setBusy(false);
     }
@@ -149,7 +152,7 @@ export function ShippingEditor({
           </div>
           {methods.length === 0 ? (
             <p className="text-[13px] text-black/45 admin:text-ink/45">
-              尚未設定 —— 沒有配送方式時,結帳不會出現運費(數位商品/自取店家可留空)。
+              {emptyText}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -223,11 +226,10 @@ export function ShippingEditor({
             </button>
           </div>
           <p className="mb-3 text-[12px] leading-relaxed text-black/45 admin:text-ink/45">
-            由上往下逐條套用,順序就是優先序;「免運」命中後不再套用後面的規則。
-            條件留空 = 不限。
+            由上往下逐條套用，順序就是優先序；「免運」命中後不再套用後面的規則。條件留空表示不限。
           </p>
           {rules.length === 0 ? (
-            <p className="text-[13px] text-black/45 admin:text-ink/45">沒有規則 —— 一律收基本運費。</p>
+            <p className="text-[13px] text-black/45 admin:text-ink/45">沒有規則，一律收基本運費。</p>
           ) : (
             <ul className="space-y-3">
               {rules.map((r, i) => (
@@ -271,7 +273,7 @@ export function ShippingEditor({
                   </div>
                   <div className="flex flex-wrap items-end gap-2.5">
                     <div className="w-40">
-                      <label className={LABEL}>規則名稱(客人看得到)</label>
+                      <label className={LABEL}>規則名稱（客人看得到）</label>
                       <input
                         className={`${FIELD} w-full`}
                         value={r.name}
@@ -281,7 +283,7 @@ export function ShippingEditor({
                       />
                     </div>
                     <div className="w-24">
-                      <label className={LABEL}>滿(小計 ≥)</label>
+                      <label className={LABEL}>滿（小計 ≥）</label>
                       <input
                         className={`${FIELD} w-full tabular-nums`}
                         inputMode="numeric"
@@ -299,7 +301,7 @@ export function ShippingEditor({
                       />
                     </div>
                     <div className="w-44">
-                      <label className={LABEL}>限地區(頓號分隔)</label>
+                      <label className={LABEL}>限地區（頓號分隔）</label>
                       <input
                         className={`${FIELD} w-full`}
                         value={r.when.regions?.join("、") ?? ""}
@@ -341,7 +343,7 @@ export function ShippingEditor({
                           );
                         })}
                         {methods.length === 0 ? (
-                          <span className="text-[12px] text-black/35 admin:text-ink/35">(不限)</span>
+                          <span className="text-[12px] text-black/35 admin:text-ink/35">（不限）</span>
                         ) : null}
                       </div>
                     </div>
@@ -359,14 +361,14 @@ export function ShippingEditor({
                         }}
                       >
                         <option value="free">免運</option>
-                        <option value="add">加收/折抵</option>
+                        <option value="add">加收／折抵</option>
                         <option value="override">改為固定</option>
                       </select>
                     </div>
                     {r.effect.type !== "free" ? (
                       <div className="w-28">
                         <label className={LABEL}>
-                          {r.effect.type === "add" ? "金額(負 = 折抵)" : "固定運費"}
+                          {r.effect.type === "add" ? "金額（負數＝折抵）" : "固定運費"}
                         </label>
                         <input
                           className={`${FIELD} w-full tabular-nums`}
@@ -403,7 +405,7 @@ export function ShippingEditor({
       <aside className={`${CARD_CLS} h-fit lg:sticky lg:top-6`}>
         <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">試算</h2>
         <p className="mt-0.5 text-[12px] text-black/45 admin:text-ink/45">
-          改左邊任何欄位,這裡立刻重算 —— 跟結帳頁用同一套規則。
+          改左邊任何欄位，這裡立刻重算，和結帳頁用同一套規則。
         </p>
         <div className="mt-3 space-y-2.5">
           <div>
@@ -449,7 +451,7 @@ export function ShippingEditor({
                   </div>
                   {o.applied.length > 0 ? (
                     <p className="text-[11.5px] text-black/40 admin:text-ink/40">
-                      套用:{o.applied.join("、")}
+                      套用：{o.applied.join("、")}
                     </p>
                   ) : null}
                 </li>

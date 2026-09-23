@@ -348,7 +348,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "extensions.networkError": "網路連線錯誤。",
   "extensions.upgrade": "套用更新",
   "extensions.upgradePending": "待套用更新",
-  "extensions.upgradeBanner": "{names} 的新版本有資料表變更還沒套用，套用前相關頁面可能打不開。",
+  "extensions.upgradeBanner": "{names}的新版本有資料表變更還沒套用，套用前相關頁面可能打不開。",
   "extensions.progress.check": "檢查版本相容與必要插件",
   "extensions.progress.migrate": "更新資料表",
   "extensions.progress.migrateOne": "更新資料表：{id}",
