@@ -152,6 +152,16 @@ export function scriptLiteral(value: unknown): string {
 }
 
 /**
+ * 1.51.0:inline script 在某個代入符號看到的值 —— scriptLiteral 的 JSON 解回來。
+ * \u 跳脫不改變值,所以就是 JSON 來回一次:undefined 變 null、Date 變字串、函式與
+ * class 實例的方法消失。public:scripts 的 override 元件拿的就是這個值(見
+ * ./scripts-widget.tsx),兩條路的輸入因此一模一樣。
+ */
+export function scriptValue(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value === undefined ? null : value) ?? "null") as unknown;
+}
+
+/**
  * inline script 代入。settings 以 key 查;content / feed 以完整路徑查
  * (`data["content.sample"]`),查不到一律是 null。
  */

@@ -381,6 +381,15 @@ v1 covers exactly the 4 view surfaces:
 | `public:<type>:list`      | `ListView`       |
 | `public:<type>:detail`    | `DetailView`     |
 
+**Extension-level surface (1.51.0).** `public:scripts` (`surfaceIds.publicScripts()`,
+two segments, one per extension) replaces a declarative plugin's `manifest.scripts`.
+Its props are `ScriptsSurfaceProps { extId, settings, data, locale }`: the values the
+inline scripts would receive, from the same resolver (`scriptInputsResolver` in
+`dx/scripts-widget.tsx`). When it is registered and the manifest has scripts, the
+public widget slot mounts it instead; no manifest `<script>` is emitted and no
+script approval or `allowScripts` source is needed (`dx/scripts-compiled.ts` holds
+the checks every script gate uses).
+
 `buildSurfaceId`/`parseSurfaceId` + the `surfaceIds.{adminCollection,adminForm,
 publicList,publicDetail}(contentType)` convenience builders own the scheme.
 Parsing is pure string split (no regex; `contentType`'s internal `.` never

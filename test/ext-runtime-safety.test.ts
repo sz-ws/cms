@@ -1,6 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { env } from "cloudflare:test";
 import type { Extension } from "../src/ext/types";
+import { overrideRegistry } from "../src/ext/overrides";
+import { surfaceIds } from "../src/ext/dx/surfaces";
 
 // loader 的資料庫路徑和 production 一樣走 D1；registry / migration helper 則用可控
 // state 模擬，以驗證同一個 isolate 內 runtime memo 的真正行為。
@@ -16,7 +18,9 @@ const migrationState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/../extensions/registry", () => ({ registry: registryState.entries }));
-vi.mock("@/ext/dx/declarative-migrate", () => ({
+vi.mock("@/ext/dx/declarative-migrate", async (importActual) => ({
+  // 1.51.0:loader 清掉被取代的 script 核准時用得到真的 revision claim。
+  ...(await importActual<typeof import("../src/ext/dx/declarative-migrate")>()),
   runDeclarativeMigrations: migrationState.run,
 }));
 
@@ -122,12 +126,13 @@ function codeExtension(
 beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, version TEXT NOT NULL, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);" +
-      "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);",
+      "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);" +
+      "CREATE TABLE IF NOT EXISTS ext_migrations (id TEXT PRIMARY KEY, ext_id TEXT NOT NULL, applied_at INTEGER NOT NULL);",
   );
 });
 
 beforeEach(async () => {
-  await d1().exec("DELETE FROM extensions; DELETE FROM declarative_extensions;");
+  await d1().exec("DELETE FROM extensions; DELETE FROM declarative_extensions; DELETE FROM ext_migrations;");
   registryState.entries.splice(0);
   migrationState.run.mockReset();
   migrationState.run.mockResolvedValue(undefined);
@@ -196,5 +201,36 @@ describe("extension runtime CORE_API boundary", () => {
       new Set(["retry-dx", "healthy-dx"]),
     );
     expect(second.unavailableById.has("retry-dx")).toBe(false);
+  });
+});
+
+// 1.51.0:插件的前台編進網站之後,編進去之前留下的 script 核准由 loader 清掉 ——
+// 公開頁的 CSP 在 middleware 算,只看得到核准(見 src/ext/dx/scripts-compiled.ts)。
+describe("extension runtime: scripts compiled into the site", () => {
+  it("clears an approval left from before the compile-in, once, and keeps other plugins' approvals", async () => {
+    if (!overrideRegistry.has("proof-dx", surfaceIds.publicScripts())) {
+      overrideRegistry.register("proof-dx", surfaceIds.publicScripts(), "scripts", () => null);
+    }
+    const approval = JSON.stringify({ hash: "a".repeat(64), by: "a@t.co", at: 1 });
+    await enableDeclarative("proof-dx", manifest("proof-dx", "^1.0.0"));
+    await enableDeclarative("plain-dx", manifest("plain-dx", "^1.0.0"));
+    await d1().prepare("UPDATE declarative_extensions SET scripts_approval = ?").bind(approval).run();
+    const state = (id: string) =>
+      d1()
+        .prepare("SELECT scripts_approval AS approval, updated_at AS updatedAt FROM declarative_extensions WHERE id = ?")
+        .bind(id)
+        .first<{ approval: string | null; updatedAt: number }>();
+
+    const rt = await (await getLoader()).getExtRuntime();
+    expect(new Set(rt.enabled.map((ext) => ext.id))).toEqual(new Set(["proof-dx", "plain-dx"]));
+    const proof = await state("proof-dx");
+    expect(proof?.approval).toBeNull();
+    expect(proof!.updatedAt).toBeGreaterThan(now);
+    expect(await state("plain-dx")).toEqual({ approval, updatedAt: now });
+
+    // 下一次完整載入沒事可做:revision 不再前進。
+    (await getLoader()).invalidateExtRuntimeMemo();
+    await (await getLoader()).getExtRuntime();
+    expect((await state("proof-dx"))?.updatedAt).toBe(proof!.updatedAt);
   });
 });

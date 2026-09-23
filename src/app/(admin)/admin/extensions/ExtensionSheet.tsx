@@ -169,11 +169,18 @@ function ExtensionSheetBody({
           {ext.needs && ext.needs.length > 0 && <MissingRequirements needs={ext.needs} />}
         </div>
 
-        {/* 1.48.0:宣告式插件帶的前台 script(執行中 / 已停用) */}
+        {/* 1.48.0:宣告式插件帶的前台 script(執行中 / 已停用)。1.51.0:已編進網站的
+            只有一句說明 —— 沒有東西可以停用或核准。 */}
         {ext.scripts && (
           <div className="flex flex-col gap-2">
             <SectionLabel>{t("extensions.sheet.scripts")}</SectionLabel>
-            <ExtensionScripts ext={ext} />
+            {ext.scripts === "compiled" ? (
+              <p className="rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/[0.08] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-ink/70">
+                {t("scripts.compiled")}
+              </p>
+            ) : (
+              <ExtensionScripts ext={ext} />
+            )}
           </div>
         )}
 

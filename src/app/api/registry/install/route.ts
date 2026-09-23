@@ -15,6 +15,7 @@ import {
   parseScriptsApproval,
   SCRIPTS_HASH_RE,
 } from "@/ext/dx/scripts";
+import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 import { validateStylesheet } from "@/ext/dx/stylesheet-guard";
 import {
   isStaleInstallConflict,
@@ -385,8 +386,10 @@ export async function POST(req: Request): Promise<Response> {
   //   - 已安裝的版本核准過同樣的內容(更新但 scripts 沒變)→ 沿用
   //   - 其他 → 409,回 hash 讓前端開核准畫面;hash 對不上代表看過之後內容又變了
   // undefined = 不動欄位(沿用);null = 清掉(新版 manifest 不再帶 scripts)。
+  // 1.51.0:這個站把插件的前台編進了網站(public:scripts)→ scripts 永遠不會輸出,
+  // 上面兩道關都不適用;核准一律清掉(CSP 只看核准,見 @/ext/dx/scripts-compiled)。
   let scriptsApproval: string | null | undefined = null;
-  if (manifest.scripts) {
+  if (manifest.scripts && !scriptsCompiledIn(id)) {
     if (source !== undefined && !(await sourceAllowsScripts(source))) {
       return Response.json({ error: "scripts_not_allowed" }, { status: 403 });
     }

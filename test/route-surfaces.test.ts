@@ -75,4 +75,15 @@ describe("surfaces (progressive override ids)", () => {
     // collection is an admin view, not public → null
     expect(parseSurfaceId("public:x:collection")).toBeNull();
   });
+
+  // 1.51.0:插件層級的 surface 只有兩段;content type 的 view 不能少一段,scripts 也不能多一段。
+  it("public:scripts is a two-segment, extension-level surface", () => {
+    expect(surfaceIds.publicScripts()).toBe("public:scripts");
+    expect(parseSurfaceId("public:scripts")).toEqual({ kind: "public", view: "scripts" });
+    expect(buildSurfaceId({ kind: "public", view: "scripts" })).toBe("public:scripts");
+    expect(parseSurfaceId("admin:scripts")).toBeNull();
+    expect(parseSurfaceId("public:detail")).toBeNull();
+    expect(parseSurfaceId("public:x.item:scripts")).toBeNull();
+    expect(parseSurfaceId(":scripts")).toBeNull();
+  });
 });

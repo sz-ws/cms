@@ -7,6 +7,7 @@ import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
 import { getExtRuntime } from "@/ext/loader";
 import { byId, listInstalledPlugins, type InstalledPluginInfo } from "@/ext/installed-plugins";
 import { listingVerdict } from "@/ext/plugin-ref";
+import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 
 // core-v2 §3.4:GET /api/registry/index。admin only。
 // 對每個 configured source 抓 registry.json,merge entries,並附上
@@ -21,6 +22,8 @@ import { listingVerdict } from "@/ext/plugin-ref";
 // 規則見 @/ext/plugin-ref 的 listingVerdict。
 //   kind     —— 同 id 是另一種插件(程式碼 vs 宣告式)
 // installedPlugins 給商店畫面判斷相依(需要的插件裝了沒、啟用了沒)與「誰用了它」。
+// 1.51.0:scriptsCompiled —— 這個站把宣告式插件的前台編進了網站,安裝不會要求核准
+// script,商店詳情改顯示一句說明(見 @/ext/dx/scripts-compiled)。只在 true 時帶。
 export async function GET(): Promise<Response> {
   try {
     await requireAuth("admin");
@@ -53,6 +56,7 @@ export async function GET(): Promise<Response> {
       conflict: match.conflict,
       installedSource: match.conflict === "source" ? match.source : null,
       compatible: satisfies(CORE_API_VERSION, entry.coreApi),
+      ...(entry.kind === "declarative" && scriptsCompiledIn(entry.id) ? { scriptsCompiled: true } : {}),
     };
   });
 

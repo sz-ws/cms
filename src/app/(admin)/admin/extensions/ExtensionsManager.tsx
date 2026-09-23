@@ -38,8 +38,11 @@ export interface ExtensionRow {
   issue: ExtensionRuntimeIssue | null;
   /** 1.45.0:已部署新版、但還沒套用(migration 沒跑或資料庫記的是舊版號)。 */
   upgrade?: { from: string; to: string; migrations: string[] } | null;
-  /** 1.48.0:宣告式插件帶前台 script 時的狀態;沒有 script = 不給。 */
-  scripts?: "running" | "stopped" | null;
+  /**
+   * 1.48.0:宣告式插件帶前台 script 時的狀態;沒有 script = 不給。
+   * 1.51.0:compiled = 前台已編進網站,script 不會輸出,也不用核准。
+   */
+  scripts?: "running" | "stopped" | "compiled" | null;
   /** 1.50.0:需要、但沒裝(missing / different)或停用(disabled)的插件;都齊了 = 不給。 */
   needs?: { id: string; name: string; state: "missing" | "disabled" | "different" }[];
 }

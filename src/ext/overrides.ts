@@ -3,6 +3,7 @@ import type { CollectionViewProps } from "./dx/views/CollectionView";
 import type { FormViewPageProps } from "./dx/views/FormViewPage";
 import type { ListViewProps } from "./dx/views/ListView";
 import type { DetailViewProps } from "./dx/views/DetailView";
+import type { Locale } from "@/lib/i18n";
 import { parseSurfaceId } from "./dx/surfaces";
 
 // core-v2 §3.6:code-override registry(progressive extensions 的核心)。
@@ -25,6 +26,11 @@ import { parseSurfaceId } from "./dx/surfaces";
 // 公開 form 雖已共用 FormView(public mode),但尚未納入 override taxonomy。
 // dashboard-block / extra-API-route override 為 §3.6 follow-up,此處不建。
 // 一個 (extId, surfaceId) 僅一個 override(重複登記 → throw,避免 code 層自我覆寫的靜默 bug)。
+//
+// 1.51.0:public:scripts —— 宣告式插件 manifest.scripts 的替代。這個 surface 沒有泛用
+// view 可以對照,props 是 script 本來會拿到的代入值(ScriptsSurfaceProps)。登記了它,
+// 前台就掛這個元件、manifest 的 script 一段都不輸出,也不再需要核准(見
+// dx/scripts-widget.tsx publicScriptsWidget)。
 
 /** 各 v1 surface 的 override 元件 props —— 一律等同泛用 view 的 props(§3.6 契約)。 */
 export type CollectionSurfaceProps = CollectionViewProps;
@@ -33,19 +39,41 @@ export type ListSurfaceProps = ListViewProps;
 export type DetailSurfaceProps = DetailViewProps;
 
 /**
- * 依 surfaceId 的 view 尾段對應到 props 型別。key 為 view 名(collection/form/list/detail)。
- * register<K>() 用它把「哪個 surface」與「該 surface 元件的 props」在編譯期綁定。
+ * 1.51.0:public:scripts 的 props —— manifest.scripts 的代入符號解析後的值,與 inline
+ * script 看到的完全相同(同一個解析器、同樣的逾時與上限,值經過同一次 JSON 化)。
+ * 伺服器端解析好才交給元件,所以元件可以直接是 client component。
+ */
+export interface ScriptsSurfaceProps {
+  extId: string;
+  /** {{settings.<key>}} → 設定值,沒存過就是 manifest 的預設值。鍵是 key。 */
+  settings: Record<string, unknown>;
+  /**
+   * {{content.*}} / {{feed.*}} → 資料,鍵是完整路徑("content.sample"、
+   * "feed.shop.recentPurchases")。來源出錯或逾時是 null。
+   */
+  data: Record<string, unknown>;
+  locale: Locale;
+}
+
+/**
+ * 依 surfaceId 的 view 尾段對應到 props 型別。key 為 view 名(collection/form/list/detail,
+ * 1.51.0 起加上 scripts)。register<K>() 用它把「哪個 surface」與「該 surface 元件的
+ * props」在編譯期綁定。
  */
 export interface SurfacePropsByView {
   collection: CollectionSurfaceProps;
   form: FormSurfaceProps;
   list: ListSurfaceProps;
   detail: DetailSurfaceProps;
+  scripts: ScriptsSurfaceProps;
 }
 
 export type SurfaceViewKey = keyof SurfacePropsByView;
 
-/** 某 surface 的 override 元件型別(server component,收該 surface 的泛用 props)。 */
+/**
+ * 某 surface 的 override 元件型別(收該 surface 的泛用 props)。view surface 是 server
+ * component;scripts 的 props 可序列化,client component 也可以直接登記。
+ */
 export type OverrideComponent<K extends SurfaceViewKey> = ComponentType<
   SurfacePropsByView[K]
 >;

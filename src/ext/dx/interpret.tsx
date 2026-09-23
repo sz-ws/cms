@@ -29,8 +29,7 @@ import { ExtThemeScope } from "./theme-scope";
 import { buildCrudRoutes } from "./crud";
 import { compilePattern, matchSegments } from "./route-matcher";
 import { makeWebhookHandler } from "./webhook";
-import { parseScriptsApproval } from "./scripts";
-import { makeScriptsWidget } from "./scripts-widget";
+import { publicScriptsWidget } from "./scripts-widget";
 import { normalizePublicWidgets } from "../public-widgets";
 import { declarativeRouteAccess } from "../admin-access";
 import { surfaceIds } from "./surfaces";
@@ -364,9 +363,10 @@ function buildHooks(
   // 1.48.0:核准過的 scripts 掛進公開頁的浮層插槽。沒核准(或已停用)就不掛;
   // hash 對不對在 widget 渲染時比(要 await,這裡是同步的)。`on` 只收宣告式
   // hook 名單,不會跟這個 filter 撞名。
-  const approval = parseScriptsApproval(scriptsApproval);
-  if (manifest.scripts && approval) {
-    const Widget = makeScriptsWidget(extId, manifest, approval);
+  // 1.51.0:編進網站的程式碼登記了 public:scripts → 改掛它,不輸出 script、不看核准
+  // (與上面三個 view surface 同一個「登記了就用登記的」規則;判斷在 publicScriptsWidget)。
+  const Widget = publicScriptsWidget(extId, manifest, scriptsApproval);
+  if (Widget) {
     hooks["filter:publicWidgets"] = (widgets: unknown) => [
       ...normalizePublicWidgets(widgets),
       Widget,

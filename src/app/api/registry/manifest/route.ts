@@ -8,6 +8,10 @@ import {
 } from "@/lib/registry-client";
 import { parseManifest, type DeclarativeManifest } from "@/ext/dx/manifest";
 import { hashScripts, parseScriptsApproval } from "@/ext/dx/scripts";
+import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
+// 1.51.0:編進網站的強化層在 loader 的 import 鏈上登記(extensions/registry.ts);這支
+// route 其他地方用不到 loader,少了這行,剛啟動的 isolate 會以為什麼都沒編進來。
+import "@/ext/loader";
 import { db } from "@/lib/db";
 import { declarativeExtensions as dxTable } from "@/lib/schema";
 import { eq } from "drizzle-orm";
@@ -86,13 +90,15 @@ export async function GET(req: Request): Promise<Response> {
  * 1.48.0:manifest 帶 scripts 時,安裝前端要知道的三件事 —— 內容 hash(核准時原樣
  * 送回)、這個來源准不准帶 scripts、已安裝的版本是不是核准過同樣的內容(更新但
  * scripts 沒變就不必再看一次)。沒有 scripts → null。
+ * 1.51.0:這個站把插件的前台編進了網站 → 也是 null:沒有要核准的東西(install route
+ * 同樣不看來源、不要核准)。
  */
 async function scriptsReview(
   manifest: DeclarativeManifest,
   source: string,
   id: string,
 ): Promise<{ hash: string; allowed: boolean; approved: boolean } | null> {
-  if (!manifest.scripts) return null;
+  if (!manifest.scripts || scriptsCompiledIn(id)) return null;
   const [hash, allowed, rows] = await Promise.all([
     hashScripts(manifest.scripts),
     sourceAllowsScripts(source),

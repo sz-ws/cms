@@ -1355,6 +1355,9 @@ function ExtensionDetail({
             {codeNote && (
               <p className="text-[12.5px] leading-relaxed text-ink/50">{codeNote}</p>
             )}
+            {entry.kind === "declarative" && entry.scriptsCompiled && (
+              <p className="text-[12.5px] leading-relaxed text-ink/50">{t("scripts.compiled")}</p>
+            )}
           </div>
 
           <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 border-t border-ink/[0.06] pt-4 text-[13px]">

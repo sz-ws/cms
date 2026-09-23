@@ -989,4 +989,33 @@
 //   version stamp of declarative_extensions. The Worker variable
 //   CMS_CSP=report-only turns enforcement off. lib/csp.ts builds every policy;
 //   ext/dx/scripts-core.ts holds the zod-free script helpers.
-export const CORE_API_VERSION = "1.50.0";
+// 1.51.0: a compiled-in layer can replace a declarative plugin's scripts.
+// - New override surface "public:scripts" (surfaceIds.publicScripts(), view
+//   "scripts"), one per extension: surface ids may now have two segments
+//   "<kind>:<view>" for extension-level surfaces. Props: ScriptsSurfaceProps
+//   { extId, settings, data, locale } — settings are the {{settings.*}} values the
+//   scripts use (defaults when unset), data is each {{content.*}} / {{feed.*}} ref
+//   keyed by its path ("content.sample"), resolved by the same resolver as the
+//   scripts (scriptInputsResolver: same feed timeout, 50-entry and 32,000-character
+//   caps, a failed source is null) and passed through the same JSON round trip
+//   (scriptValue), so a client component can be registered directly.
+// - dx/scripts-widget publicScriptsWidget(): when the manifest has scripts and the
+//   plugin's enhancement layer registered public:scripts, filter:publicWidgets gets
+//   a server component that resolves the inputs and renders it. No <script> from
+//   the manifest is emitted and no approval or allowScripts source is needed.
+//   Without an override nothing changes.
+// - dx/scripts-compiled scriptsCompiledIn(id) drives every script gate: install and
+//   update skip scripts_not_allowed / scripts_review_required and clear the stored
+//   approval; GET /api/registry/manifest returns scripts: null; POST
+//   /api/extensions/<id>/scripts { action: "approve" } answers 409
+//   scripts_compiled; the store index marks the entry scriptsCompiled and the store
+//   detail and the installed list show 已編進網站，前台不需要 script。 instead of
+//   the review. The loader clears an approval left from before the layer was
+//   compiled in on its next full load, so lib/public-csp.ts (which only sees
+//   approvals) never allows hosts of replaced scripts.
+// - To use it: ship files/ with the declarative manifest (1.25.0) whose index.ts
+//   calls overrideRegistry.register(id, surfaceIds.publicScripts(), "scripts",
+//   Component) guarded by has(), keep the scripts as the fallback for sites that
+//   only install from the store, and declare coreApi ^1.51.0.
+// Additive: manifests and sites without the layer behave as in 1.50.0.
+export const CORE_API_VERSION = "1.51.0";

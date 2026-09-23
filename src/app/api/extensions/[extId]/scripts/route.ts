@@ -11,6 +11,7 @@ import {
   parseScriptsApproval,
   SCRIPTS_HASH_RE,
 } from "@/ext/dx/scripts";
+import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 import { buildInstallRevisionClaim } from "@/ext/dx/declarative-migrate";
 import { isStaleInstallConflict } from "@/ext/dx/install-contract";
 import { invalidateExtRuntimeMemo } from "@/ext/loader";
@@ -23,6 +24,9 @@ import { invalidateExtRuntimeMemo } from "@/ext/loader";
 //
 // 安裝時的核准走 POST /api/registry/install 的 approveScripts;這裡處理的是之後:
 // 管理員想先停掉某段 script、或停掉之後要再打開。admin only。
+//
+// 1.51.0:插件的前台已經編進網站(public:scripts)→ approve 回 409 scripts_compiled。
+// 那些 script 不會輸出,核准只會讓它們的主機進 CSP 白名單(見 @/ext/dx/scripts-compiled)。
 
 type Loaded =
   | { ok: true; row: typeof dxTable.$inferSelect; manifest: DeclarativeManifest }
@@ -123,6 +127,9 @@ export async function POST(
 
   let scriptsApproval: string | null = null;
   if (body.action === "approve") {
+    if (scriptsCompiledIn(extId)) {
+      return Response.json({ error: "scripts_compiled" }, { status: 409 });
+    }
     if (!(await allowedFor(row.source))) {
       return Response.json({ error: "scripts_not_allowed" }, { status: 403 });
     }

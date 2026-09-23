@@ -18,6 +18,11 @@
 // content type 各自獨立覆寫,且與資料層命名一致。
 //
 // dashboard-block / extra-API-route 覆寫為 §3.6 的 follow-up,v1 不含(見 SURFACE_KINDS)。
+//
+// 1.51.0:另有**插件層級**的 surface —— 不屬於某個 content type,每個插件一個,
+// 形狀只有兩段「<kind>:<view>」:
+//   public:scripts                   → 宣告式插件 manifest.scripts 的替代(見 ./scripts-widget.tsx)
+// 編進網站的程式碼登記了它,前台就改掛那個元件,manifest 的 script 一段都不輸出。
 
 /** surface 的兩大分類:後台 admin 頁 vs 公開 public 路由。 */
 export const SURFACE_KINDS = ["admin", "public"] as const;
@@ -27,17 +32,31 @@ export type SurfaceKind = (typeof SURFACE_KINDS)[number];
 export const ADMIN_VIEWS = ["collection", "form"] as const;
 export const PUBLIC_VIEWS = ["list", "detail"] as const;
 
+/** 1.51.0:插件層級(沒有 content type)的 public view。 */
+export const EXTENSION_VIEWS = ["scripts"] as const;
+
 export type AdminView = (typeof ADMIN_VIEWS)[number];
 export type PublicView = (typeof PUBLIC_VIEWS)[number];
-export type SurfaceView = AdminView | PublicView;
+export type ExtensionView = (typeof EXTENSION_VIEWS)[number];
+export type SurfaceView = AdminView | PublicView | ExtensionView;
 
-/** 一個 surface 的結構化描述(build/parse 兩端共用)。 */
-export interface SurfaceRef {
+/** content type 層級的 surface(4 個 view surface)。 */
+export interface ContentSurfaceRef {
   kind: SurfaceKind;
   /** 完整 content type key「<extId>.<name>」。 */
   contentType: string;
-  view: SurfaceView;
+  view: AdminView | PublicView;
 }
+
+/** 1.51.0:插件層級的 surface —— 每個插件一個,沒有 content type。 */
+export interface ExtensionSurfaceRef {
+  kind: "public";
+  contentType?: undefined;
+  view: ExtensionView;
+}
+
+/** 一個 surface 的結構化描述(build/parse 兩端共用)。 */
+export type SurfaceRef = ContentSurfaceRef | ExtensionSurfaceRef;
 
 const SEP = ":";
 
@@ -50,10 +69,11 @@ const SEP = ":";
  * 不會與 contentType 內部碰撞(見 parseSurfaceId 的重組邏輯)。
  */
 export function buildSurfaceId(ref: SurfaceRef): string {
+  if (ref.contentType === undefined) return `${ref.kind}${SEP}${ref.view}`;
   return `${ref.kind}${SEP}${ref.contentType}${SEP}${ref.view}`;
 }
 
-/** 便捷 helpers —— 4 個 v1 surface 各一,避免呼叫端手拼字串出錯。 */
+/** 便捷 helpers —— 每個 surface 各一,避免呼叫端手拼字串出錯。 */
 export const surfaceIds = {
   adminCollection: (contentType: string): string =>
     buildSurfaceId({ kind: "admin", contentType, view: "collection" }),
@@ -63,31 +83,44 @@ export const surfaceIds = {
     buildSurfaceId({ kind: "public", contentType, view: "list" }),
   publicDetail: (contentType: string): string =>
     buildSurfaceId({ kind: "public", contentType, view: "detail" }),
+  /** 1.51.0:"public:scripts"。鍵是 (extId, surfaceId),所以不帶參數也是每個插件一個。 */
+  publicScripts: (): string => buildSurfaceId({ kind: "public", view: "scripts" }),
 } as const;
 
 function isSurfaceKind(v: string): v is SurfaceKind {
   return (SURFACE_KINDS as readonly string[]).includes(v);
 }
 
-function isSurfaceView(kind: SurfaceKind, v: string): v is SurfaceView {
+function isContentView(kind: SurfaceKind, v: string): v is AdminView | PublicView {
   const views: readonly string[] =
     kind === "admin" ? ADMIN_VIEWS : PUBLIC_VIEWS;
   return views.includes(v);
 }
 
+function isExtensionView(v: string): v is ExtensionView {
+  return (EXTENSION_VIEWS as readonly string[]).includes(v);
+}
+
 /**
  * 解析 surfaceId → SurfaceRef,或 null(格式不合法 / kind·view 不匹配)。
  * 純字串切分,無 regex(03 §:ReDoS 面)。middle 段即完整 contentType(可含「.」)。
+ * 兩段的只收插件層級的 view(public:scripts);content type 的 view 一定要三段。
  */
 export function parseSurfaceId(surfaceId: string): SurfaceRef | null {
   const first = surfaceId.indexOf(SEP);
   const last = surfaceId.lastIndexOf(SEP);
-  if (first <= 0 || last <= first) return null; // 需至少 3 段、非空 head/middle/tail
+  if (first <= 0) return null;
+  if (first === last) {
+    const view = surfaceId.slice(first + 1);
+    return surfaceId.slice(0, first) === "public" && isExtensionView(view)
+      ? { kind: "public", view }
+      : null;
+  }
   const kind = surfaceId.slice(0, first);
   const contentType = surfaceId.slice(first + 1, last);
   const view = surfaceId.slice(last + 1);
   if (contentType.length === 0 || view.length === 0) return null;
   if (!isSurfaceKind(kind)) return null;
-  if (!isSurfaceView(kind, view)) return null;
+  if (!isContentView(kind, view)) return null;
   return { kind, contentType, view };
 }

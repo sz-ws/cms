@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { getSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { declarativeExtensions as dxTable } from "@/lib/schema";
+import { getLocale } from "@/lib/i18n/server";
 import { cachedPublicQuery } from "./content-cache";
 import { parseManifest, type DeclarativeManifest } from "./manifest";
 import { isSubmissionTypeName } from "./submission";
@@ -13,12 +14,16 @@ import {
   capScriptData,
   CONTENT_REF_LIMIT,
   hashScripts,
+  parseScriptsApproval,
   renderInlineScript,
   renderScriptSrc,
+  scriptValue,
   type DeclarativeScript,
   type ScriptRef,
   type ScriptsApproval,
 } from "./scripts";
+import { overrideRegistry, type ScriptsSurfaceProps } from "../overrides";
+import { surfaceIds } from "./surfaces";
 
 // 1.48.0:把宣告式插件核准過的 scripts 掛上 filter:publicWidgets(interpret.tsx)。
 //
@@ -32,6 +37,11 @@ import {
 // 資料代入({{content.*}} / {{feed.*}})也在這裡:值嵌進 HTML,瀏覽器不必再打 API
 // (公開的 Content API 要 bearer token,script 不能帶)。任何一個來源出錯都只是 null,
 // 這個元件掛在每一條公開路由上,它的例外會變成整站 500。
+//
+// 1.51.0:插件的程式碼強化層可以登記 public:scripts(src/ext/overrides.ts)。登記了,
+// 浮層插槽改掛那個元件,manifest 的 script 一段都不輸出、也不看核准 —— 編進網站的
+// 程式碼跟程式碼插件一樣可信,核准是給「從商店來、沒人審過的程式」用的。兩條路共用
+// 下面的 scriptInputsResolver:同樣的代入符號、同樣的逾時與上限、失敗同樣是 null。
 
 const FEED_TIMEOUT_MS = 1500;
 
@@ -97,24 +107,25 @@ async function loadData(ownId: string, ref: ScriptRef): Promise<unknown> {
   }
 }
 
-export function makeScriptsWidget(
+/** 一組 scripts 的代入值:設定以 key 為鍵,資料以完整路徑為鍵(renderInlineScript 的形狀)。 */
+export interface ScriptInputs {
+  settings: Record<string, unknown>;
+  data: Record<string, unknown>;
+}
+
+/**
+ * manifest → 解析它 scripts 代入值的函式。代入符號與設定預設值在這裡(interpret 期)
+ * 算一次,每次渲染只讀值。scripts 與 public:scripts override 兩條路都用它。
+ */
+export function scriptInputsResolver(
   extId: string,
   manifest: DeclarativeManifest,
-  approval: ScriptsApproval,
-): ComponentType {
-  const scripts: readonly DeclarativeScript[] = manifest.scripts ?? [];
+): () => Promise<ScriptInputs> {
+  const refs = allScriptRefs(manifest.scripts ?? []);
   const defaults = Object.fromEntries(
     (manifest.settings ?? []).map((field) => [field.key, field.default]),
   );
-
-  async function DeclarativeScripts() {
-    if ((await hashScripts(scripts)) !== approval.hash) return null;
-    // 1.50.0:公開頁 enforce CSP(見 src/middleware.ts)。inline 靠這個請求的 nonce
-    // 執行;外部 script **不**給 nonce —— 它由 policy 裡核准過的主機放行,這樣白名單
-    // 才是真的在管事(給了 nonce,主機寫什麼都會被放行)。
-    const nonce = (await headers()).get("x-nonce") ?? undefined;
-
-    const refs = allScriptRefs(scripts);
+  return async function resolveScriptInputs() {
     const settings: Record<string, unknown> = {};
     const data: Record<string, unknown> = {};
     await Promise.all(
@@ -126,6 +137,25 @@ export function makeScriptsWidget(
         }
       }),
     );
+    return { settings, data };
+  };
+}
+
+export function makeScriptsWidget(
+  extId: string,
+  manifest: DeclarativeManifest,
+  approval: ScriptsApproval,
+): ComponentType {
+  const scripts: readonly DeclarativeScript[] = manifest.scripts ?? [];
+  const resolveInputs = scriptInputsResolver(extId, manifest);
+
+  async function DeclarativeScripts() {
+    if ((await hashScripts(scripts)) !== approval.hash) return null;
+    // 1.50.0:公開頁 enforce CSP(見 src/middleware.ts)。inline 靠這個請求的 nonce
+    // 執行;外部 script **不**給 nonce —— 它由 policy 裡核准過的主機放行,這樣白名單
+    // 才是真的在管事(給了 nonce,主機寫什麼都會被放行)。
+    const nonce = (await headers()).get("x-nonce") ?? undefined;
+    const { settings, data } = await resolveInputs();
 
     return (
       <>
@@ -153,4 +183,60 @@ export function makeScriptsWidget(
   }
   DeclarativeScripts.displayName = `DeclarativeScripts(${extId})`;
   return DeclarativeScripts;
+}
+
+/** 值逐一換成 inline script 看到的樣子(scriptValue)。 */
+function asScriptValues(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, scriptValue(value)]));
+}
+
+/**
+ * 1.51.0:public:scripts override 的外殼(server component)—— 解析代入值,交給登記的
+ * 元件。不輸出任何 <script>、不讀 nonce:元件是 bundle 裡的程式,CSP 用不著放行什麼。
+ */
+function makeScriptsOverrideWidget(
+  extId: string,
+  manifest: DeclarativeManifest,
+  Override: ComponentType<ScriptsSurfaceProps>,
+): ComponentType {
+  const resolveInputs = scriptInputsResolver(extId, manifest);
+
+  async function CompiledScripts() {
+    const [{ settings, data }, locale] = await Promise.all([resolveInputs(), getLocale()]);
+    return (
+      <Override
+        extId={extId}
+        settings={asScriptValues(settings)}
+        data={asScriptValues(data)}
+        locale={locale}
+      />
+    );
+  }
+  CompiledScripts.displayName = `CompiledScripts(${extId})`;
+  return CompiledScripts;
+}
+
+/**
+ * 1.51.0:這個插件要在公開頁的浮層插槽掛什麼(interpret.tsx 的 buildHooks 用)。
+ *   - manifest 沒有 scripts → 不掛(override 沒有東西可以取代)。
+ *   - 編進網站的程式碼登記了 public:scripts → 掛 override;不看核准。
+ *   - 其他 → 1.50.0 原樣:核准過才掛 scripts,hash 對不對在渲染時比。
+ */
+export function publicScriptsWidget(
+  extId: string,
+  manifest: DeclarativeManifest,
+  rawApproval: string | null | undefined,
+): ComponentType | null {
+  if (!manifest.scripts) return null;
+  const override = overrideRegistry.get(extId, surfaceIds.publicScripts());
+  if (override) {
+    // 登記時已由 view "scripts" 綁定 props(overrides.ts register),這裡收斂回去不放寬。
+    return makeScriptsOverrideWidget(
+      extId,
+      manifest,
+      override as unknown as ComponentType<ScriptsSurfaceProps>,
+    );
+  }
+  const approval = parseScriptsApproval(rawApproval);
+  return approval ? makeScriptsWidget(extId, manifest, approval) : null;
 }

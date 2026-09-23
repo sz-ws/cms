@@ -11,6 +11,7 @@ import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import { interpretManifest } from "./dx/interpret";
 import { runDeclarativeMigrations } from "./dx/declarative-migrate";
+import { retireReplacedScriptApprovals } from "./dx/scripts-compiled";
 import { missingCapabilities } from "./features";
 import {
   builtinSignature,
@@ -200,6 +201,16 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
       .from(dxTable)
       .where(eq(dxTable.enabled, 1));
 
+    // 1.51.0:編進網站的插件,編進去之前留下的 script 核准清掉(CSP 只看得到核准,
+    // 理由見 dx/scripts-compiled.ts)。同內建插件:有寫入就不寫 memo;失敗只 log。
+    let approvalsSettled = true;
+    try {
+      if (await retireReplacedScriptApprovals(dxRows)) approvalsSettled = false;
+    } catch (e) {
+      console.error("[loader] retiring replaced script approvals failed", e);
+      approvalsSettled = false;
+    }
+
     const dx: Extension[] = [];
     const dxSeen = new Set<string>();
     let hasRetryableMigrationFailure = false;
@@ -283,6 +294,7 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
       stamp !== null &&
       !hasRetryableMigrationFailure &&
       builtinsSettled &&
+      approvalsSettled &&
       wanted !== null
     ) {
       runtimeMemo = {

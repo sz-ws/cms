@@ -481,6 +481,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "scripts.cancel": "取消",
   "scripts.notAllowed": "這個來源還沒開放安裝帶 script 的插件，要先到「設定 → 核心 → 擴充功能來源」開啟。",
   "scripts.changed": "插件內容在你檢查之後改了，請重新檢查。",
+  "scripts.compiled": "已編進網站，前台不需要 script。",
 
   // ApiTokensManager
   "apiTokens.notAllowed": "不允許此操作。",

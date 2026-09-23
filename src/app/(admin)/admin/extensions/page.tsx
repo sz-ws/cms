@@ -6,8 +6,8 @@ import {
 } from "@/lib/schema";
 import { getExtRuntime } from "@/ext/loader";
 import { pendingCodeUpgrades } from "@/ext/manager";
-import { parseManifest, type DeclarativeManifest } from "@/ext/dx/manifest";
-import { hashScripts, parseScriptsApproval } from "@/ext/dx/scripts";
+import { parseManifest } from "@/ext/dx/manifest";
+import { installedScriptsState } from "@/ext/dx/scripts-compiled";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import {
@@ -76,7 +76,8 @@ export default async function ExtensionsPage() {
         installed: true,
         kind: "declarative" as const,
         issue: r.enabled === 1 ? (rt.unavailableById.get(r.id) ?? null) : null,
-        scripts: await scriptsState(dm, r.scriptsApproval),
+        // 1.48.0 執行中 / 已停用;1.51.0 起多一個「已編進網站」。
+        scripts: await installedScriptsState(r.id, dm, r.scriptsApproval),
         needs: needsOf("declarative", r.id),
       };
     }),
@@ -119,17 +120,6 @@ function missingRequirements(plugins: InstalledPluginInfo[], locale: Locale) {
       };
     });
   };
-}
-
-/** 1.48.0:核准紀錄與目前內容對得上才算執行中(與 scripts-widget 同一個判斷)。 */
-async function scriptsState(
-  manifest: DeclarativeManifest | undefined,
-  rawApproval: string | null,
-): Promise<ExtensionRow["scripts"]> {
-  if (!manifest?.scripts) return null;
-  const approval = parseScriptsApproval(rawApproval);
-  if (!approval) return "stopped";
-  return approval.hash === (await hashScripts(manifest.scripts)) ? "running" : "stopped";
 }
 
 function safeJson(s: string): unknown {

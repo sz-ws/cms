@@ -494,6 +494,7 @@ export const en = {
   "scripts.notAllowed":
     "This source isn't set up for extensions with scripts. Turn it on first under Settings → Core → Registry Sources.",
   "scripts.changed": "The extension changed after you reviewed it. Review it again.",
+  "scripts.compiled": "Built into this site, so public pages need no script from it.",
 
   // ApiTokensManager
   "apiTokens.notAllowed": "Not allowed.",

@@ -13,6 +13,12 @@ import {
 // 在 middleware(edge)裡跑,所以只用 D1 binding 與零依賴的 scripts-core —— 不拉
 // drizzle、zod、loader。manifest 裡的 scripts 安裝時已經過 zod;這裡只做「形狀對、
 // 值合規」的最小檢查,因為結果會寫進回應標頭。
+//
+// 1.51.0:插件的前台編進了網站(public:scripts)時,它的 scripts 不會輸出,主機也不該
+// 在白名單上。middleware 是另一個 bundle,看不到編進來的程式碼 —— 靠的是「被取代的
+// script 沒有核准紀錄」:安裝時清掉、不能再核准、編進去之前的由 loader 清掉
+// (ext/dx/scripts-compiled.ts)。所以這裡照舊只看核准。編進來的元件是 bundle 裡的
+// 程式,'self' 就涵蓋,不用放行任何主機。
 
 const SQL = `SELECT json_extract(manifest, '$.scripts') AS scripts, scripts_approval AS approval
   FROM declarative_extensions

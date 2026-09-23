@@ -54,6 +54,8 @@ export interface RegistryEntry {
   requires?: { capability: string; optional?: boolean; reason?: string }[];
   /** 1.50.0:需要的其他插件。 */
   requiresExtensions?: RequiredPlugin[];
+  /** 1.51.0:這個站把它的前台編進了網站 —— 安裝不用核准 script。 */
+  scriptsCompiled?: boolean;
 }
 
 /** 站上已安裝的插件(name 可能是多語物件,畫面依語系解析)。 */

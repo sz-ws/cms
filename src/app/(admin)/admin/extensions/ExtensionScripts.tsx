@@ -41,7 +41,9 @@ export function ExtensionScripts({ ext }: { ext: ExtensionRow }) {
         ? t("scripts.notAllowed")
         : data.error === "scripts_changed"
           ? t("scripts.changed")
-          : t("extensions.actionFailed"),
+          : data.error === "scripts_compiled"
+            ? t("scripts.compiled")
+            : t("extensions.actionFailed"),
     );
     return false;
   }

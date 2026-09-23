@@ -61,6 +61,8 @@ vi.mock("@/ext/loader", async () => {
 });
 
 import { GET } from "../src/app/api/registry/index/route";
+import { overrideRegistry } from "../src/ext/overrides";
+import { surfaceIds } from "../src/ext/dx/surfaces";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -208,6 +210,24 @@ describe("GET /api/registry/index", () => {
 
     const body = (await (await GET()).json()) as { entries: { id: string }[] };
     expect(body.entries.map((e) => e.id)).toEqual(["blog"]);
+  });
+
+  // 1.51.0:這個站把宣告式插件的前台編進了網站 → 商店詳情不問核准,改顯示一句說明。
+  it("marks a declarative entry whose scripts are compiled into this site", async () => {
+    authState.user = ADMIN;
+    if (!overrideRegistry.has("proof", surfaceIds.publicScripts())) {
+      overrideRegistry.register("proof", surfaceIds.publicScripts(), "scripts", () => null);
+    }
+    registryState.entries = [
+      { id: "proof", kind: "declarative", name: "Proof", version: "0.3.0", coreApi: "^1.51.0", source: "https://example.test" },
+      { id: "blog", kind: "declarative", name: "Blog", version: "1.2.5", coreApi: "^1.0.0", source: "https://example.test" },
+    ];
+
+    const body = (await (await GET()).json()) as { entries: { id: string; scriptsCompiled?: boolean }[] };
+    expect(body.entries.map((e) => [e.id, e.scriptsCompiled])).toEqual([
+      ["proof", true],
+      ["blog", undefined],
+    ]);
   });
 });
 
