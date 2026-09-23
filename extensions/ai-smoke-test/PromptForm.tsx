@@ -131,7 +131,7 @@ export function PromptForm() {
 
       {networkError && (
         <p className="mt-4 rounded-[10px] bg-red-600/[0.06] px-3 py-2 text-[13px] text-red-700">
-          request 失敗:{networkError}
+          request 失敗：{networkError}
         </p>
       )}
 

@@ -14,7 +14,7 @@ export const aiSmokeTest = defineExtension({
   name: "AI Smoke Test",
   version: "0.0.1",
   coreApi: "^1.0.0",
-  description: "ai:generate capability 的最小驗證 extension(僅本機測試用)。",
+  description: "ai:generate capability 的最小驗證 extension（僅本機測試用）。",
   icon: "puzzle",
   adminPages: [
     {

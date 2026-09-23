@@ -33,12 +33,12 @@ import { testEventHandler } from "./test-route";
 export const sentry = defineExtension({
   id: "sentry",
   name: { en: "Error tracking", "zh-Hant": "錯誤追蹤" },
-  version: "1.0.1",
+  version: "1.0.2",
   coreApi: "^1.26.0",
   description: {
     en: "Sends unhandled errors, failed extension hooks and failed cron ticks to a self-hosted GlitchTip (or Sentry) project.",
     "zh-Hant":
-      "把沒接住的例外、失敗的 extension hook 與失敗的 cron tick 送到自架的 GlitchTip(或 Sentry)專案。",
+      "把沒接住的例外、失敗的 extension hook 與失敗的 cron tick 送到自架的 GlitchTip（或 Sentry）專案。",
   },
   icon: "bug",
   menu: { section: "system" },
@@ -49,7 +49,7 @@ export const sentry = defineExtension({
       description: {
         en: "From your GlitchTip project settings. Empty turns error reporting off entirely. Applies to the server side immediately; the browser half needs NEXT_PUBLIC_CMS_ERROR_DSN at build time.",
         "zh-Hant":
-          "從 GlitchTip 專案設定複製。留空 = 整套關閉。伺服器端存檔即生效;瀏覽器那半邊要在建置時設 NEXT_PUBLIC_CMS_ERROR_DSN。",
+          "從 GlitchTip 專案設定複製。留空 = 整套關閉。伺服器端存檔即生效；瀏覽器那半邊要在建置時設 NEXT_PUBLIC_CMS_ERROR_DSN。",
       },
       type: "text",
       secret: true, // → ext.sentry.dsn,自動走 AES-GCM 加密管線(理由見檔頭)。

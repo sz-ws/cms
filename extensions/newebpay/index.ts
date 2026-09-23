@@ -24,24 +24,24 @@ const ORDERS_TABLE = "ext_newebpay_orders";
 export const newebpay = defineExtension({
   id: "newebpay",
   name: "藍新金流",
-  version: "0.1.1",
+  version: "0.1.2",
   coreApi: "^1.14.0",
   description:
-    "NewebPay MPG 2.0 收款:提供 payment capability(createCheckout)、訂單記錄與付款回呼處理。",
+    "NewebPay MPG 2.0 收款：提供 payment capability（createCheckout）、訂單記錄與付款回呼處理。",
   icon: "credit-card",
   menu: { section: "commerce", parent: "shop" },
   settings: [
     {
       key: "merchantId",
       label: "Merchant ID",
-      description: "藍新商店代號(MS 開頭)。",
+      description: "藍新商店代號（MS 開頭）。",
       type: "text",
       default: "",
     },
     {
       key: "hashKey",
       label: "Hash Key",
-      description: "商店後台核發,固定 32 字元。",
+      description: "商店後台核發，固定 32 字元。",
       type: "text",
       secret: true, // → ext.newebpay.hashKey,自動走 AES-GCM 加密管線。
       default: "",
@@ -49,7 +49,7 @@ export const newebpay = defineExtension({
     {
       key: "hashIv",
       label: "Hash IV",
-      description: "商店後台核發,固定 16 字元。",
+      description: "商店後台核發，固定 16 字元。",
       type: "text",
       secret: true,
       default: "",
@@ -57,7 +57,7 @@ export const newebpay = defineExtension({
     {
       key: "env",
       label: "環境",
-      description: "測試機(ccore)或正式機(core)。",
+      description: "測試機（ccore）或正式機（core）。",
       type: "select",
       options: [
         { value: "test", label: "測試機" },

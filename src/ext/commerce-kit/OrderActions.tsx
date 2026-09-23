@@ -30,7 +30,7 @@ const MARK_PAID: ActionDef = {
   primary: true,
   path: (n) => `orders/${n}/verify`,
   body: { approve: true },
-  confirm: "客人尚未回報末五碼。確認銀行已入帳,直接標記為已付款?",
+  confirm: "客人尚未回報末五碼。確認銀行已入帳，直接標記為已付款？",
 };
 
 const ACTIONS: Partial<Record<OrderStatus, ActionDef[]>> = {
@@ -40,13 +40,13 @@ const ACTIONS: Partial<Record<OrderStatus, ActionDef[]>> = {
       primary: true,
       path: (n) => `orders/${n}/verify`,
       body: { approve: true },
-      confirm: "確認已對到這筆匯款?核可後訂單將標記為已付款。",
+      confirm: "確認已對到這筆匯款？核可後訂單將標記為已付款。",
     },
     {
       label: "退回",
       path: (n) => `orders/${n}/verify`,
       body: { approve: false },
-      confirm: "退回後訂單回到待付款,客人可重新回報。",
+      confirm: "退回後訂單回到待付款，客人可重新回報。",
     },
   ],
   paid: [
@@ -63,7 +63,7 @@ const ACTIONS: Partial<Record<OrderStatus, ActionDef[]>> = {
       label: "標記已退款",
       path: (n) => `orders/${n}/status`,
       body: { to: "refunded" },
-      confirm: "這只是記帳 —— 退款請先在金流/銀行端完成。確定標記為已退款?",
+      confirm: "這只是記帳：退款請先在金流或銀行那邊完成。確定標記為已退款？",
     },
   ],
   shipped: [
@@ -78,7 +78,7 @@ const ACTIONS: Partial<Record<OrderStatus, ActionDef[]>> = {
       label: "取消訂單",
       path: (n) => `orders/${n}/status`,
       body: { to: "cancelled" },
-      confirm: "取消後不可復原,確定取消這筆訂單?",
+      confirm: "取消後不可復原，確定取消這筆訂單？",
     },
   ],
 };

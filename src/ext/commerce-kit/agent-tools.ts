@@ -74,7 +74,7 @@ const noteSchema = z.string().trim().min(1).max(NOTE_MAX);
  * note 是**看訂單的人**唯一會讀到的軌跡,所以「這個動作是 AI 提議、由人核可的」
  * 要寫在這裡。handler 另外會補上 admin 的 email,兩者合起來就是完整的責任鏈。
  */
-const AGENT_STAMP = "(AI 助理提案,admin 確認)";
+const AGENT_STAMP = "（AI 助理提案，管理員確認）";
 function stampNote(note: string | undefined): string {
   return note ? `${note} ${AGENT_STAMP}` : AGENT_STAMP;
 }
@@ -88,7 +88,7 @@ function stampNote(note: string | undefined): string {
 function summaryOrderNo(args: unknown, locale: Locale): string {
   const orderNo = readStringArg(args, "orderNo");
   if (orderNo) return orderNo;
-  return locale === "zh-Hant" ? "(未指定編號)" : "(no order number)";
+  return locale === "zh-Hant" ? "（未指定編號）" : "(no order number)";
 }
 
 /** 狀態的中文說法。訂單頁與對帳佇列用的是同一組詞,摘要不另創一套。 */
@@ -240,7 +240,7 @@ export function createCommerceAgentTools(
       summarize: (args, locale) => {
         const orderNo = summaryOrderNo(args, locale);
         return locale === "zh-Hant"
-          ? `把訂單 ${orderNo} 標記為已收款(手動核帳)`
+          ? `把訂單 ${orderNo} 標記為已收款（手動核帳）`
           : `Mark order ${orderNo} as paid (manual verification)`;
       },
       run: async (ctx, args) =>

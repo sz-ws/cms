@@ -10,11 +10,11 @@ import type { CheckoutSession } from "../capabilities";
 // 按鈕忙碌狀態為靜態文字(無 pulsing / 呼吸動效 —— 專案紅線)。
 
 const ERROR_HINT: Record<string, string> = {
-  not_configured: "商店金鑰未設定或格式不對,先到設定頁補齊。",
-  invalid_input: "輸入不合法:金額需為正整數,描述 1–50 字。",
-  invalid_amount: "金額不合法(1–99,999,999 的整數)。",
+  not_configured: "商店金鑰未設定或格式不對，先到設定頁補齊。",
+  invalid_input: "輸入不合法：金額需為正整數，描述 1–50 字。",
+  invalid_amount: "金額不合法（1–99,999,999 的整數）。",
   invalid_description: "描述長度需在 1–50 字之間。",
-  invalid_order_no: "訂單編號不符 gateway 規則(extension bug,請回報)。",
+  invalid_order_no: "訂單編號不符金流的規則，請回報這個問題。",
 };
 
 /** 以 session 的 fields 建立 hidden form 並送出(離開本頁,前往 gateway 付款頁)。 */
@@ -76,12 +76,12 @@ export function CheckoutTestForm({
       }
       if (session.ok) {
         // kind:"manual"(1.28.0)不該出現在 gateway 測試表單;守住 union 完整性。
-        setError("此 provider 為人工收款,無測試付款流程。");
+        setError("這個付款方式是人工收款，沒有測試付款流程。");
         return;
       }
-      setError(ERROR_HINT[session.error] ?? `建立失敗:${session.error}`);
+      setError(ERROR_HINT[session.error] ?? `建立失敗：${session.error}`);
     } catch {
-      setError("網路錯誤,請重試。");
+      setError("網路錯誤，請重試。");
     } finally {
       setBusy(false);
     }
@@ -94,7 +94,7 @@ export function CheckoutTestForm({
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-[8rem_1fr_1fr]">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] text-black/45">金額(NT$)</span>
+          <span className="text-[12px] text-black/45">金額（NT$）</span>
           <input
             type="number"
             min={1}
@@ -120,7 +120,7 @@ export function CheckoutTestForm({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] text-black/45">Email(選填)</span>
+          <span className="text-[12px] text-black/45">Email（選填）</span>
           <input
             type="email"
             value={email}

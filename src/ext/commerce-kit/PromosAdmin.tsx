@@ -17,15 +17,16 @@ const GHOST_BTN =
   "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] " +
   "disabled:opacity-35";
 
-const TYPE_LABEL: Record<PromoType, string> = {
-  percent: "打折",
-  flat: "折抵",
-  freeship: "免運",
-};
+/** 打折的說法:折 10% = 打 9 折,折 15% = 打 85 折(店家和客人都這樣講)。 */
+function percentEffect(percentOff: number): string {
+  if (percentOff >= 100) return "全額折抵";
+  const rest = Math.round((100 - percentOff) * 100) / 100;
+  return `打 ${rest % 10 === 0 ? rest / 10 : rest} 折`;
+}
 
 function promoEffect(p: Promo): string {
-  if (p.type === "percent") return `${p.value}% off`;
-  if (p.type === "flat") return `折 NT$ ${p.value.toLocaleString("zh-TW")}`;
+  if (p.type === "percent") return percentEffect(p.value);
+  if (p.type === "flat") return `折抵 NT$ ${p.value.toLocaleString("zh-TW")}`;
   return "免運";
 }
 
@@ -81,13 +82,13 @@ export function PromosAdmin({
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
       if (!data.ok) {
-        setNotice(`失敗:${data.error ?? res.status}`);
+        setNotice(`失敗：${data.error ?? res.status}`);
         return false;
       }
       router.refresh();
       return true;
     } catch {
-      setNotice("網路錯誤,請重試。");
+      setNotice("網路錯誤，請重試。");
       return false;
     } finally {
       setBusy(false);
@@ -112,18 +113,18 @@ export function PromosAdmin({
           </h2>
           <div className="flex flex-wrap items-end gap-2.5">
             <div className="w-40">
-              <label className={LABEL}>代碼(大寫英數)</label>
+              <label className={LABEL}>代碼（大寫英數）</label>
               <input
                 className={`${FIELD} w-full font-mono uppercase`}
                 value={form.code}
                 maxLength={40}
                 disabled={editing}
-                placeholder="WELCOME10"
+                placeholder="EXAMPLE10"
                 onChange={(e) => patch({ code: e.target.value.toUpperCase() })}
               />
             </div>
             <div className="w-36">
-              <label className={LABEL}>名稱(給自己看)</label>
+              <label className={LABEL}>名稱（給自己看）</label>
               <input
                 className={`${FIELD} w-full`}
                 value={form.label}
@@ -138,15 +139,15 @@ export function PromosAdmin({
                 value={form.type}
                 onChange={(e) => patch({ type: e.target.value as PromoType })}
               >
-                <option value="percent">打折(%)</option>
-                <option value="flat">折抵(元)</option>
+                <option value="percent">打折（%）</option>
+                <option value="flat">折抵（元）</option>
                 <option value="freeship">免運</option>
               </select>
             </div>
             {form.type !== "freeship" ? (
               <div className="w-24">
                 <label className={LABEL}>
-                  {form.type === "percent" ? "折扣 %(1–100)" : "折抵金額"}
+                  {form.type === "percent" ? "折扣 %（1–100）" : "折抵金額"}
                 </label>
                 <input
                   className={`${FIELD} w-full tabular-nums`}
@@ -157,7 +158,7 @@ export function PromosAdmin({
               </div>
             ) : null}
             <div className="w-24">
-              <label className={LABEL}>低消(0 = 不限)</label>
+              <label className={LABEL}>低消（0 = 不限）</label>
               <input
                 className={`${FIELD} w-full tabular-nums`}
                 inputMode="numeric"
@@ -165,8 +166,8 @@ export function PromosAdmin({
                 onChange={(e) => patch({ minSubtotal: Number(e.target.value) || 0 })}
               />
             </div>
-            <div className="w-28">
-              <label className={LABEL}>次數上限(空 = 不限)</label>
+            <div className="w-36">
+              <label className={LABEL}>次數上限（空白 = 不限）</label>
               <input
                 className={`${FIELD} w-full tabular-nums`}
                 inputMode="numeric"
@@ -236,7 +237,7 @@ export function PromosAdmin({
                     ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-black/70 admin:text-ink/70">
-                    {TYPE_LABEL[p.type]} · {promoEffect(p)}
+                    {promoEffect(p)}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-black/70 admin:text-ink/70">
                     {p.minSubtotal > 0 ? `NT$ ${p.minSubtotal.toLocaleString("zh-TW")}` : "—"}
@@ -283,7 +284,7 @@ export function PromosAdmin({
                           className={GHOST_BTN}
                           disabled={busy}
                           onClick={() => {
-                            if (window.confirm(`刪除優惠碼 ${p.code}?`)) {
+                            if (window.confirm(`刪除優惠碼 ${p.code}？`)) {
                               void post("promos/delete", { code: p.code });
                             }
                           }}

@@ -34,8 +34,8 @@ export async function NewebPayAdminPage() {
         </h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
           NewebPay MPG 2.0 收款。這個 extension 提供 payment
-          capability(其他模組可透過 provider registry
-          建立結帳)、付款回呼驗簽處理與訂單記錄。商店金鑰到設定頁的
+          capability（其他模組可透過 provider registry
+          建立結帳）、付款回呼驗簽處理與訂單記錄。商店金鑰到設定頁的
           Extensions 區填寫。
         </p>
       </header>
@@ -62,7 +62,7 @@ export async function NewebPayAdminPage() {
             <ConfiguredPill configured={Boolean(hashKey && hashIv)} />
             {!configured && (
               <span className="text-ink/50">
-                三項皆填妥前,付款入口關閉(fail-closed,拒收所有回呼)。
+                三項皆填妥前，付款入口關閉（fail-closed，拒收所有回呼）。
               </span>
             )}
           </Row>
@@ -78,7 +78,7 @@ export async function NewebPayAdminPage() {
               </code>
             ) : (
               <span className="text-amber-700">
-                尚未設定 Site URL(設定頁 General 區)—— 藍新收不到付款通知,
+                尚未設定 Site URL（設定頁 General 區）—— 藍新收不到付款通知，
                 訂單會停在「待付款」。
               </span>
             )}
@@ -92,8 +92,8 @@ export async function NewebPayAdminPage() {
           測試付款
         </h2>
         <p className="mb-4 text-[13px] leading-relaxed text-ink/55">
-          建立一筆訂單並跳轉到藍新付款頁(依上方環境設定)。測試機用藍新提供的
-          測試卡號;付款結果由 Notify 回呼寫回下方訂單表。
+          建立一筆訂單並跳轉到藍新付款頁（依上方環境設定）。測試機用藍新提供的
+          測試卡號；付款結果由 Notify 回呼寫回下方訂單表。
         </p>
         <CheckoutTestForm
           endpoint="/api/ext/newebpay/checkout"

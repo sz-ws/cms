@@ -490,7 +490,7 @@ describe("commerce-kit 訂單 tools(裝了 shop,AI 就會操作訂單)", () => {
 
     // 訂單自己的 note 軌跡留下「AI 提案、人核可」與 admin 身分。
     const note = (await getOrder({ db: db() }, ORDERS_TABLE, "SO5"))?.note ?? "";
-    expect(note).toContain("AI 助理提案,admin 確認");
+    expect(note).toContain("AI 助理提案，管理員確認");
     expect(note).toContain("admin@test.com");
     expect(note).toContain("對到 5/12 入帳 760");
   });
@@ -548,7 +548,7 @@ describe("commerce-kit 訂單 tools(裝了 shop,AI 就會操作訂單)", () => {
     const after = await getOrder({ db: db() }, ORDERS_TABLE, "SO10");
     expect(after?.status).toBe("shipped");
     expect(after?.note).toContain("黑貓 123");
-    expect(after?.note).toContain("AI 助理提案,admin 確認");
+    expect(after?.note).toContain("AI 助理提案，管理員確認");
 
     await seedOrder("SO11");
     const illegal = await invokeAgentTool(byName("shoptest.orders.transition"), ctx(), {
@@ -590,7 +590,7 @@ describe("summarize:訂單 write tools(1.31.0)", () => {
 
   it("verify:兩種語言都指名訂單編號,並說明這是手動核帳", () => {
     expect(say(`${EXT_ID}.orders.verify`, { orderNo: "SO42" }, "zh-Hant")).toBe(
-      "把訂單 SO42 標記為已收款(手動核帳)",
+      "把訂單 SO42 標記為已收款（手動核帳）",
     );
     expect(say(`${EXT_ID}.orders.verify`, { orderNo: "SO42" }, "en")).toBe(
       "Mark order SO42 as paid (manual verification)",
@@ -628,10 +628,10 @@ describe("summarize:訂單 write tools(1.31.0)", () => {
   });
 
   it("缺 orderNo → 明說缺,而不是生出一句看起來很篤定的話", () => {
-    expect(say(`${EXT_ID}.orders.verify`, {}, "zh-Hant")).toContain("(未指定編號)");
+    expect(say(`${EXT_ID}.orders.verify`, {}, "zh-Hant")).toContain("（未指定編號）");
     expect(say(`${EXT_ID}.orders.verify`, {}, "en")).toContain("(no order number)");
     expect(say(`${EXT_ID}.orders.transition`, { to: "shipped" }, "zh-Hant")).toBe(
-      "把訂單 (未指定編號) 轉為已出貨",
+      "把訂單 （未指定編號） 轉為已出貨",
     );
   });
 

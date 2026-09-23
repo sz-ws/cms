@@ -30,8 +30,7 @@ export async function BankTransferAdminPage() {
           銀行轉帳
         </h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
-          匯款收款:結帳時向客人出示下方帳戶,客人回報末五碼後,到商店的
-          「對帳佇列」核可入帳。收款帳戶到設定頁的 Extensions 區填寫。
+          匯款收款：結帳時向客人出示下方帳戶，客人回報末五碼後，到商店的「對帳佇列」核可入帳。收款帳戶在設定頁填寫。
         </p>
       </header>
 
@@ -45,12 +44,11 @@ export async function BankTransferAdminPage() {
             {configured ? (
               <span className="font-mono text-[12.5px] text-ink/60">
                 {bankName}
-                {bankCode ? `(${bankCode})` : ""} {accountNumber}
+                {bankCode ? `（${bankCode}）` : ""} {accountNumber}
               </span>
             ) : (
               <span className="text-ink/50">
-                銀行名稱、帳號、戶名填妥前,結帳頁不會出現匯款選項
-                (fail-closed,createCheckout 回 not_configured)。
+                銀行名稱、帳號、戶名填妥前，結帳頁不會出現匯款選項。
               </span>
             )}
           </Row>
@@ -63,8 +61,7 @@ export async function BankTransferAdminPage() {
           付款列
         </h2>
         <p className="mb-3 text-[13px] leading-relaxed text-ink/55">
-          每筆匯款訂單在此各有一列(pending → 核可後 paid)。核可動作在商店的
-          對帳佇列 —— 那裡有客人回報的末五碼。
+          每筆匯款訂單在這裡各有一列，核可後從待付款變成已付款。核可動作在商店的對帳佇列，那裡有客人回報的末五碼。
         </p>
         <PaymentOrdersTable orders={orders} />
       </section>

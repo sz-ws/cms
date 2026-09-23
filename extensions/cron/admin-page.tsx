@@ -65,10 +65,10 @@ export async function CronAdminPage() {
           Cron
         </h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
-          分鐘級準時排程的驗簽入口。錶(定時器)活在外部的 companion
-          worker;它每分鐘對下方 endpoint 送一個帶 HMAC 簽章的
-          tick,催動到期任務掃描。worker 掛掉不會壞 —— 排程退回 core 的 lazy
-          sweep 節奏,到期任務最終仍會被處理。
+          分鐘級準時排程的驗簽入口。錶（定時器）活在外部的 companion
+          worker；它每分鐘對下方 endpoint 送一個帶 HMAC 簽章的
+          tick，催動到期任務掃描。worker 掛掉不會壞 —— 排程退回 core 的 lazy
+          sweep 節奏，到期任務最終仍會被處理。
         </p>
       </header>
 
@@ -85,7 +85,7 @@ export async function CronAdminPage() {
               <>
                 <span className={`${PILL} ${PILL_RED}`}>未設定</span>
                 <span className="text-ink/50">
-                  入口關閉(fail-closed,拒收所有 tick)。到設定頁的
+                  入口關閉（fail-closed，拒收所有 tick）。到設定頁的
                   Extensions 區填「Cron signing secret」。
                 </span>
               </>
@@ -111,7 +111,7 @@ export async function CronAdminPage() {
               <>
                 <span className={`${PILL} ${PILL_NEUTRAL}`}>從未收到</span>
                 <span className="text-ink/50">
-                  lazy sweep 仍保底,只是準時度停在「有人瀏覽 admin 時」。
+                  lazy sweep 仍保底，只是準時度停在「有人瀏覽 admin 時」。
                 </span>
               </>
             )}
@@ -126,8 +126,8 @@ export async function CronAdminPage() {
         </h2>
         <p className="mb-3 text-[13px] leading-relaxed text-ink/55">
           companion worker 對這個 URL 送 <code className="font-mono text-[12px]">POST</code>
-          ,簽章放 <code className="font-mono text-[12px]">x-signature</code> header
-          (對整段 raw body 的 HMAC-SHA-256,hex 編碼),兩端共用同一個 signing
+          ，簽章放 <code className="font-mono text-[12px]">x-signature</code> header
+          （對整段 raw body 的 HMAC-SHA-256，hex 編碼），兩端共用同一個 signing
           secret。
         </p>
         <code className="block overflow-x-auto rounded-[calc(10px*var(--admin-radius-scale,1))] bg-ink/[0.04] px-4 py-3 font-mono text-[13px] text-ink/85">
@@ -135,7 +135,7 @@ export async function CronAdminPage() {
         </code>
         {!siteUrl && (
           <p className="mt-2 text-[12px] text-amber-700">
-            尚未設定 Site URL(設定頁 General 區)—— 上面只顯示相對路徑,worker
+            尚未設定 Site URL（設定頁 General 區）—— 上面只顯示相對路徑，worker
             的 SITE_URL 請自行帶站台 origin。
           </p>
         )}
@@ -151,29 +151,29 @@ export async function CronAdminPage() {
           <code className="rounded bg-ink/[0.06] px-1.5 py-0.5 font-mono text-[12px] text-ink/80">
             extensions/cron/worker/
           </code>
-          ,單獨 deploy,不隨 CMS 部署(詳見該目錄 README)。
+          ，單獨 deploy，不隨 CMS 部署（詳見該目錄 README）。
         </p>
         <ol className="flex flex-col gap-2 text-[13px] leading-relaxed text-ink/65">
           <li className="flex gap-2">
             <span className="shrink-0 font-mono text-ink/35">1.</span>
             <span>
               在設定頁 Extensions 區填「Cron signing
-              secret」(隨機長字串;加密儲存)。
+              secret」（隨機長字串；加密儲存）。
             </span>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0 font-mono text-ink/35">2.</span>
             <span>
-              部署 worker:填 <code className="font-mono text-[12px]">wrangler.jsonc</code>{" "}
+              部署 worker：填 <code className="font-mono text-[12px]">wrangler.jsonc</code>{" "}
               的 SITE_URL、
               <code className="font-mono text-[12px]">wrangler secret put CRON_SECRET</code>
-              (同一個值)、
+              （同一個值）、
               <code className="font-mono text-[12px]">wrangler deploy</code>。
             </span>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0 font-mono text-ink/35">3.</span>
-            <span>等一分鐘,回來看上方「最後 tick」轉綠。</span>
+            <span>等一分鐘，回來看上方「最後 tick」轉綠。</span>
           </li>
         </ol>
       </section>

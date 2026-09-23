@@ -136,7 +136,7 @@ export function createTransferVerifyHandler(opts: {
 
     const stamp = `${body.approve ? "核可" : "退回"} by ${ctx.user.email}` +
       (order.transferLast5 ? ` 末五碼 ${order.transferLast5}` : "") +
-      (order.status === "pending_payment" ? "(未經回報,後台直接核帳)" : "") +
+      (order.status === "pending_payment" ? "（未經回報，後台直接核帳）" : "") +
       (body.note ? ` — ${body.note}` : "");
 
     if (body.approve) {

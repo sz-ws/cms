@@ -233,7 +233,7 @@ export function TransferVerifyQueue({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-[13px] text-black/80 admin:text-ink/80">
+                <span className="min-w-0 font-mono text-[13px] text-black/80 admin:text-ink/80 [overflow-wrap:anywhere]">
                   {o.orderNo}
                 </span>
                 <span className="tabular-nums text-[13px] text-black/70 admin:text-ink/70">

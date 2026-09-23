@@ -34,7 +34,7 @@ async function buildInstructions(
     instructions: [
       {
         label: "銀行",
-        value: bankCode.trim() ? `${bankName.trim()}(${bankCode.trim()})` : bankName.trim(),
+        value: bankCode.trim() ? `${bankName.trim()}（${bankCode.trim()}）` : bankName.trim(),
       },
       { label: "帳號", value: accountNumber.trim() },
       { label: "戶名", value: accountName.trim() },
@@ -49,10 +49,11 @@ async function buildInstructions(
 export const banktransfer = defineExtension({
   id: "banktransfer",
   name: "銀行轉帳",
-  version: "0.1.2",
+  // 0.1.3:中文標點用全形(銀行代碼的括號、說明文字);後台頁不再寫實作細節。
+  version: "0.1.3",
   coreApi: "^1.28.0",
   description:
-    "匯款收款(無金流閘道):結帳時出示收款帳號,款項由後台人工對帳後入帳。",
+    "匯款收款（不經金流）：結帳時出示收款帳號，款項由後台人工對帳後入帳。",
   icon: "landmark",
   menu: { section: "commerce", parent: "shop" },
   settings: [
@@ -67,7 +68,7 @@ export const banktransfer = defineExtension({
     {
       key: "bankCode",
       label: "銀行代碼",
-      description: "三碼銀行代碼(如 013)。可留空。",
+      description: "三碼銀行代碼（如 013）。可留空。",
       type: "text",
       default: "",
     },

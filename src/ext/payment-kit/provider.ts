@@ -149,7 +149,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     const title = succeeded ? "付款完成" : "付款未完成";
     const detail = succeeded
       ? "我們已收到您的款項。"
-      : "交易未成功,未收取任何款項。";
+      : "交易未成功，未收取任何款項。";
     const orderLine = orderNo
       ? `<p class="order">訂單編號 ${escapeHtml(orderNo)}</p>`
       : "";
@@ -172,7 +172,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
   .mark { font-size: 40px; line-height: 1; }
   h1 { margin: 16px 0 8px; font-size: 22px; letter-spacing: -0.02em; }
   p { margin: 0; font-size: 14px; color: rgba(0,0,0,.55); }
-  .order { margin-top: 12px; font-variant-numeric: tabular-nums; }
+  .order { margin-top: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .back { display: inline-block; margin-top: 24px; font-size: 14px;
           color: rgba(0,0,0,.85); text-underline-offset: 4px; }
 </style>

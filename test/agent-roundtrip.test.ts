@@ -332,7 +332,7 @@ describe("code extension 的 write 提案:/chat → 確認卡 → /execute(真 D
     });
     // 訂單自己的 note 留下「AI 提案、人核可」與是誰核的。
     const note = (await getOrder({ db: db() }, ORDERS_TABLE, ORDER_NO))?.note ?? "";
-    expect(note).toContain("AI 助理提案,admin 確認");
+    expect(note).toContain("AI 助理提案，管理員確認");
     expect(note).toContain(ADMIN.email);
 
     // ── 3. 稽核:剛好一列 write,而且來自 /execute ────────────────────────

@@ -51,21 +51,21 @@ export function TestEventButton({ disabled }: { disabled: boolean }) {
 
       {networkError && (
         <p className={`${CARD_INSET} bg-red-600/[0.06] text-red-700`}>
-          請求失敗:{networkError}
+          請求失敗：{networkError}
         </p>
       )}
 
       {result?.ok && (
         <div className={`${CARD_INSET} bg-black/[0.03] text-black/70`}>
           <p>
-            送出了。到 GlitchTip 用這個 event id 找:
+            送出了。到 GlitchTip 用這個 event id 找：
           </p>
           <code className="mt-1 block break-all font-mono text-[12.5px] text-black/85">
-            {result.eventId ?? "(SDK 沒有回傳 id)"}
+            {result.eventId ?? "（SDK 沒有回傳 id）"}
           </code>
           <p className="mt-2 text-[12.5px] text-black/45">
-            幾秒內沒出現在收集端的話,問題就在 CMS 之外了(DSN 指錯專案、
-            GlitchTip 沒在跑、或 Worker 出不去外網)。
+            幾秒內沒出現在收集端的話，問題就在 CMS 之外了（DSN 指錯專案、
+            GlitchTip 沒在跑、或 Worker 出不去外網）。
           </p>
         </div>
       )}
@@ -74,13 +74,13 @@ export function TestEventButton({ disabled }: { disabled: boolean }) {
         <div className={`${CARD_INSET} bg-amber-500/[0.08] text-amber-800`}>
           {result.reason === "not_sending" ? (
             <p>
-              沒有送出 —— 目前的判定是不送(環境層級{" "}
+              沒有送出 —— 目前的判定是不送（環境層級{" "}
               <code className="font-mono text-[12px]">{result.layer}</code>
-              )。上方「狀態」那一區寫了是哪一個環節擋下來的。
+              ）。上方「狀態」那一區寫了是哪一個環節擋下來的。
             </p>
           ) : (
             <p>
-              SDK 在送出時丟出例外。Worker 的 log 裡有完整訊息;把{" "}
+              SDK 在送出時丟出例外。Worker 的 log 裡有完整訊息；把{" "}
               <code className="font-mono text-[12px]">CMS_ERROR_DEBUG=1</code>{" "}
               打開可以看到每一次傳輸的結果 ——「沒送出去」和「送出去但被對面丟掉」
               在這一頁看起來是一樣的。
