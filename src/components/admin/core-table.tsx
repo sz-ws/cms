@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOptionalT } from "@/lib/i18n/I18nProvider";
 
 // Core 表格範式(task #18 第一塊磚)—— /admin/users 立下的視覺語言抽成共用:
 // 白底 rounded-[12px] admin:rounded-[calc(12px*var(--admin-radius-scale,1))] 容器 + hairline ring、uppercase 小表頭、hover 列 tint、
@@ -45,10 +46,12 @@ export function CoreTable<T>({
   onRowClick,
   rowActive,
   trailingActions,
-  trailingLabel = "Row actions",
+  trailingLabel,
   minWidth = 600,
 }: CoreTableProps<T>) {
   const [sort, setSort] = useState<CoreSort>(null);
+  const t = useOptionalT();
+  const actionsLabel = trailingLabel ?? (t ? t("coreTable.rowActions") : "Row actions");
 
   const sorted = sort
     ? [...rows].sort((a, b) => {
@@ -121,7 +124,7 @@ export function CoreTable<T>({
             {trailingActions && (
               <th
                 className="w-0 border-b border-black/[0.07] admin:border-ink/[0.07]"
-                aria-label={trailingLabel}
+                aria-label={actionsLabel}
               />
             )}
           </tr>

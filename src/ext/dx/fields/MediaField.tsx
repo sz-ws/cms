@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaPickerDialog } from "./MediaPickerDialog";
 import { buildSrcSet, variantUrl } from "@/lib/image-variants";
+import { useExtT } from "../ext-locale";
 import type { FieldComponentProps } from "./types";
 
 // C.5b §2 + visual upgrade: media field. Stored value = R2 storage key string
@@ -33,6 +34,7 @@ export function MediaField({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mode, setMode] = useState<ViewMode>("cover");
   const [expanded, setExpanded] = useState(false);
+  const t = useExtT();
 
   const looksLikeImage = useMemo(() => IMAGE_EXT_RE.test(key), [key]);
   // 這裡刻意留著原生 <img>(而非共用的 MediaImage):兩個預覽都掛了 onError 來
@@ -57,19 +59,19 @@ export function MediaField({
         <div className="flex items-center justify-between gap-3">
           <TabsList className="rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] p-0.5">
             <TabsTrigger value="cover" className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-1.5 text-[12.5px]">
-              Cover
+              {t("dxField.media.cover")}
             </TabsTrigger>
             <TabsTrigger
               value="library"
               className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-1.5 text-[12.5px]"
             >
-              Library
+              {t("dxField.media.library")}
             </TabsTrigger>
             <TabsTrigger
               value="manual"
               className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 py-1.5 text-[12.5px]"
             >
-              Manual
+              {t("dxField.media.manual")}
             </TabsTrigger>
           </TabsList>
 
@@ -78,7 +80,7 @@ export function MediaField({
               <button
                 type="button"
                 disabled={disabled}
-                aria-label={expanded ? "Shrink cover preview" : "Expand cover preview"}
+                aria-label={t(expanded ? "dxField.media.shrinkPreview" : "dxField.media.expandPreview")}
                 onClick={() => setExpanded((v) => !v)}
                 className="inline-flex h-9 items-center gap-1 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[12.5px] font-medium text-black/55 admin:text-ink/55 shadow-[0_0_0_1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))] transition-[color,background-color] hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] hover:text-black/85 admin:hover:text-ink/85 active:scale-[0.96] disabled:opacity-50"
               >
@@ -87,7 +89,7 @@ export function MediaField({
                 ) : (
                   <Maximize2 className="size-3.5" />
                 )}
-                {expanded ? "Shrink" : "Expand"}
+                {t(expanded ? "dxField.media.shrink" : "dxField.media.expand")}
               </button>
             ) : null}
             <button
@@ -97,7 +99,7 @@ export function MediaField({
               data-invalid={error ? "true" : undefined}
               className="inline-flex h-10 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-4 text-[13px] font-medium text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] transition-[background-color] outline-none hover:bg-black/85 admin:hover:bg-ink/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.25)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100 data-[invalid]:shadow-[0_0_0_1px_rgba(185,28,28,0.5)]"
             >
-              {key ? "Replace" : "Choose"}
+              {t(key ? "dxField.media.replace" : "dxField.media.choose")}
             </button>
             {key && (
               <button
@@ -107,7 +109,7 @@ export function MediaField({
                 className="inline-flex h-10 items-center gap-1 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[13px] font-medium text-black/45 admin:text-ink/45 transition-[color,background-color] outline-none hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] hover:text-black/85 admin:hover:text-ink/85 active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100"
               >
                 <XIcon className="size-3.5" />
-                Clear
+                {t("dxField.media.clear")}
               </button>
             )}
           </div>
@@ -148,7 +150,7 @@ export function MediaField({
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-black/35 admin:text-ink/35">
                 <ImageIcon className="size-7" />
-                <span className="text-[12.5px]">No cover image yet</span>
+                <span className="text-[12.5px]">{t("dxField.media.noImage")}</span>
               </div>
             )}
           </div>
@@ -200,9 +202,9 @@ export function MediaField({
                 </>
               ) : (
                 <>
-                  <span className="text-[13px] text-black/55 admin:text-ink/55">Empty</span>
+                  <span className="text-[13px] text-black/55 admin:text-ink/55">{t("dxField.media.empty")}</span>
                   <span className="text-[11.5px] text-black/35 admin:text-ink/35">
-                    Open the picker to choose a file.
+                    {t("dxField.media.emptyHint")}
                   </span>
                 </>
               )}
@@ -213,18 +215,22 @@ export function MediaField({
         {/* Manual entry — direct storage key paste, hidden until tab is active. */}
         {mode === "manual" ? (
           <div className="mt-3 flex flex-col gap-1.5">
-            <label className="text-[12px] font-medium text-black/55 admin:text-ink/55">
-              Storage key
+            <label
+              htmlFor={`field-${field.key}-key`}
+              className="text-[12px] font-medium text-black/55 admin:text-ink/55"
+            >
+              {t("dxField.media.keyLabel")}
             </label>
             <Input
+              id={`field-${field.key}-key`}
               value={key}
-              placeholder="e.g. core/2026/07/abc.jpg"
+              placeholder={t("dxField.media.keyPlaceholder")}
               disabled={disabled}
               onChange={(e) => onChange(e.target.value)}
               className="h-10 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] font-mono text-[12px]"
             />
             <span className="text-[11px] text-black/40 admin:text-ink/40">
-              Type or paste a R2 storage key directly.
+              {t("dxField.media.keyHint")}
             </span>
           </div>
         ) : null}

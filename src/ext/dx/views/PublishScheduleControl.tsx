@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CalendarClock, X } from "lucide-react";
 import { TextMorph } from "torph/react";
 import { Calendar } from "@/components/ui/calendar";
+import { TimeInput } from "@/components/ui/time-input";
 import {
   Popover,
   PopoverContent,
@@ -12,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useDateFormatter } from "@/components/DateTimeProvider";
 import { wallClock, zonedTimeToMs, type DateFormatter } from "@/lib/datetime";
+import { useExtT } from "../ext-locale";
 
 // Admin-only publish scheduling control(FormView status 區塊,僅 Draft 時顯示)。
 // value = epoch ms(row 層 publishAt,見 content-provider.ts extractPublishAt)
@@ -23,6 +25,9 @@ import { wallClock, zonedTimeToMs, type DateFormatter } from "@/lib/datetime";
 //
 // 1.41.0:日期與時間是站台時區的(lib/datetime.ts)——人在國外排「9/20 09:00」,
 // 發佈的是店家那邊的 9/20 早上九點。月曆元件用瀏覽器時區,進出時用年月日換算。
+//
+// 月曆跟著後台語系(ui/calendar);時間用 24 小時制的 <TimeInput>,不用原生
+// <input type="time">(它跟著瀏覽器語系,中文後台會冒出「12:00 AM」)。
 
 interface PublishScheduleControlProps {
   value: number | null;
@@ -74,6 +79,7 @@ export function PublishScheduleControl({
   const [open, setOpen] = useState(false);
   const dates = useDateFormatter();
   const timeZone = dates.timeZone;
+  const t = useExtT();
   // Popover 的 draft state:開啟時從 value 播種(見 onOpenChange)。
   const [draftDate, setDraftDate] = useState<Date | undefined>(undefined);
   const [draftTime, setDraftTime] = useState(DEFAULT_TIME);
@@ -118,7 +124,7 @@ export function PublishScheduleControl({
               >
                 <CalendarClock className="size-3.5" aria-hidden />
                 <TextMorph respectReducedMotion>
-                  {scheduled ? formatSchedule(value, dates) : "Schedule…"}
+                  {scheduled ? formatSchedule(value, dates) : t("publishSchedule.trigger")}
                 </TextMorph>
               </button>
             }
@@ -132,12 +138,11 @@ export function PublishScheduleControl({
               autoFocus
             />
             <div className="flex items-center justify-between gap-2 border-t border-black/[0.06] admin:border-ink/[0.06] px-3 py-2.5">
-              <input
-                type="time"
-                aria-label="Publish time"
+              <TimeInput
+                aria-label={t("publishSchedule.time")}
                 value={draftTime}
-                onChange={(e) => setDraftTime(e.target.value)}
-                className="h-8 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] px-2 text-[13px] tabular-nums text-black/80 admin:text-ink/80 outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
+                onChange={setDraftTime}
+                className="h-8 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] px-1 text-[13px] text-black/80 admin:text-ink/80 has-[select:focus-visible]:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
               />
               <button
                 type="button"
@@ -145,7 +150,7 @@ export function PublishScheduleControl({
                 disabled={combined === null}
                 className="inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 admin:hover:bg-ink/85 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Set schedule
+                {t("publishSchedule.set")}
               </button>
             </div>
           </PopoverContent>
@@ -153,7 +158,7 @@ export function PublishScheduleControl({
         {scheduled && (
           <button
             type="button"
-            aria-label="Clear schedule"
+            aria-label={t("publishSchedule.clear")}
             disabled={disabled}
             onClick={() => onChange(null)}
             className="inline-flex size-8 items-center justify-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] text-black/35 admin:text-ink/35 transition-colors duration-150 hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/70 admin:hover:text-ink/70 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none disabled:opacity-50"
@@ -164,9 +169,7 @@ export function PublishScheduleControl({
       </div>
       {scheduled && (
         <p className="text-[11px] text-black/35 admin:text-ink/35">
-          {past
-            ? "This time has passed — the entry will publish on the next sweep."
-            : "Publishes automatically at this time."}
+          {past ? t("publishSchedule.past") : t("publishSchedule.upcoming")}
         </p>
       )}
     </div>

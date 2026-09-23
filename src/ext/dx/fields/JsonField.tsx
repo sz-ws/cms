@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { ChevronRightIcon, CodeIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FieldComponentProps } from "./types";
+import { useExtT } from "../ext-locale";
 
 // json field: CodeMirror 6 (json lang), dynamically imported with ssr:false
 // so the editor chunk never ships to public pages or non-json admin forms.
@@ -13,13 +14,18 @@ import type { FieldComponentProps } from "./types";
 // parse failure shows an inline error and keeps the raw text (does not clear
 // user input).
 
+function EditorLoading() {
+  const t = useExtT();
+  return (
+    <div className="flex h-32 items-center justify-center rounded-2xl border border-input/60 bg-input/30 text-sm text-muted-foreground">
+      {t("dxField.editorLoading")}
+    </div>
+  );
+}
+
 const JsonCodeEditor = dynamic(() => import("./JsonCodeEditor"), {
   ssr: false,
-  loading: () => (
-    <div className="flex h-32 items-center justify-center rounded-2xl border border-input/60 bg-input/30 text-sm text-muted-foreground">
-      Loading editor…
-    </div>
-  ),
+  loading: () => <EditorLoading />,
 });
 
 function stringify(value: unknown): string {
@@ -40,7 +46,9 @@ export function JsonField({
 }: FieldComponentProps<unknown>) {
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState(() => stringify(value));
+  // JSON.parse 的原始訊息(英文、含出錯位置):畫面上顯示翻好的一句,原文放在 title。
   const [parseError, setParseError] = useState<string | null>(null);
+  const t = useExtT();
 
   function handleBlur() {
     const trimmed = text.trim();
@@ -54,7 +62,7 @@ export function JsonField({
       setParseError(null);
       onChange(parsed);
     } catch (e) {
-      setParseError(e instanceof Error ? e.message : "Invalid JSON");
+      setParseError(e instanceof Error ? e.message : "");
     }
   }
 
@@ -79,7 +87,7 @@ export function JsonField({
         />
         <CodeIcon className="size-4 shrink-0 text-muted-foreground" />
         <span className="truncate text-muted-foreground">
-          {expanded ? "Hide JSON editor" : "Show JSON editor"}
+          {t(expanded ? "dxField.json.hide" : "dxField.json.show")}
         </span>
       </button>
 
@@ -91,9 +99,13 @@ export function JsonField({
             onBlur={handleBlur}
             disabled={disabled}
           />
-          {(parseError || error) && (
-            <p className="text-sm text-destructive">{parseError ?? error}</p>
-          )}
+          {parseError !== null ? (
+            <p className="text-sm text-destructive" title={parseError || undefined}>
+              {t("dxField.json.invalid")}
+            </p>
+          ) : error ? (
+            <p className="text-sm text-destructive">{error}</p>
+          ) : null}
         </>
       )}
     </div>

@@ -15,6 +15,7 @@ import {
 import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
 import { ColorSwatchPicker } from "./ColorSwatchPicker";
+import { SettingUnitHint } from "./SettingUnitHint";
 import { SaveBar, SAVE_BUTTON_CLASS } from "./SaveBar";
 import { SettingTabs } from "./SettingTabs";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
@@ -43,6 +44,11 @@ interface SettingsWorkspaceProps {
 type SettingsState = Record<string, string | boolean>;
 type SettingsTab = "core" | "style" | "declarative" | "extensions";
 const SETTINGS_TABS: readonly SettingsTab[] = ["core", "style", "declarative", "extensions"];
+
+// 每一組設定是一張單層卡片(同角色頁與成員表格)。外面再包一圈玻璃框,
+// 「細邊線」風格下兩層陰影都變成 1px 線,會畫成兩道邊。
+const SECTION_CARD =
+  "rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]";
 
 function resolveTab(value: string | undefined, hasStyle: boolean): SettingsTab {
   const tab = SETTINGS_TABS.find((id) => id === value) ?? "core";
@@ -220,11 +226,9 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
       <section
         key="core-addon"
         id={sectionAnchorId("core-addon")}
-        className="scroll-mt-20 rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md"
+        className={cn("scroll-mt-20", SECTION_CARD)}
       >
-        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
-          {coreAddonNode}
-        </div>
+        {coreAddonNode}
       </section>
     );
   }
@@ -341,6 +345,21 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
                     ))}
                   </SelectContent>
                 </Select>
+              ) : field.type === "number" && field.unit ? (
+                // 1.52.0:有單位的數字(例如付款期限的分鐘數),右邊換算成好讀的說法。
+                <div className="flex min-w-0 items-center gap-3">
+                  <Input
+                    id={controlId}
+                    aria-describedby={[descriptionId, `${controlId}-unit`].filter(Boolean).join(" ")}
+                    aria-invalid={fieldErrors[fullKey] ? true : undefined}
+                    className="min-w-0 flex-1 rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
+                    type="number"
+                    value={String(state[fullKey] ?? "")}
+                    aria-required={field.required || undefined}
+                    onChange={(e) => update(fullKey, e.target.value)}
+                  />
+                  <SettingUnitHint id={`${controlId}-unit`} unit={field.unit} value={state[fullKey]} />
+                </div>
               ) : (
                 <Input
                   id={controlId}
@@ -390,19 +409,17 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
       <section
         key={section.id}
         id={sectionAnchorId(section.id)}
-        className="scroll-mt-20 rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md"
+        className={cn("scroll-mt-20", SECTION_CARD)}
       >
-        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
-          <div className="mb-5 flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
-              {section.title}
-            </h3>
-            {section.description && (
-              <p className="text-[12px] text-ink/40">{section.description}</p>
-            )}
-          </div>
-          {renderSectionFields(section)}
+        <div className="mb-5 flex flex-col gap-1">
+          <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
+            {section.title}
+          </h3>
+          {section.description && (
+            <p className="text-[12px] text-ink/40">{section.description}</p>
+          )}
         </div>
+        {renderSectionFields(section)}
       </section>
     );
   }
@@ -418,16 +435,14 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
 
   function renderDeclarativePlaceholder() {
     return (
-      <section className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
-        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
-              {t("settingsWorkspace.declarative")}
-            </h3>
-            <p className="text-[12px] leading-relaxed text-ink/40">
-              {t("settingsWorkspace.declarativeDesc")}
-            </p>
-          </div>
+      <section className={SECTION_CARD}>
+        <div className="flex flex-col gap-1">
+          <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
+            {t("settingsWorkspace.declarative")}
+          </h3>
+          <p className="text-[12px] leading-relaxed text-ink/40">
+            {t("settingsWorkspace.declarativeDesc")}
+          </p>
         </div>
       </section>
     );

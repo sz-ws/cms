@@ -10,6 +10,7 @@ import {
   ComboboxList,
 } from "@/components/ui/combobox";
 import type { FieldComponentProps } from "./types";
+import { useExtT } from "../ext-locale";
 import {
   resolveRelationOptions,
   searchRelationOptions,
@@ -37,6 +38,7 @@ export function RelationField({
   disabled,
 }: FieldComponentProps<string>) {
   const to = field.to ?? "";
+  const t = useExtT();
   const selectedId = typeof value === "string" ? value : "";
 
   // Fetched search results shown in the popup (we control filtering; the
@@ -122,12 +124,12 @@ export function RelationField({
     >
       <ComboboxInput
         id={`field-${field.key}`}
-        placeholder="Search…"
+        placeholder={t("dxField.search")}
         aria-invalid={Boolean(error)}
         showClear={Boolean(selectedId)}
       />
       <ComboboxContent>
-        <ComboboxEmpty>No matches.</ComboboxEmpty>
+        <ComboboxEmpty>{t("dxField.noMatches")}</ComboboxEmpty>
         <ComboboxList>
           {(item: RelationOption) => (
             <ComboboxItem key={item.id} value={item}>

@@ -32,7 +32,7 @@ vi.mock("@/ext/loader", () => ({
 vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 
 import { enableExtension, enableStepCheck, enableStepMigrate, pendingCodeUpgrades, type EnableStepEvent } from "../src/ext/manager";
-import { applyStepEvent, initialSteps, markFailed, withMigrations } from "../src/app/(admin)/admin/extensions/EnableProgress";
+import { applyStepEvent, initialSteps, markFailed, receiptSteps, withMigrations } from "../src/app/(admin)/admin/extensions/EnableProgress";
 
 const d1 = () => (env as { DB: D1Database }).DB;
 
@@ -116,6 +116,21 @@ describe("EnableProgress steps", () => {
     expect(steps.map((s) => s.key)).toContain("migrate:0003_payment_fields");
     const skipped = applyStepEvent(initialSteps(null), { step: "migrate", status: "skipped" });
     expect(skipped.find((s) => s.key === "migrate")?.status).toBe("skipped");
+  });
+
+  it("卡片上的 migration 合成一列「更新資料表」,不列出 migration id", () => {
+    let steps = initialSteps(["0001_a", "0002_b"]);
+    const rows = () => receiptSteps(steps).map((s) => `${s.key}:${s.status}`);
+    expect(rows()).toEqual(["check:waiting", "migrate:waiting", "settings:waiting", "record:waiting"]);
+    expect(receiptSteps(steps).some((s) => s.migration)).toBe(false);
+    steps = applyStepEvent(steps, { step: "migrate", status: "done", migration: "0001_a" });
+    expect(rows()).toContain("migrate:running");
+    steps = applyStepEvent(steps, { step: "migrate", status: "done", migration: "0002_b" });
+    expect(rows()).toContain("migrate:done");
+    expect(receiptSteps(markFailed(applyStepEvent(initialSteps(["0003"]), { step: "migrate", status: "running", migration: "0003" })))
+      .find((s) => s.status === "failed")?.key).toBe("migrate");
+    expect(receiptSteps(applyStepEvent(initialSteps(null), { step: "migrate", status: "skipped" })).map((s) => s.key))
+      .toEqual(["check", "migrate", "settings", "record"]);
   });
 
   it("失敗:進行中的那一步標成失敗;還沒開始就標第一步", () => {

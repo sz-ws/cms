@@ -84,6 +84,7 @@ export default async function DashboardPage() {
       empty: m["recent.empty"],
       published: m["contentType.published"],
       draft: m["contentType.draft"],
+      untitled: m["recent.untitled"],
     },
     extStat: {
       view: m["dashboard.extStat.view"],

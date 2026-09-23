@@ -189,7 +189,7 @@ export function CollectionGrid({
                 <CornerCheckbox
                   checked={isSel}
                   onChange={() => toggle(card.id)}
-                  label={`Select ${card.title || card.id}`}
+                  label={card.title ? t("collection.selectCard", { title: card.title }) : t("collection.selectRow")}
                 />
               )}
               <AdminLink

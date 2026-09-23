@@ -7,15 +7,14 @@
 //   100,000,超過直接拋
 //     NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not supported
 //   這是**平台常數,不是 CPU 預算** —— 換更貴的 Workers 方案不會改變它。
-//   實測於 cms-tmp-suko-test:outcome=ok、cpuTime=10ms,然後拋出上述錯誤。
+//   實測於一個測試部署:outcome=ok、cpuTime=10ms,然後拋出上述錯誤。
 //
 //   曾經有一版把下限設成 600,000,並附一個「部署時校準」精靈,前提是「工作因子
 //   取決於這個部署撐得住多少 CPU」。那個前提是錯的:在 Workers 上唯一可能的值
 //   就是 100,000,既是下限也是上限。結果是 /setup 永遠建不出第一個管理員,而
 //   UI 還會叫人「升級到 CPU 更多的方案」—— 一條永遠走不通的路。
 //
-//   同一個技術棧的其他站(contest-bat、朝藝麵、suko-admin、emat-hub、my-shop)
-//   全部都是 100,000。這裡是唯一走岔的那個。
+//   同一個技術棧的其他 Workers 專案全部都是 100,000。這裡曾是唯一走岔的那個。
 //
 // 怎麼在 100,000 的天花板下仍達到 OWASP 的工作量:**鏈式** derivation。
 // 跑 PBKDF2_ROUNDS 輪,每輪 100,000 次,把前一輪的輸出當成下一輪的輸入密碼。

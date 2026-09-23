@@ -11,6 +11,7 @@ import {
   type PasskeySummary,
 } from "@/components/admin/PasskeysManager";
 import { AvatarManager } from "@/components/admin/AvatarManager";
+import { roleLabel } from "@/components/admin/role-label";
 import {
   IdentitiesManager,
   type IdentitySummary,
@@ -18,8 +19,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Paper & Ink 卡片語彙,層級抄 admin/settings/page.tsx(20px outer shell → 14px
-// inner card)。role badge 走跟 token scope 一樣的 uppercase 小 pill,不借
+// Paper & Ink 卡片語彙,同設定頁與角色頁:每一區一張單層 14px 卡片。外面再包一圈
+// 玻璃框的話,「細邊線」風格下兩層陰影都變成 1px 線,會畫成兩道邊。
+const CARD =
+  "rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]";
+
+// role badge 走跟 token scope 一樣的 uppercase 小 pill,不借
 // admin/users 那支舊版 ui.tsx 的 Badge(那是另一套尚未換裝的舊 UI)。
 function RoleBadge({
   role,
@@ -148,91 +153,74 @@ export default async function AccountPage({
         </p>
       </div>
 
-      <section className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
-        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
-          <div className="mb-4 flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
-              {m["account.identity"]}
-            </h3>
-            <p className="text-[12px] text-ink/40">
-              {m["account.whoYouAre"]}
-            </p>
-          </div>
-          {/* 頭像:放 Identity 卡最上方(51a329f 後端)。 */}
-          <div className="mb-4 border-b border-ink/[0.06] pb-4">
-            <AvatarManager name={user.name} avatarKey={user.avatarKey} />
-          </div>
-          <div className="flex flex-col">
-            <IdentityRow label={m["account.email"]}>
-              {isPlaceholderEmail(user.email) ? (
-                // placeholder email(LINE 等拿不到 email 的 OAuth 帳號)遮罩顯示,
-                // 不露內部合成字串(spec-login-providers §2)。
-                <span className="text-[13px] text-ink/35">
-                  {m["account.noEmail"]}
-                </span>
-              ) : (
-                <span className="text-[13px] font-medium text-ink/85">
-                  {user.email}
-                </span>
-              )}
-            </IdentityRow>
-            <IdentityRow label={m["account.role"]}>
-              <RoleBadge
-                role={user.staffRole ? "editor" : user.role}
-                label={
-                  // 1.50.0:自訂角色顯示角色名稱。
-                  user.staffRole
-                    ? user.staffRole.name
-                    : user.role === "admin"
-                      ? m["account.roleAdmin"]
-                      : user.role === "guest"
-                        ? m["account.roleGuest"]
-                        : m["account.roleEditor"]
-                }
-              />
-            </IdentityRow>
-            {memberSince && (
-              <IdentityRow label={m["account.memberSince"]}>
-                <span className="text-[13px] tabular-nums text-ink/85">
-                  {memberSince}
-                </span>
-              </IdentityRow>
+      <section className={CARD}>
+        <h3 className="mb-4 text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
+          {m["account.identity"]}
+        </h3>
+        {/* 頭像:放個人資料卡最上方(51a329f 後端)。 */}
+        <div className="mb-4 border-b border-ink/[0.06] pb-4">
+          <AvatarManager name={user.name} avatarKey={user.avatarKey} />
+        </div>
+        <div className="flex flex-col">
+          <IdentityRow label={m["account.email"]}>
+            {isPlaceholderEmail(user.email) ? (
+              // placeholder email(LINE 等拿不到 email 的 OAuth 帳號)遮罩顯示,
+              // 不露內部合成字串(spec-login-providers §2)。
+              <span className="text-[13px] text-ink/35">
+                {m["account.noEmail"]}
+              </span>
+            ) : (
+              <span className="text-[13px] font-medium text-ink/85">
+                {user.email}
+              </span>
             )}
-          </div>
+          </IdentityRow>
+          <IdentityRow label={m["account.role"]}>
+            <RoleBadge
+              role={user.staffRole ? "editor" : user.role}
+              // 1.50.0:自訂角色顯示角色名稱。
+              label={roleLabel(user, (key) => m[key])}
+            />
+          </IdentityRow>
+          {memberSince && (
+            <IdentityRow label={m["account.memberSince"]}>
+              <span className="text-[13px] tabular-nums text-ink/85">
+                {memberSince}
+              </span>
+            </IdentityRow>
+          )}
         </div>
       </section>
 
-      <section className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md">
-        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]">
-          <div className="mb-4 flex flex-col gap-1">
-            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
-              {m["account.signInMethods"]}
-            </h3>
-            <p className="text-[12px] text-ink/40">
-              {m["account.passkeyDesc"]}
-            </p>
-          </div>
-          <PasskeysManager initialPasskeys={initialPasskeys} now={now} />
-
-          {showIdentities && (
-            <div className="mt-5 border-t border-ink/[0.06] pt-5">
-              <div className="mb-4 flex flex-col gap-1">
-                <h4 className="text-[14px] font-semibold tracking-[-0.01em] text-ink/85">
-                  {m["account.connectedAccounts"]}
-                </h4>
-                <p className="text-[12px] text-ink/40">
-                  {m["account.connectedAccountsDesc"]}
-                </p>
-              </div>
-              <IdentitiesManager
-                initialIdentities={identities}
-                providers={loginProviders}
-                linked={linkedFlash}
-                errorCode={identityError}
-              />
-            </div>
-          )}
+      <section className={CARD}>
+        <div className="mb-4 flex flex-col gap-1">
+          <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
+            {m["account.signInMethods"]}
+          </h3>
+          <p className="text-[12px] text-pretty text-ink/40">
+            {m["account.passkeyDesc"]}
+          </p>
         </div>
+        <PasskeysManager initialPasskeys={initialPasskeys} now={now} />
+
+        {showIdentities && (
+          <div className="mt-5 border-t border-ink/[0.06] pt-5">
+            <div className="mb-4 flex flex-col gap-1">
+              <h4 className="text-[14px] font-semibold tracking-[-0.01em] text-ink/85">
+                {m["account.connectedAccounts"]}
+              </h4>
+              <p className="text-[12px] text-pretty text-ink/40">
+                {m["account.connectedAccountsDesc"]}
+              </p>
+            </div>
+            <IdentitiesManager
+              initialIdentities={identities}
+              providers={loginProviders}
+              linked={linkedFlash}
+              errorCode={identityError}
+            />
+          </div>
+        )}
       </section>
     </div>
   );

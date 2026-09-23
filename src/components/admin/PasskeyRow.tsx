@@ -72,7 +72,7 @@ export function PasskeyRow({
           <button
             type="button"
             onClick={onRequestDelete}
-            aria-label={`Remove ${passkey.name}`}
+            aria-label={t("passkey.removeNamed", { name: passkey.name })}
             className="flex size-10 shrink-0 items-center justify-center rounded-[calc(8px*var(--admin-radius-scale,1))] text-ink/35 opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 active:scale-[0.96]"
           >
             <Trash2 className="size-4" />

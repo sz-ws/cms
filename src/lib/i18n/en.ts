@@ -77,6 +77,7 @@ export const en = {
   "recent.title": "Recent activity",
   "recent.subtitle": "Across every content type",
   "recent.empty": "Nothing edited yet. New entries appear here.",
+  "recent.untitled": "Untitled",
 
   // DashboardEmpty
   "dashboardEmpty.title": "No content types yet",
@@ -245,9 +246,8 @@ export const en = {
 
   // account (page.tsx)
   "account.title": "Account",
-  "account.subtitle": "Your identity and how you sign in.",
-  "account.identity": "Identity",
-  "account.whoYouAre": "Who you are, as far as this CMS is concerned.",
+  "account.subtitle": "Your profile and how you sign in.",
+  "account.identity": "Profile",
   "account.email": "Email",
   "account.role": "Role",
   "account.roleAdmin": "Admin",
@@ -258,8 +258,7 @@ export const en = {
   "account.signInMethods": "Sign-in methods",
   "account.passkeyDesc": "Passkeys let you sign in with Touch ID, Windows Hello, or a security key instead of a password.",
   "account.connectedAccounts": "Connected accounts",
-  "account.connectedAccountsDesc":
-    "Third-party sign-ins linked to this account. Link one, then use its button on the login page.",
+  "account.connectedAccountsDesc": "Link another account to sign in with it from the login page.",
   "account.identityConnect": "Link",
   "account.identityDisconnect": "Disconnect",
   "account.identityConnectedAt": "Linked {date}",
@@ -355,6 +354,14 @@ export const en = {
   "settingsWorkspace.fieldExpectedNumber": "Numbers only",
   "settingsWorkspace.fieldInvalidColor": "Use a colour code like #5672e4",
   "settingsWorkspace.fieldInvalid": "Invalid format",
+  // Number settings with a unit (SettingField.unit): the equivalent next to the field, e.g. 1440 minutes.
+  "settingsWorkspace.unitEquals": "= {value}",
+  "settingsWorkspace.duration.day": "{n} day",
+  "settingsWorkspace.duration.days": "{n} days",
+  "settingsWorkspace.duration.hour": "{n} hour",
+  "settingsWorkspace.duration.hours": "{n} hours",
+  "settingsWorkspace.duration.minute": "{n} minute",
+  "settingsWorkspace.duration.minutes": "{n} minutes",
   "settingsWorkspace.notAllowed": "Not allowed.",
   "settingsWorkspace.saveFailedError": "Save failed.",
   "settingsWorkspace.networkError": "Network error.",
@@ -378,7 +385,7 @@ export const en = {
   "passkeys.removeError": "Could not remove passkey.",
   "passkeys.browserUnsupported": "This browser does not support passkeys. Sign in with your password instead.",
   "passkeys.noPasskeysYet": "No passkeys yet",
-  "passkeys.noPasskeysDesc": "Add one to sign in with Touch ID, Windows Hello, or a security key",
+  "passkeys.noPasskeysDesc": "Add one to sign in without a password next time.",
 
   // PasskeyRow
   "passkey.added": "Added {relative}",
@@ -386,6 +393,7 @@ export const en = {
   "passkey.removeConfirm": "Remove?",
   "passkey.cancel": "Cancel",
   "passkey.remove": "Remove",
+  "passkey.removeNamed": "Remove {name}",
 
   // PasskeyNameDialog
   "passkeyName.title": "Name this passkey",
@@ -409,7 +417,6 @@ export const en = {
   "extensions.needs.enable": "Enable first: {names}",
   "extensions.progress.check": "Check compatibility and required extensions",
   "extensions.progress.migrate": "Update database tables",
-  "extensions.progress.migrateOne": "Update tables: {id}",
   "extensions.progress.migrateSkipped": "Tables already up to date",
   "extensions.progress.settings": "Add defaults for new settings",
   "extensions.progress.settingsAdded": "Added defaults for {count} new settings",
@@ -553,6 +560,7 @@ export const en = {
   "sidebar.account": "Account",
   "sidebar.logOut": "Log out",
   "sidebar.signingOut": "Signing out…",
+  "sidebar.accountMenu": "Account menu",
 
   // SetupForm
   "setup.title": "Set up your CMS",
@@ -717,6 +725,19 @@ export const en = {
   "collection.bulk.deleteFailed": "Some deletes failed.",
   "collection.bulk.networkError": "Network error.",
   "collection.bulk.dismiss": "Dismiss",
+  // Table status column, pagination count, row/card checkboxes, cell values.
+  "collection.statusColumn": "Status",
+  "collection.range": "{from}–{to} of {total}",
+  "collection.selectRow": "Select this row",
+  "collection.selectCard": "Select {title}",
+  "collection.cell.yes": "yes",
+  "collection.cell.no": "no",
+  "collection.cell.item": "{count} item",
+  "collection.cell.items": "{count} items",
+  "collection.cell.block": "{count} block",
+  "collection.cell.blocks": "{count} blocks",
+  // Shared admin table (components/admin/core-table.tsx): the actions column's accessible name.
+  "coreTable.rowActions": "Row actions",
 
   // Declarative FormView (src/ext/dx/views/FormView.tsx). `extForm.public.*` is
   // visitor-facing (public routes have NO I18nProvider — FormView resolves these
@@ -756,6 +777,98 @@ export const en = {
   "extForm.admin.unsavedChanges": "Unsaved changes in this entry.",
   "extForm.admin.noChanges": "No changes yet.",
   "extForm.admin.viewOnly": "You can view this entry but not change it. Ask an admin to update your role.",
+  // Public list page (views/ListView.tsx).
+  "publicList.empty": "Nothing published yet.",
+
+  // Publish scheduling on a draft (views/PublishScheduleControl.tsx).
+  "publishSchedule.trigger": "Schedule…",
+  "publishSchedule.time": "Publish time",
+  "publishSchedule.set": "Set schedule",
+  "publishSchedule.clear": "Clear schedule",
+  "publishSchedule.past": "This time has passed. The entry will publish shortly.",
+  "publishSchedule.upcoming": "Publishes automatically at this time.",
+
+  // 24-hour time picker (components/ui/time-input.tsx). Screen-reader names of its two parts.
+  "timeInput.hour": "Hour",
+  "timeInput.minute": "Minute",
+
+  // Declarative field controls (src/ext/dx/fields/*). Looked up with useExtT(), so
+  // public forms (no I18nProvider) get them too.
+  "dxField.date.pick": "Pick a date",
+  "dxField.number.decrease": "Decrease",
+  "dxField.number.increase": "Increase",
+  "dxField.select.placeholder": "Select…",
+  "dxField.search": "Search…",
+  "dxField.searchToAdd": "Search to add…",
+  "dxField.noMatches": "No matches.",
+  "dxField.moveUp": "Move up",
+  "dxField.moveDown": "Move down",
+  "dxField.remove": "Remove",
+  "dxField.emptyRow": "(empty)",
+  "dxField.repeater.addFirst": "Add item",
+  "dxField.repeater.addAnother": "Add another",
+  "dxField.blocks.add": "Add block",
+  "dxField.blocks.addNamed": "Add {name}",
+  "dxField.blocks.unknown": "This block type (“{name}”) no longer exists. You can remove it.",
+  "dxField.blocks.unknownShort": "Unknown block type.",
+  "dxField.slug.lock": "Lock slug (auto-sync from title)",
+  "dxField.slug.unlock": "Unlock slug (stop auto-sync)",
+  "dxField.slug.syncing": "Auto-syncing from title",
+  "dxField.slug.manual": "Manually edited",
+  "dxField.text.expand": "Expand editor",
+  "dxField.text.collapse": "Collapse",
+  "dxField.text.collapseEditor": "Collapse editor",
+  "dxField.text.expandedLabel": "{label} — expanded editor",
+  "dxField.text.collapseHint": "Press {esc} or {enter} to collapse.",
+  "dxField.editorLoading": "Loading editor…",
+  "dxField.json.show": "Show JSON editor",
+  "dxField.json.hide": "Hide JSON editor",
+  "dxField.json.invalid": "Invalid JSON",
+  "dxField.richtext.bold": "Bold",
+  "dxField.richtext.italic": "Italic",
+  "dxField.richtext.strike": "Strikethrough",
+  "dxField.richtext.h2": "Heading 2",
+  "dxField.richtext.h3": "Heading 3",
+  "dxField.richtext.bulletList": "Bullet list",
+  "dxField.richtext.orderedList": "Ordered list",
+  "dxField.richtext.quote": "Blockquote",
+  "dxField.richtext.addLink": "Add link",
+  "dxField.richtext.removeLink": "Remove link",
+  "dxField.richtext.linkPrompt": "Link URL",
+  "dxField.richtext.image": "Insert image",
+  "dxField.media.cover": "Cover",
+  "dxField.media.library": "Library",
+  "dxField.media.manual": "Manual",
+  "dxField.media.expand": "Expand",
+  "dxField.media.shrink": "Shrink",
+  "dxField.media.expandPreview": "Expand cover preview",
+  "dxField.media.shrinkPreview": "Shrink cover preview",
+  "dxField.media.choose": "Choose",
+  "dxField.media.replace": "Replace",
+  "dxField.media.clear": "Clear",
+  "dxField.media.noImage": "No cover image yet",
+  "dxField.media.empty": "Empty",
+  "dxField.media.emptyHint": "Open the picker to choose a file.",
+  "dxField.media.keyLabel": "Storage key",
+  "dxField.media.keyPlaceholder": "e.g. core/2026/07/abc.jpg",
+  "dxField.media.keyHint": "Type or paste a storage key directly.",
+
+  // Media chooser dialog (fields/MediaPickerDialog.tsx) — media field and the richtext image button.
+  "mediaPicker.title": "Choose media",
+  "mediaPicker.desc": "Upload a new file or pick one from your library.",
+  "mediaPicker.library": "Library",
+  "mediaPicker.upload": "Upload",
+  "mediaPicker.loadFailed": "Could not load library.",
+  "mediaPicker.networkError": "Network error.",
+  "mediaPicker.retry": "Retry",
+  "mediaPicker.empty": "Nothing uploaded yet. Use the Upload tab.",
+  "mediaPicker.loading": "Loading…",
+  "mediaPicker.loadMore": "Load more",
+  "mediaPicker.tooLarge": "File is too large (max 25MB).",
+  "mediaPicker.uploadFailed": "Upload failed.",
+  "mediaPicker.uploading": "Uploading…",
+  "mediaPicker.dropHint": "Drop a file or click to browse",
+  "mediaPicker.hint": "Images, video, audio, PDF · up to 25MB",
 
   // 公開表單收件匣(src/lib/submissions.ts + views/InboxView.tsx)。
   "inbox.subtitle": "Messages sent through your public form.",

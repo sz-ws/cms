@@ -29,7 +29,7 @@ export interface EnableProgressState {
   error?: string;
 }
 
-/** 起始清單。套用更新時已知要跑哪些 migration,一個一列;全新啟用時先放一列「更新資料表」。 */
+/** 起始清單。套用更新時已知要跑哪些 migration,一個一步;全新啟用時先放一步「更新資料表」。 */
 export function initialSteps(migrations: readonly string[] | null): ProgressStep[] {
   const migrate: ProgressStep[] = migrations?.length
     ? migrations.map((id) => ({ key: `migrate:${id}`, status: "waiting", migration: id }))
@@ -80,6 +80,27 @@ export function applyStepEvent(steps: readonly ProgressStep[], event: EnableStep
   );
 }
 
+/**
+ * 卡片上畫的列:每個 migration 各自是一步(一次一個請求、失敗從那一個重來),但畫出來
+ * 合成一列「更新資料表」。migration id(0002_xxx)是寫給開發者的,店主看了只會困惑;
+ * 要查是哪一個,伺服器 log 與 ext_migrations 表都有。
+ */
+export function receiptSteps(steps: readonly ProgressStep[]): ProgressStep[] {
+  const at = steps.findIndex((s) => s.migration);
+  if (at < 0) return [...steps];
+  const statuses = steps.filter((s) => s.migration).map((s) => s.status);
+  const status: StepStatus = statuses.includes("failed")
+    ? "failed"
+    : statuses.every((s) => s === "waiting")
+      ? "waiting"
+      : statuses.every((s) => s === "skipped")
+        ? "skipped"
+        : statuses.every((s) => s === "done" || s === "skipped")
+          ? "done"
+          : "running";
+  return [...steps.slice(0, at), { key: "migrate", status }, ...steps.slice(at).filter((s) => !s.migration)];
+}
+
 /** 失敗時:進行中的那一步標成失敗;若還沒開始任何一步,就是第一步失敗。 */
 export function markFailed(steps: readonly ProgressStep[]): ProgressStep[] {
   const running = steps.findIndex((s) => s.status === "running");
@@ -110,7 +131,6 @@ export function EnableProgressCard({
     if (step.key === "migrate") {
       return step.status === "skipped" ? t("extensions.progress.migrateSkipped") : t("extensions.progress.migrate");
     }
-    if (step.migration) return t("extensions.progress.migrateOne", { id: step.migration });
     if (step.key === "settings") {
       if (step.status !== "done") return t("extensions.progress.settings");
       return step.count
@@ -120,7 +140,8 @@ export function EnableProgressCard({
     return t("extensions.progress.record");
   }
 
-  const failedStep = state.steps.find((s) => s.status === "failed");
+  const rows = receiptSteps(state.steps);
+  const failedStep = rows.find((s) => s.status === "failed");
   const title =
     state.outcome === "failed"
       ? t("extensions.progress.failed", { name: state.name, step: failedStep ? label(failedStep) : "" })
@@ -153,7 +174,7 @@ export function EnableProgressCard({
         )}
       </div>
       <ol className="mt-2.5 flex flex-col gap-1.5">
-        {state.steps.map((step) => (
+        {rows.map((step) => (
           <li
             key={step.key}
             className={cn(
@@ -163,7 +184,7 @@ export function EnableProgressCard({
             )}
           >
             <StepIcon status={step.status} />
-            <span className={cn(step.migration && "font-mono text-[12px]")}>{label(step)}</span>
+            <span>{label(step)}</span>
           </li>
         ))}
       </ol>

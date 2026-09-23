@@ -11,7 +11,7 @@ import type { DeclarativeBlockDef } from "../manifest";
 import type { FieldComponentProps } from "./types";
 import { LeafFieldControl } from "./LeafFieldControl";
 import { blockLabel } from "../views/field-utils";
-import { useExtLocale } from "../ext-locale";
+import { useExtLocale, useExtT } from "../ext-locale";
 import {
   AddButton,
   InstanceCard,
@@ -39,6 +39,7 @@ export function BlocksField({
   disabled,
 }: FieldComponentProps<BlockInstance[]>) {
   const locale = useExtLocale();
+  const t = useExtT();
   const defs: DeclarativeBlockDef[] = field.blocks ?? [];
   const byName = new Map(defs.map((b) => [b.name, b]));
   const items: BlockInstance[] = Array.isArray(value)
@@ -99,8 +100,7 @@ export function BlocksField({
                   ))
                 ) : (
                   <p className="text-[13px] text-black/45 admin:text-ink/45">
-                    Unknown block type “{name}”. Remove it, or restore its
-                    definition in the manifest.
+                    {t("dxField.blocks.unknown", { name })}
                   </p>
                 )}
               </InstanceCard>
@@ -136,13 +136,14 @@ function BlockChooser({
   onAdd: (name: string) => void;
   labelOf: (def: DeclarativeBlockDef) => string;
 }) {
+  const t = useExtT();
   if (defs.length === 0) return null;
   // Single declared block: a plain add button (no menu needed).
   if (defs.length === 1) {
     const only = defs[0];
     return (
       <AddButton
-        label={`Add ${labelOf(only)}`}
+        label={t("dxField.blocks.addNamed", { name: labelOf(only) })}
         disabled={disabled}
         onClick={() => onAdd(only.name)}
       />
@@ -157,7 +158,7 @@ function BlockChooser({
         className="inline-flex h-10 w-fit items-center gap-1.5 rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-3.5 text-[13px] font-medium text-black/75 admin:text-ink/75 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color] outline-none hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 motion-reduce:active:scale-100"
       >
         <PlusIcon className="size-3.5" />
-        Add block
+        {t("dxField.blocks.add")}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-40">
         {defs.map((def) => (

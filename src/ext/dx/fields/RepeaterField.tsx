@@ -3,6 +3,7 @@
 import type { DeclarativeLeafField } from "../manifest";
 import type { FieldComponentProps } from "./types";
 import { LeafFieldControl } from "./LeafFieldControl";
+import { useExtT } from "../ext-locale";
 import {
   AddButton,
   InstanceCard,
@@ -29,6 +30,7 @@ export function RepeaterField({
   disabled,
 }: FieldComponentProps<Row[]>) {
   const subfields: DeclarativeLeafField[] = field.fields ?? [];
+  const t = useExtT();
   const rows: Row[] = Array.isArray(value)
     ? value.filter(
         (r): r is Row => r !== null && typeof r === "object" && !Array.isArray(r),
@@ -86,7 +88,7 @@ export function RepeaterField({
       )}
       <div className="flex items-center gap-2">
         <AddButton
-          label={rows.length === 0 ? "Add item" : "Add another"}
+          label={t(rows.length === 0 ? "dxField.repeater.addFirst" : "dxField.repeater.addAnother")}
           disabled={disabled || atMax}
           onClick={addRow}
         />

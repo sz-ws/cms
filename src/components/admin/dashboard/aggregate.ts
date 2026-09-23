@@ -103,7 +103,8 @@ function recentFromSnapshot(
     : String(raw ?? "");
   return {
     id: entry.id,
-    title: title.length > 0 ? title : "Untitled",
+    // 空標題留空,由 RecentEntries 用後台語系補「未命名」。
+    title,
     typeLabel: t.typeLabel,
     extName: t.extName,
     status: entry.status,

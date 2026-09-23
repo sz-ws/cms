@@ -11,6 +11,7 @@ import {
   ComboboxList,
 } from "@/components/ui/combobox";
 import type { FieldComponentProps } from "./types";
+import { useExtT } from "../ext-locale";
 import {
   resolveRelationOptions,
   searchRelationOptions,
@@ -49,6 +50,7 @@ export function RelationsField({
   disabled,
 }: FieldComponentProps<string[]>) {
   const to = field.to ?? "";
+  const t = useExtT();
   const ids = Array.isArray(value)
     ? value.filter((v): v is string => typeof v === "string")
     : [];
@@ -127,11 +129,11 @@ export function RelationsField({
       >
         <ComboboxInput
           id={`field-${field.key}`}
-          placeholder="Search to add…"
+          placeholder={t("dxField.searchToAdd")}
           aria-invalid={Boolean(error)}
         />
         <ComboboxContent>
-          <ComboboxEmpty>No matches.</ComboboxEmpty>
+          <ComboboxEmpty>{t("dxField.noMatches")}</ComboboxEmpty>
           <ComboboxList>
             {(item: RelationOption) => (
               <ComboboxItem key={item.id} value={item}>
@@ -154,21 +156,21 @@ export function RelationsField({
               </span>
               <span className="flex-1 truncate">{titles[id] ?? id}</span>
               <ReorderButton
-                label="Move up"
+                label={t("dxField.moveUp")}
                 disabled={disabled || i === 0}
                 onClick={() => move(i, -1)}
               >
                 <ArrowUpIcon className="size-3.5" />
               </ReorderButton>
               <ReorderButton
-                label="Move down"
+                label={t("dxField.moveDown")}
                 disabled={disabled || i === ids.length - 1}
                 onClick={() => move(i, 1)}
               >
                 <ArrowDownIcon className="size-3.5" />
               </ReorderButton>
               <ReorderButton
-                label="Remove"
+                label={t("dxField.remove")}
                 disabled={disabled}
                 onClick={() => removeAt(i)}
               >

@@ -145,3 +145,18 @@ export function buildAdminNavGroups(
       ...(section.collapse ? { collapse: section.collapse } : {}),
     }));
 }
+
+/**
+ * 每個側欄頁的 href → 它所在的分區 id(資料夾的子頁跟著資料夾)。麵包屑用它判斷
+ * 「上一層」是不是和目前這頁在同一區(breadcrumbs.ts)。
+ */
+export function sectionsByHref(groups: readonly AdminNavGroupData[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const group of groups) {
+    for (const item of group.items) {
+      out[item.href] = group.id;
+      for (const child of item.children ?? []) out[child.href] = group.id;
+    }
+  }
+  return out;
+}

@@ -348,7 +348,9 @@ function UserSheetForm({
                         {opt.title}
                         {active && <Check className="size-3.5 text-ink/55" />}
                       </span>
-                      <span className="text-[11.5px] leading-relaxed text-ink/40">
+                      {/* 中文說明寫在一行放得下的長度(約 25 字);英文或更窄的畫面
+                          折行時,text-pretty 避免最後一行只剩一兩個字。 */}
+                      <span className="text-[11.5px] leading-relaxed text-pretty text-ink/40">
                         {opt.hint}
                       </span>
                     </button>

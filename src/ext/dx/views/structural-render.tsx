@@ -5,7 +5,7 @@ import { renderRichtext } from "./richtext-render";
 import { isMediaKey } from "../media-key";
 import { MediaImage } from "@/components/ui/media-image";
 import { NO_MEDIA_DIMS, type MediaDims } from "./media-dims";
-import type { Locale } from "@/lib/i18n/index";
+import { getMessages, type Locale } from "@/lib/i18n/index";
 
 // Tier 2 v1.2: readable server-side rendering of structural field values on the
 // public DetailView. Pure (no I/O, no hooks) so it stays in the server render
@@ -163,7 +163,7 @@ export function renderStructural(
               {def ? (
                 <LeafList fields={def.fields} data={item} locale={locale} dims={dims} />
               ) : (
-                <p className="text-sm text-gray-400">Unknown block type.</p>
+                <p className="text-sm text-gray-400">{getMessages(locale)["dxField.blocks.unknownShort"]}</p>
               )}
             </li>
           );

@@ -4,6 +4,7 @@ import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useExtT } from "../ext-locale";
 import type { FieldComponentProps } from "./types";
 
 // number field:stepper input,honour min/max/step from field def when present.
@@ -31,6 +32,7 @@ export function NumberField({
   disabled,
 }: FieldComponentProps<number | undefined>) {
   const inputId = useId();
+  const t = useExtT();
   const def = field as unknown as NumberFieldDef;
   const step = def.step ?? 1;
 
@@ -46,7 +48,7 @@ export function NumberField({
         variant="outline"
         size="icon"
         disabled={disabled}
-        aria-label="Decrease"
+        aria-label={t("dxField.number.decrease")}
         className="h-9 w-9 shrink-0 rounded-3xl transition-[background-color,color] active:scale-[0.96]"
         onClick={() => step_(-1)}
       >
@@ -79,7 +81,7 @@ export function NumberField({
         variant="outline"
         size="icon"
         disabled={disabled}
-        aria-label="Increase"
+        aria-label={t("dxField.number.increase")}
         className="h-9 w-9 shrink-0 rounded-3xl transition-[background-color,color] active:scale-[0.96]"
         onClick={() => step_(1)}
       >

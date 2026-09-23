@@ -1019,7 +1019,8 @@
 //   only install from the store, and declare coreApi ^1.51.0.
 // Additive: manifests and sites without the layer behave as in 1.50.0.
 // 1.52.0: paid extensions, stage 1 (registry protocol 1: prices shown, no payments),
-// screens that follow the viewer's access, and plugin numbers on the dashboard.
+// screens that follow the viewer's access, plugin numbers on the dashboard, and admin
+// polish.
 // Paid extensions (registry protocol 1):
 // - Every registry request from core and the CLI carries X-Registry-Protocol: 1. A registry
 //   that sees it lists extensions this key has not been given and answers 402 for their
@@ -1097,5 +1098,18 @@
 // - ExtStatCard shows display when given, else the value through StatNumber with the
 //   admin locale (StatNumber takes locales); the hint replaces the extension name; the
 //   link reads dashboard.extStat.view (View / 查看) instead of a hard-coded "View all".
+// Admin polish: account, settings and dashboard cards draw a single frame; the account
+// page copy is rewritten; the sidebar shows the role name (components/admin/role-label.ts);
+// the update receipt shows 更新資料表 instead of migration ids; zh strings use full-width
+// punctuation and 你; the admin role is called 管理員.
+// Admin language: ui/calendar follows the admin locale (dayPickerLocale(locale) where there is
+// no I18nProvider); ui/time-input TimeInput is a 24-hour "HH:MM" picker to use instead of
+// <input type="time">, which follows the browser's language; field controls, the media picker
+// and collection lists read core i18n keys (dx/ext-locale useExtT, public forms included).
+// SettingField number settings take unit?: "minutes": the stored value stays in minutes and the
+// settings page shows the equivalent next to the field (1440 → "= 24 小時"); defineExtension
+// rejects unit on other types, and older cores reject the key, so declare coreApi ^1.52.0.
+// Breadcrumbs (components/admin/breadcrumbs.ts) skip a parent page that the sidebar shows in
+// another section after filter:adminMenu, so a moved sub-page reads Dashboard › its own title.
 // Additive: registries, extensions and roles without the new fields behave as in 1.51.0.
 export const CORE_API_VERSION = "1.52.0";

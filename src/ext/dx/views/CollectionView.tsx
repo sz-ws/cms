@@ -118,7 +118,7 @@ export async function CollectionView({
         id: entry.id,
         status: entry.status,
         editHref: editHref(entry.id),
-        cells: columns.map((f) => renderCell(f, entry.data[f.key], timeZone)),
+        cells: columns.map((f) => renderCell(f, entry.data[f.key], timeZone, locale)),
       }));
 
   // grid 卡片(§3.5 推斷 cover/title/meta)。

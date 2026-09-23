@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar, dayPickerLocale } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useDateFormatter } from "@/components/DateTimeProvider";
 import type { DateFormatter } from "@/lib/datetime";
+import { useExtLocale, useExtT } from "../ext-locale";
 import type { FieldComponentProps } from "./types";
 
 // date field:Calendar popover picker(react-day-picker,shadcn Calendar) —— 從不
@@ -36,8 +37,8 @@ function dateToEpoch(d: Date, dates: DateFormatter): number | undefined {
   return dates.dayStart(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
 }
 
-function formatDisplay(v: number | undefined, dates: DateFormatter): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return "Pick a date";
+function formatDisplay(v: number | undefined, dates: DateFormatter, placeholder: string): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return placeholder;
   return dates.format(v, { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -51,6 +52,9 @@ export function DateField({
   const [open, setOpen] = useState(false);
   const dates = useDateFormatter();
   const selected = epochToDate(value, dates);
+  // 公開表單沒有 I18nProvider,月曆的語系從 field 樹拿(同 label)。
+  const locale = useExtLocale();
+  const t = useExtT();
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -68,13 +72,14 @@ export function DateField({
             )}
           >
             <CalendarIcon className="size-4" />
-            {formatDisplay(value, dates)}
+            {formatDisplay(value, dates, t("dxField.date.pick"))}
           </Button>
         }
       />
       <PopoverContent className="w-auto p-0" align="start">
         <Calendar
           mode="single"
+          locale={dayPickerLocale(locale)}
           selected={selected}
           onSelect={(date) => {
             onChange(date ? dateToEpoch(date, dates) : undefined);

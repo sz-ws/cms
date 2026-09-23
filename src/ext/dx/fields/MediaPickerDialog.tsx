@@ -12,6 +12,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MediaImage } from "@/components/ui/media-image";
 import { cn } from "@/lib/utils";
+import type { MessageKey } from "@/lib/i18n/index";
+import { useExtT } from "../ext-locale";
 
 // C.5b §2: reusable media picker. Two tabs — Upload (dropzone → POST
 // /api/media/upload) and Library (grid from GET /api/media/list). Selecting in
@@ -80,6 +82,7 @@ export function MediaPickerDialog({
   onSelect,
 }: MediaPickerDialogProps) {
   const [tab, setTab] = useState<"library" | "upload">("library");
+  const t = useExtT();
 
   const handleSelect = useCallback(
     (key: string) => {
@@ -94,10 +97,8 @@ export function MediaPickerDialog({
       <DialogContent className="max-w-2xl rounded-[20px] admin:rounded-[calc(20px*var(--admin-radius-scale,1))] p-0 shadow-[0_16px_48px_-12px_rgba(30,20,50,0.18)] admin:shadow-[var(--admin-shadow-panel,0_16px_48px_-12px_rgba(30,20,50,0.18))] sm:max-w-2xl">
         <div className="flex flex-col gap-4 p-5">
           <DialogHeader>
-            <DialogTitle>Choose media</DialogTitle>
-            <DialogDescription>
-              Upload a new file or pick one from your library.
-            </DialogDescription>
+            <DialogTitle>{t("mediaPicker.title")}</DialogTitle>
+            <DialogDescription>{t("mediaPicker.desc")}</DialogDescription>
           </DialogHeader>
 
           <Tabs
@@ -106,10 +107,10 @@ export function MediaPickerDialog({
           >
             <TabsList className="rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] p-1">
               <TabsTrigger value="library" className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] text-[13px]">
-                Library
+                {t("mediaPicker.library")}
               </TabsTrigger>
               <TabsTrigger value="upload" className="rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] text-[13px]">
-                Upload
+                {t("mediaPicker.upload")}
               </TabsTrigger>
             </TabsList>
 
@@ -138,8 +139,10 @@ function LibraryGrid({
   const [files, setFiles] = useState<StoredFileDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // 存字典 key 而不是翻好的字:load 不必依賴 t。
+  const [error, setError] = useState<MessageKey | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const t = useExtT();
 
   const load = useCallback(async (nextCursor?: string) => {
     setLoading(true);
@@ -148,7 +151,7 @@ function LibraryGrid({
       const qs = nextCursor ? `?cursor=${encodeURIComponent(nextCursor)}` : "";
       const res = await fetch(`/api/media/list${qs}`);
       if (!res.ok) {
-        setError("Could not load library.");
+        setError("mediaPicker.loadFailed");
         return;
       }
       const data = parseListResponse(await res.json());
@@ -156,7 +159,7 @@ function LibraryGrid({
       setCursor(data.cursor);
       setLoaded(true);
     } catch {
-      setError("Network error.");
+      setError("mediaPicker.networkError");
     } finally {
       setLoading(false);
     }
@@ -166,20 +169,20 @@ function LibraryGrid({
   // effect body itself performs no synchronous setState (react-hooks lint).
   useEffect(() => {
     if (!active || loaded || loading) return;
-    const t = setTimeout(() => void load(), 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load(), 0);
+    return () => clearTimeout(timer);
   }, [active, loaded, loading, load]);
 
   if (error) {
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-center">
-        <p className="text-[13px] text-black/55 admin:text-ink/55">{error}</p>
+        <p className="text-[13px] text-black/55 admin:text-ink/55">{t(error)}</p>
         <button
           type="button"
           onClick={() => void load()}
           className="h-10 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color] hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] active:scale-[0.96]"
         >
-          Retry
+          {t("mediaPicker.retry")}
         </button>
       </div>
     );
@@ -192,7 +195,7 @@ function LibraryGrid({
           <span className="size-1 rounded-full bg-black/25 admin:bg-ink/25" />
         </span>
         <p className="text-[13px] text-black/45 admin:text-ink/45">
-          Nothing uploaded yet. Use the Upload tab.
+          {t("mediaPicker.empty")}
         </p>
       </div>
     );
@@ -239,7 +242,7 @@ function LibraryGrid({
           disabled={loading}
           className="mx-auto h-10 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))] transition-[background-color] hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] active:scale-[0.96] disabled:opacity-50"
         >
-          {loading ? "Loading…" : "Load more"}
+          {t(loading ? "mediaPicker.loading" : "mediaPicker.loadMore")}
         </button>
       )}
     </div>
@@ -251,8 +254,9 @@ function LibraryGrid({
 function UploadPane({ onUploaded }: { onUploaded: (key: string) => void }) {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const t = useExtT();
 
   const upload = useCallback(
     async (file: File) => {
@@ -267,17 +271,17 @@ function UploadPane({ onUploaded }: { onUploaded: (key: string) => void }) {
           headers: { "x-requested-with": "fetch" },
         });
         if (!res.ok) {
-          setError(res.status === 413 ? "File is too large (max 25MB)." : "Upload failed.");
+          setError(res.status === 413 ? "mediaPicker.tooLarge" : "mediaPicker.uploadFailed");
           return;
         }
         const data = parseUploadResponse(await res.json());
         if (!data) {
-          setError("Upload failed.");
+          setError("mediaPicker.uploadFailed");
           return;
         }
         onUploaded(data.key);
       } catch {
-        setError("Network error.");
+        setError("mediaPicker.networkError");
       } finally {
         setUploading(false);
       }
@@ -314,9 +318,9 @@ function UploadPane({ onUploaded }: { onUploaded: (key: string) => void }) {
       >
         <UploadCloudIcon className="size-6 text-black/35 admin:text-ink/35" />
         <span className="text-[13px] font-medium text-black/85 admin:text-ink/85">
-          {uploading ? "Uploading…" : "Drop a file or click to browse"}
+          {t(uploading ? "mediaPicker.uploading" : "mediaPicker.dropHint")}
         </span>
-        <span className="text-[11px] text-black/35 admin:text-ink/35">Images, video, audio, PDF · up to 25MB</span>
+        <span className="text-[11px] text-black/35 admin:text-ink/35">{t("mediaPicker.hint")}</span>
       </button>
       <input
         ref={inputRef}
@@ -331,7 +335,7 @@ function UploadPane({ onUploaded }: { onUploaded: (key: string) => void }) {
       {error && (
         <p className="flex items-center gap-1.5 text-[12px] text-red-700">
           <ImageIcon className="size-3.5" />
-          {error}
+          {t(error)}
         </p>
       )}
     </div>

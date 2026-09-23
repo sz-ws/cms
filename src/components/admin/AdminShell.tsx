@@ -6,7 +6,7 @@ import { AdminNav } from "@/components/admin/AdminNav";
 import { AdminTitlesProvider } from "@/components/admin/admin-titles";
 import { StatusSetsProvider } from "@/components/admin/StatusBadge";
 import { SearchPalette } from "@/components/admin/SearchPalette";
-import { buildAdminNavGroups } from "@/components/admin/nav-groups";
+import { buildAdminNavGroups, sectionsByHref } from "@/components/admin/nav-groups";
 import type { PageSearchConfig } from "@/components/admin/PageSearch";
 import { ExtensionLayoutLoader } from "@/ext/dx/extension-layouts";
 import type { AdminMenuItem, AdminNavSection } from "@/ext/admin-menu";
@@ -95,7 +95,12 @@ export function AdminShell({
         groups={groups}
       />
       <SidebarInset>
-        <AdminNav menuTitles={menuTitles} folderTitles={folderTitles} pageSearch={pageSearch} />
+        <AdminNav
+          menuTitles={menuTitles}
+          folderTitles={folderTitles}
+          pageSearch={pageSearch}
+          hrefSections={sectionsByHref(groups)}
+        />
         <main className="flex-1 p-4 lg:p-6">
           {/* 頁面標題跟側欄同名(站台改名後也一致),見 admin-titles.tsx。 */}
           <AdminTitlesProvider titles={menuTitles}>

@@ -8,9 +8,22 @@ import {
   type Locale,
 } from "react-day-picker"
 
+import { zhTW } from "react-day-picker/locale/zh-TW"
+
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
+import type { Locale as AppLocale } from "@/lib/i18n/index"
+import { useOptionalLocale } from "@/lib/i18n/I18nProvider"
+
+/**
+ * 網站語系 → 月曆的語系(月份、星期、無障礙標籤)。英文用 DayPicker 內建的預設值。
+ * 沒傳 locale 的 <Calendar> 自己會跟著後台語系;公開表單沒有 I18nProvider,
+ * 由呼叫端(DateField)用這個函式換好再傳進來。
+ */
+function dayPickerLocale(locale: AppLocale | null | undefined): Partial<Locale> | undefined {
+  return locale === "zh-Hant" ? zhTW : undefined
+}
 
 function Calendar({
   className,
@@ -26,6 +39,8 @@ function Calendar({
   buttonVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
   const defaultClassNames = getDefaultClassNames()
+  const appLocale = useOptionalLocale()
+  const resolvedLocale = locale ?? dayPickerLocale(appLocale)
 
   return (
     <DayPicker
@@ -37,10 +52,10 @@ function Calendar({
         className
       )}
       captionLayout={captionLayout}
-      locale={locale}
+      locale={resolvedLocale}
       formatters={{
         formatMonthDropdown: (date) =>
-          date.toLocaleString(locale?.code, { month: "short" }),
+          date.toLocaleString(resolvedLocale?.code, { month: "short" }),
         ...formatters,
       }}
       classNames={{
@@ -162,7 +177,7 @@ function Calendar({
           )
         },
         DayButton: ({ ...props }) => (
-          <CalendarDayButton locale={locale} {...props} />
+          <CalendarDayButton locale={resolvedLocale} {...props} />
         ),
         WeekNumber: ({ children, ...props }) => {
           return (
@@ -218,4 +233,4 @@ function CalendarDayButton({
   )
 }
 
-export { Calendar, CalendarDayButton }
+export { Calendar, CalendarDayButton, dayPickerLocale }

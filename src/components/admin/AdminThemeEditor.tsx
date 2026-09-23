@@ -151,120 +151,118 @@ export function AdminThemeEditor({ initial }: { initial: AdminAppearance }) {
   const barVisible = dirty || pending || justSaved || failure !== null;
 
   return (
-    // 外框與標題比照設定頁其他分組卡(SettingsWorkspace 的 renderSection)。
-    <form onSubmit={submit} aria-labelledby="admin-style-title" className={cn(barVisible && "mb-24", "rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 shadow-[var(--admin-shadow-panel,0_0_0_1px_rgba(0,0,0,0.05),0_16px_48px_-12px_rgba(30,20,50,0.18))] backdrop-blur-md")}>
-      <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-5 pt-6 pb-6 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] sm:px-6">
-        <div className="mb-6 flex flex-col gap-1">
-          <h3 id="admin-style-title" className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">{c.title}</h3>
-          <p className="text-[12px] text-ink/40">{c.subtitle}</p>
-        </div>
-        {/* 窄螢幕:預設風格 → 預覽 → 細部調整,調的時候預覽就在上面。
-            寬螢幕:左邊控制、右邊預覽跟著捲動停在畫面裡。 */}
-        <div className="grid min-w-0 gap-x-10 gap-y-7 [grid-template-areas:'presets'_'preview'_'controls'] xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)] xl:[grid-template-areas:'presets_preview'_'controls_preview']">
-          <fieldset disabled={pending} className="min-w-0 [grid-area:presets]">
-            <legend className="mb-3.5 text-[13px] font-medium text-ink/85">{c.presets}</legend>
-            <div className="grid grid-cols-2 gap-2.5">
-              {ADMIN_THEME_PRESETS.map((item) => {
-                const active = preset?.id === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => change(item.appearance)}
-                    className={cn(
-                      "rounded-[calc(12px*var(--admin-radius-scale,1))] p-1.5 text-left transition-shadow duration-150 outline-none focus-visible:shadow-[0_0_0_2px_var(--admin-accent)]",
-                      active ? "shadow-[0_0_0_1.5px_var(--admin-accent)]" : "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)]",
-                    )}
-                  >
-                    <span aria-hidden className="flex h-14 gap-1.5 rounded-[8px] p-1.5" style={{ background: item.appearance.theme.background }}>
-                      <span className="w-3.5 rounded-[3px]" style={{ background: item.appearance.accent }} />
-                      <span className="flex-1 p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.05)]" style={{ background: item.appearance.theme.surface, borderRadius: { sharp: 0, soft: 5, round: 9 }[item.appearance.theme.radius] }}>
-                        <span className="block h-1.5 w-2/3 rounded-full opacity-60" style={{ background: item.appearance.theme.ink }} />
-                        <span className="mt-2 block h-1 w-1/2 rounded-full opacity-20" style={{ background: item.appearance.theme.ink }} />
-                      </span>
+    // 外框與標題比照設定頁其他分組卡(SettingsWorkspace 的 renderSection):單層卡片。
+    <form onSubmit={submit} aria-labelledby="admin-style-title" className={cn(barVisible && "mb-24", "rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-5 pt-6 pb-6 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))] sm:px-6")}>
+      <div className="mb-6 flex flex-col gap-1">
+        <h3 id="admin-style-title" className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">{c.title}</h3>
+        <p className="text-[12px] text-ink/40">{c.subtitle}</p>
+      </div>
+      {/* 窄螢幕:預設風格 → 預覽 → 細部調整,調的時候預覽就在上面。
+          寬螢幕:左邊控制、右邊預覽跟著捲動停在畫面裡。 */}
+      <div className="grid min-w-0 gap-x-10 gap-y-7 [grid-template-areas:'presets'_'preview'_'controls'] xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)] xl:[grid-template-areas:'presets_preview'_'controls_preview']">
+        <fieldset disabled={pending} className="min-w-0 [grid-area:presets]">
+          <legend className="mb-3.5 text-[13px] font-medium text-ink/85">{c.presets}</legend>
+          <div className="grid grid-cols-2 gap-2.5">
+            {ADMIN_THEME_PRESETS.map((item) => {
+              const active = preset?.id === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => change(item.appearance)}
+                  className={cn(
+                    "rounded-[calc(12px*var(--admin-radius-scale,1))] p-1.5 text-left transition-shadow duration-150 outline-none focus-visible:shadow-[0_0_0_2px_var(--admin-accent)]",
+                    active ? "shadow-[0_0_0_1.5px_var(--admin-accent)]" : "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)]",
+                  )}
+                >
+                  <span aria-hidden className="flex h-14 gap-1.5 rounded-[8px] p-1.5" style={{ background: item.appearance.theme.background }}>
+                    <span className="w-3.5 rounded-[3px]" style={{ background: item.appearance.accent }} />
+                    <span className="flex-1 p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.05)]" style={{ background: item.appearance.theme.surface, borderRadius: { sharp: 0, soft: 5, round: 9 }[item.appearance.theme.radius] }}>
+                      <span className="block h-1.5 w-2/3 rounded-full opacity-60" style={{ background: item.appearance.theme.ink }} />
+                      <span className="mt-2 block h-1 w-1/2 rounded-full opacity-20" style={{ background: item.appearance.theme.ink }} />
                     </span>
-                    <span className="mt-1.5 flex items-center justify-between gap-1 px-1 pb-0.5 text-[12px] font-medium text-ink/80">
-                      {item.name[locale]}
-                      {active && <Check className="size-3.5 text-(--admin-accent)" aria-hidden />}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          <div className="min-w-0 [grid-area:preview] xl:sticky xl:top-6 xl:self-start">
-            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h4 className="text-[13px] font-medium text-ink/85">{c.preview}</h4>
-              <p className="text-[12px] text-ink/40">{c.previewNote}</p>
-            </div>
-            <AdminThemePreview mode={previewMode} style={previewStyle} icons={preview.theme.icons} />
+                  </span>
+                  <span className="mt-1.5 flex items-center justify-between gap-1 px-1 pb-0.5 text-[12px] font-medium text-ink/80">
+                    {item.name[locale]}
+                    {active && <Check className="size-3.5 text-(--admin-accent)" aria-hidden />}
+                  </span>
+                </button>
+              );
+            })}
           </div>
+        </fieldset>
 
-          <fieldset disabled={pending} className="min-w-0 space-y-5 [grid-area:controls]">
-            <legend className="sr-only">{c.title}</legend>
-            <Group title={c.colors}>
-              {/* 標籤在上:主色有九顆色票,並排會擠成兩行。 */}
-              <div className="grid gap-3.5">
-                {COLOR_KEYS.map((key) => (
-                  <div key={key}>
-                    <span aria-hidden className="mb-1 block text-[12px] text-ink/50">{c[key]}</span>
-                    <ColorSwatchPicker
-                      label={c[key]}
-                      value={key === "accent" ? draft.accent : draft.theme[key]}
-                      swatches={swatches[key]}
-                      invalid={key === "ink" ? unreadable.length > 0 : key !== "accent" && unreadable.includes(key)}
-                      onChange={(value) => (key === "accent" ? change({ ...draft, accent: value }) : setTheme({ [key]: value }))}
-                    />
-                  </div>
-                ))}
-              </div>
-              {unreadable.length > 0 && (
-                <p role="alert" className="mt-3 text-[12px] leading-relaxed text-red-600">
-                  {c.unreadable(unreadable.map((key) => c[key]).join(c.and))}
-                </p>
-              )}
-            </Group>
-            <Group title={c.font}>
-              <p id="theme-font-label" className="sr-only">{c.font}</p>
-              <SettingTabs
-                id="theme-font"
-                labelledBy="theme-font-label"
-                layout="list"
-                value={draft.theme.font}
-                tabs={ADMIN_FONTS.map((font) => ({ value: font.id, label: font.name[locale], labelStyle: { fontFamily: font.family } }))}
-                onChange={(value) => setTheme({ font: value as AdminAppearance["theme"]["font"] })}
-              />
-            </Group>
-            <Group title={c.shape}>
-              <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
-                {(["radius", "elevation"] as const).map((key) => (
-                  <div key={key} className="contents">
-                    <span id={`theme-${key}-label`} className="text-[12px] text-ink/50">{c[key]}</span>
-                    <SettingTabs
-                      id={`theme-${key}`}
-                      labelledBy={`theme-${key}-label`}
-                      value={draft.theme[key]}
-                      tabs={SHAPE_OPTIONS[key].map((value) => ({ value, label: c[value] }))}
-                      onChange={(value) => setTheme({ [key]: value })}
-                    />
-                  </div>
-                ))}
-              </div>
-            </Group>
-            <Group title={c.icons}>
-              <p id="theme-icons-label" className="sr-only">{c.icons}</p>
-              <SettingTabs
-                id="theme-icons"
-                labelledBy="theme-icons-label"
-                value={draft.theme.icons}
-                tabs={ADMIN_ICON_SETS.map((value) => ({ value, label: c[value] }))}
-                onChange={(value) => setTheme({ icons: value as AdminAppearance["theme"]["icons"] })}
-              />
-            </Group>
-          </fieldset>
+        <div className="min-w-0 [grid-area:preview] xl:sticky xl:top-6 xl:self-start">
+          <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h4 className="text-[13px] font-medium text-ink/85">{c.preview}</h4>
+            <p className="text-[12px] text-ink/40">{c.previewNote}</p>
+          </div>
+          <AdminThemePreview mode={previewMode} style={previewStyle} icons={preview.theme.icons} />
         </div>
+
+        <fieldset disabled={pending} className="min-w-0 space-y-5 [grid-area:controls]">
+          <legend className="sr-only">{c.title}</legend>
+          <Group title={c.colors}>
+            {/* 標籤在上:主色有九顆色票,並排會擠成兩行。 */}
+            <div className="grid gap-3.5">
+              {COLOR_KEYS.map((key) => (
+                <div key={key}>
+                  <span aria-hidden className="mb-1 block text-[12px] text-ink/50">{c[key]}</span>
+                  <ColorSwatchPicker
+                    label={c[key]}
+                    value={key === "accent" ? draft.accent : draft.theme[key]}
+                    swatches={swatches[key]}
+                    invalid={key === "ink" ? unreadable.length > 0 : key !== "accent" && unreadable.includes(key)}
+                    onChange={(value) => (key === "accent" ? change({ ...draft, accent: value }) : setTheme({ [key]: value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            {unreadable.length > 0 && (
+              <p role="alert" className="mt-3 text-[12px] leading-relaxed text-red-600">
+                {c.unreadable(unreadable.map((key) => c[key]).join(c.and))}
+              </p>
+            )}
+          </Group>
+          <Group title={c.font}>
+            <p id="theme-font-label" className="sr-only">{c.font}</p>
+            <SettingTabs
+              id="theme-font"
+              labelledBy="theme-font-label"
+              layout="list"
+              value={draft.theme.font}
+              tabs={ADMIN_FONTS.map((font) => ({ value: font.id, label: font.name[locale], labelStyle: { fontFamily: font.family } }))}
+              onChange={(value) => setTheme({ font: value as AdminAppearance["theme"]["font"] })}
+            />
+          </Group>
+          <Group title={c.shape}>
+            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+              {(["radius", "elevation"] as const).map((key) => (
+                <div key={key} className="contents">
+                  <span id={`theme-${key}-label`} className="text-[12px] text-ink/50">{c[key]}</span>
+                  <SettingTabs
+                    id={`theme-${key}`}
+                    labelledBy={`theme-${key}-label`}
+                    value={draft.theme[key]}
+                    tabs={SHAPE_OPTIONS[key].map((value) => ({ value, label: c[value] }))}
+                    onChange={(value) => setTheme({ [key]: value })}
+                  />
+                </div>
+              ))}
+            </div>
+          </Group>
+          <Group title={c.icons}>
+            <p id="theme-icons-label" className="sr-only">{c.icons}</p>
+            <SettingTabs
+              id="theme-icons"
+              labelledBy="theme-icons-label"
+              value={draft.theme.icons}
+              tabs={ADMIN_ICON_SETS.map((value) => ({ value, label: c[value] }))}
+              onChange={(value) => setTheme({ icons: value as AdminAppearance["theme"]["icons"] })}
+            />
+          </Group>
+        </fieldset>
       </div>
 
       <SaveBar visible={barVisible} title={bar.title} note={bar.note} alert={failure !== null}>

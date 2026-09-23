@@ -49,10 +49,16 @@ export interface SettingOption {
   description?: LocalizedString;
 }
 
+/**
+ * 1.52.0:數字設定的單位。存的值不變(仍是這個單位的數字),設定頁在欄位旁邊換算成
+ * 好讀的說法,例如 1440 分鐘旁邊寫「= 24 小時」。
+ */
+export type SettingNumberUnit = "minutes";
+
 export type SettingField = SettingFieldBase &
   (
     | { type: "text" | "textarea" }
-    | { type: "number" }
+    | { type: "number"; unit?: SettingNumberUnit }
     | { type: "boolean" }
     // 1.44.0:presentation: "tabs" 畫成一排分頁(佔整列),適合二選一、三選一的「用哪個服務」。
     | { type: "select"; options: SettingOption[]; presentation?: "tabs" }

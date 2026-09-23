@@ -202,7 +202,7 @@ export function PasskeysManager({ initialPasskeys, now }: PasskeysManagerProps) 
           <FaceIdIcon className="size-9 text-ink/20" />
           <div className="flex flex-col gap-1">
             <p className="text-[13px] text-ink/45">{t("passkeys.noPasskeysYet")}</p>
-            <p className="text-[12px] text-ink/35">
+            <p className="text-[12px] text-balance text-ink/35">
               {t("passkeys.noPasskeysDesc")}
             </p>
           </div>

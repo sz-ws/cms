@@ -8,6 +8,7 @@ import { StackedList, StackedListItem } from "@/components/ui/stacked-list";
 import { MediaImage } from "@/components/ui/media-image";
 import { getLocale } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
+import { getMessages } from "@/lib/i18n/index";
 
 // core-v2 §3.3/§3.5:generic public list view。列出某 content type 的 published
 // entry。layout:"table"(預設,單列連結)、"grid"(響應式卡片格,cover/title/meta)或
@@ -70,7 +71,7 @@ export async function ListView({
       <h1 className="text-3xl font-semibold text-gray-900">{heading}</h1>
 
       {items.length === 0 ? (
-        <p className="text-gray-500">Nothing published yet.</p>
+        <p className="text-gray-500">{getMessages(locale)["publicList.empty"]}</p>
       ) : isGrid ? (
         <GridBody
           items={items}

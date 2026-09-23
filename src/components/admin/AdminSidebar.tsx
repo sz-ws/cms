@@ -33,6 +33,7 @@ import { AdminNavGroup } from "./AdminNavGroup";
 import { AdminNavLink } from "./AdminNavLink";
 import { NavIcon } from "./adminNavIcons";
 import { pickActiveHref } from "./nav-active";
+import { roleLabel } from "./role-label";
 import { setNavOpen, useNavOpen } from "./nav-open-store";
 import type { AdminNavGroupData, AdminNavItem, AdminNavKind } from "./nav-groups";
 
@@ -119,6 +120,8 @@ export function AdminSidebar({
   const searchParams = useSearchParams();
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
+  // 使用者區塊與帳號選單都顯示角色名稱(不是 "admin" 這類內部代碼)。
+  const roleName = roleLabel(user, t);
 
   const { state, isMobile } = useSidebar();
   const docked = state === "collapsed" && !isMobile;
@@ -332,7 +335,7 @@ export function AdminSidebar({
               "hover:shadow-[0_0_0_1px_rgba(20,18,22,0.06),0_2px_4px_-2px_rgba(20,18,22,0.06),0_16px_34px_-14px_rgba(30,20,50,0.20)] active:scale-[0.98]",
               "in-data-[collapsible=dock]:bg-transparent in-data-[collapsible=dock]:shadow-none",
             )}
-            aria-label="Account menu"
+            aria-label={t("sidebar.accountMenu")}
           >
             <div className="flex min-w-0 items-center gap-x-2.5">
               {/* 頭像 chip:有上傳用圖(51a329f),否則退回 brand-gradient 縮寫。 */}
@@ -360,7 +363,7 @@ export function AdminSidebar({
                   {user.name}
                 </div>
                 <div className="truncate text-[11px] text-ink/40">
-                  {user.staffRole?.name ?? user.role}
+                  {roleName}
                 </div>
               </div>
             </div>
@@ -384,13 +387,7 @@ export function AdminSidebar({
                     ? t("account.noEmail")
                     : user.email}
                   {" · "}
-                  {user.staffRole
-                    ? user.staffRole.name
-                    : user.role === "admin"
-                      ? t("account.roleAdmin")
-                      : user.role === "guest"
-                        ? t("account.roleGuest")
-                        : t("account.roleEditor")}
+                  {roleName}
                 </span>
               </MenuHeader>
             </MenuSection>

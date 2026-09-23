@@ -2,6 +2,7 @@
 
 import { ArrowUpIcon, ArrowDownIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { useExtT } from "../ext-locale";
 
 // Tier 2 v1.2: shared UI parts for RepeaterField + BlocksField. Both render an
 // ordered list of instances (rows / blocks) with up/down reorder + remove
@@ -71,6 +72,7 @@ export function InstanceCard({
   onRemove: () => void;
   children: ReactNode;
 }) {
+  const t = useExtT();
   return (
     <li className="flex flex-col gap-3 rounded-[14px] admin:rounded-[calc(14px*var(--admin-radius-scale,1))] bg-white admin:bg-surface p-3 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_6px_0_rgba(0,0,0,0.03)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_6px_0_rgba(0,0,0,0.03))]">
       <div className="flex items-center gap-2">
@@ -84,25 +86,25 @@ export function InstanceCard({
         )}
         {summary !== undefined && (
           <span className="min-w-0 flex-1 truncate text-[13px] text-black/55 admin:text-ink/55">
-            {summary || <span className="text-black/25 admin:text-ink/25">(empty)</span>}
+            {summary || <span className="text-black/25 admin:text-ink/25">{t("dxField.emptyRow")}</span>}
           </span>
         )}
         <span className={summary === undefined ? "flex-1" : undefined} />
         <IconButton
-          label="Move up"
+          label={t("dxField.moveUp")}
           disabled={disabled || index === 0}
           onClick={onUp}
         >
           <ArrowUpIcon className="size-3.5" />
         </IconButton>
         <IconButton
-          label="Move down"
+          label={t("dxField.moveDown")}
           disabled={disabled || index === count - 1}
           onClick={onDown}
         >
           <ArrowDownIcon className="size-3.5" />
         </IconButton>
-        <IconButton label="Remove" disabled={disabled} onClick={onRemove}>
+        <IconButton label={t("dxField.remove")} disabled={disabled} onClick={onRemove}>
           <XIcon className="size-3.5" />
         </IconButton>
       </div>

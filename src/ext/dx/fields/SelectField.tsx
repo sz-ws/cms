@@ -8,6 +8,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
+import { useExtT } from "../ext-locale";
 import type { FieldComponentProps } from "./types";
 
 // select field:searchable combobox(base-ui Combobox,同 shadcn "Combobox"
@@ -23,6 +24,7 @@ export function SelectField({
   disabled,
 }: FieldComponentProps<string>) {
   const options = field.options ?? [];
+  const t = useExtT();
 
   return (
     <Combobox
@@ -35,12 +37,12 @@ export function SelectField({
     >
       <ComboboxInput
         id={`field-${field.key}`}
-        placeholder="Select…"
+        placeholder={t("dxField.select.placeholder")}
         aria-invalid={Boolean(error)}
         showClear={Boolean(value)}
       />
       <ComboboxContent>
-        <ComboboxEmpty>No matches.</ComboboxEmpty>
+        <ComboboxEmpty>{t("dxField.noMatches")}</ComboboxEmpty>
         <ComboboxList>
           {(item: string) => (
             <ComboboxItem key={item} value={item}>

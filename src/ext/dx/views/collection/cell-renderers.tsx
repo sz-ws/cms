@@ -5,6 +5,7 @@ import { StatusBadge } from "../StatusBadge";
 import { fmtDate, truncate } from "../field-utils";
 import { RelationCell } from "./RelationCell";
 import { MediaImage } from "@/components/ui/media-image";
+import { format, getMessages, type Locale } from "@/lib/i18n/index";
 
 // 依 field type 把 data 值渲染為表格 cell。純展示,server-renderable(無 hooks)。
 // Paper & Ink:數字 tabular-nums、boolean ring-dot、select 借 StatusBadge 藥丸、
@@ -69,6 +70,8 @@ export function renderCell(
   value: unknown,
   /** 站台時區;date 欄位用(1.41.0)。 */
   timeZone?: string,
+  /** 後台語系;是／否與「N 項」的字。 */
+  locale: Locale = "en",
 ): ReactNode {
   if (value === undefined || value === null || value === "") {
     // boolean false 是有效值,交給下方分支;其餘空值統一 em-dash。
@@ -91,7 +94,7 @@ export function renderCell(
       return (
         <span className="inline-flex items-center gap-1.5 text-black/55 admin:text-ink/55">
           <RingDot on={value === true} />
-          <span className="text-[12px]">{value === true ? "yes" : "no"}</span>
+          <span className="text-[12px]">{getMessages(locale)[value === true ? "collection.cell.yes" : "collection.cell.no"]}</span>
         </span>
       );
     case "date": {
@@ -148,13 +151,13 @@ export function renderCell(
       // Tier 2 v1.2: repeater → "N items" count chip.
       const n = Array.isArray(value) ? value.length : 0;
       if (n === 0) return EMPTY;
-      return <Chip>{`${n} item${n === 1 ? "" : "s"}`}</Chip>;
+      return <Chip>{format(getMessages(locale)[n === 1 ? "collection.cell.item" : "collection.cell.items"], { count: n })}</Chip>;
     }
     case "blocks": {
       // Tier 2 v1.2: blocks → "N blocks" count chip.
       const n = Array.isArray(value) ? value.length : 0;
       if (n === 0) return EMPTY;
-      return <Chip>{`${n} block${n === 1 ? "" : "s"}`}</Chip>;
+      return <Chip>{format(getMessages(locale)[n === 1 ? "collection.cell.block" : "collection.cell.blocks"], { count: n })}</Chip>;
     }
     default:
       return <span className="text-black/85 admin:text-ink/85">{truncate(String(value))}</span>;

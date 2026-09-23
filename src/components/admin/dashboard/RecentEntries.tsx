@@ -26,6 +26,7 @@ interface RecentEntriesProps {
     empty: string;
     published: string;
     draft: string;
+    untitled: string;
   };
 }
 
@@ -59,7 +60,7 @@ export function RecentEntries({ entries, now, locale, timeZone, labels }: Recent
               >
                 <StatusDot tone={e.status === "published" ? "good" : "draft"} />
                 <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink/85">
-                  {e.title}
+                  {e.title || labels.untitled}
                 </span>
                 <span className="hidden w-[90px] shrink-0 text-[12px] text-ink/40 sm:inline">
                   {e.typeLabel}

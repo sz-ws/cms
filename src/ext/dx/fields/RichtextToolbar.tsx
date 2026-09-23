@@ -15,6 +15,7 @@ import {
   ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useExtT } from "../ext-locale";
 
 // C.5b §1: richtext toolbar. Icon buttons, 40px hit areas, active mark rendered
 // in dither-blue, white surface + shadow-ring (Paper & Ink). Purely a view over
@@ -63,13 +64,14 @@ function Divider() {
 }
 
 export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolbarProps) {
+  const t = useExtT();
   function toggleLink() {
     if (editor.isActive("link")) {
       editor.chain().focus().unsetLink().run();
       return;
     }
     const prev = (editor.getAttributes("link").href as string | undefined) ?? "";
-    const url = window.prompt("Link URL", prev);
+    const url = window.prompt(t("dxField.richtext.linkPrompt"), prev);
     if (url === null) return; // cancelled
     if (url.trim() === "") {
       editor.chain().focus().unsetLink().run();
@@ -88,7 +90,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
   return (
     <div className="flex flex-wrap items-center gap-0.5 rounded-t-[13px] admin:rounded-t-[calc(13px*var(--admin-radius-scale,1))] bg-white admin:bg-surface px-2 py-1.5 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.06)]">
       <ToolButton
-        label="Bold"
+        label={t("dxField.richtext.bold")}
         disabled={disabled}
         active={editor.isActive("bold")}
         onClick={() => editor.chain().focus().toggleBold().run()}
@@ -96,7 +98,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
         <BoldIcon className={iconCls} />
       </ToolButton>
       <ToolButton
-        label="Italic"
+        label={t("dxField.richtext.italic")}
         disabled={disabled}
         active={editor.isActive("italic")}
         onClick={() => editor.chain().focus().toggleItalic().run()}
@@ -104,7 +106,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
         <ItalicIcon className={iconCls} />
       </ToolButton>
       <ToolButton
-        label="Strikethrough"
+        label={t("dxField.richtext.strike")}
         disabled={disabled}
         active={editor.isActive("strike")}
         onClick={() => editor.chain().focus().toggleStrike().run()}
@@ -115,7 +117,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
       <Divider />
 
       <ToolButton
-        label="Heading 2"
+        label={t("dxField.richtext.h2")}
         disabled={disabled}
         active={editor.isActive("heading", { level: 2 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
@@ -123,7 +125,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
         <Heading2Icon className={iconCls} />
       </ToolButton>
       <ToolButton
-        label="Heading 3"
+        label={t("dxField.richtext.h3")}
         disabled={disabled}
         active={editor.isActive("heading", { level: 3 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
@@ -134,7 +136,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
       <Divider />
 
       <ToolButton
-        label="Bullet list"
+        label={t("dxField.richtext.bulletList")}
         disabled={disabled}
         active={editor.isActive("bulletList")}
         onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -142,7 +144,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
         <ListIcon className={iconCls} />
       </ToolButton>
       <ToolButton
-        label="Ordered list"
+        label={t("dxField.richtext.orderedList")}
         disabled={disabled}
         active={editor.isActive("orderedList")}
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
@@ -150,7 +152,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
         <ListOrderedIcon className={iconCls} />
       </ToolButton>
       <ToolButton
-        label="Blockquote"
+        label={t("dxField.richtext.quote")}
         disabled={disabled}
         active={editor.isActive("blockquote")}
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -161,7 +163,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
       <Divider />
 
       <ToolButton
-        label={editor.isActive("link") ? "Remove link" : "Add link"}
+        label={t(editor.isActive("link") ? "dxField.richtext.removeLink" : "dxField.richtext.addLink")}
         disabled={disabled}
         active={editor.isActive("link")}
         onClick={toggleLink}
@@ -172,7 +174,7 @@ export function RichtextToolbar({ editor, onPickImage, disabled }: RichtextToolb
           <LinkIcon className={iconCls} />
         )}
       </ToolButton>
-      <ToolButton label="Insert image" disabled={disabled} onClick={onPickImage}>
+      <ToolButton label={t("dxField.richtext.image")} disabled={disabled} onClick={onPickImage}>
         <ImageIcon className={iconCls} />
       </ToolButton>
     </div>

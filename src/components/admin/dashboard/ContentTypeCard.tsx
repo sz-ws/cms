@@ -10,7 +10,7 @@ import { StatusDot } from "./StatusDot";
 // 模板」承載差異巨大的資料 —— 31 筆的類型跟 1 筆的類型長得一模一樣,而 ring
 // 對其中三張根本無意義(投稿類 0% 發布 = 空環像壞掉;單筆 100% = 噪音)。
 // 這版改成「卡片形態跟著資料形狀走」,不是固定模板:
-//   · hero —— 內容量最大的類型(佔全站絕大多數),吃滿整列 + 光暈殼 + 橫向
+//   · hero —— 內容量最大的類型(佔全站絕大多數),吃滿整列 + 橫向
 //     比例條(bare ProportionBar,寬版面才用得起橫向空間,ring 用不到)。
 //   · ratio —— 已發布/草稿都有且量夠,發布率才承載資訊 → 保留 compact ring。
 //   · inbox —— 0 已發布、有草稿(表單投稿無發布流程),不畫發布率,改標「待處理」。
@@ -111,8 +111,9 @@ function CardActions({
 }
 
 // ── HERO ────────────────────────────────────────────────────────────────────
-// 內容量最大的類型。光暈殼(login 的 hero 手法:20px 殼 p-1.5 → 14px 卡),整列
-// 寬度,橫向 proportion bar 吃滿水平空間。一頁只有一張 hero(design doc 規定)。
+// 內容量最大的類型。整列寬度,橫向 proportion bar 吃滿水平空間。一頁只有一張 hero
+// (design doc 規定)。外框跟其他儀表板卡片一樣只有一層:原本的光暈殼在「細邊線」
+// 風格下看起來是兩道框。
 function HeroCard({
   stats,
   labels,
@@ -126,54 +127,52 @@ function HeroCard({
   const sharePct = Math.round(shareOfTotal * 100);
 
   return (
-    <div className="rounded-[calc(20px*var(--admin-radius-scale,1))] bg-surface/55 p-1.5 backdrop-blur">
-      <div
-        className={cn(
-          "flex flex-col gap-6 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-[22px] py-5 md:flex-row md:items-center md:gap-8",
-          SHADOW_RING,
+    <div
+      className={cn(
+        "flex flex-col gap-6 rounded-[calc(16px*var(--admin-radius-scale,1))] bg-surface px-[22px] py-5 md:flex-row md:items-center md:gap-8",
+        SHADOW_RING,
+      )}
+    >
+      {/* Left: identity + the one large number + why-it's-featured caption. */}
+      <div className="flex shrink-0 flex-col gap-1 md:min-w-[190px]">
+        <div className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
+          {typeLabel}
+        </div>
+        <div className="text-[12px] text-ink/40">{extName}</div>
+        <div className="mt-2 text-[46px] font-semibold leading-[0.9] tabular-nums tracking-[-0.03em] text-ink/90">
+          <StatNumber value={total} />
+        </div>
+        {sharePct > 0 && (
+          <div className="mt-1 text-[12px] tabular-nums text-ink/40">
+            {sharePct}% {labels.ofAllContent}
+          </div>
         )}
-      >
-        {/* Left: identity + the one large number + why-it's-featured caption. */}
-        <div className="flex shrink-0 flex-col gap-1 md:min-w-[190px]">
-          <div className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
-            {typeLabel}
-          </div>
-          <div className="text-[12px] text-ink/40">{extName}</div>
-          <div className="mt-2 text-[46px] font-semibold leading-[0.9] tabular-nums tracking-[-0.03em] text-ink/90">
-            <StatNumber value={total} />
-          </div>
-          {sharePct > 0 && (
-            <div className="mt-1 text-[12px] tabular-nums text-ink/40">
-              {sharePct}% {labels.ofAllContent}
-            </div>
-          )}
-        </div>
+      </div>
 
-        {/* Center: horizontal proportion bar (published vs draft) — the visual a
-            ring can't be in a wide slot — over the precise split readings. */}
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-3.5">
-          <ProportionBar
-            height={14}
-            segments={[
-              { id: "published", label: labels.published, value: published },
-              { id: "draft", label: labels.draft, value: drafts },
-            ]}
-            colors={[ACCENT, "rgba(0,0,0,0.14)"]}
+      {/* Center: horizontal proportion bar (published vs draft) — the visual a
+          ring can't be in a wide slot — over the precise split readings. */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-3.5">
+        <ProportionBar
+          height={14}
+          segments={[
+            { id: "published", label: labels.published, value: published },
+            { id: "draft", label: labels.draft, value: drafts },
+          ]}
+          colors={[ACCENT, "rgba(0,0,0,0.14)"]}
+        />
+        <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+          <SplitStat tone="good" value={published} label={labels.published} />
+          <SplitStat
+            tone="draft"
+            value={drafts}
+            label={drafts === 1 ? labels.draft : labels.drafts}
           />
-          <div className="flex flex-wrap gap-x-6 gap-y-1.5">
-            <SplitStat tone="good" value={published} label={labels.published} />
-            <SplitStat
-              tone="draft"
-              value={drafts}
-              label={drafts === 1 ? labels.draft : labels.drafts}
-            />
-          </div>
         </div>
+      </div>
 
-        {/* Right: actions, bottom-aligned on wide layouts. */}
-        <div className="flex shrink-0 items-end md:self-stretch">
-          <CardActions stats={stats} labels={labels} />
-        </div>
+      {/* Right: actions, bottom-aligned on wide layouts. */}
+      <div className="flex shrink-0 items-end md:self-stretch">
+        <CardActions stats={stats} labels={labels} />
       </div>
     </div>
   );

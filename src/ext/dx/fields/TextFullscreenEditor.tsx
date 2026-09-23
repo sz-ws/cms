@@ -2,6 +2,7 @@
 
 import {
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useRef,
@@ -12,7 +13,23 @@ import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import type { FieldComponentProps } from "./types";
 import { fieldLabel } from "../views/field-utils";
-import { useExtLocale } from "../ext-locale";
+import { useExtLocale, useExtT } from "../ext-locale";
+
+const KBD_CLASS = "rounded bg-black/[0.06] admin:bg-ink/[0.06] px-1.5 py-0.5 font-mono";
+const KEYS: Record<string, string> = { esc: "esc", enter: "⌘ enter" };
+
+/** 字典裡的 {esc}／{enter} 換成 <kbd>,語序交給各語言的字串決定。 */
+function withKeys(text: string): ReactNode[] {
+  return text.split(/\{(esc|enter)\}/).map((part, i) =>
+    i % 2 === 1 ? (
+      <kbd key={i} className={KBD_CLASS}>
+        {KEYS[part]}
+      </kbd>
+    ) : (
+      part
+    ),
+  );
+}
 
 /**
  * 多行 text 編輯:
@@ -33,6 +50,7 @@ export function TextFullscreenEditor({
   const [open, setOpen] = useState(false);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const label = fieldLabel(field, useExtLocale());
+  const t = useExtT();
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -83,7 +101,7 @@ export function TextFullscreenEditor({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={`${label} — expanded editor`}
+          aria-label={t("dxField.text.expandedLabel", { label })}
           className="fixed inset-0 z-50 flex flex-col bg-[#fbfaf9]/95 admin:bg-background/95 backdrop-blur-md p-4 sm:p-8"
         >
           <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-3">
@@ -93,12 +111,12 @@ export function TextFullscreenEditor({
               </span>
               <button
                 type="button"
-                aria-label="Collapse editor"
+                aria-label={t("dxField.text.collapseEditor")}
                 onClick={close}
                 className="inline-flex h-9 items-center gap-1.5 rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] border border-black/10 admin:border-ink/10 bg-white admin:bg-surface px-3 text-[13px] font-medium text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06))] transition-colors hover:bg-black/[0.03] admin:hover:bg-ink/[0.03] active:scale-[0.96]"
               >
                 <Shrink className="size-3.5" />
-                Collapse
+                {t("dxField.text.collapse")}
                 <span className="ml-1 hidden text-black/35 admin:text-ink/35 sm:inline">esc</span>
               </button>
             </div>
@@ -110,9 +128,7 @@ export function TextFullscreenEditor({
               className={fullscreenClass}
             />
             <p className="text-center text-[11.5px] text-black/35 admin:text-ink/35">
-              Press <kbd className="rounded bg-black/[0.06] admin:bg-ink/[0.06] px-1.5 py-0.5 font-mono">esc</kbd>{" "}
-              or <kbd className="rounded bg-black/[0.06] admin:bg-ink/[0.06] px-1.5 py-0.5 font-mono">⌘ enter</kbd>{" "}
-              to collapse.
+              {withKeys(t("dxField.text.collapseHint"))}
             </p>
           </div>
         </div>
@@ -127,7 +143,7 @@ export function TextFullscreenEditor({
           />
           <button
             type="button"
-            aria-label="Expand editor"
+            aria-label={t("dxField.text.expand")}
             onClick={() => setOpen(true)}
             disabled={disabled}
             className="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-[6px] admin:rounded-[calc(6px*var(--admin-radius-scale,1))] text-black/45 admin:text-ink/45 transition-colors hover:bg-black/[0.04] admin:hover:bg-ink/[0.04] hover:text-black/85 admin:hover:text-ink/85 active:scale-[0.94] disabled:opacity-50"

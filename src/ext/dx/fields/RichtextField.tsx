@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import type { JSONContent } from "@tiptap/core";
 import type { FieldComponentProps } from "./types";
+import { useExtT } from "../ext-locale";
 
 // C.5b §1: richtext field. Stored value = Tiptap JSON document object
 // (dx-field-components.md `richtext` row). The heavy Tiptap/ProseMirror editor
@@ -16,13 +17,18 @@ import type { FieldComponentProps } from "./types";
 // Value type here is `unknown` (the FormView holds field values as unknown and
 // the FIELD_COMPONENTS map is type-erased); the editor narrows internally.
 
+function EditorLoading() {
+  const t = useExtT();
+  return (
+    <div className="flex min-h-52 items-center justify-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface text-[13px] text-black/45 admin:text-ink/45 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))]">
+      {t("dxField.editorLoading")}
+    </div>
+  );
+}
+
 const RichtextEditor = dynamic(() => import("./RichtextEditor"), {
   ssr: false,
-  loading: () => (
-    <div className="flex min-h-52 items-center justify-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-white admin:bg-surface text-[13px] text-black/45 admin:text-ink/45 shadow-[0_0_0_1px_rgba(0,0,0,0.08)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))]">
-      Loading editor…
-    </div>
-  ),
+  loading: () => <EditorLoading />,
 });
 
 export function RichtextField({

@@ -159,7 +159,7 @@ export function CollectionTable({
               ))}
               <th className="px-4 py-2.5 text-right">
                 <span className="text-[12px] font-medium text-black/45 admin:text-ink/45">
-                  Status
+                  {t("collection.statusColumn")}
                 </span>
               </th>
             </tr>
@@ -182,7 +182,7 @@ export function CollectionTable({
                       <RingCheckbox
                         checked={isSel}
                         onChange={() => toggle(row.id)}
-                        label={`Select row ${row.id}`}
+                        label={t("collection.selectRow")}
                       />
                     </td>
                   )}

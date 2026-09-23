@@ -55,7 +55,8 @@ export interface SettingFieldBase {
 export type SettingField = SettingFieldBase &
   (
     | { type: "text" | "textarea" }
-    | { type: "number" }
+    // 1.52.0:unit 讓設定頁在欄位旁換算(1440 分鐘 → 「= 24 小時」),存的值不變。
+    | { type: "number"; unit?: "minutes" }
     | { type: "boolean" }
     // §1 #11:settings select 已 value/label 分離,label 可乾淨 localize。
     // 1.44.0:presentation: "tabs" 畫成分頁;選項可帶 logo(站內圖片路徑)與選到時的說明。
@@ -417,6 +418,7 @@ const settingSchema = z
     required: z.boolean().optional(),
     secret: z.boolean().optional(),
     type: z.enum(["text", "textarea", "number", "boolean", "select", "color"]),
+    unit: z.enum(["minutes"]).optional(),
     options: z
       .array(
         z.object({ value: z.string(), label: localizedStringSchema }).strict(),
@@ -456,6 +458,13 @@ const settingSchema = z
         code: "custom",
         message: "options are only valid for select settings",
         path: ["options"],
+      });
+    }
+    if (setting.unit !== undefined && setting.type !== "number") {
+      ctx.addIssue({
+        code: "custom",
+        message: "unit is only valid for number settings",
+        path: ["unit"],
       });
     }
     if (setting.swatches !== undefined && setting.type !== "color") {

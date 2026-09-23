@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { SlugFieldProps } from "./types";
+import { useExtT } from "../ext-locale";
 
 // slug field: auto-kebab-cases from the slugField source value (wired by
 // FormView via the `sourceValue` prop) until the user edits the slug input
@@ -36,6 +37,7 @@ export function SlugField({
   // directly into the slug input, or can be manually re-locked/unlocked.
   const [locked, setLocked] = useState(true);
   const lastAutoValue = useRef<string>("");
+  const t = useExtT();
 
   useEffect(() => {
     if (!locked || sourceValue === undefined) return;
@@ -66,8 +68,8 @@ export function SlugField({
         size="icon"
         disabled={disabled}
         aria-pressed={locked}
-        aria-label={locked ? "Unlock slug (stop auto-sync)" : "Lock slug (auto-sync from title)"}
-        title={locked ? "Auto-syncing from title" : "Manually edited"}
+        aria-label={t(locked ? "dxField.slug.unlock" : "dxField.slug.lock")}
+        title={t(locked ? "dxField.slug.syncing" : "dxField.slug.manual")}
         className={cn(
           "h-9 w-9 shrink-0 rounded-3xl transition-[background-color,color] active:scale-[0.96]",
           locked && "text-primary",
