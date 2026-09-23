@@ -99,12 +99,23 @@ shop 這邊只做一件事:`public-pages.tsx` 用 `getExtRuntime().byId("shop-op
 
 | | 舊結帳(0.1.0 行為) | 商城營運模式 |
 |---|---|---|
-| 身分 | 訪客,免登入 | 需登入(guest 以上);未登入頂端顯示「請先登入會員後結帳」與登入連結(`/login?next=/shop/checkout`),送出會被伺服器 401 |
+| 身分 | 訪客,免登入 | 需登入(guest 以上);未登入頂端顯示「結帳前請先登入會員」,「登入」連到 `/login?next=/shop/checkout`,送出會被伺服器 401 |
 | 電話、收件地址 | 選填(`requireContact` 可改必填) | 必填 |
 | 推薦碼 | 無 | 依 `referralMode`:欄位 / 只用連結 / 不用 |
 | 「我的訂單」連結 | 無 | 有(`/shop/orders`,shop-operations 的公開頁) |
 | 匯款成立後的說明 | 「請於三日內匯款」 | 「請依「我的訂單」顯示的付款期限付款」(期限 = shop-operations 的 `holdMinutes`,逾期自動取消並放回庫存) |
 | 匯款末五碼回報 | `POST /api/ext/shop/transfer-report` | `POST /api/ext/shop-operations/actions`,body 加 `action:"report"` |
+
+### 訪客結帳(0.7.0)
+
+受管訂單那一邊可以開放沒登入的人結帳:`commerce:orders` provider 多一個
+`guestCheckout(): Promise<boolean>`,回 true 時 `public-pages.tsx` 把 `guestCheckout: true`
+交給 `resolveCheckoutOptions`(只在受管模式、沒登入時有效)。沒有這個函式的 provider 照舊要登入。
+
+- 頂端不擋登入,改成「已經是會員？登入」(連到 `/login?next=/shop/checkout`;給了
+  `onSignIn` 就改呼叫它),沒有「我的訂單」連結。
+- 匯款訂單的結局頁請客人「匯款後到訂單查詢回報」(`/shop/orders`),並記下訂單編號。
+- 伺服器要不要收訪客訂單、怎麼查單,由受管訂單那一邊決定;這裡只管頁面。
 
 ### 結帳協定的差異
 
@@ -231,12 +242,14 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
   訂單金額 −(商品金額 − 折扣),`orderShipping`),也不超過訂單還沒退的金額:從運費 150
   的訂單退一件 150 元的商品,最多退 300,不是整張訂單的金額。整張退、或瑕疵品由店家負擔
   運費時,可以把預設金額改成連運費一起退。
-- **權限**:API 只給 admin(`returns/…`,見 `commerce-kit/returns-api.ts`);後台頁本來就
-  只開給 admin。
+- **權限**:API(`returns/…`,見 `commerce-kit/returns-api.ts`)跟著退貨管理頁(`accessAs`):
+  自訂角色要這一頁的「檢視」才看得到,「編輯」才能建立與處理退貨;只能看的角色沒有
+  「新增退貨」與下一步。預設角色照舊只有管理者。
 - **搜尋**:頂欄可找退貨編號、訂單編號、姓名、電話與建立期間;⌘K 也找得到。狀態名稱在
   狀態組 `shop:returns`,站台可用 `filter:statusSets` 改名。
 - **從訂單開退貨**:訂單列表(或商城營運的訂單明細)的「申請退貨」帶著訂單編號打開
-  「新增退貨」(`?order=`)。
+  「新增退貨」(`?order=`)。只有能在退貨管理建立退貨的角色看得到;商品都已經申請退貨的
+  訂單不給(0.7.0)。
 
 表(migration `0004_returns`):`ext_shop_return_requests`(退貨)、`ext_shop_return_events`
 (處理紀錄)、`ext_shop_return_operations`(ledger-kit 交易收據)。
@@ -259,8 +272,10 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
   自訂殼層直接沿用即可拿到相同的預設與優先序。
 - 換整頁版面 = 改 `public-pages.tsx` 的殼,或整組換掉 publicRoutes 的 component。
 - `CheckoutView` 的 props:`cardEnabled`、`transferEnabled`(必填);`shippingConfig`、
-  `promoEnabled`、`managedOrders`、`signedIn`、`referralMode`、`requireContact`、
-  `notice`(選填,預設同 `resolveCheckoutOptions`)。
+  `promoEnabled`、`managedOrders`、`signedIn`、`guestCheckout`、`referralMode`、
+  `requireContact`、`notice`、`contact`(選填,預設同 `resolveCheckoutOptions`)。
+  0.7.0 另有兩個函式 prop,只能從 client 元件傳:`onSignIn`(按「登入」時做的事)、
+  `afterOrder({ orderNo, email })`(匯款訂單結局頁下面多放的東西)。
 - 結帳協定不變即可:POST `/api/ext/shop/checkout`(items+聯絡資料+method;商城營運
   模式另加 requestId 與 referralCode,見上節)、匯款回報依模式打不同端點;session
   三種 kind 的處理見 CheckoutView(form-post 自動送出 / redirect / manual 指示)。
@@ -297,6 +312,23 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 
 ## 版本
 
+- **0.7.0**:需要 core 1.52.0。
+  - 訪客結帳(見「訪客結帳」一節):受管訂單那一邊開放時,沒登入也能結帳,頂端改成
+    「已經是會員？登入」,匯款訂單的結局頁請客人用訂單編號查詢。`resolveCheckoutOptions`
+    多一個 `guestCheckout`;`CheckoutView` 多 `onSignIn`、`afterOrder` 兩個選填 prop。
+  - 已登入的人結帳時,Email 與姓名先帶入帳號上的資料(`checkoutContact`)。
+  - 在「角色與權限」只拿到「檢視」的角色,訂單、對帳佇列、運費、優惠碼與退貨管理只列出
+    資料:沒有訂單動作、核可與退回、新增退貨與下一步,運費欄位不能改、沒有儲存(試算照常),
+    優惠碼沒有建立、編輯與刪除(core `canEditCurrentPage()`)。打不開對帳佇列的角色,訂單頁
+    不顯示「待對帳」。訂單頁的「申請退貨」照商城營運的兩條規則:只給能在退貨管理建立退貨
+    (那一頁的「編輯」)的角色;商品都已經申請退貨(未拒絕、未取消的退貨件數達到訂購件數)
+    的訂單改說「商品都已申請退貨」,不給連結。
+  - 結帳頁、訂單、對帳佇列、運費與優惠碼頁的中文用全形標點(「運費（宅配）」「優惠碼（選填）」);
+    優惠碼列表寫成「打 9 折」「折抵 NT$ 100」;代碼欄的範例改成 EXAMPLE10,不會被當成真的優惠碼。
+  - 結帳完成頁的匯款指示、訂單編號與優惠碼太長時在手機上換行,不再超出卡片右緣
+    (`InstructionLines`)。
+  - 受管訂單的結帳頁頂端改成「已登入會員 · 我的訂單」與「結帳前請先登入會員 · 我的訂單」,
+    句號不再和 · 撞在一起。
 - **0.6.0**:需要 core 1.50.0。退貨管理(見「退貨」一節):migration `0004_returns`、後台頁
   `returns`、狀態組 `shop:returns`、四個 admin API(`returns/…`);訂單列表的已出貨、已完成
   訂單多一個「申請退貨」。要按「套用更新」才會建表。運費、優惠碼、對帳、訂單狀態與退貨的

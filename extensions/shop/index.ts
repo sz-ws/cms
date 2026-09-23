@@ -76,7 +76,7 @@ async function resolveProvider(
 export const shop = defineExtension({
   id: "shop",
   name: "商店",
-  version: "0.6.0",
+  version: "0.7.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -90,7 +90,10 @@ export const shop = defineExtension({
   //
   // ^1.50.0:退貨(commerce-kit 的退貨引擎、API、後台頁與 returns 狀態組);
   // 各 API 以 accessAs 跟著對應後台頁的角色權限。
-  coreApi: "^1.50.0",
+  //
+  // ^1.52.0(0.7.0):commerce-kit 的唯讀模式(運費、優惠碼、對帳佇列)與訂單列表的
+  // loadFullyReturned / returned。
+  coreApi: "^1.52.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",
@@ -102,14 +105,14 @@ export const shop = defineExtension({
     {
       key: "cardProvider",
       label: "信用卡付款",
-      description: "輸入插件代號,例如 newebpay。不提供刷卡就留空。",
+      description: "輸入插件代號，例如 newebpay。不提供刷卡就留空。",
       type: "text",
       default: "",
     },
     {
       key: "transferProvider",
       label: "匯款付款",
-      description: "輸入插件代號,預設是 banktransfer(銀行轉帳)。不提供匯款就留空。",
+      description: "輸入插件代號，預設是 banktransfer（銀行轉帳）。不提供匯款就留空。",
       type: "text",
       default: "banktransfer",
     },

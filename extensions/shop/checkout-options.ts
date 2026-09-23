@@ -1,4 +1,5 @@
 import type { SettingField } from "@/ext/types";
+import { isPlaceholderEmail } from "@/lib/placeholder-email";
 
 // 結帳頁的開關(shop 0.2.0)。三個設定都存在 settings 表(`ext.shop.<key>`),
 // 由 public-pages.tsx 在伺服器讀出、經 resolveCheckoutOptions 正規化後交給
@@ -55,6 +56,11 @@ export interface CheckoutOptions {
   managedOrders: boolean;
   /** 受管模式下是否已登入;非受管一律 false(訪客結帳不需要登入)。 */
   signedIn: boolean;
+  /**
+   * 0.7.0:受管模式下,受管訂單那一邊(`commerce:orders` provider 的 `guestCheckout()`)
+   * 開放沒登入的人結帳。true 時不擋登入,頂端改成「已經是會員？登入」。非受管一律 false。
+   */
+  guestCheckout: boolean;
   /** 推薦碼欄位模式;非受管一律 "off"(舊結帳路徑不認得 referralCode)。 */
   referralMode: ReferralMode;
   /** 電話與收件地址是否必填;受管模式一律 true(伺服器端 schema 要求)。 */
@@ -71,6 +77,7 @@ export interface CheckoutOptions {
 export function resolveCheckoutOptions(input: {
   managedOrders?: boolean;
   signedIn?: boolean;
+  guestCheckout?: unknown;
   referralMode?: unknown;
   requireContact?: unknown;
   checkoutNotice?: unknown;
@@ -81,9 +88,33 @@ export function resolveCheckoutOptions(input: {
   return {
     managedOrders,
     signedIn: managedOrders && input.signedIn === true,
+    guestCheckout: managedOrders && input.guestCheckout === true,
     referralMode: managedOrders ? referral : "off",
     requireContact: managedOrders || input.requireContact === true,
     notice:
       typeof input.checkoutNotice === "string" ? input.checkoutNotice.trim() : "",
+  };
+}
+
+/** 結帳表單一開始帶入的聯絡資料(0.7.0)。 */
+export interface CheckoutContact {
+  name?: string;
+  email?: string;
+}
+
+/**
+ * 已登入的人結帳時,Email 與姓名先帶入帳號上的資料,不必再打一次(欄位照樣能改)。
+ * 拿不到真實 Email 的第三方登入(placeholder)不帶;姓名只是 Email @ 前面那段(帳號
+ * 建立時沒填名字的預設值)也不帶 —— 那不是收件人的名字。
+ */
+export function checkoutContact(user: { email?: string | null; name?: string | null } | null): CheckoutContact {
+  if (!user) return {};
+  const rawEmail = (user.email ?? "").trim();
+  const email = isPlaceholderEmail(rawEmail) ? "" : rawEmail;
+  const name = (user.name ?? "").trim();
+  const local = email.split("@")[0] ?? "";
+  return {
+    ...(email ? { email } : {}),
+    ...(name && name !== local && name !== email ? { name } : {}),
   };
 }

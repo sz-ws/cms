@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHECKOUT_NOTICE_KEY,
+  checkoutContact,
   REFERRAL_MODES,
   REFERRAL_MODE_KEY,
   REQUIRE_CONTACT_KEY,
@@ -43,6 +44,7 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ managedOrders: false })).toEqual({
       managedOrders: false,
       signedIn: false,
+      guestCheckout: false,
       referralMode: "off",
       requireContact: false,
       notice: "",
@@ -69,6 +71,7 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ managedOrders: true, requireContact: false })).toEqual({
       managedOrders: true,
       signedIn: false,
+      guestCheckout: false,
       referralMode: "field",
       requireContact: true,
       notice: "",
@@ -96,10 +99,20 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ managedOrders: true }).signedIn).toBe(false);
   });
 
+  it("0.7.0:guest checkout only on managed orders, and only a real true counts", () => {
+    expect(resolveCheckoutOptions({ managedOrders: true, guestCheckout: true }).guestCheckout).toBe(true);
+    expect(resolveCheckoutOptions({ managedOrders: false, guestCheckout: true }).guestCheckout).toBe(false);
+    expect(resolveCheckoutOptions({ managedOrders: true, guestCheckout: "true" }).guestCheckout).toBe(false);
+    expect(resolveCheckoutOptions({ managedOrders: true }).guestCheckout).toBe(false);
+    // Contact fields stay required for guests, same as members.
+    expect(resolveCheckoutOptions({ managedOrders: true, guestCheckout: true }).requireContact).toBe(true);
+  });
+
   it("is idempotent so CheckoutView can re-run it on its props", () => {
     const first = resolveCheckoutOptions({
       managedOrders: true,
       signedIn: true,
+      guestCheckout: true,
       referralMode: "link",
       requireContact: false,
       checkoutNotice: " 預購商品 ",
@@ -107,3 +120,22 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ ...first, checkoutNotice: first.notice })).toEqual(first);
   });
 });
+
+describe("checkoutContact(0.7.0:已登入的人結帳時先帶入 Email 與姓名)", () => {
+  it("沒登入 → 什麼都不帶", () => {
+    expect(checkoutContact(null)).toEqual({});
+  });
+
+  it("帶入帳號的 Email 與姓名", () => {
+    expect(checkoutContact({ email: "amy@example.com", name: "王小美" })).toEqual({ email: "amy@example.com", name: "王小美" });
+  });
+
+  it("姓名只是 Email @ 前面那段(沒填名字的預設)→ 不帶姓名", () => {
+    expect(checkoutContact({ email: "amy@example.com", name: "amy" })).toEqual({ email: "amy@example.com" });
+  });
+
+  it("拿不到真實 Email 的第三方登入 → 不帶 Email", () => {
+    expect(checkoutContact({ email: "oauth-line-1a2b3c4d@placeholder.invalid", name: "小美" })).toEqual({ name: "小美" });
+  });
+});
+

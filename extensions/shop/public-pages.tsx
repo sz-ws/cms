@@ -8,6 +8,7 @@ import {
   CHECKOUT_NOTICE_KEY,
   REFERRAL_MODE_KEY,
   REQUIRE_CONTACT_KEY,
+  checkoutContact,
   resolveCheckoutOptions,
 } from "./checkout-options";
 
@@ -47,6 +48,21 @@ function PageShell({
   );
 }
 
+/**
+ * 0.7.0:受管訂單那一邊開不開放訪客結帳。`commerce:orders` provider(id 是訂單表名)有
+ * `guestCheckout()` 且回 true 才算;沒有這個函式 = 不開放,和以前一樣要登入。
+ */
+async function managedGuestCheckout(): Promise<boolean> {
+  const [{ getExtRuntime }, { buildProviderRegistry }] = await Promise.all([
+    import("@/ext/loader"),
+    import("@/ext/services"),
+  ]);
+  const orders = buildProviderRegistry(await getExtRuntime()).getById<{
+    guestCheckout?: () => Promise<boolean>;
+  }>("commerce:orders", "ext_shop_orders");
+  return typeof orders?.guestCheckout === "function" && (await orders.guestCheckout()) === true;
+}
+
 export function ShopCartPage() {
   return (
     <PageShell title="購物車">
@@ -82,9 +98,11 @@ export async function ShopCheckoutPage() {
   // 受管訂單:shop-operations 啟用即委派(commerce-kit 依 provider 判斷,shop 端
   // 沒有開關 —— 理由見 checkout-options.ts 檔頭與 README「商城營運模式」)。
   const managedOrders = !!(await getExtRuntime()).byId("shop-operations");
+  const user = await getSessionUser();
   const options = resolveCheckoutOptions({
     managedOrders,
-    signedIn: managedOrders && !!(await getSessionUser()),
+    signedIn: managedOrders && !!user,
+    guestCheckout: managedOrders && !user && (await managedGuestCheckout()),
     referralMode,
     requireContact,
     checkoutNotice,
@@ -97,6 +115,7 @@ export async function ShopCheckoutPage() {
         transferEnabled={Boolean(transferProvider.trim())}
         shippingConfig={shippingConfig}
         promoEnabled={promos.some((p) => p.enabled)}
+        contact={checkoutContact(user)}
       />
     </PageShell>
   );

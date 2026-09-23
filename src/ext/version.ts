@@ -1061,7 +1061,7 @@
 //   engine fullyReturned; a returns table that is not applied yet counts as none).
 //   CommerceOrdersTable's returned prop shows 商品都已申請退貨 for them instead of
 //   StartReturnLink. Callers pass returnsPage only to roles with Edit on the returns page
-//   (adminPageLevels), as shop 0.6.1 does.
+//   (adminPageLevels), as shop 0.7.0 does.
 // - Dashboard (components/admin/dashboard/viewer.ts, dashboardViewer(access)): a custom
 //   role sees only the cards and numbers whose source page it can open.
 //   getDashboardData(viewer) keeps the declarative types whose list page is viewable

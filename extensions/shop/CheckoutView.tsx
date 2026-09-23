@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import type { CheckoutSession, ManualInstructionLine } from "@/ext/capabilities";
 import {
@@ -14,7 +14,7 @@ import {
   getCartSnapshot,
   subscribeCart,
 } from "./cart-store";
-import { resolveCheckoutOptions, type ReferralMode } from "./checkout-options";
+import { resolveCheckoutOptions, type CheckoutContact, type ReferralMode } from "./checkout-options";
 
 // 結帳頁(client)。三種 session 結局:
 //   form-post → 動態 <form> 送出跳轉 gateway(付款結果由回呼寫回)
@@ -34,6 +34,10 @@ import { resolveCheckoutOptions, type ReferralMode } from "./checkout-options";
 //   - 三個開關(推薦碼欄位、電話地址必填、結帳頁說明)由 checkout-options.ts
 //     正規化;這裡對 props 再跑一次 resolveCheckoutOptions,自訂殼層少給幾個
 //     prop 也會得到一致的預設。
+//   - 0.7.0 訪客結帳:受管訂單那一邊開放時(guestCheckout),沒登入也能填表下單,頂端
+//     改成「已經是會員？登入」;匯款訂單的結局頁請客人到 /shop/orders 用訂單編號查詢。
+//     站台的殼可以給 onSignIn(按「登入」時換回自己的會員流程)與 afterOrder(結局頁
+//     下面多放一段,例如請訪客設定密碼)。兩個都是函式,只能從 client 元件傳進來。
 
 /** 收件地區(台灣縣市)。引擎只做字串比對 —— 這份清單是 UI 層的事。 */
 const TW_REGIONS = [
@@ -47,21 +51,24 @@ const FIELD =
   "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)] outline-none " +
   "focus:shadow-[inset_0_0_0_1.5px_rgba(0,0,0,0.6)]";
 const LABEL = "mb-1.5 block text-[12.5px] text-black/55";
+/** 訂單編號、帳號這類沒有空白的長代碼:手機上放不下時在任意字元處換行,不撐出卡片。 */
+const CODE = "font-mono [overflow-wrap:anywhere]";
 const PRIMARY_BTN =
   "grid h-11 w-full place-items-center rounded-[12px] bg-black text-[14.5px] " +
   "font-medium text-white hover:bg-black/85 disabled:opacity-50";
 
 const ERROR_HINT: Record<string, string> = {
-  invalid_input: "資料不完整或格式不對,請檢查後再送出。",
-  unknown_product: "購物車內有商品已下架,請回購物車移除後重試。",
-  unpriced_product: "購物車內有商品目前無法結帳,請回購物車移除後重試。",
+  invalid_input: "資料不完整或格式不對，請檢查後再送出。",
+  unknown_product: "購物車內有商品已下架，請回購物車移除後重試。",
+  unpriced_product: "購物車內有商品目前無法結帳，請回購物車移除後重試。",
   invalid_total: "訂單金額不正確。",
   invalid_shipping: "請選擇配送方式。",
-  promo_invalid: "優惠碼無法使用,請移除後重試。",
+  promo_invalid: "優惠碼無法使用，請移除後重試。",
   method_not_enabled: "此付款方式目前未開放。",
-  not_available: "付款服務暫時無法使用,請稍後再試。",
-  not_configured: "付款方式尚未設定完成,請聯絡店家。",
-  rate_limited: "嘗試次數過多,請稍後再試。",
+  not_available: "付款服務暫時無法使用，請稍後再試。",
+  not_configured: "付款方式尚未設定完成，請聯絡店家。",
+  rate_limited: "嘗試次數過多，請稍後再試。",
+  unauthorized: "請先登入會員再結帳。",
   referral_invalid: "這組推薦碼無法使用，請先移除後再結帳。",
   referral_self: "無法使用自己的推薦碼，請先移除後再結帳。",
 };
@@ -108,10 +115,26 @@ function submitToGateway(gatewayUrl: string, fields: Record<string, string>): vo
   form.submit();
 }
 
+/** 匯款指示(銀行、帳號、金額、訂單編號…):值是會換行的長代碼,窄螢幕不會撐出卡片。 */
+export function InstructionLines({ lines }: { lines: ManualInstructionLine[] }) {
+  return (
+    <dl className="mt-4 space-y-2.5">
+      {lines.map((line) => (
+        <div key={line.label} className="flex items-baseline gap-3">
+          <dt className="w-20 shrink-0 text-[12.5px] text-black/60">{line.label}</dt>
+          <dd className={`${CODE} min-w-0 text-[14px] text-black/85`}>{line.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 interface ManualState {
   orderNo: string;
   instructions: ManualInstructionLine[];
   note?: string;
+  /** 下單時填的 Email(給 afterOrder)。 */
+  email: string;
 }
 
 interface AppliedPromo {
@@ -128,9 +151,13 @@ export function CheckoutView({
   promoEnabled = false,
   managedOrders = false,
   signedIn = false,
+  guestCheckout = false,
+  onSignIn,
+  afterOrder,
   referralMode,
   requireContact = false,
   notice = "",
+  contact = {},
 }: {
   cardEnabled: boolean;
   transferEnabled: boolean;
@@ -142,16 +169,25 @@ export function CheckoutView({
   managedOrders?: boolean;
   /** 受管模式下是否已登入;未登入顯示登入提示(伺服器會拒絕未登入的結帳)。 */
   signedIn?: boolean;
+  /** 0.7.0:受管模式下開放訪客結帳(不擋登入,見 checkout-options.ts)。 */
+  guestCheckout?: boolean;
+  /** 0.7.0:按「登入」時要做的事;沒給就連到 /login。只能從 client 元件傳。 */
+  onSignIn?: () => void;
+  /** 0.7.0:匯款訂單成立後,結局頁下面多放的東西。只能從 client 元件傳。 */
+  afterOrder?: (order: { orderNo: string; email: string }) => ReactNode;
   /** 推薦碼欄位模式(設定 ext.shop.referralMode);未給 = 受管時 "field"。非受管一律無效。 */
   referralMode?: ReferralMode;
   /** 電話與收件地址必填(設定 ext.shop.requireContact);受管模式一律必填。 */
   requireContact?: boolean;
   /** 結帳頁最上方的說明(設定 ext.shop.checkoutNotice);空 = 不顯示。 */
   notice?: string;
+  /** 0.7.0:表單一開始帶入的姓名與 Email(已登入的人,見 checkoutContact)。 */
+  contact?: CheckoutContact;
 }) {
   const options = resolveCheckoutOptions({
     managedOrders,
     signedIn,
+    guestCheckout,
     referralMode,
     requireContact,
     checkoutNotice: notice,
@@ -161,8 +197,8 @@ export function CheckoutView({
     getCartSnapshot,
     getCartServerSnapshot,
   );
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState(contact.name ?? "");
+  const [email, setEmail] = useState(contact.email ?? "");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [region, setRegion] = useState("");
@@ -248,7 +284,7 @@ export function CheckoutView({
         freeShipping: data.freeShipping,
       });
     } catch {
-      setPromoError("網路錯誤,請重試。");
+      setPromoError("網路錯誤，請重試。");
     }
   }
 
@@ -302,13 +338,13 @@ export function CheckoutView({
             return;
           }
         }
-        setError(ERROR_HINT[data.error] ?? `結帳失敗:${data.error}`);
+        setError(ERROR_HINT[data.error] ?? `結帳失敗：${data.error}`);
         return;
       }
       request.current = null;
       const session = data.session;
       if (!session.ok) {
-        setError(ERROR_HINT[session.error] ?? `結帳失敗:${session.error}`);
+        setError(ERROR_HINT[session.error] ?? `結帳失敗：${session.error}`);
         return;
       }
       if (session.kind === "form-post") {
@@ -325,9 +361,10 @@ export function CheckoutView({
         orderNo: data.orderNo,
         instructions: session.instructions,
         note: session.note,
+        email: email.trim(),
       });
     } catch {
-      setError("網路錯誤,請重試。");
+      setError("網路錯誤，請重試。");
     } finally {
       setBusy(false);
     }
@@ -350,17 +387,29 @@ export function CheckoutView({
         setError(
           data.error === "invalid_input"
             ? "末五碼需為 5 位數字。"
-            : (ERROR_HINT[data.error ?? ""] ?? "回報失敗,請重試。"),
+            : (ERROR_HINT[data.error ?? ""] ?? "回報失敗，請重試。"),
         );
         return;
       }
       setReported(true);
     } catch {
-      setError("網路錯誤,請重試。");
+      setError("網路錯誤，請重試。");
     } finally {
       setBusy(false);
     }
   }
+
+  // 訪客下的受管訂單:沒有「我的訂單」,改用訂單編號查詢(0.7.0)。
+  const asGuest = options.guestCheckout && !options.signedIn;
+  const signInLink = onSignIn ? (
+    <button type="button" onClick={onSignIn} className="ml-1 underline underline-offset-4">
+      登入
+    </button>
+  ) : (
+    <Link href="/login?next=%2Fshop%2Fcheckout" className="ml-1 underline underline-offset-4">
+      登入
+    </Link>
+  );
 
   // 結局頁:匯款指示 / 回報完成。
   if (manual) {
@@ -368,22 +417,13 @@ export function CheckoutView({
       <div className="flex flex-col gap-6">
         <div className="rounded-[14px] bg-white px-6 py-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
           <p className="text-[13px] text-black/55">
-            {options.managedOrders
-              ? "訂單已成立，請依「我的訂單」顯示的付款期限付款。"
-              : "訂單已成立,請於三日內匯款至以下帳戶:"}
+            {asGuest
+              ? "訂單已成立，請匯款到以下帳戶："
+              : options.managedOrders
+                ? "訂單已成立，請依「我的訂單」顯示的付款期限付款。"
+                : "訂單已成立，請於三日內匯款至以下帳戶："}
           </p>
-          <dl className="mt-4 space-y-2.5">
-            {manual.instructions.map((line) => (
-              <div key={line.label} className="flex items-baseline gap-3">
-                <dt className="w-20 shrink-0 text-[12.5px] text-black/60">
-                  {line.label}
-                </dt>
-                <dd className="font-mono text-[14px] text-black/85">
-                  {line.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <InstructionLines lines={manual.instructions} />
           {manual.note ? (
             <p className="mt-4 text-[12.5px] leading-relaxed text-black/60">
               {manual.note}
@@ -398,7 +438,7 @@ export function CheckoutView({
               已收到您的回報
             </h2>
             <p className="mt-1.5 text-[13.5px] text-black/55">
-              訂單 <span className="font-mono">{manual.orderNo}</span>{" "}
+              訂單 <span className={CODE}>{manual.orderNo}</span>{" "}
               對帳完成後即為您處理。
             </p>
             <Link
@@ -408,6 +448,16 @@ export function CheckoutView({
               返回網站
             </Link>
           </div>
+        ) : asGuest ? (
+          // 訪客:用訂單編號與 Email 查單,付款期限與回報匯款都在那裡。
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Link href="/shop/orders" className={PRIMARY_BTN}>
+              匯款後到訂單查詢回報
+            </Link>
+            <p className="text-[12px] text-black/60">
+              訂單編號 <span className={CODE}>{manual.orderNo}</span>，查詢訂單時會用到，請記下來。
+            </p>
+          </div>
         ) : options.managedOrders ? (
           // 受管訂單(shop-operations)在「我的訂單」回報:那裡的表單照站台設定要末五碼、
           // 匯款人姓名或兩者,這頁只知道末五碼,設成姓名的站台在這裡會回報失敗。
@@ -416,14 +466,14 @@ export function CheckoutView({
               匯款後到我的訂單回報
             </Link>
             <p className="text-[12px] text-black/60">
-              訂單編號 <span className="font-mono">{manual.orderNo}</span>
+              訂單編號 <span className={CODE}>{manual.orderNo}</span>
             </p>
           </div>
         ) : (
           <form onSubmit={(e) => void report(e)} className="flex flex-col gap-3">
             <div>
               <label htmlFor="shop-last5" className={LABEL}>
-                匯款完成後,回報您的帳號末五碼
+                匯款完成後，回報您的帳號末五碼
               </label>
               <input
                 id="shop-last5"
@@ -445,11 +495,12 @@ export function CheckoutView({
             </button>
             <p className="text-center text-[12px] text-black/60">
               稍後再匯也沒關係 —— 記下訂單編號
-              <span className="font-mono"> {manual.orderNo} </span>
+              <span className={CODE}> {manual.orderNo} </span>
               即可。
             </p>
           </form>
         )}
+        {afterOrder ? afterOrder({ orderNo: manual.orderNo, email: manual.email }) : null}
       </div>
     );
   }
@@ -457,7 +508,7 @@ export function CheckoutView({
   if (items.length === 0) {
     return (
       <p className="text-[14px] text-black/60">
-        購物車是空的,先去
+        購物車是空的，先去
         <Link href="/shop/cart" className="underline underline-offset-4">
           購物車
         </Link>
@@ -473,19 +524,20 @@ export function CheckoutView({
           {options.notice}
         </p>
       ) : null}
-      {options.managedOrders ? (
+      {asGuest ? (
+        <p className="text-[13.5px] text-black/60">已經是會員？{signInLink}</p>
+      ) : options.managedOrders ? (
+        // 一行兩段,中間用 · 隔開:句尾不加句號(「。 ·」兩個標點撞在一起)。
         <p className="text-[13.5px] text-black/60">
           {options.signedIn ? (
-            "已登入會員。"
+            "已登入會員"
           ) : (
             <>
-              請先登入會員後結帳。
-              <Link
-                href="/login?next=%2Fshop%2Fcheckout"
-                className="ml-2 underline underline-offset-4"
-              >
+              結帳前請先
+              <Link href="/login?next=%2Fshop%2Fcheckout" className="mx-0.5 underline underline-offset-4">
                 登入
               </Link>
+              會員
             </>
           )}
           {" · "}
@@ -516,11 +568,11 @@ export function CheckoutView({
             </span>
           </div>
           {promo ? (
-            <div className="flex justify-between">
-              <span className="text-black/55">
-                優惠碼 <span className="font-mono">{promo.code}</span>
+            <div className="flex justify-between gap-3">
+              <span className="min-w-0 text-black/55">
+                優惠碼 <span className={CODE}>{promo.code}</span>
               </span>
-              <span className="tabular-nums text-emerald-700">
+              <span className="shrink-0 tabular-nums text-emerald-700">
                 {promo.discount > 0
                   ? `− NT$ ${promo.discount.toLocaleString("zh-TW")}`
                   : "免運"}
@@ -529,7 +581,7 @@ export function CheckoutView({
           ) : null}
           {selectedShip ? (
             <div className="flex justify-between">
-              <span className="text-black/55">運費({selectedShip.name})</span>
+              <span className="text-black/55">運費（{selectedShip.name}）</span>
               <span className="tabular-nums text-black/80">
                 {shippingFee === 0 ? "免運" : `NT$ ${shippingFee.toLocaleString("zh-TW")}`}
               </span>
@@ -573,7 +625,7 @@ export function CheckoutView({
       </div>
       <div>
         <label htmlFor="shop-phone" className={LABEL}>
-          {options.requireContact ? "電話" : "電話(選填)"}
+          {options.requireContact ? "電話" : "電話（選填）"}
         </label>
         <input
           id="shop-phone"
@@ -608,7 +660,7 @@ export function CheckoutView({
 
       <div>
         <label htmlFor="shop-address" className={LABEL}>
-          {options.requireContact ? "收件地址" : "收件地址(選填)"}
+          {options.requireContact ? "收件地址" : "收件地址（選填）"}
         </label>
         <input
           id="shop-address"
@@ -668,19 +720,19 @@ export function CheckoutView({
       {promoEnabled ? (
         <div>
           <label htmlFor="shop-promo" className={LABEL}>
-            優惠碼(選填)
+            優惠碼（選填）
           </label>
           {promo ? (
-            <div className="flex h-11 items-center justify-between rounded-[10px] bg-emerald-50 px-3.5 text-[13.5px] text-emerald-800 shadow-[inset_0_0_0_1px_rgba(4,120,87,0.25)]">
-              <span>
-                <span className="font-mono">{promo.code}</span> 已套用
+            <div className="flex min-h-11 items-center justify-between gap-3 rounded-[10px] bg-emerald-50 px-3.5 py-2 text-[13.5px] text-emerald-800 shadow-[inset_0_0_0_1px_rgba(4,120,87,0.25)]">
+              <span className="min-w-0">
+                <span className={CODE}>{promo.code}</span> 已套用
                 {promo.discount > 0
                   ? ` — 折 NT$ ${promo.discount.toLocaleString("zh-TW")}`
                   : " — 免運"}
               </span>
               <button
                 type="button"
-                className="text-[12.5px] underline underline-offset-2"
+                className="shrink-0 text-[12.5px] underline underline-offset-2"
                 onClick={() => {
                   setPromo(null);
                   setPromoInput("");
@@ -700,7 +752,7 @@ export function CheckoutView({
                   setPromoInput(e.target.value.toUpperCase());
                   setPromoError(null);
                 }}
-                placeholder="WELCOME10"
+                placeholder="EXAMPLE10"
               />
               <button
                 type="button"
@@ -722,7 +774,7 @@ export function CheckoutView({
       {referral === "field" ? (
         <div>
           <label htmlFor="shop-referral" className={LABEL}>
-            推薦碼(選填)
+            推薦碼（選填）
           </label>
           <input
             id="shop-referral"
@@ -787,11 +839,11 @@ export function CheckoutView({
           ? "處理中…"
           : method === "card"
             ? "前往付款"
-            : "成立訂單,取得匯款帳號"}
+            : "成立訂單，取得匯款帳號"}
       </button>
       {noMethods ? (
         <p className="text-center text-[12.5px] text-black/60">
-          目前沒有可用的付款方式(店家尚未設定)。
+          目前沒有可用的付款方式（店家尚未設定）。
         </p>
       ) : null}
     </form>
