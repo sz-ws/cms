@@ -37,55 +37,21 @@ import {
 import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/admin/LoadingState";
 import { missingCapabilities } from "@/ext/features";
-import { useT } from "@/lib/i18n/I18nProvider";
+import { useLocale, useT } from "@/lib/i18n/I18nProvider";
 import { useInstallFlow, type InstallState } from "./useInstallFlow";
 import { InstallPromptsDialog } from "./InstallPromptsDialog";
 import { ScriptReviewDialog } from "./ScriptReviewDialog";
+import {
+  entryUnmetPlugins,
+  markInstalled,
+  type IndexResponse,
+  type InstalledPluginRef,
+  type RegistryEntry,
+} from "./registry-types";
+import { InstallGate, RequiredPluginItems, UsedBySection, requiredPluginName } from "./PluginRequirements";
 
 // Marketplace browse — App Store vibe: hero featured cards, category pills,
 // search, deployment badges, Paper & Ink visual language.
-
-interface RegistryEntry {
-  id: string;
-  kind: "declarative" | "code";
-  name: string;
-  version: string;
-  coreApi: string;
-  description?: string;
-  author?: string;
-  source: string;
-  installed: boolean;
-  installedVersion: string | null;
-  compatible: boolean;
-  icon?: string;
-  iconUrl?: string;
-  banner?: string;
-  screenshots?: string[];
-  license?: string;
-  tags?: string[];
-  category?: string;
-  deployment?: "instant" | "progressive" | "code-only";
-  homepage?: string;
-  repository?: string;
-  supportUrl?: string;
-  capabilities?: string[];
-  /** manifest.requires passthrough:服務需求(對照 IndexResponse.services 判定)。 */
-  requires?: { capability: string; optional?: boolean; reason?: string }[];
-}
-
-interface SourceFetchError {
-  source: string;
-  error: string;
-}
-
-interface IndexResponse {
-  entries: RegistryEntry[];
-  errors: SourceFetchError[];
-  /** 目前有 provider 的 capability 全集(requires 的滿足判定基準)。 */
-  services?: string[];
-  /** 編譯進 bundle 的 code extension(id/version = bundle 事實,enabled = DB 列)。 */
-  installedCode?: { id: string; version: string; enabled: boolean }[];
-}
 
 // 基本分類 + registry entries 實際出現的 content category(動態附加 pills)
 const BASE_CATEGORIES = ["all", "declarative", "code", "installed"] as const;
@@ -250,6 +216,22 @@ function entryUnmetServices(
   return unmet;
 }
 
+// 1.50.0:卡片上不能直接裝的理由(同 id 已是別的插件、舊版從別的來源裝、缺必要插件)。
+// 卡片只給一句短的,完整說明與「前往」在詳情頁。null = 可以畫安裝鈕。
+function cardBlockLabel(
+  t: Translator,
+  entry: RegistryEntry,
+  installed: ReadonlyMap<string, InstalledPluginRef>,
+): string | null {
+  if (entry.kind !== "declarative") return null;
+  if (entry.conflict === "identity" || entry.conflict === "kind") return t("registryBrowser.plugins.conflictShort");
+  if (entry.conflict === "source") return t("registryBrowser.plugins.otherSourceShort");
+  // 已經裝好、沒有新版:卡片照舊顯示「已安裝」,缺的插件在詳情頁與已安裝列表上說。
+  if (entry.installed && entry.installedVersion === entry.version) return null;
+  if (entryUnmetPlugins(entry, installed).length > 0) return t("registryBrowser.plugins.needsShort");
+  return null;
+}
+
 // code extension 的安裝狀態:index route 本來就回 installed/installedVersion
 // (extensions 表比對),UI 過去一律渲染死的「手動安裝」——這裡接上:
 // 未裝 → 灰「開發者安裝」(管理員自己裝不了,詳情頁底下再一句話說誰來做);
@@ -329,12 +311,18 @@ function statusFromInstall(state: InstallState): StatusButtonStatus {
 
 function FeaturedCard({
   entry,
+  blocked,
+  nameOf,
   onClick,
   onInstalled,
 }: {
   entry: RegistryEntry;
+  /** 1.50.0:不能直接裝的理由(見 cardBlockLabel);有就不畫安裝鈕。 */
+  blocked: string | null;
+  /** 1.50.0:必要插件的顯示名稱(安裝失敗的訊息用)。 */
+  nameOf: (id: string) => string;
   onClick: () => void;
-  onInstalled: (id: string) => void;
+  onInstalled: (id: string, source: string) => void;
 }) {
   const t = useT();
   const {
@@ -347,7 +335,7 @@ function FeaturedCard({
     review,
     confirmReview,
     closeReview,
-  } = useInstallFlow(entry, onInstalled);
+  } = useInstallFlow(entry, onInstalled, nameOf);
   const missing = entryMissingCapabilities(entry);
   const bannerUrl = mediaUrl(entry, entry.banner ?? entry.screenshots?.[0]);
   const [tintA, tintB] = artTint(entry.id);
@@ -453,6 +441,8 @@ function FeaturedCard({
                   })}
                 </span>
               </div>
+            ) : blocked ? (
+              <span className="text-[12px] text-ink/50">{blocked}</span>
             ) : (
               // stopPropagation:卡片本身 onClick 會開 detail 頁,包一層擋住冒泡,
               // 讓 Install 按鈕只做安裝、不順帶開頁(沿用原 FeaturedCard 行為)。
@@ -615,12 +605,18 @@ function categoryLabel(t: Translator, category: string): string {
 
 function StoreCard({
   entry,
+  blocked,
+  nameOf,
   onClick,
   onInstalled,
 }: {
   entry: RegistryEntry;
+  /** 1.50.0:不能直接裝的理由(見 cardBlockLabel);有就不畫安裝鈕。 */
+  blocked: string | null;
+  /** 1.50.0:必要插件的顯示名稱(安裝失敗的訊息用)。 */
+  nameOf: (id: string) => string;
   onClick: () => void;
-  onInstalled: (id: string) => void;
+  onInstalled: (id: string, source: string) => void;
 }) {
   const t = useT();
   const {
@@ -633,7 +629,7 @@ function StoreCard({
     review,
     confirmReview,
     closeReview,
-  } = useInstallFlow(entry, onInstalled);
+  } = useInstallFlow(entry, onInstalled, nameOf);
   const missing = entryMissingCapabilities(entry);
 
   const isUpdate =
@@ -706,6 +702,8 @@ function StoreCard({
                 features: missing.join(", "),
               })}
             </span>
+          ) : blocked ? (
+            <span className="text-[11px] text-ink/50">{blocked}</span>
           ) : (
             // stopPropagation:同 FeaturedCard —— 卡片 onClick 會開 detail 頁,
             // 少了這層的話按 Get/Update 會順帶切頁,安裝流程看起來像沒觸發。
@@ -761,9 +759,9 @@ export function RegistryBrowser() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category>("all");
-  const [selectedEntry, setSelectedEntry] = useState<RegistryEntry | null>(
-    null,
-  );
+  const [selected, setSelected] = useState<{ source: string; id: string } | null>(null);
+  const setSelectedEntry = (entry: RegistryEntry | null) =>
+    setSelected(entry ? { source: entry.source, id: entry.id } : null);
 
   useEffect(() => {
     let cancelled = false;
@@ -776,24 +774,10 @@ export function RegistryBrowser() {
           if (!cancelled) setLoadError(t("registryBrowser.loadError"));
           return;
         }
+        // code entry 的 installed/installedVersion 由伺服器以 bundle 事實(編譯進來的
+        // 版本)算好;1.50.0 起一併比對 identity,所以這裡不再用 installedCode 覆蓋。
         const json = (await res.json()) as IndexResponse;
-        // code entry 的 installed/installedVersion 以 installedCode(bundle 事實,
-        // extensions/registry.ts 編譯進來的版本)覆蓋 DB 列版本 —— DB 可能落後
-        // (registry.ts 加了項但沒跑 install)或超前(row 在、code 已移除)。
-        // 單點覆蓋,下游 CodeStateChip / installed 分類全部自動吃到。
-        const codeById = new Map(
-          (json.installedCode ?? []).map((c) => [c.id, c]),
-        );
-        const entries = json.entries.map((e) => {
-          if (e.kind !== "code") return e;
-          const bundled = codeById.get(e.id);
-          return {
-            ...e,
-            installed: bundled !== undefined,
-            installedVersion: bundled?.version ?? null,
-          };
-        });
-        if (!cancelled) setData({ ...json, entries });
+        if (!cancelled) setData(json);
       } catch {
         if (!cancelled) setLoadError(t("registryBrowser.networkError"));
       } finally {
@@ -850,15 +834,24 @@ export function RegistryBrowser() {
     return data.entries.filter((e) => e.compatible && !e.installed).slice(0, 6);
   }, [data]);
 
+  // 1.50.0:站上已安裝的插件,判斷相依用(詳情頁與卡片)。
+  const installedPlugins = useMemo(
+    () => new Map((data?.installedPlugins ?? []).map((p) => [p.id, p])),
+    [data],
+  );
+  const locale = useLocale();
+  const pluginNamer = useCallback(
+    (entry: RegistryEntry) => (id: string) =>
+      requiredPluginName(entry, id, installedPlugins, data?.entries ?? [], locale),
+    [installedPlugins, data, locale],
+  );
+
   // 安裝/更新成功 → 就地更新 client 端的 registry data(installedVersion 對齊 registry
-  // 版本),列表卡、detail 頁、featured 全部即時反映;不等重新 fetch /api/registry/index。
-  const handleInstalled = useCallback((id: string) => {
-    const mark = (e: RegistryEntry): RegistryEntry =>
-      e.id === id ? { ...e, installed: true, installedVersion: e.version } : e;
-    setData((prev) =>
-      prev ? { ...prev, entries: prev.entries.map(mark) } : prev,
-    );
-    setSelectedEntry((prev) => (prev ? mark(prev) : prev));
+  // 版本,其他來源的同 id 項目變成衝突,已安裝清單補上它),列表卡、detail 頁、featured
+  // 全部即時反映;不等重新 fetch /api/registry/index。
+  // selectedEntry 只存身分(source + id),內容一律從 data 取,更新後自然是新的。
+  const handleInstalled = useCallback((id: string, source: string) => {
+    setData((prev) => (prev ? markInstalled(prev, id, source) : prev));
   }, []);
 
   if (loading) {
@@ -877,12 +870,20 @@ export function RegistryBrowser() {
   if (!data) return null;
 
   // Detail view
+  const selectedEntry = selected
+    ? data.entries.find((e) => e.source === selected.source && e.id === selected.id)
+    : undefined;
   if (selectedEntry) {
     return (
       <ExtensionDetail
+        // key:從一個插件的詳情前往另一個(必要插件)時,安裝流程的狀態全新。
+        key={`${selectedEntry.source}:${selectedEntry.id}`}
         entry={selectedEntry}
+        entries={data.entries}
+        installed={installedPlugins}
         services={data.services ?? []}
         onBack={() => setSelectedEntry(null)}
+        onOpen={setSelectedEntry}
         onInstalled={handleInstalled}
       />
     );
@@ -925,6 +926,8 @@ export function RegistryBrowser() {
               >
                 <FeaturedCard
                   entry={entry}
+                  blocked={cardBlockLabel(t, entry, installedPlugins)}
+                  nameOf={pluginNamer(entry)}
                   onClick={() => setSelectedEntry(entry)}
                   onInstalled={handleInstalled}
                 />
@@ -1005,6 +1008,8 @@ export function RegistryBrowser() {
             <StoreCard
               key={`${entry.source}:${entry.id}`}
               entry={entry}
+              blocked={cardBlockLabel(t, entry, installedPlugins)}
+              nameOf={pluginNamer(entry)}
               onClick={() => setSelectedEntry(entry)}
               onInstalled={handleInstalled}
             />
@@ -1075,16 +1080,26 @@ function DevInstall({ entry, update }: { entry: RegistryEntry; update: boolean }
 
 function ExtensionDetail({
   entry,
+  entries,
+  installed,
   services,
   onBack,
+  onOpen,
   onInstalled,
 }: {
   entry: RegistryEntry;
+  /** 商店裡全部的項目(找必要插件、列出需要它的插件)。 */
+  entries: readonly RegistryEntry[];
+  installed: ReadonlyMap<string, InstalledPluginRef>;
   services: string[];
   onBack: () => void;
-  onInstalled: (id: string) => void;
+  /** 1.50.0:前往另一個插件的詳情(必要插件、需要它的插件)。 */
+  onOpen: (entry: RegistryEntry) => void;
+  onInstalled: (id: string, source: string) => void;
 }) {
   const t = useT();
+  const locale = useLocale();
+  const nameOf = (id: string) => requiredPluginName(entry, id, installed, entries, locale);
   const {
     state,
     error,
@@ -1095,7 +1110,7 @@ function ExtensionDetail({
     review,
     confirmReview,
     closeReview,
-  } = useInstallFlow(entry, onInstalled);
+  } = useInstallFlow(entry, onInstalled, nameOf);
   const missing = entryMissingCapabilities(entry);
   const unmetServices = entryUnmetServices(entry, services);
   const bannerUrl = mediaUrl(entry, entry.banner);
@@ -1120,7 +1135,23 @@ function ExtensionDetail({
   // 需要項目只列管理員該知道的:不支援的功能、以及服務需求(附原因)。
   // 支援的 core 功能代號(contents、admin-pages…)對管理員沒有意義,不列。
   const requires = entry.requires ?? [];
-  const showRequirements = missing.length > 0 || requires.length > 0;
+  const requiredPlugins = entry.requiresExtensions ?? [];
+  const showRequirements = missing.length > 0 || requires.length > 0 || requiredPlugins.length > 0;
+  // 1.50.0:宣告式插件現在不能裝的理由(同名衝突、別的來源、缺必要插件),右欄畫說明取代安裝鈕。
+  const gate =
+    entry.kind === "declarative" && entry.compatible && missing.length === 0 && unmetServices.length === 0 ? (
+      <InstallGate
+        entry={entry}
+        installed={installed}
+        entries={entries}
+        onOpen={onOpen}
+        onReplaceSource={(installedSource) => void install(installedSource)}
+        busy={state === "installing"}
+      />
+    ) : null;
+  const gated =
+    entry.kind === "declarative" &&
+    (entry.conflict != null || entryUnmetPlugins(entry, installed).length > 0);
 
   const links = [
     { label: t("registryBrowser.detail.link.homepage"), url: entry.homepage },
@@ -1215,6 +1246,7 @@ function ExtensionDetail({
                 {t("registryBrowser.detail.requires")}
               </h2>
               <ul className="flex flex-col gap-3">
+                <RequiredPluginItems entry={entry} installed={installed} entries={entries} onOpen={onOpen} />
                 {missing.map((cap) => (
                   <li key={cap} className="flex flex-col gap-0.5">
                     <span className="text-[13px] font-medium text-red-700">
@@ -1274,6 +1306,13 @@ function ExtensionDetail({
             </section>
           )}
 
+          <UsedBySection
+            entry={entry}
+            entries={entries}
+            onOpen={onOpen}
+            className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}
+          />
+
           {entry.kind === "code" && codeState !== "installed" && (
             <DevInstall entry={entry} update={codeState === "update"} />
           )}
@@ -1301,6 +1340,8 @@ function ExtensionDetail({
               <span className="text-[12.5px] text-red-600/80">
                 {t("registryBrowser.install.needsServices", { services: unmetServices.join(", ") })}
               </span>
+            ) : gated ? (
+              gate
             ) : (
               <StatusButton
                 size="lg"

@@ -40,6 +40,21 @@ export interface ExtensionRow {
   upgrade?: { from: string; to: string; migrations: string[] } | null;
   /** 1.48.0:宣告式插件帶前台 script 時的狀態;沒有 script = 不給。 */
   scripts?: "running" | "stopped" | null;
+  /** 1.50.0:需要、但沒裝(missing / different)或停用(disabled)的插件;都齊了 = 不給。 */
+  needs?: { id: string; name: string; state: "missing" | "disabled" | "different" }[];
+}
+
+/** 1.50.0:缺的必要插件,分成「要先安裝」與「要先啟用」兩句(列表與詳情共用)。 */
+export function needsLines(
+  t: ReturnType<typeof useT>,
+  needs: NonNullable<ExtensionRow["needs"]>,
+): string[] {
+  const install = needs.filter((n) => n.state !== "disabled").map((n) => n.name);
+  const enable = needs.filter((n) => n.state === "disabled").map((n) => n.name);
+  return [
+    ...(install.length > 0 ? [t("extensions.needs.install", { names: install.join("、") })] : []),
+    ...(enable.length > 0 ? [t("extensions.needs.enable", { names: enable.join("、") })] : []),
+  ];
 }
 
 class EnableStepError extends Error {
@@ -290,6 +305,16 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
           {e.description && (
             <span className="max-w-[36ch] truncate text-[12px] text-ink/40">
               {e.description}
+            </span>
+          )}
+          {e.needs && e.needs.length > 0 && (
+            <span className="flex max-w-[40ch] items-start gap-1 text-[12px] leading-snug text-red-700">
+              <CircleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+              <span className="flex flex-col">
+                {needsLines(t, e.needs).map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </span>
             </span>
           )}
         </span>

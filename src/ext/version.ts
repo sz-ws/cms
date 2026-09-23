@@ -827,8 +827,8 @@
 // - lib/settings getPlainSetting(): reads a non-secret setting without building the
 //   extension runtime (the loader uses it).
 // Additive for extensions reading catalog.product; shop 0.5.0 needs coreApi ^1.49.0.
-// 1.50.0: one release — returns in commerce-kit (退貨管理) and custom staff roles
-// (角色與權限).
+// 1.50.0: one release — returns in commerce-kit (退貨管理), custom staff roles
+// (角色與權限), and plugin identity with plugins that require plugins.
 // Returns (commerce-kit):
 // - returns.ts: the return lifecycle requested → approved / rejected / cancelled;
 //   approved → received / refunded / cancelled; received → refunded / completed;
@@ -943,4 +943,37 @@
 // (the API answers 403) until they read canEditCurrentPage() or return their levels.
 // Additive: extensions without accessAs behave as before for presets; custom roles
 // fall back to the extension-wide level.
+// Plugin identity and requirements:
+// - manifest.identity / Extension.identity: "<publisher>/<name>" (ext/plugin-ref.ts
+//   says why this over a UUID). The site-local key is still id. Once a declarative
+//   plugin is installed its identity is fixed: POST /api/registry/install answers
+//   409 identity_mismatch when an install or update carries a different identity or
+//   drops it. A plugin installed before 1.50.0 has none; an update from a different
+//   source than the stored one answers 409 source_changed unless the body carries
+//   confirmSource equal to that stored source (the store asks first). The identity
+//   is read from the stored manifest; there is no new column.
+// - manifest.requiresExtensions: [{ id, identity?, optional?, reason? }]. A
+//   non-optional one that is not installed and enabled (or is a different plugin
+//   under the same id) blocks install with 409 missing_extensions { missing: ids }
+//   and blocks enabling (409, names in the message). Both fields need coreApi
+//   ^1.50.0. ext/installed-plugins.ts lists what is installed for all three checks.
+//   The enable write carries the check in its own SQL (code-lifecycle's
+//   requiredPluginsEnabled), like writeCodeEnabled. Disabling or uninstalling a
+//   plugin (either kind) that an enabled declarative plugin requires non-optionally
+//   now answers 409 naming that plugin; the write carries the same check
+//   (noDeclarativeDependents), and uninstallDeclarative disables first.
+// - The registry index reads identity and requiresExtensions for both kinds (a code
+//   entry may list plain ids, as in Extension.requiresExtensions). GET
+//   /api/registry/index marks an entry installed only when it is the same plugin
+//   (identity when both the entry and the installed plugin have one, otherwise the
+//   stored source; plugin-ref's listingVerdict); otherwise conflict is
+//   "identity" | "source" | "kind". An entry without an identity is never
+//   "identity": indexes lag manifests. It also returns installedPlugins, and a code
+//   plugin compiled into this site fills in its own requiresExtensions when its
+//   index entry has none.
+// - Store detail lists required plugins with their state and reason, opens a
+//   listed one, shows which listed plugins need this one, and replaces the install
+//   button while something is missing. The installed list flags plugins whose
+//   required plugins are missing or disabled.
+// Additive: manifests without the new fields are unchanged.
 export const CORE_API_VERSION = "1.50.0";

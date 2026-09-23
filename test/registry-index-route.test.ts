@@ -210,3 +210,97 @@ describe("GET /api/registry/index", () => {
     expect(body.entries.map((e) => e.id)).toEqual(["blog"]);
   });
 });
+
+// 1.50.0:「已安裝」= 裝的就是這一個(identity,舊安裝則看來源)。
+describe("GET /api/registry/index — plugin identity", () => {
+  const A = "https://registry-a.test";
+  const B = "https://registry-b.test";
+
+  async function insertDx(id: string, source: string, identity?: string, enabled = 1) {
+    const manifest = { kind: "declarative", id, name: { en: "Reviews", "zh-Hant": "評論" }, version: "1.0.0", coreApi: "^1.50.0", ...(identity ? { identity } : {}) };
+    await d1()
+      .prepare("INSERT INTO declarative_extensions (id, manifest, version, enabled, source, installed_at, updated_at) VALUES (?, ?, '1.0.0', ?, ?, 1, 1)")
+      .bind(id, JSON.stringify(manifest), enabled, source)
+      .run();
+  }
+
+  const entry = (source: string, identity?: string) => ({
+    id: "reviews",
+    kind: "declarative",
+    name: "Reviews",
+    version: "1.1.0",
+    coreApi: "^1.50.0",
+    source,
+    ...(identity ? { identity } : {}),
+  });
+
+  type Body = {
+    entries: { source: string; installed: boolean; installedVersion: string | null; conflict: string | null; installedSource: string | null }[];
+    installedPlugins: { id: string; kind: string; enabled: boolean; identity: string | null; name: unknown }[];
+  };
+
+  it("an entry with a different identity is a conflict, the same identity from any source is installed", async () => {
+    authState.user = ADMIN;
+    await insertDx("reviews", A, "acme/reviews");
+    registryState.entries = [entry(A, "acme/reviews"), entry(B, "other/reviews"), entry(B + "/mirror", "acme/reviews")];
+    const body = (await (await GET()).json()) as Body;
+    expect(body.entries.map((e) => [e.installed, e.installedVersion, e.conflict])).toEqual([
+      [true, "1.0.0", null],
+      [false, null, "identity"],
+      [true, "1.0.0", null],
+    ]);
+  });
+
+  it("an install from before identities is only this entry when the source matches", async () => {
+    authState.user = ADMIN;
+    await insertDx("reviews", A);
+    registryState.entries = [entry(A), entry(B, "acme/reviews")];
+    const body = (await (await GET()).json()) as Body;
+    expect(body.entries[0]).toMatchObject({ installed: true, conflict: null });
+    expect(body.entries[1]).toMatchObject({ installed: false, conflict: "source", installedSource: A });
+  });
+
+  // 索引常落後 manifest(registry 的索引建置還沒帶 identity、第三方來源):索引沒寫
+  // identity 不能讓已安裝、有 identity 的插件變成「跟自己衝突」。
+  it("an entry whose index has no identity is judged by source, not as a different plugin", async () => {
+    authState.user = ADMIN;
+    await insertDx("reviews", A, "acme/reviews");
+    registryState.entries = [entry(A), entry(B)];
+    const body = (await (await GET()).json()) as Body;
+    expect(body.entries[0]).toMatchObject({ installed: true, installedVersion: "1.0.0", conflict: null });
+    expect(body.entries[1]).toMatchObject({ installed: false, conflict: "source", installedSource: A });
+  });
+
+  it("an id taken by the other kind is a conflict", async () => {
+    authState.user = ADMIN;
+    rtState.all = [fakeExt("reviews", "2.0.0")];
+    registryState.entries = [entry(A)];
+    const body = (await (await GET()).json()) as Body;
+    expect(body.entries[0]).toMatchObject({ installed: false, conflict: "kind" });
+  });
+
+  it("a compiled-in code plugin supplies its own requiresExtensions when the index has none", async () => {
+    authState.user = ADMIN;
+    rtState.all = [{ ...fakeExt("bundles", "1.0.0"), requiresExtensions: ["stock"] }];
+    registryState.entries = [
+      { id: "bundles", kind: "code", name: "Bundles", version: "1.0.0", coreApi: "^1.36.0", source: A },
+      { id: "loyalty", kind: "code", name: "Loyalty", version: "1.0.0", coreApi: "^1.36.0", source: A, requiresExtensions: [{ id: "stock", optional: true }] },
+    ];
+    const body = (await (await GET()).json()) as { entries: { id: string; requiresExtensions?: unknown }[] };
+    expect(body.entries[0].requiresExtensions).toEqual([{ id: "stock" }]);
+    expect(body.entries[1].requiresExtensions).toEqual([{ id: "stock", optional: true }]);
+  });
+
+  it("installedPlugins lists both kinds with enabled state and identity", async () => {
+    authState.user = ADMIN;
+    await insertExt("shop", 1, "0.5.0");
+    rtState.all = [{ ...fakeExt("shop", "0.5.0"), identity: "sz-ws/shop" }, fakeExt("cron", "1.0.0")];
+    await insertDx("reviews", A, "acme/reviews", 0);
+    const body = (await (await GET()).json()) as Body;
+    expect(body.installedPlugins).toEqual([
+      { id: "shop", kind: "code", enabled: true, identity: "sz-ws/shop", name: "shop" },
+      { id: "cron", kind: "code", enabled: false, identity: null, name: "cron" },
+      { id: "reviews", kind: "declarative", enabled: false, identity: "acme/reviews", name: { en: "Reviews", "zh-Hant": "評論" } },
+    ]);
+  });
+});

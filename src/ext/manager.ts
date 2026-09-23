@@ -1,5 +1,14 @@
 import { getDB } from "@/lib/cf";
-import { ExtensionLifecycleConflict, assertCodeDependencies, writeCodeEnabled, writeCodeDisabled } from "./code-lifecycle";
+import {
+  ExtensionLifecycleConflict,
+  NO_GUARD,
+  assertCodeDependencies,
+  noDeclarativeDependents,
+  requiredPluginsEnabled,
+  writeCodeEnabled,
+  writeCodeDisabled,
+  type WriteGuard,
+} from "./code-lifecycle";
 import { and, eq, like, notLike, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { db } from "@/lib/db";
@@ -18,7 +27,12 @@ import { revalidateExt } from "./dx/cache-invalidate";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import type { Extension, ExtMigration } from "./types";
-import { buildInstallRevisionClaim } from "./dx/declarative-migrate";
+import { buildInstallRevisionClaim, installRevisionClaimId } from "./dx/declarative-migrate";
+import { byId, listInstalledPlugins } from "./installed-plugins";
+import { requiredBy, unmetRequirements, type PluginRequirement } from "./plugin-ref";
+import { parseManifest } from "./dx/manifest";
+import { getLocale } from "@/lib/i18n/server";
+import { resolveLocalizedString } from "@/lib/i18n/localized";
 
 // 03 §5:Manager — 啟用/停用/migrations。
 
@@ -242,6 +256,8 @@ export async function enableExtension(
 export async function disableExtension(extId: string): Promise<void> {
   // update enabled=0 → doAction("ext:disabled")。不動資料表、不動 settings。
   const ext = findManifest(extId);
+  // 1.50.0:需要它的插件(兩種都算)先擋一次、給名稱;writeCodeDisabled 的條件再擋一次競態。
+  await assertNotRequired("code", extId);
   await writeCodeDisabled(getDB(), ext, registry, Date.now());
 
   invalidateExtRuntimeMemo();
@@ -307,31 +323,120 @@ async function findDeclarativeRow(
   return rows[0];
 }
 
+/**
+ * 切換 enabled。guard(1.50.0)是相依的最後一道檢查:它同時加在 revision claim 與
+ * UPDATE 上,在同一個 batch 裡 —— 條件不成立時兩個都不寫。只擋 UPDATE 的話 claim 會
+ * 留下來,之後同一個 revision 的每一次寫入都撞主鍵。回傳有沒有寫入。
+ */
 async function setDeclarativeEnabled(
   extId: string,
   enabled: 0 | 1,
-): Promise<void> {
+  guard: WriteGuard = NO_GUARD,
+): Promise<boolean> {
   const row = await findDeclarativeRow(extId);
   if (!row) throw new ExtNotFound(extId);
   const now = Math.max(Date.now(), row.updatedAt + 1);
-  await db().batch([
-    buildInstallRevisionClaim(extId, row.updatedAt, now),
-    db()
-      .update(declarativeExtensions)
-      .set({ enabled, updatedAt: now })
-      .where(eq(declarativeExtensions.id, extId)),
+  const d1 = getDB();
+  const [, update] = await d1.batch([
+    d1
+      .prepare(`INSERT INTO ext_migrations (id, ext_id, applied_at) SELECT ?, ?, ? WHERE ${guard.sql}`)
+      .bind(installRevisionClaimId(extId, row.updatedAt), extId, now, ...guard.binds),
+    d1
+      .prepare(`UPDATE declarative_extensions SET enabled = ?, updated_at = ? WHERE id = ? AND ${guard.sql}`)
+      .bind(enabled, now, extId, ...guard.binds),
   ]);
+  return update.meta.changes === 1;
+}
+
+// 讀出來的資料說可以、寫入時條件卻不成立:中間有人(另一個分頁)改了相關的插件。
+const REQUIRED_JUST_DISABLED = "必要插件剛被停用，請重新整理後再試一次";
+const DEPENDENT_JUST_ENABLED = "有其他插件剛啟用並需要它，請重新整理後再試一次";
+
+/**
+ * 1.50.0:停用或移除一個插件之前,啟用中、非選用地需要它的插件要先停用(與程式碼插件
+ * 之間本來就有的規則相同,現在宣告式插件也算)。先用讀出來的資料擋,訊息給名稱;
+ * 寫入時的條件(noDeclarativeDependents / writeCodeDisabled)再擋一次競態。
+ * 回傳這個插件的 identity(寫入條件要用)。
+ */
+async function assertNotRequired(kind: "code" | "declarative", extId: string): Promise<string | null> {
+  const plugins = await listInstalledPlugins(registry);
+  const self = plugins.find((p) => p.kind === kind && p.id === extId);
+  const identity = self?.identity ?? null;
+  const dependents = requiredBy(plugins, { id: extId, identity });
+  if (dependents.length === 0) return identity;
+  const locale = await getLocale();
+  const names = dependents.map((p) => resolveLocalizedString(p.name, locale) ?? p.id);
+  throw new ExtensionLifecycleConflict(`這些插件需要它，請先停用：${names.join("、")}`);
+}
+
+/**
+ * 1.50.0:宣告式插件 manifest.requiresExtensions 裡非選用的插件都要裝好、啟用。
+ * 與程式碼插件的 assertCodeDependencies 同一種擋法(ExtensionLifecycleConflict → 409,
+ * 訊息原樣顯示在擴充功能頁),但訊息用名稱 —— 已安裝列表上看得到的是名稱不是 id。
+ * 回傳必要插件依種類分好的 id,給寫入時的條件(requiredPluginsEnabled)用。
+ */
+async function assertDeclarativeDependencies(
+  extId: string,
+): Promise<{ code: string[]; declarative: string[] }> {
+  const rows = await db()
+    .select({ manifest: declarativeExtensions.manifest })
+    .from(declarativeExtensions)
+    .where(eq(declarativeExtensions.id, extId))
+    .limit(1);
+  let requires: PluginRequirement[] = [];
+  try {
+    requires = parseManifest(JSON.parse(rows[0]?.manifest ?? "null")).manifest?.requiresExtensions ?? [];
+  } catch {
+    // manifest 讀不到:交給 loader 的健康檢查,這裡不擋啟用。
+  }
+  const none = { code: [], declarative: [] };
+  if (!requires.some((req) => !req.optional)) return none;
+  const installed = await listInstalledPlugins(registry);
+  const installedById = byId(installed);
+  const unmet = unmetRequirements(requires, installedById);
+  if (unmet.length === 0) {
+    const required = [...new Set(requires.filter((req) => !req.optional).map((req) => req.id))];
+    return {
+      code: required.filter((id) => installedById.get(id)?.kind === "code"),
+      declarative: required.filter((id) => installedById.get(id)?.kind === "declarative"),
+    };
+  }
+  const locale = await getLocale();
+  const nameOf = (id: string) =>
+    resolveLocalizedString(installed.find((p) => p.id === id)?.name, locale) ?? id;
+  // 沒裝(或同 id 是別的插件)只能給 id;停用的插件看得到名稱。
+  const toInstall = unmet.filter((u) => u.state !== "disabled").map((u) => u.id);
+  const toEnable = unmet.filter((u) => u.state === "disabled").map((u) => nameOf(u.id));
+  throw new ExtensionLifecycleConflict(
+    [
+      toInstall.length > 0 ? `請先安裝必要插件：${toInstall.join("、")}` : null,
+      toEnable.length > 0 ? `請先啟用必要插件：${toEnable.join("、")}` : null,
+    ]
+      .filter(Boolean)
+      .join("；"),
+  );
 }
 
 export async function enableDeclarative(extId: string): Promise<void> {
-  await setDeclarativeEnabled(extId, 1);
+  const required = await assertDeclarativeDependencies(extId);
+  if (!(await setDeclarativeEnabled(extId, 1, requiredPluginsEnabled(required)))) {
+    throw new ExtensionLifecycleConflict(REQUIRED_JUST_DISABLED);
+  }
   invalidateExtRuntimeMemo();
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
 }
 
+/** 停用,條件是沒有啟用中的插件需要它(先擋一次給名稱,寫入時再擋一次)。 */
+async function disableDeclarativeGuarded(extId: string): Promise<void> {
+  const identity = await assertNotRequired("declarative", extId);
+  if (!(await setDeclarativeEnabled(extId, 0, noDeclarativeDependents(extId, identity)))) {
+    throw new ExtensionLifecycleConflict(DEPENDENT_JUST_ENABLED);
+  }
+}
+
 export async function disableDeclarative(extId: string): Promise<void> {
-  await setDeclarativeEnabled(extId, 0);
+  await disableDeclarativeGuarded(extId);
   invalidateExtRuntimeMemo();
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
@@ -342,11 +447,15 @@ export async function disableDeclarative(extId: string): Promise<void> {
  * 其 settings(ext.<extId>.%),purgeContent=true 時一併刪除 contents 中
  * type LIKE "<extId>.%" 的列(該 extension 的所有 content type)。
  * 先 disable(fire ext:disabled)再刪除,與 code uninstallExtension 對稱。
+ *
+ * 1.50.0:先停用這一步帶著「沒有啟用中的插件需要它」的條件。停用之後,需要它的插件
+ * 就啟用不了(它們啟用的條件是它啟用中),所以接下來的刪除不會剛好碰上有人又用上它。
  */
 export async function uninstallDeclarative(
   extId: string,
   purgeContent: boolean,
 ): Promise<void> {
+  await disableDeclarativeGuarded(extId);
   const row = await findDeclarativeRow(extId);
   if (!row) throw new ExtNotFound(extId);
   const rt = await getExtRuntime();

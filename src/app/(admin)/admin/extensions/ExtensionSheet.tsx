@@ -14,6 +14,7 @@ import { useT } from "@/lib/i18n/I18nProvider";
 import {
   StatusPill,
   KindBadge,
+  needsLines,
   type ExtensionRow,
   type Action,
 } from "./ExtensionsManager";
@@ -165,6 +166,7 @@ function ExtensionSheetBody({
             </button>
           </div>
           {ext.issue && <RuntimeIssue issue={ext.issue} />}
+          {ext.needs && ext.needs.length > 0 && <MissingRequirements needs={ext.needs} />}
         </div>
 
         {/* 1.48.0:宣告式插件帶的前台 script(執行中 / 已停用) */}
@@ -267,6 +269,25 @@ function RuntimeIssue({ issue }: { issue: NonNullable<ExtensionRow["issue"]> }) 
       <span className="flex flex-col gap-0.5">
         <span className="font-medium">{t("extensions.sheet.runtimeIssue")}</span>
         <span className="text-red-700/80">{message}</span>
+      </span>
+    </div>
+  );
+}
+
+/** 1.50.0:需要的插件沒裝或停用 —— 說缺誰,讓管理員知道先處理哪一個。 */
+function MissingRequirements({ needs }: { needs: NonNullable<ExtensionRow["needs"]> }) {
+  const t = useT();
+  return (
+    <div
+      role="alert"
+      className="flex gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] border border-red-600/15 bg-red-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-red-700"
+    >
+      <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span className="flex flex-col gap-0.5">
+        <span className="font-medium">{t("extensions.needs.title")}</span>
+        {needsLines(t, needs).map((line) => (
+          <span key={line} className="text-red-700/80">{line}</span>
+        ))}
       </span>
     </div>
   );

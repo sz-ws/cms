@@ -15,6 +15,9 @@ import {
   type ExtensionRow,
 } from "./ExtensionsManager";
 import { isBaseManaged } from "@/ext/builtin-declaratives";
+import { byId, listInstalledPlugins, type InstalledPluginInfo } from "@/ext/installed-plugins";
+import { unmetRequirements } from "@/ext/plugin-ref";
+import type { Locale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +41,9 @@ export default async function ExtensionsPage() {
   const installedIds = new Set(dbRows.map((r) => r.id));
   // 1.45.0:部署了新版、還沒套用的(migration 沒跑或版號沒更新)。
   const upgrades = await pendingCodeUpgrades(dbRows);
+  // 1.50.0:每個插件需要、但沒裝或停用的插件(列表上標出來)。
+  const plugins = await listInstalledPlugins(rt.all);
+  const needsOf = missingRequirements(plugins, locale);
 
   // §1 #1/#2:name/description 可為 LocalizedString;此 server 頁以 getLocale() resolve
   // 成純字串後才進 ExtensionsManager(client DTO,ExtensionRow.name/description 為 string)。
@@ -51,6 +57,7 @@ export default async function ExtensionsPage() {
     kind: "code",
     issue: enabledIds.has(e.id) ? (rt.unavailableById.get(e.id) ?? null) : null,
     upgrade: upgrades.get(e.id) ?? null,
+    needs: needsOf("code", e.id),
   }));
 
   // declarative extensions:name/description 取自 manifest(驗證後)。
@@ -70,6 +77,7 @@ export default async function ExtensionsPage() {
         kind: "declarative" as const,
         issue: r.enabled === 1 ? (rt.unavailableById.get(r.id) ?? null) : null,
         scripts: await scriptsState(dm, r.scriptsApproval),
+        needs: needsOf("declarative", r.id),
       };
     }),
   );
@@ -90,6 +98,27 @@ export default async function ExtensionsPage() {
       <ExtensionsManager extensions={rows} />
     </div>
   );
+}
+
+/**
+ * 1.50.0:插件 → 它需要、但沒裝(或停用、或同 id 是別的插件)的插件。名稱取已安裝的
+ * 那一個;沒裝或裝錯的只有 id 可以給。
+ */
+function missingRequirements(plugins: InstalledPluginInfo[], locale: Locale) {
+  const installed = byId(plugins);
+  return (kind: InstalledPluginInfo["kind"], id: string): ExtensionRow["needs"] => {
+    const self = plugins.find((p) => p.kind === kind && p.id === id);
+    const unmet = unmetRequirements(self?.requires, installed);
+    if (unmet.length === 0) return undefined;
+    return unmet.map((u) => {
+      const plugin = u.state === "disabled" ? installed.get(u.id) : undefined;
+      return {
+        id: u.id,
+        name: (plugin && resolveLocalizedString(plugin.name, locale)) || u.id,
+        state: u.state,
+      };
+    });
+  };
 }
 
 /** 1.48.0:核准紀錄與目前內容對得上才算執行中(與 scripts-widget 同一個判斷)。 */

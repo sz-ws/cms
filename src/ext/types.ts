@@ -20,6 +20,7 @@ import {
 import { validateSettingValue } from "../lib/setting-validation";
 import { normalizeHex } from "../lib/color";
 import { rangeStartsAtOrAfter } from "./semver";
+import { IDENTITY_MAX, IDENTITY_RE } from "./plugin-ref";
 import {
   adminIconIssue,
   extensionMenuSchema,
@@ -154,6 +155,9 @@ export interface ExtJobRegistration {
 
 export interface Extension {
   id: string; // ^[a-z][a-z0-9-]{1,30}$
+  /** 1.50.0:跨來源的全域名字 `<publisher>/<name>`(見 ./plugin-ref.ts)。商店用它分辨
+   * 「同 id 的另一個插件」;別的插件的相依宣告也可以用它指名。 */
+  identity?: string;
   // §1 #1/#2:declarative interpret 透傳原始 LocalizedString(memo-safe);server 端
   // 消費點(dashboard extName、settings 分頁標題、extensions 列表 DTO)以 getLocale()
   // resolve。code extension 給純字串即可(string ⊂ LocalizedString)。
@@ -509,6 +513,7 @@ const agentToolSchema = z.object({
 const manifestSchema = z
   .object({
     id: z.string().regex(ID_RE, "invalid extension id"),
+    identity: z.string().max(IDENTITY_MAX).regex(IDENTITY_RE, "invalid identity (expect <publisher>/<name>)").optional(),
     // spec-extension-i18n.md §1 #1/#2:頂層 name/description 與 label/title 一樣是
     // LocalizedString。Extension 介面自 1.17.0 起就這樣宣告了,但這裡的 zod 還停在
     // 純 z.string() —— 於是寫物件形式的 code extension 過得了 tsc、卻要等到
@@ -574,6 +579,7 @@ const manifestSchema = z
     duplicate(ext.requiresExtensions ?? [], "requiresExtensions", "required extension");
     if (ext.requiresExtensions?.includes(ext.id)) ctx.addIssue({ code: "custom", message: "extension cannot depend on itself", path: ["requiresExtensions"] });
     if ((ext.requiresExtensions?.length || ext.canDisable) && !rangeStartsAtOrAfter(ext.coreApi, "1.36.0")) ctx.addIssue({ code: "custom", message: "lifecycle guards require coreApi >= 1.36.0", path: ["coreApi"] });
+    if (ext.identity !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.50.0")) ctx.addIssue({ code: "custom", message: "identity requires coreApi >= 1.50.0", path: ["coreApi"] });
     duplicate((ext.settings ?? []).map((item) => item.key), "settings", "setting key");
     duplicate((ext.migrations ?? []).map((item) => item.id), "migrations", "migration id");
     duplicate((ext.uninstall ?? []).map((item) => item.id), "uninstall", "uninstall migration id");

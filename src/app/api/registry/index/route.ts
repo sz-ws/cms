@@ -1,19 +1,26 @@
 import { requireAuth, authErrorResponse } from "@/lib/auth";
-import { fetchRegistryIndex } from "@/lib/registry-client";
-import { db } from "@/lib/db";
-import {
-  extensions as extTable,
-  declarativeExtensions as dxTable,
-} from "@/lib/schema";
+import { fetchRegistryIndex, type RegistryIndexEntry } from "@/lib/registry-client";
 import { satisfies } from "@/ext/semver";
 import { CORE_API_VERSION } from "@/ext/version";
 import { availableServices } from "@/ext/service-requirements";
-import { getExtRuntime } from "@/ext/loader";
 import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
+import { getExtRuntime } from "@/ext/loader";
+import { byId, listInstalledPlugins, type InstalledPluginInfo } from "@/ext/installed-plugins";
+import { listingVerdict } from "@/ext/plugin-ref";
 
 // core-v2 §3.4:GET /api/registry/index。admin only。
 // 對每個 configured source 抓 registry.json,merge entries,並附上
 // installed?/installedVersion/compatible 供 Browse tab 使用。
+//
+// 1.50.0:「已安裝」改成「裝的就是這一個」。同 id 裝的是別的插件時 installed 為
+// false、conflict 說明是哪一種:
+//   identity —— 兩邊都有 identity 而且不同,不能互相更新
+//   source   —— 有一邊沒寫 identity(舊安裝,或索引落後 manifest),而已安裝的是從別的
+//               來源裝的;管理員確認後才能改用這個來源(install route 再拿實際的
+//               manifest 比一次 identity)
+// 規則見 @/ext/plugin-ref 的 listingVerdict。
+//   kind     —— 同 id 是另一種插件(程式碼 vs 宣告式)
+// installedPlugins 給商店畫面判斷相依(需要的插件裝了沒、啟用了沒)與「誰用了它」。
 export async function GET(): Promise<Response> {
   try {
     await requireAuth("admin");
@@ -23,23 +30,28 @@ export async function GET(): Promise<Response> {
     throw e;
   }
 
-  const { entries, errors } = await fetchRegistryIndex();
-
-  const codeRows = await db().select().from(extTable);
-  const dxRows = await db().select().from(dxTable);
-  const codeVersionById = new Map(codeRows.map((r) => [r.id, r.version]));
-  const dxVersionById = new Map(dxRows.map((r) => [r.id, r.version]));
+  const [{ entries, errors }, installed] = await Promise.all([
+    fetchRegistryIndex(),
+    getExtRuntime().then((rt) => listInstalledPlugins(rt.all)),
+  ]);
+  const installedById = byId(installed);
 
   // 1.49.0:底座自帶的 id(商品目錄)就算某個來源還列著,也不在商店出現。
   const items = entries.filter((entry) => !isBuiltinDeclarative(entry.id)).map((entry) => {
-    const installedVersion =
-      entry.kind === "code"
-        ? codeVersionById.get(entry.id)
-        : dxVersionById.get(entry.id);
+    const plugin = installedById.get(entry.id);
+    const match = matchInstalled(entry, plugin);
+    // 程式碼插件的 registry.json 還沒寫相依時,已經編譯進來的那一份自己知道
+    // (Extension.requiresExtensions)。
+    const requiresExtensions =
+      entry.requiresExtensions ??
+      (entry.kind === "code" && match.installed && plugin && plugin.requires.length > 0 ? plugin.requires : undefined);
     return {
       ...entry,
-      installed: installedVersion !== undefined,
-      installedVersion: installedVersion ?? null,
+      requiresExtensions,
+      installed: match.installed,
+      installedVersion: match.installed ? match.version : null,
+      conflict: match.conflict,
+      installedSource: match.conflict === "source" ? match.source : null,
       compatible: satisfies(CORE_API_VERSION, entry.coreApi),
     };
   });
@@ -48,23 +60,37 @@ export async function GET(): Promise<Response> {
   // (RegistryBrowser 對照 entry.requires 算 met/unmet)。
   const services = await availableServices();
 
-  // installedCode:上面 codeVersionById 只反映 extensions 表(可能落後於實際
-  // bundle,例如 registry.ts 加了新項但還沒跑過 install/enable 寫入 DB 列)。
-  // rt.all(= extensions/registry.ts 的 registry 陣列,loader.ts 定義)才是「這次
-  // 部署真的編譯進 bundle」的事實來源,version 取自 Extension 本身而非 DB 列
-  // ——讓 Browse tab 能拿 entry.version(registry.json 上游)跟這裡的
-  // bundle-compiled version 比對,判斷「已安裝但可更新」。enabled 仍查 DB 列
-  // (loader 只把 enabled=1 的塞進 rt.enabled,故已編譯但停用的 code ext 要靠
-  // codeRows 補上 enabled:false,不能只看 rt.enabled)。
-  const enabledCodeIds = new Set(
-    codeRows.filter((r) => r.enabled === 1).map((r) => r.id),
-  );
-  const rt = await getExtRuntime();
-  const installedCode = rt.all.map((e) => ({
-    id: e.id,
-    version: e.version,
-    enabled: enabledCodeIds.has(e.id),
+  // installedCode:編譯進這次部署的程式碼插件(version 取自 Extension 本身,不是 DB 列
+  // —— 讓商店能比對「已安裝但可更新」);enabled 看 extensions 表。
+  const installedCode = installed
+    .filter((p) => p.kind === "code")
+    .map((p) => ({ id: p.id, version: p.version, enabled: p.enabled }));
+
+  // name 與相依的 reason 可能是多語物件,由商店畫面依使用者語系解析。
+  const installedPlugins = installed.map((p) => ({
+    id: p.id,
+    kind: p.kind,
+    enabled: p.enabled,
+    identity: p.identity ?? null,
+    name: p.name,
   }));
 
-  return Response.json({ entries: items, errors, services, installedCode });
+  return Response.json({ entries: items, errors, services, installedCode, installedPlugins });
+}
+
+type Match =
+  | { installed: true; version: string; conflict: null; source: null }
+  | { installed: false; version: null; conflict: null | "identity" | "kind"; source: null }
+  | { installed: false; version: null; conflict: "source"; source: string };
+
+function matchInstalled(entry: RegistryIndexEntry, plugin: InstalledPluginInfo | undefined): Match {
+  if (!plugin) return { installed: false, version: null, conflict: null, source: null };
+  if (plugin.kind !== entry.kind) return { installed: false, version: null, conflict: "kind", source: null };
+  // 程式碼插件的 source 恆為 null,所以同一條規則下只會比 identity(兩邊都有時)。
+  const verdict = listingVerdict(plugin, { identity: entry.identity ?? null, source: entry.source });
+  if (verdict.ok) return { installed: true, version: plugin.version, conflict: null, source: null };
+  if (verdict.error === "source_changed") {
+    return { installed: false, version: null, conflict: "source", source: verdict.installedSource };
+  }
+  return { installed: false, version: null, conflict: "identity", source: null };
 }

@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
-import { writeCodeEnabled, writeCodeDisabled } from "../src/ext/code-lifecycle";
+import { noDeclarativeDependents, requiredPluginsEnabled, writeCodeEnabled, writeCodeDisabled } from "../src/ext/code-lifecycle";
 import { defineExtension } from "../src/ext/types";
 
 const db = (env as { DB: D1Database }).DB;
@@ -10,8 +10,12 @@ const registry = [wallet, dealer];
 beforeAll(async () => {
   await db.prepare("CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, version TEXT NOT NULL, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS pending_work (id TEXT PRIMARY KEY)").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, enabled INTEGER NOT NULL)").run();
 });
-beforeEach(async () => { await db.prepare("DELETE FROM extensions").run(); await db.prepare("DELETE FROM pending_work").run(); });
+beforeEach(async () => {
+  await db.prepare("DELETE FROM extensions").run(); await db.prepare("DELETE FROM pending_work").run();
+  await db.prepare("DELETE FROM declarative_extensions").run();
+});
 
 describe("code extension lifecycle guards", () => {
   it("rejects absent/disabled dependencies and preserves first install time", async () => {
@@ -44,5 +48,44 @@ describe("code extension lifecycle guards", () => {
     expect(() => defineExtension({ ...dealer, requiresExtensions: ["dealer"] })).toThrow();
     expect(() => defineExtension({ ...dealer, requiresExtensions: ["wallet", "wallet"] })).toThrow();
     expect(() => defineExtension({ ...wallet, canDisable: { sql: "1; DELETE FROM users", message: "bad" } })).toThrow();
+  });
+});
+
+// 1.50.0:宣告式插件的相依,寫入時的條件。
+describe("declarative dependency guards", () => {
+  const needs = (id: string, requires: unknown, enabled = 1) =>
+    db.prepare("INSERT INTO declarative_extensions (id, manifest, enabled) VALUES (?, ?, ?)").bind(id, JSON.stringify({ id, requiresExtensions: requires }), enabled).run();
+  const holds = async (guard: { sql: string; binds: (string | number | null)[] }) =>
+    (await db.prepare(`SELECT CASE WHEN ${guard.sql} THEN 1 ELSE 0 END AS ok`).bind(...guard.binds).first<number>("ok")) === 1;
+
+  it("a code plugin that an enabled declarative plugin needs stays enabled", async () => {
+    await writeCodeEnabled(db, wallet, registry, 1);
+    await needs("reviews", [{ id: "wallet", reason: "pays" }]);
+    await expect(writeCodeDisabled(db, wallet, registry, 2)).rejects.toThrow();
+    await db.prepare("UPDATE declarative_extensions SET enabled = 0").run();
+    await writeCodeDisabled(db, wallet, registry, 3);
+    expect(await db.prepare("SELECT enabled FROM extensions WHERE id = 'wallet'").first("enabled")).toBe(0);
+  });
+
+  it("ignores optional needs, needs for another identity, and rows it cannot read", async () => {
+    await needs("a", [{ id: "wallet", optional: true }]);
+    await needs("b", [{ id: "wallet", identity: "other/wallet" }]);
+    await needs("c", "not a list");
+    await needs("d", ["wallet", 3, null]);
+    await db.prepare("INSERT INTO declarative_extensions (id, manifest, enabled) VALUES ('e', '{broken', 1)").run();
+    expect(await holds(noDeclarativeDependents("wallet", "sz-ws/wallet"))).toBe(true);
+    await needs("f", [{ id: "wallet", identity: "sz-ws/wallet" }]);
+    expect(await holds(noDeclarativeDependents("wallet", "sz-ws/wallet"))).toBe(false);
+    expect(await holds(noDeclarativeDependents("wallet", null))).toBe(false);
+  });
+
+  it("required plugins must be enabled at write time", async () => {
+    expect(await holds(requiredPluginsEnabled({ code: [], declarative: [] }))).toBe(true);
+    await writeCodeEnabled(db, wallet, registry, 1);
+    await needs("stock", [], 0);
+    expect(await holds(requiredPluginsEnabled({ code: ["wallet"], declarative: [] }))).toBe(true);
+    expect(await holds(requiredPluginsEnabled({ code: ["wallet"], declarative: ["stock"] }))).toBe(false);
+    await db.prepare("UPDATE declarative_extensions SET enabled = 1 WHERE id = 'stock'").run();
+    expect(await holds(requiredPluginsEnabled({ code: ["wallet"], declarative: ["stock"] }))).toBe(true);
   });
 });

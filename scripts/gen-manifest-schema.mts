@@ -503,6 +503,22 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   root = set(root, requiresEntryPath, { $ref: "#/$defs/requiresEntry" });
 }
 
+// requiredExtension (1.50.0, no refine). The self-reference and duplicate-id
+// checks are superRefine rules on the manifest and are documented on the
+// top-level property instead.
+{
+  const requiredPath = ["properties", "requiresExtensions", "items"];
+  const required = clone(get(root, requiredPath)) as MutableSchema;
+  required.properties.id.description = "Site-local id of the required extension (code or declarative).";
+  required.properties.identity.description =
+    "Optional global identity of the required extension ('<publisher>/<name>'). When both this and the installed extension carry an identity, they must match; an installed extension without an identity is matched by id alone.";
+  required.properties.optional.description =
+    "true = works without it (the store shows it as optional). Absent/false = install is refused (409 missing_extensions) until it is installed and enabled.";
+  required.properties.reason.description = "User-facing explanation shown on the store detail page.";
+  defs.requiredExtension = required;
+  root = set(root, requiredPath, { $ref: "#/$defs/requiredExtension" });
+}
+
 // ---- step 10: theme (themeColorSchema/themeRadiusSchema .refine() is a
 // redundant injection-character guard -- the regex character classes
 // already exclude ; { } < > " ', so there is nothing left for a JSON Schema
@@ -638,6 +654,10 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
     "Platform capabilities this extension needs (install-time feature-gating, core-v2 roadmap #17). Intentionally not an enum here -- unknown names may come from a newer core version; compared against src/ext/features.ts at install time instead.";
   p.requires.description =
     "Service/provider requirements (deliberately separate axis from capabilities): capabilities is core's static feature table, requires is 'which provider must be present' (providers.ts capability registry, e.g. email:send, cron:tick). A non-optional entry that is absent blocks install; an optional one just surfaces a suggestion in the UI.";
+  p.identity.description =
+    "1.50.0: global identity '<publisher>/<name>' (publisher: lowercase letters/digits in segments joined by single '.' or '-', e.g. 'sz-ws' or 'example.com'; name follows the extension id rule). Fixed once installed: an install or update whose identity differs from (or drops) the installed one is refused (409 identity_mismatch). `id` stays the site-local key. A manifest using this field must declare coreApi \"^1.50.0\".";
+  p.requiresExtensions.description =
+    "1.50.0: other extensions this one needs (code or declarative), separate from `requires` (service providers). A non-optional entry that is not installed and enabled blocks install (409 missing_extensions with the ids). Must not list itself or the same id twice (zod superRefine). A manifest using this field must declare coreApi \"^1.50.0\".";
   p.author.description = "zod does not call .strict() on this object, so additional properties are permitted here (unlike most other manifest objects).";
   p.homepage.description = "homepage must be https";
   p.repository.description = "repository must be https";
@@ -708,15 +728,15 @@ const DEF_ORDER = [
   "formLayoutColumn", "formLayout", "contentType",
   "settingOption", "settingField", "adminPage",
   "formSuccess", "publicRoute", "hookAction",
-  "installPrompt", "customApiRoute", "requiresEntry",
+  "installPrompt", "customApiRoute", "requiresEntry", "requiredExtension",
   "themeColor", "themeRadius", "theme",
   "migrationStatement", "dashboardCard",
   "scheduleAction", "scheduleItem", "scriptEntry",
 ];
 
 const PROPERTY_ORDER = [
-  "kind", "id", "name", "version", "coreApi", "description", "icon", "menu", "iconUrl", "banner", "screenshots",
-  "deployment", "files", "installPrompts", "customApiRoutes", "capabilities", "requires",
+  "kind", "id", "identity", "name", "version", "coreApi", "description", "icon", "menu", "iconUrl", "banner", "screenshots",
+  "deployment", "files", "installPrompts", "customApiRoutes", "capabilities", "requires", "requiresExtensions",
   "author", "homepage", "repository", "license", "tags", "category", "support",
   "theme", "stylesheet", "contentTypes", "settings", "adminPages", "publicRoutes", "og",
   "migrations", "on", "dashboardCards", "schedule", "loginProvider", "scripts",

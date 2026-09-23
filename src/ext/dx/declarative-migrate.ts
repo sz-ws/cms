@@ -128,8 +128,13 @@ export function buildInstallRevisionClaim(
   now: number,
 ): BatchItem<"sqlite"> {
   return db().insert(extMigrations).values({
-    id: `${extId}:install:${revision}`,
+    id: installRevisionClaimId(extId, revision),
     extId,
     appliedAt: now,
   });
+}
+
+/** claim 的主鍵(ext_migrations.id)。要自己組條件式 claim 的地方(manager 的啟停)共用這個格式。 */
+export function installRevisionClaimId(extId: string, revision: number | "new"): string {
+  return `${extId}:install:${revision}`;
 }

@@ -1,6 +1,8 @@
 import { getSetting, getRegistryTokenMap } from "./settings";
 import { EXTENSION_ID_RE, isValidAssetFile } from "./registry-asset";
 import type { ServiceRequirement } from "@/ext/service-requirements";
+import { isIdentity, type PluginRequirement } from "@/ext/plugin-ref";
+import type { LocalizedString } from "@/lib/i18n/localized";
 
 // core-v2 §3.4 / §5:registry client — 只信任 core.registrySources 白名單內的來源,
 // https only、1 MB response cap、8s timeout、單一來源失敗不得中斷其他來源。
@@ -14,6 +16,8 @@ const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MB cap（§5）
 
 export interface RegistryIndexEntry {
   id: string;
+  /** 1.50.0:跨來源的全域名字(見 @/ext/plugin-ref)。格式不對就當作沒有。 */
+  identity?: string;
   kind: "declarative" | "code";
   name: string;
   version: string;
@@ -40,6 +44,9 @@ export interface RegistryIndexEntry {
   /** manifest.requires passthrough(服務需求;RegistryBrowser 對照 index 回應的
    * services[] 判定 met/unmet)。 */
   requires?: ServiceRequirement[];
+  /** 1.50.0:需要的其他插件。宣告式來自 manifest.requiresExtensions;程式碼插件的
+   * registry.json 可以直接寫 Extension.requiresExtensions 的 id 陣列。 */
+  requiresExtensions?: PluginRequirement[];
 }
 
 export interface SourceFetchError {
@@ -262,6 +269,7 @@ async function boundedFetchBytes(
 
 interface RawIndexEntry {
   id?: unknown;
+  identity?: unknown;
   kind?: unknown;
   name?: unknown;
   version?: unknown;
@@ -281,6 +289,7 @@ interface RawIndexEntry {
   support?: unknown;
   capabilities?: unknown;
   requires?: unknown;
+  requiresExtensions?: unknown;
 }
 
 /** raw requires 陣列 → 正規化的 ServiceRequirement[](非法項直接丟棄)。 */
@@ -295,6 +304,39 @@ function parseRequires(raw: unknown): ServiceRequirement[] | undefined {
       capability: r.capability,
       optional: r.optional === true ? true : undefined,
       reason: typeof r.reason === "string" ? r.reason : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+const REQUIRED_ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
+
+function parseLocalized(raw: unknown): LocalizedString | undefined {
+  if (typeof raw === "string") return raw.slice(0, 200);
+  if (!raw || typeof raw !== "object") return undefined;
+  const { en, "zh-Hant": zh } = raw as { en?: unknown; "zh-Hant"?: unknown };
+  const out: { en?: string; "zh-Hant"?: string } = {};
+  if (typeof en === "string") out.en = en.slice(0, 200);
+  if (typeof zh === "string") out["zh-Hant"] = zh.slice(0, 200);
+  return out.en !== undefined || out["zh-Hant"] !== undefined ? out : undefined;
+}
+
+/**
+ * raw requiresExtensions → PluginRequirement[]。程式碼插件的 registry.json 多半直接
+ * 抄 Extension.requiresExtensions(字串陣列),宣告式的是物件陣列;兩種都收,非法項丟棄。
+ */
+function parseRequiredExtensions(raw: unknown): PluginRequirement[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginRequirement[] = [];
+  for (const item of raw.slice(0, 20)) {
+    const r = typeof item === "string" ? { id: item } : item && typeof item === "object" ? (item as Record<string, unknown>) : null;
+    if (!r || typeof r.id !== "string" || !REQUIRED_ID_RE.test(r.id)) continue;
+    if (out.some((existing) => existing.id === r.id)) continue;
+    out.push({
+      id: r.id,
+      identity: isIdentity(r.identity) ? r.identity : undefined,
+      optional: r.optional === true ? true : undefined,
+      reason: parseLocalized(r.reason),
     });
   }
   return out.length > 0 ? out : undefined;
@@ -332,6 +374,7 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
     ) {
       out.push({
         id: raw.id,
+        identity: isIdentity(raw.identity) ? raw.identity : undefined,
         kind: raw.kind,
         name: raw.name,
         version: raw.version,
@@ -361,6 +404,7 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
             : undefined,
         capabilities: parseStringArray(raw.capabilities),
         requires: parseRequires(raw.requires),
+        requiresExtensions: parseRequiredExtensions(raw.requiresExtensions),
       });
     }
   }

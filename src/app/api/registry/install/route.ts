@@ -46,6 +46,8 @@ import {
 import { desc, eq, like } from "drizzle-orm";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "@/ext/loader";
 import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
+import { installVerdict, unmetRequirements } from "@/ext/plugin-ref";
+import { byId, listInstalledPlugins } from "@/ext/installed-plugins";
 import { revalidateExt } from "@/ext/dx/cache-invalidate";
 import {
   prepareExtensionSettingValues,
@@ -79,6 +81,9 @@ const bodySchema = z
     promptValues: z.record(z.string(), z.unknown()).optional(),
     // 1.48.0:管理員在核准畫面看過的 scripts hash(manifest 帶 scripts 時才需要)。
     approveScripts: z.string().regex(SCRIPTS_HASH_RE).optional(),
+    // 1.50.0:已安裝的版本沒有 identity、又是從別的來源裝的 —— 管理員確認要改用這個
+    // 來源時,把當初的來源原樣送回(證明看過是誰被取代)。見 @/ext/plugin-ref。
+    confirmSource: z.string().min(1).max(2048).optional(),
   })
   .strict()
   .refine(
@@ -123,7 +128,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const { id, source, promptValues, approveScripts } = parsed;
+  const { id, source, promptValues, approveScripts, confirmSource } = parsed;
   const inlineManifest = parsed.manifest;
 
   if (inlineManifest !== undefined && !DEV_INSTALL) {
@@ -206,6 +211,7 @@ export async function POST(req: Request): Promise<Response> {
       version: dxTable.version,
       updatedAt: dxTable.updatedAt,
       scriptsApproval: dxTable.scriptsApproval,
+      source: dxTable.source,
     })
     .from(dxTable)
     .where(eq(dxTable.id, id))
@@ -229,6 +235,30 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
     previousManifest = previousResult.manifest;
+    // 1.50.0:同 id 已經裝了東西 —— 先確定是同一個插件,再談版本相容。identity 一旦
+    // 裝上就不能換;舊安裝沒有 identity 時,換來源要管理員確認(見 installVerdict)。
+    const verdict = installVerdict(
+      { identity: previousManifest.identity ?? null, source: existingRows[0].source },
+      { identity: manifest.identity ?? null, source: source ?? null },
+      confirmSource,
+    );
+    if (!verdict.ok) {
+      return Response.json(
+        verdict.error === "identity_mismatch"
+          ? {
+              error: "identity_mismatch",
+              installed: verdict.installed,
+              incoming: verdict.incoming,
+              message: `"${id}" is already installed as ${verdict.installed}; this manifest is ${verdict.incoming ?? "missing an identity"}. Uninstall the installed one first.`,
+            }
+          : {
+              error: "source_changed",
+              installedSource: verdict.installedSource,
+              message: `"${id}" was installed from ${verdict.installedSource}; confirm to replace it with the one from ${source}.`,
+            },
+        { status: 409 },
+      );
+    }
     const incompatible = incompatibleSettingContract(
       previousManifest.settings ?? [],
       manifest.settings ?? [],
@@ -299,6 +329,27 @@ export async function POST(req: Request): Promise<Response> {
       },
       { status: 409 },
     );
+  }
+
+  // 1.50.0 manifest.requiresExtensions:非選用、而且沒裝(或停用、或同 id 是別的插件)
+  // 的必要插件 → 擋下,回那些 id,商店畫面據此提供「前往」。同上:裝上去才發現缺
+  // 東西,不如現在講清楚。
+  if (manifest.requiresExtensions?.length) {
+    const unmet = unmetRequirements(
+      manifest.requiresExtensions,
+      byId(await listInstalledPlugins((await getExtRuntime()).all)),
+    );
+    if (unmet.length > 0) {
+      return Response.json(
+        {
+          error: "missing_extensions",
+          missing: unmet.map((u) => u.id),
+          details: unmet,
+          message: `extension "${id}" requires extensions that are not installed and enabled: ${unmet.map((u) => u.id).join(", ")}`,
+        },
+        { status: 409 },
+      );
+    }
   }
 
   // installPrompts(可選):使用者於安裝表單填的值,對照 manifest.installPrompts

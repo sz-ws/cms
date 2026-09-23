@@ -17,6 +17,7 @@ import {
   type DeclarativeScript,
 } from "./scripts";
 import { isSubmissionTypeName } from "./submission";
+import { IDENTITY_MAX, IDENTITY_RE, type PluginRequirement } from "../plugin-ref";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -540,6 +541,9 @@ export const manifestSchema = z
   .object({
     kind: z.literal("declarative"),
     id: z.string().regex(ID_RE, "invalid extension id"),
+    // 1.50.0:插件跨來源的全域名字 `<publisher>/<name>`(理由見 ../plugin-ref.ts)。
+    // 裝上之後不能換:install route 拒絕 identity 不同(或拿掉)的更新。id 仍是站內 key。
+    identity: z.string().max(IDENTITY_MAX).regex(IDENTITY_RE, "invalid identity (expect <publisher>/<name>)").optional(),
     // spec §1 #1/#2:頂層使用者可見的 name/description 亦可 localize(union;純字串
     // manifest 全相容)。id 是機器識別字,永不 localize(仍 z.string())。
     name: localized(z.string().min(1)),
@@ -638,6 +642,24 @@ export const manifestSchema = z
               ),
             optional: z.boolean().optional(),
             /** 顯示給使用者的用途說明(Browse chips tooltip)。 */
+            reason: localized(z.string().max(200)).optional(),
+          })
+          .strict(),
+      )
+      .max(16)
+      .optional(),
+    // 1.50.0:需要的其他插件(程式碼或宣告式皆可)。與 requires(服務)分軸:requires
+    // 問「有沒有誰提供 email:send」,這裡問「是不是裝了這一個插件」。非 optional 的
+    // 沒裝或停用 → install route 409 擋下,商店詳情頁列出並提供前往;identity 有寫就
+    // 一起比對,同 id 但 identity 不同的插件不算數。
+    requiresExtensions: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(ID_RE, "invalid extension id"),
+            identity: z.string().max(IDENTITY_MAX).regex(IDENTITY_RE, "invalid identity (expect <publisher>/<name>)").optional(),
+            optional: z.boolean().optional(),
+            /** 顯示給管理員的用途說明(商店詳情頁)。 */
             reason: localized(z.string().max(200)).optional(),
           })
           .strict(),
@@ -839,6 +861,20 @@ export const manifestSchema = z
           });
         }
       });
+    });
+
+    if ((m.identity !== undefined || m.requiresExtensions !== undefined) && !rangeStartsAtOrAfter(m.coreApi, "1.50.0")) {
+      ctx.addIssue({
+        code: "custom",
+        message: 'identity and requiresExtensions require coreApi "^1.50.0" or newer',
+        path: ["coreApi"],
+      });
+    }
+    addDuplicateIssues((m.requiresExtensions ?? []).map((item) => item.id), "requiresExtensions", "required extension");
+    (m.requiresExtensions ?? []).forEach((req, idx) => {
+      if (req.id === m.id || (req.identity !== undefined && req.identity === m.identity)) {
+        ctx.addIssue({ code: "custom", message: "extension cannot require itself", path: ["requiresExtensions", idx, "id"] });
+      }
     });
 
     if (m.scripts) {
@@ -1120,6 +1156,8 @@ export type DeclarativeLoginProvider = z.infer<typeof loginProviderSchema>;
 export interface DeclarativeManifest {
   kind: "declarative";
   id: string;
+  /** 1.50.0:跨來源的全域名字 `<publisher>/<name>`,裝上之後不能換(見 ../plugin-ref.ts)。 */
+  identity?: string;
   /** spec §1 #1/#2:可 localize(union)。id 為機器識別字,永不 localize。 */
   name: LocalizedString;
   version: string;
@@ -1169,6 +1207,8 @@ export interface DeclarativeManifest {
     /** spec §1 #17:union。Browse chips tooltip 顯示屬 surface B,v1 未接線。 */
     reason?: LocalizedString;
   }>;
+  /** 1.50.0:需要的其他插件。非 optional 的沒裝或停用 → install 擋下。 */
+  requiresExtensions?: PluginRequirement[];
   /** 作者/出處(marketplace 信任資訊)。 */
   author?: { name: string; url?: string; email?: string };
   homepage?: string;

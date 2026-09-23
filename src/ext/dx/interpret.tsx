@@ -413,6 +413,7 @@ export function interpretManifest(row: DeclarativeRow): ManifestInterpretation {
     status: "ready",
     extension: {
       id: manifest.id,
+      identity: manifest.identity,
       name: manifest.name,
       version: manifest.version,
       coreApi: manifest.coreApi,

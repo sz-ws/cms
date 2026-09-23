@@ -16,3 +16,6 @@
   - `version.ts`: CORE_API_VERSION constant.
   - `admin-menu.ts`: sidebar data model; `admin-access.ts` (1.50.0): custom-role rules —
     grantable pages, levels, `accessAs`, the roles matrix derived from the sidebar.
+  - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
+  - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
+  - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.
