@@ -131,6 +131,7 @@ export interface DateFormatter {
   dayStart(day: string, end?: boolean): number | undefined;
 }
 
+const ODD_SPACES = /[\u00a0\u2009\u202f]/g;
 const DATE: Intl.DateTimeFormatOptions = { year: "numeric", month: "numeric", day: "numeric" };
 const DATE_TIME: Intl.DateTimeFormatOptions = { ...DATE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 const TIME: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
@@ -139,8 +140,10 @@ const MONTH_DAY: Intl.DateTimeFormatOptions = { month: "numeric", day: "numeric"
 export function createDateFormatter(locale: Locale, timeZone: string): DateFormatter {
   const tz = normalizeTimeZone(timeZone);
   const tag = localeTag(locale);
+  // 新版 ICU(Node 26 / CLDR 48)在日期與時間之間放細空白 U+2009,Chrome 放一般空白:
+  // server render 與 hydration 的字串就對不上,React 會整棵重畫。一律換成一般空白。
   const format = (ms: number, options: Intl.DateTimeFormatOptions) =>
-    Number.isFinite(ms) ? formatter(tag, tz, options).format(new Date(ms)) : "";
+    Number.isFinite(ms) ? formatter(tag, tz, options).format(new Date(ms)).replace(ODD_SPACES, " ") : "";
   const dayKey = (ms: number) => {
     const w = wallClock(ms, tz);
     return `${w.year}-${pad(w.month)}-${pad(w.day)}`;
