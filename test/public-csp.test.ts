@@ -77,9 +77,14 @@ describe("policy strings", () => {
     expect(policy).toContain("script-src 'self' 'nonce-abcdefghijklmnopqrstuv==' https://www.google-analytics.com");
     expect(policy).toContain("img-src 'self' data: blob: https://www.google-analytics.com");
     expect(policy).toContain("connect-src 'self' https://www.google-analytics.com https://errors.example.com");
-    expect(policy).toContain("frame-src 'self' https://www.google-analytics.com");
+    expect(policy).toContain("frame-src 'self' https://www.google-analytics.com https://www.google.com");
     expect(policy).toContain("form-action 'self'");
     expect(policy).not.toContain("wasm-unsafe-eval");
+  });
+
+  it("public pages may embed a Google map; the admin policy has no frame-src", () => {
+    expect(reportOnlyPolicy({ nonce: "abcdefghijklmnopqrstuv==", hosts: [] })).toContain("frame-src 'self' https://www.google.com;");
+    expect(reportOnlyPolicy()).not.toContain("frame-src");
   });
 
   it("drops host values that could smuggle another directive into the header", () => {

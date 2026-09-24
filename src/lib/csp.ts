@@ -127,7 +127,9 @@ export function reportOnlyPolicy(input?: PublicPolicyInput): string {
     `font-src 'self' https://fonts.gstatic.com${extra(hosts)}`,
     // extension 的 webhook 是伺服器端送出的,不需要在這裡開。
     `connect-src 'self'${extra(connect)}`,
-    ...(hosts.length > 0 ? [`frame-src 'self'${extra(hosts)}`] : []),
+    // 公開頁:核准過的主機,加上 Google 地圖的嵌入(店家頁尾常見;www.google.com/maps/embed)。
+    // 後台那一份不變。只在 Report-Only 這份 —— enforce 的那份本來就不管框架。
+    ...(input ? [`frame-src 'self'${extra([...hosts, "https://www.google.com"])}`] : []),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
