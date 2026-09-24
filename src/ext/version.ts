@@ -1112,4 +1112,50 @@
 // Breadcrumbs (components/admin/breadcrumbs.ts) skip a parent page that the sidebar shows in
 // another section after filter:adminMenu, so a moved sub-page reads Dashboard › its own title.
 // Additive: registries, extensions and roles without the new fields behave as in 1.51.0.
-export const CORE_API_VERSION = "1.52.0";
+// 1.53.0: additional fields, readable CJK slugs, faster public pages with Workers KV,
+// and Server-Timing.
+// Additional fields (額外欄位):
+// - Setting core.content.extraFields (lib/extra-fields.ts EXTRA_FIELDS_SETTING, hidden from
+//   the generic form, validated in setting-validation.ts): Record<"<extId>.<type>",
+//   ExtraFieldDef[]>, ExtraFieldDef { key ^[a-z][a-zA-Z0-9_]{0,39}$ unique per type, label
+//   ≤ 60, type "boolean" | "text" | "textarea" | "number", public }, at most 30 per type,
+//   array order = display order. Settings → 額外欄位 (components/admin/ExtraFieldsManager)
+//   edits it per content type.
+// - Values live in contents.data.extra. Admin create/update replace extra with
+//   coerceExtraValues(defs, extra) (unknown keys dropped, text ≤ 500, textarea ≤ 5000,
+//   numbers finite, booleans strict); a type without defs stores no extra. Anonymous public
+//   create still drops it.
+// - Non-admin outputs keep only public keys (publicExtras): the Content API (and its sort
+//   ignores extra.*), declarative {{content.*}} script data and public:scripts props, and
+//   webhook payloads. Admin reads, export, revisions and search keep everything.
+// - AdminFormViewProps.extraFields: FormView and extension layouts get the defs;
+//   dx/fields/ExtraFieldsPanel renders them and the value is saved as data.extra.
+// - The blog layout keeps the entry's status when saving (it used to save every post as a
+//   draft) and uses the same status and schedule controls as FormView
+//   (dx/views/StatusToggle).
+// Slugs:
+// - dx/slug.ts slugify is shared by the server and SlugField: NFKC, lowercase, Unicode
+//   letters, marks and numbers kept, other runs become "-", ≤ 80 code points; ASCII input
+//   gives the same slug as before. An update re-derives the slug only when its source
+//   field changed or the entry has none; SlugField starts unlocked when the stored slug is
+//   not the derived one.
+// - route-matcher decodePathSegments decodes URL segments once (a bad % sequence is a 404);
+//   public pages, the Content API, the OG image route and the ext API use it. ListView,
+//   relation links, the sitemap and RSS encode slugs.
+// Workers KV (optional binding CMS_KV, lib/stamps.ts):
+// - The settings, extension-runtime and script-host stamps are stored under
+//   cms:request-stamps:v1. Middleware marks public page GET/HEAD requests with
+//   x-cms-public-page (custom-worker.ts and the middleware strip any copy a client sends);
+//   those read the stamps from KV when the copy is younger than 5 minutes, so a warm isolate
+//   makes no D1 query. Admin pages, /api and POSTs keep reading D1.
+// - invalidateSettingsCache / invalidateExtRuntimeMemo publish fresh stamps; a missing,
+//   broken or stale copy is refreshed after a D1 read. Changes show at once in the location
+//   that wrote them and within about a minute elsewhere. Without CMS_KV nothing changes.
+// - The CLI's setup provisions cms-<slug>-kv and writes the CMS_KV binding.
+// Server-Timing: with the Worker variable CMS_SERVER_TIMING=1, custom-worker.ts wraps the
+// D1, R2, KV and service bindings and fetch per request (lib/server-timing.ts) and adds a
+// Server-Timing header; HTML also logs one JSON line when its stream ends.
+// CSP: the public Report-Only policy allows frame-src https://www.google.com (map embeds).
+// Additive: sites without CMS_KV, extra-field definitions or CMS_SERVER_TIMING behave as in
+// 1.52.0.
+export const CORE_API_VERSION = "1.53.0";
