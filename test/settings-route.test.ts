@@ -47,6 +47,15 @@ vi.mock("@/lib/settings", async (importActual) => {
         default: [],
       },
     ],
+    [
+      "core.content.extraFields",
+      {
+        key: "core.content.extraFields",
+        label: "Additional fields",
+        type: "textarea",
+        default: {},
+      },
+    ],
   ]);
   return {
     ...actual,
@@ -99,6 +108,42 @@ describe("PUT /api/settings value contract", () => {
       fields: [{ key: "core.registrySources", code: "invalid_format" }],
     });
     expect(state.writes).toEqual([]);
+  });
+
+  // 額外欄位的定義是 textarea(JSON)型的設定,但不能只看「是不是 JSON」:
+  // 形狀不對就擋,而且什麼都不寫。
+  it.each([
+    ["a plain string", "[]"],
+    ["a bad key", { "blog.post": [{ key: "Bad Key", label: "A", type: "text", public: false }] }],
+    [
+      "a duplicate key",
+      {
+        "blog.post": [
+          { key: "a", label: "A", type: "text", public: false },
+          { key: "a", label: "B", type: "text", public: true },
+        ],
+      },
+    ],
+    ["an unknown field type", { "blog.post": [{ key: "a", label: "A", type: "date", public: false }] }],
+  ])("rejects additional field definitions with %s", async (_name, value) => {
+    const response = await PUT(request({ "core.content.extraFields": value }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "invalid_values",
+      fields: [{ key: "core.content.extraFields", code: "invalid_extra_fields" }],
+    });
+    expect(state.writes).toEqual([]);
+  });
+
+  it("persists valid additional field definitions", async () => {
+    const entries = {
+      "core.content.extraFields": {
+        "blog.post": [{ key: "subtitle", label: "Subtitle", type: "text", public: true }],
+      },
+    };
+    const response = await PUT(request(entries));
+    expect(response.status).toBe(200);
+    expect(state.writes).toEqual([entries]);
   });
 
   it("persists valid values", async () => {

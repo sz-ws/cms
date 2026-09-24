@@ -38,6 +38,7 @@ import { GET } from "../src/app/api/content/[extId]/[type]/[[...rest]]/route";
 import { parseManifest } from "../src/ext/dx/manifest";
 import { satisfies } from "../src/ext/semver";
 import { CORE_API_VERSION } from "../src/ext/version";
+import { invalidateSettingsCache } from "../src/lib/settings";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -67,12 +68,18 @@ beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);",
   );
+  // 額外欄位的定義(core.content.extraFields)住在 settings。
+  await d1().exec(
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+  );
 });
 
 beforeEach(async () => {
   await d1().exec("DELETE FROM api_tokens;");
   await d1().exec("DELETE FROM contents;");
   await d1().exec("DELETE FROM declarative_extensions;");
+  await d1().exec("DELETE FROM settings;");
+  invalidateSettingsCache(); // 直接清表繞開寫入路徑,一併清 isolate settings 快取。
 });
 
 // ---- 測試 fixtures ----
@@ -289,6 +296,107 @@ describe("pagination + filter whitelist (§6.4)", () => {
     );
     const bogusBody = (await bogus.json()) as { total: number };
     expect(bogusBody.total).toBe(3);
+  });
+});
+
+// ---- 額外欄位(data.extra):只給公開的,不能照它排序 ----
+
+describe("additional fields (data.extra)", () => {
+  async function setExtraFields(value: unknown): Promise<void> {
+    await d1()
+      .prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)")
+      .bind("core.content.extraFields", JSON.stringify(value), Date.now())
+      .run();
+    invalidateSettingsCache();
+  }
+
+  async function insertAt(slug: string, data: Record<string, unknown>, at: number): Promise<void> {
+    await d1()
+      .prepare(
+        "INSERT INTO contents (id, type, slug, status, data, created_at, updated_at) VALUES (?, 'blog.post', ?, 'published', ?, ?, ?)",
+      )
+      .bind(`c-${slug}`, slug, JSON.stringify(data), at, at)
+      .run();
+  }
+
+  it("detail and list include public extras only; private and undefined keys never leave", async () => {
+    await insertDx("blog", blogManifest);
+    await setExtraFields({
+      "blog.post": [
+        { key: "subtitle", label: "Subtitle", type: "text", public: true },
+        { key: "costNote", label: "Cost note", type: "text", public: false },
+      ],
+    });
+    await insertContent("blog.post", "hello", "published", {
+      title: "Hello",
+      extra: { subtitle: "Hi there", costNote: "PRIVATE-COST", leftover: "PRIVATE-OLD" },
+    });
+    await insertContent("blog.post", "quiet", "published", {
+      title: "Quiet",
+      extra: { costNote: "PRIVATE-ONLY" },
+    });
+    const { raw } = await createApiToken("ok");
+
+    const detail = await GET(
+      makeReq("/api/content/blog/post/hello", { token: raw }),
+      params("blog", "post", ["hello"]),
+    );
+    expect(detail.status).toBe(200);
+    const detailBody = (await detail.json()) as { data: Record<string, unknown> };
+    expect(detailBody.data).toEqual({ title: "Hello", extra: { subtitle: "Hi there" } });
+
+    const list = await GET(
+      makeReq("/api/content/blog/post", { token: raw }),
+      params("blog", "post"),
+    );
+    const text = await list.text();
+    expect(text).not.toContain("PRIVATE");
+    const listBody = JSON.parse(text) as { items: Array<{ slug: string; data: Record<string, unknown> }> };
+    const quiet = listBody.items.find((item) => item.slug === "quiet");
+    // 一個公開值都沒有 → extra 整個不出現。
+    expect(quiet?.data).toEqual({ title: "Quiet" });
+  });
+
+  it("drops every extra when the type has no definitions", async () => {
+    await insertDx("blog", blogManifest);
+    await insertContent("blog.post", "hello", "published", {
+      title: "Hello",
+      extra: { subtitle: "PRIVATE-NO-DEF" },
+    });
+    const { raw } = await createApiToken("ok");
+    const res = await GET(
+      makeReq("/api/content/blog/post/hello", { token: raw }),
+      params("blog", "post", ["hello"]),
+    );
+    expect(await res.text()).not.toContain("PRIVATE");
+  });
+
+  it("ignores sort on extra paths (the order would reveal private values)", async () => {
+    await insertDx("blog", blogManifest);
+    await setExtraFields({
+      "blog.post": [{ key: "rank", label: "Rank", type: "number", public: false }],
+    });
+    // 預設排序是 updatedAt desc → [newer, older];照 rank asc 排會是 [older, newer]。
+    await insertAt("older", { title: "Older", extra: { rank: 1 } }, 1_000);
+    await insertAt("newer", { title: "Newer", extra: { rank: 2 } }, 2_000);
+    const { raw } = await createApiToken("ok");
+
+    for (const sort of ["extra.rank:asc", '"extra".rank:asc', "extra:asc"]) {
+      const res = await GET(
+        makeReq(`/api/content/blog/post?sort=${encodeURIComponent(sort)}`, { token: raw }),
+        params("blog", "post"),
+      );
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((item) => item.slug)).toEqual(["newer", "older"]);
+    }
+
+    // 宣告欄位照舊可以排(title desc:Older 在前,跟預設順序相反)。
+    const byTitle = await GET(
+      makeReq("/api/content/blog/post?sort=title:desc", { token: raw }),
+      params("blog", "post"),
+    );
+    const byTitleBody = (await byTitle.json()) as { items: Array<{ slug: string }> };
+    expect(byTitleBody.items.map((item) => item.slug)).toEqual(["older", "newer"]);
   });
 });
 

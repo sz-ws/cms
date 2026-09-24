@@ -8,6 +8,8 @@ import {
 } from "@/ext/dx/content-cache";
 import { isSubmissionTypeName } from "@/ext/dx/submission";
 import { decodePathSegments } from "@/ext/dx/route-matcher";
+import { publicExtras, type ExtraFieldDef } from "@/lib/extra-fields";
+import { getExtraFieldDefs } from "@/lib/extra-fields-server";
 import type {
   ContentEntry,
   ContentFilterValue,
@@ -36,8 +38,11 @@ const notFound = () => Response.json({ error: "not_found" }, { status: 404 });
  * migrations/0011 起帶上 locale 與 translationGroup —— 雙語站的呼叫端必須能分辨
  * 「這筆是哪個語言」以及「它的其他語言版本在哪」,否則兩個譯本在回應裡長得一模一樣。
  * 舊 provider 沒填就不輸出該欄(維持既有回應形狀)。
+ *
+ * data.extra(設定頁的額外欄位)只留公開的:token 是給網站前台或外部程式的,
+ * 不公開的欄位只給後台看。
  */
-function serialize(entry: ContentEntry) {
+function serialize(entry: ContentEntry, extraDefs: readonly ExtraFieldDef[]) {
   return {
     id: entry.id,
     slug: entry.slug,
@@ -45,7 +50,7 @@ function serialize(entry: ContentEntry) {
     ...(entry.translationGroup
       ? { translationGroup: entry.translationGroup }
       : {}),
-    data: entry.data,
+    data: publicExtras(extraDefs, entry.data),
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   };
@@ -117,7 +122,12 @@ function buildQuery(
   const sortRaw = sp.get("sort");
   if (sortRaw) {
     const [field, dir] = sortRaw.split(":");
-    if (field) sort = { field, dir: dir === "asc" ? "asc" : "desc" };
+    // 不能照額外欄位排序:按不公開的值排,排出來的順序本身就洩漏了那個值。
+    // 欄位名會接進 JSON path("$." + field),SQLite 認得 `"extra".x` 這種加引號的
+    // 寫法,所以先拿掉引號與空白再比。(filter 不必另外擋:extra 不是宣告欄位,
+    // 白名單本來就不收。)
+    const byExtra = /^extra($|[.[])/.test((field ?? "").replace(/["\s]/g, ""));
+    if (field && !byExtra) sort = { field, dir: dir === "asc" ? "asc" : "desc" };
   }
 
   const rawPerPage = Number.parseInt(sp.get("perPage") ?? "", 10);
@@ -193,6 +203,7 @@ export async function GET(
   }
 
   const fullType = `${extId}.${typeName}`;
+  const extraDefs = await getExtraFieldDefs(fullType);
   const fieldKeys = new Set<string>(["slug"]);
   for (const f of ct.fields ?? []) {
     if (typeof f?.key === "string") fieldKeys.add(f.key);
@@ -210,7 +221,7 @@ export async function GET(
     const slug = decoded[0];
     const entry = await cachedPublicGetBySlug(extId, fullType, slug);
     if (!entry || entry.status !== "published") return notFound();
-    return Response.json(serialize(entry));
+    return Response.json(serialize(entry, extraDefs));
   }
 
   // list:GET /<extId>/<type>。
@@ -218,7 +229,7 @@ export async function GET(
   const { query, page, perPage } = buildQuery(sp, fieldKeys);
   const { items, total } = await cachedPublicQuery(extId, fullType, query);
   return Response.json({
-    items: items.map(serialize),
+    items: items.map((entry) => serialize(entry, extraDefs)),
     total,
     page,
     perPage,

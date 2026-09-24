@@ -5,6 +5,8 @@ import { getSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { declarativeExtensions as dxTable } from "@/lib/schema";
 import { getLocale } from "@/lib/i18n/server";
+import { publicExtras } from "@/lib/extra-fields";
+import { getExtraFieldDefs } from "@/lib/extra-fields-server";
 import { cachedPublicQuery } from "./content-cache";
 import { parseManifest, type DeclarativeManifest } from "./manifest";
 import { isSubmissionTypeName } from "./submission";
@@ -47,14 +49,23 @@ const FEED_TIMEOUT_MS = 1500;
 
 type Loaded = { id: string; slug: string | null; data: Record<string, unknown> };
 
+// 這份資料會嵌進公開頁的 HTML:額外欄位(data.extra)只留公開的。
 async function publishedEntries(extId: string, type: string): Promise<Loaded[]> {
-  const { items } = await cachedPublicQuery(extId, `${extId}.${type}`, {
-    filter: { status: "published" },
-    sort: { field: "createdAt", dir: "desc" },
-    page: 1,
-    perPage: CONTENT_REF_LIMIT,
-  });
-  return items.map((e) => ({ id: e.id, slug: e.slug ?? null, data: e.data }));
+  const fullType = `${extId}.${type}`;
+  const [{ items }, extraDefs] = await Promise.all([
+    cachedPublicQuery(extId, fullType, {
+      filter: { status: "published" },
+      sort: { field: "createdAt", dir: "desc" },
+      page: 1,
+      perPage: CONTENT_REF_LIMIT,
+    }),
+    getExtraFieldDefs(fullType),
+  ]);
+  return items.map((e) => ({
+    id: e.id,
+    slug: e.slug ?? null,
+    data: publicExtras(extraDefs, e.data),
+  }));
 }
 
 /** 別的插件的型別:只給標題,而且收件匣型別一律不給。 */

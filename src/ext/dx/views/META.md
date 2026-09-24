@@ -10,6 +10,8 @@
 - Current set:
   - `CollectionView` (admin collection).
   - `FormViewPage` + `FormView` (admin create/edit; ALSO used for public `view:"form"` via `mode:"public"`).
+    `StatusToggle` + `PublishScheduleControl` are the publish controls; custom layouts
+    (extensions/blog/layout.tsx) reuse them so publishing works the same everywhere.
   - `ListView` (public list).
   - `DetailView` (public detail).
 - **DO NOT** add extension-specific components here. An extension's own frontend kit

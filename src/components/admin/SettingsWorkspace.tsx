@@ -35,6 +35,8 @@ interface SettingsWorkspaceProps {
   sections: SettingsSection[];
   values: Record<string, unknown>;
   coreAddon?: React.ReactNode;
+  /** 額外欄位管理(核心分頁,自己一張卡、自己一個導覽錨點)。有自己的儲存鈕,不進這裡的表單。 */
+  extraFieldsSection?: React.ReactNode;
   /** 「風格」分頁的內容(AdminThemeEditor)。有自己的儲存鈕,不進這裡的表單。 */
   styleTab?: React.ReactNode;
   /** 網址的 ?tab=,不認得的值回到核心。 */
@@ -210,12 +212,20 @@ function statusLine(
   };
 }
 
-export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initialTab }: SettingsWorkspaceProps) {
+export function SettingsWorkspace({
+  sections,
+  values,
+  coreAddon,
+  extraFieldsSection,
+  styleTab,
+  initialTab,
+}: SettingsWorkspaceProps) {
   const t = useT();
   // §1 #9–#11:extension settings 的 label/description/option.label 可為 LocalizedString;
   // admin 有 I18nProvider,故直接 useLocale() resolve(核心 settings 為純字串,原樣透傳)。
   const locale = useLocale();
   const coreAddonNode = coreAddon ?? null;
+  const extraFieldsNode = extraFieldsSection ?? null;
   // fullKey → 伺服器回的錯誤碼;改動該欄位就清掉那一格的錯誤。
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -229,6 +239,21 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
         className={cn("scroll-mt-20", SECTION_CARD)}
       >
         {coreAddonNode}
+      </section>
+    );
+  }
+
+  // 額外欄位:放在分組卡之後、來源與權杖之前 —— 它是「內容長什麼樣」的設定,
+  // 跟上面的網站設定同一類,不該埋進來源與權杖那張卡。
+  function renderExtraFieldsSection() {
+    if (!extraFieldsNode) return null;
+    return (
+      <section
+        key="extra-fields"
+        id={sectionAnchorId("extra-fields")}
+        className={cn("scroll-mt-20", SECTION_CARD)}
+      >
+        {extraFieldsNode}
       </section>
     );
   }
@@ -428,6 +453,7 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
     return (
       <>
         {sectionsToRender.map(renderSection)}
+        {activeTab === "core" && renderExtraFieldsSection()}
         {activeTab === "core" && renderCoreAddonSection()}
       </>
     );
@@ -480,6 +506,9 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
   // anchor-nav 讓人不用捲軸慢慢找。declarative 只有單一 placeholder 卡,不需要。
   const navTargets = useMemo(() => {
     const list = shownSections.map((s) => ({ id: s.id, label: s.title }));
+    if (activeTab === "core" && extraFieldsNode) {
+      list.push({ id: "extra-fields", label: t("extraFields.title") });
+    }
     if (activeTab === "core" && coreAddonNode) {
       list.push({
         id: "core-addon",
@@ -487,7 +516,7 @@ export function SettingsWorkspace({ sections, values, coreAddon, styleTab, initi
       });
     }
     return list;
-  }, [shownSections, activeTab, coreAddonNode, t]);
+  }, [shownSections, activeTab, extraFieldsNode, coreAddonNode, t]);
 
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   // activeSectionId 若不屬於這輪 navTargets(剛切分頁、章節增減)就退回第一個

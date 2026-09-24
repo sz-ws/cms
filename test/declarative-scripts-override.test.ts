@@ -22,6 +22,9 @@ const settingsState = vi.hoisted(() => ({ values: new Map<string, unknown>() }))
 vi.mock("@/lib/settings", () => ({
   getSetting: async (key: string, fallback: unknown) =>
     settingsState.values.has(key) ? settingsState.values.get(key) : fallback,
+  // 額外欄位的定義(core.content.extraFields)走這條。
+  getPlainSetting: async (key: string, fallback: unknown) =>
+    settingsState.values.has(key) ? settingsState.values.get(key) : fallback,
 }));
 
 const contentState = vi.hoisted(() => ({
@@ -183,6 +186,22 @@ describe("scriptInputsResolver", () => {
     expect(data["content.catalog.product"]).toEqual([{ id: "p1", slug: "black-tea", title: "紅茶" }]);
     expect(data["feed.shop.recentPurchases"]).toEqual([
       { product: "檸檬塔", more: 1, at: new Date(60_000), note: undefined },
+    ]);
+  });
+
+  it("hands over public additional fields only (the data is inlined into public HTML)", async () => {
+    settingsState.values.set("core.content.extraFields", {
+      [`${COMPILED}.sample`]: [
+        { key: "badge", label: "Badge", type: "text", public: true },
+        { key: "margin", label: "Margin", type: "number", public: false },
+      ],
+    });
+    contentState.items.set(`${COMPILED}.sample`, [
+      { id: "s1", slug: null, data: { product: "蘋果派", extra: { badge: "新品", margin: 42, old: "x" } } },
+    ]);
+    const { data } = await scriptInputsResolver(COMPILED, parsed(manifestFor(COMPILED)))();
+    expect(data["content.sample"]).toEqual([
+      { id: "s1", slug: null, data: { product: "蘋果派", extra: { badge: "新品" } } },
     ]);
   });
 

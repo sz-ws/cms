@@ -10,6 +10,8 @@ import { notifyOnPublicCreate } from "./notify"; // A:public create 成功後 be
 import { getRevision, listRevisions } from "@/lib/revisions";
 import { restoreRevision, RevisionRestoreError } from "@/lib/revision-restore";
 import { readBoundedJsonObject } from "@/lib/body-limit";
+import { withCoercedExtra } from "@/lib/extra-fields";
+import { getExtraFieldDefs } from "@/lib/extra-fields-server";
 import { isSubmissionState } from "./submission";
 import {
   deleteSubmissionRecord,
@@ -111,6 +113,19 @@ async function readJson(
   return r.reason === "too_large"
     ? Response.json({ error: "payload_too_large" }, { status: 413 })
     : Response.json({ error: "invalid_input" }, { status: 400 });
+}
+
+/**
+ * 額外欄位(data.extra,定義在設定頁;規則見 lib/extra-fields.ts)。body 帶了 extra 才讀
+ * 設定:照這種內容的定義整理,沒有定義就整個拿掉。沒帶 extra 的寫入(大多數 API 呼叫、
+ * 還沒有額外欄位的站)不多一次設定讀取。
+ */
+async function shapeExtra(
+  type: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  if (!Object.prototype.hasOwnProperty.call(body, "extra")) return body;
+  return withCoercedExtra(await getExtraFieldDefs(type), body);
 }
 
 function errResponse(e: unknown): Response {
@@ -236,6 +251,8 @@ export function buildCrudRoutes(
             delete body[HONEYPOT_KEY];
             payload = sanitizePublicCreateBody(body, ct);
           }
+          // public type 的 extra 已在上面被當成未宣告欄位丟掉;這裡只剩後台建立會帶到。
+          payload = await shapeExtra(def.type, payload);
 
           const p = await provider(ctx, def);
           const entry = await p.create(def.type, payload);
@@ -333,7 +350,12 @@ export function buildCrudRoutes(
           const existing = await p.get(def.type, params.id);
           if (!existing)
             return Response.json({ error: "not_found" }, { status: 404 });
-          const entry = await p.update(def.type, params.id, body);
+          // 更新是淺合併:送來的 extra 整包取代舊的(編輯器一律送整包)。
+          const entry = await p.update(
+            def.type,
+            params.id,
+            await shapeExtra(def.type, body),
+          );
           return Response.json({ entry });
         } catch (e) {
           return errResponse(e);

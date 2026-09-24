@@ -43,6 +43,7 @@ export function AdminFormSurface(props: AdminFormSurfaceProps) {
       layout={props.contentType?.layout}
       locale={props.locale}
       readOnly={props.readOnly}
+      extraFields={props.extraFields}
     />
   );
 }

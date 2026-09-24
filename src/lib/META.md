@@ -21,6 +21,11 @@
   D1 binding (runs in the edge middleware, so no drizzle / zod). The middleware uses
   `cachedApprovedScriptHosts`, memoised per isolate behind a version stamp.
 - `rate-limit.ts`: shared `hitRateLimit` (D1 KV-style table).
+- `extra-fields.ts`: additional fields an admin adds per content type
+  (`core.content.extraFields`; values in `data.extra`). Pure (zod only) so the settings
+  manager and editors share it; `extra-fields-server.ts` reads the setting. Anything that
+  leaves the admin (Content API, inlined script data, webhooks) goes through
+  `publicExtras`.
 - `utils.ts`: `cn(...)` etc.
 - `observe/`: error reporting (GlitchTip / Sentry protocol). `sentry-options.ts` is
   pure + type-only imports on purpose — the Worker entry (`custom-worker.ts`) reaches

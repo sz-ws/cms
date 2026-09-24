@@ -23,6 +23,8 @@ import {
   type ExportContentType,
 } from "@/components/admin/ContentExportCard";
 import { listApiTokens } from "@/lib/api-token";
+import { EXTRA_FIELDS_SETTING, parseExtraFieldsSetting } from "@/lib/extra-fields";
+import { ExtraFieldsManager } from "@/components/admin/ExtraFieldsManager";
 // named import 讓打包只留 version 欄位(同 AdminSidebar 曾用的手法)。
 import { version } from "../../../../../package.json";
 
@@ -61,7 +63,8 @@ export default async function SettingsPage({
       field.key !== "core.registryTokens" &&
       field.key !== "core.adminTheme" &&
       field.key !== "core.adminAccent" &&
-      field.key !== "core.dashboard.insights",
+      field.key !== "core.dashboard.insights" &&
+      field.key !== EXTRA_FIELDS_SETTING,
   );
 
   // Core 卡片完全由 SettingField.group 推導(見 settings-ui.ts):有欄位的 group
@@ -128,7 +131,7 @@ export default async function SettingsPage({
 
   // 匯出的「只匯出某個 type」選單。來源是已啟用 extension 宣告的 content type;
   // 匯出端點本身不受此清單限制(它讀的是 contents 表,連停用 extension 留下的
-  // 資料都拿得到)—— 這裡只是給人選的方便入口。
+  // 資料都拿得到)—— 這裡只是給人選的方便入口。額外欄位的內容類型選單用同一份。
   const exportTypes: ExportContentType[] = rt.enabled.flatMap((ext) =>
     (ext.contentTypes ?? []).map((ct) => ({
       type: `${ext.id}.${ct.name}`,
@@ -136,6 +139,9 @@ export default async function SettingsPage({
         resolveLocalizedString(ct.label, locale) ?? `${ext.id}.${ct.name}`,
     })),
   );
+
+  // 停用中的插件留下的定義照樣原封存回去(管理元件只改得到選單裡的類型)。
+  const extraFields = parseExtraFieldsSetting(raw[EXTRA_FIELDS_SETTING]);
 
   return (
     <div className="relative flex flex-col gap-6 pb-6">
@@ -156,6 +162,9 @@ export default async function SettingsPage({
           <AdminThemeEditor
             initial={resolveAdminAppearance(values["core.adminTheme"], values["core.adminAccent"])}
           />
+        }
+        extraFieldsSection={
+          <ExtraFieldsManager types={exportTypes} initialSetting={extraFields} />
         }
         coreAddon={
           <div className="flex flex-col gap-6">

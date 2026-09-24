@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { Stepper, StepperItem, StepperList } from "@/components/ui/stepper";
@@ -17,6 +17,13 @@ import { SlugField } from "../fields/SlugField";
 import { toFieldValue, buildFieldValue } from "../fields/field-values";
 import { sameFieldValues } from "./form-dirty";
 import { PublishScheduleControl } from "./PublishScheduleControl";
+import { StatusToggle } from "./StatusToggle";
+import { ExtraFieldsPanel } from "../fields/ExtraFieldsPanel";
+import {
+  coerceExtraValues,
+  readExtraValues,
+  type ExtraFieldDef,
+} from "@/lib/extra-fields";
 import { TextMorph } from "torph/react";
 
 // core-v2 §3.3: generic declarative form client. Admin create/edit and public
@@ -78,6 +85,11 @@ export interface AdminFormViewProps extends FormViewBaseProps {
    * 真正的門在 CRUD API(沒有「編輯」一律 403)。
    */
   readOnly?: boolean;
+  /**
+   * 管理員在設定頁替這種內容加的額外欄位(lib/extra-fields.ts)。值住在 data.extra,
+   * 由 FormViewPage 在 server 讀好傳進來;插件的 layout.tsx 也收得到(同一份 props)。
+   */
+  extraFields?: ExtraFieldDef[];
 }
 
 interface PublicFormModeProps extends FormViewBaseProps {
@@ -94,7 +106,6 @@ interface PublicFormModeProps extends FormViewBaseProps {
 export type FormViewProps = AdminFormViewProps | PublicFormModeProps;
 
 type FieldValues = Record<string, unknown>;
-type Messages = ReturnType<typeof getMessages>;
 
 // AS.3: see the `dirty` state comment in FormView — outlasts RichtextEditor's
 // own 300ms onChange debounce so its mount-time value normalisation never
@@ -160,79 +171,6 @@ function sameState(
   return sameFieldValues(a, b);
 }
 
-/**
- * Status picker (admin mode) — 兩段式 paper & ink chip 切換器,取代原生 <select>。
- * Tab/Enter/Space/方向鍵 都能用(由 host element 自己負責)。
- */
-type EntryStatus = "draft" | "published";
-
-function StatusToggle({
-  value,
-  onChange,
-  m,
-  disabled = false,
-}: {
-  value: EntryStatus;
-  onChange: (next: EntryStatus) => void;
-  m: Messages;
-  /** 1.50.0:只能檢視時停用(不能切換、不能聚焦到另一個選項)。 */
-  disabled?: boolean;
-}) {
-  const options: EntryStatus[] = ["draft", "published"];
-  const selectedIndex = options.indexOf(value);
-
-  function onKey(e: KeyboardEvent<HTMLDivElement>) {
-    if (disabled) return;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-      e.preventDefault();
-      onChange(options[(selectedIndex + 1) % options.length]);
-    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-      e.preventDefault();
-      onChange(options[(selectedIndex - 1 + options.length) % options.length]);
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      onChange(options[0]);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      onChange(options[options.length - 1]);
-    }
-  }
-
-  return (
-    <div
-      role="radiogroup"
-      aria-label={m["extForm.admin.entryStatus"]}
-      onKeyDown={onKey}
-      className="inline-flex rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.04] admin:bg-ink/[0.04] p-0.5"
-    >
-      {options.map((opt) => {
-        const active = opt === value;
-        return (
-          <button
-            key={opt}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            tabIndex={active ? 0 : -1}
-            disabled={disabled}
-            onClick={() => onChange(opt)}
-            className={
-              "inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 outline-none disabled:cursor-not-allowed disabled:opacity-60 " +
-              (active
-                ? "bg-white admin:bg-surface text-black/85 admin:text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_-1px_rgba(0,0,0,0.06))] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--admin-accent)_35%,transparent)]"
-                : "text-black/55 admin:text-ink/55 hover:text-black/85 admin:hover:text-ink/85 focus-visible:text-black/85 admin:focus-visible:text-ink/85 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]")
-            }
-          >
-            {opt === "draft"
-              ? m["collection.filter.draft"]
-              : m["collection.filter.published"]}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // Seed each field's editor value from stored data. Per-type normalisation lives
 // in fields/field-values.ts (toFieldValue) so top-level fields AND nested
 // group/repeater/blocks subfields share one contract (Tier 2 v1.2).
@@ -269,6 +207,9 @@ function FormViewInner(props: FormViewProps) {
     ? "draft"
     : (props.initialStatus ?? "draft");
   const initialPublishAt = isPublic ? null : (props.initialPublishAt ?? null);
+  // 額外欄位只在後台:公開表單不畫、不送(匿名建立本來就會丟掉未宣告的 key)。
+  const extraDefs = isPublic ? [] : (props.extraFields ?? []);
+  const initialExtra = useState(() => readExtraValues(initialData.extra))[0];
   const initialValues = useState<FieldValues>(() =>
     toFieldValues(fields, initialData),
   )[0];
@@ -276,11 +217,13 @@ function FormViewInner(props: FormViewProps) {
   const initialValuesRef = useRef<FieldValues>(initialValues);
   const initialEntryStatusRef = useRef<"draft" | "published">(initialEntryStatus);
   const initialPublishAtRef = useRef<number | null>(initialPublishAt);
+  const initialExtraRef = useRef<FieldValues>(initialExtra);
   const [values, setValues] = useState<FieldValues>(initialValues);
   const [entryStatus, setEntryStatus] = useState<"draft" | "published">(
     initialEntryStatus,
   );
   const [publishAt, setPublishAt] = useState<number | null>(initialPublishAt);
+  const [extra, setExtra] = useState<FieldValues>(initialExtra);
   const [submitState, setSubmitState] = useState<"idle" | "success">("idle");
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -310,11 +253,13 @@ function FormViewInner(props: FormViewProps) {
     nextValues: FieldValues,
     nextStatus: "draft" | "published",
     nextPublishAt: number | null,
+    nextExtra: FieldValues = extra,
   ): boolean {
     if (!readyRef.current) return false;
     if (!sameState(nextValues, initialValuesRef.current)) return true;
     if (nextStatus !== initialEntryStatusRef.current) return true;
     if (nextPublishAt !== initialPublishAtRef.current) return true;
+    if (!sameState(nextExtra, initialExtraRef.current)) return true;
     return false;
   }
 
@@ -360,6 +305,15 @@ function FormViewInner(props: FormViewProps) {
     });
   }
 
+  function setExtraField(key: string, value: unknown) {
+    if (readOnly) return;
+    setExtra((prev) => {
+      const next = { ...prev, [key]: value };
+      setDirty(recomputeDirty(values, entryStatus, publishAt, next));
+      return next;
+    });
+  }
+
   function setEntryStatusDirty(next: "draft" | "published") {
     setEntryStatus(next);
     if (!isPublic) setDirty(recomputeDirty(values, next, publishAt));
@@ -374,6 +328,7 @@ function FormViewInner(props: FormViewProps) {
     setValues({ ...initialValuesRef.current });
     setEntryStatus(initialEntryStatusRef.current);
     setPublishAt(initialPublishAtRef.current);
+    setExtra({ ...initialExtraRef.current });
     setDirty(false);
     setSaved(false);
     setError(null);
@@ -388,6 +343,7 @@ function FormViewInner(props: FormViewProps) {
     initialEntryStatusRef.current = entryStatus;
     // 存檔後的 baseline 用「實際送出」的值:Published 一律清排程(見 buildData)。
     initialPublishAtRef.current = entryStatus === "published" ? null : publishAt;
+    initialExtraRef.current = { ...extra };
     setDirty(false);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1200);
@@ -430,6 +386,9 @@ function FormViewInner(props: FormViewProps) {
       // row 層排程欄位(content-provider.ts extractPublishAt):admin 表單永遠帶
       // 明確值(number | null)以如實反映 UI 狀態;Published 沒有排程可言 → 清 null。
       out.publishAt = entryStatus === "published" ? null : publishAt;
+      // 額外欄位整包送(更新是淺合併,送整包才刪得掉清空的值);沒有定義就不送,
+      // 舊值原封留在 data 裡。server 會用同一支 coerce 再整理一次。
+      if (extraDefs.length > 0) out.extra = coerceExtraValues(extraDefs, extra);
     }
     if (isPublic && honeypot.length > 0) out._hp = honeypot;
     return out;
@@ -753,26 +712,34 @@ function FormViewInner(props: FormViewProps) {
         pending: pending || readOnly,
         props,
         body: (
-          <div className="col-span-full flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-black/55 admin:text-ink/55">
-              {m["extForm.admin.status"]}
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusToggle
-                value={entryStatus}
-                onChange={setEntryStatusDirty}
-                m={m}
-                disabled={readOnly}
-              />
-              {entryStatus === "draft" && (
-                <PublishScheduleControl
-                  value={publishAt}
-                  onChange={setPublishAtDirty}
-                  disabled={pending || readOnly}
+          <>
+            <ExtraFieldsPanel
+              defs={extraDefs}
+              values={extra}
+              onChange={setExtraField}
+              disabled={pending || readOnly}
+            />
+            <div className="col-span-full flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-black/55 admin:text-ink/55">
+                {m["extForm.admin.status"]}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusToggle
+                  value={entryStatus}
+                  onChange={setEntryStatusDirty}
+                  m={m}
+                  disabled={readOnly}
                 />
-              )}
+                {entryStatus === "draft" && (
+                  <PublishScheduleControl
+                    value={publishAt}
+                    onChange={setPublishAtDirty}
+                    disabled={pending || readOnly}
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          </>
         ),
         saveBar: readOnly ? null : (
           <div

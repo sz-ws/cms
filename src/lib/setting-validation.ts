@@ -1,5 +1,6 @@
 import { normalizeHex } from "./color";
 import { adminThemeSchema } from "./admin-theme";
+import { EXTRA_FIELDS_SETTING, extraFieldsSettingSchema } from "./extra-fields";
 
 export type SettingValueField = {
   key: string;
@@ -17,6 +18,7 @@ export type SettingValueErrorCode =
   | "invalid_option"
   | "invalid_color"
   | "invalid_theme"
+  | "invalid_extra_fields"
   | "not_serializable";
 
 export interface SettingValueError {
@@ -44,6 +46,11 @@ export function validateSettingValue(
 ): SettingValueErrorCode | null {
   if (field.key === "core.adminTheme") {
     return value === null || adminThemeSchema.safeParse(value).success ? null : "invalid_theme";
+  }
+  // 額外欄位的定義一路影響 CRUD 寫入與對外出口(哪些值算公開),所以不能只看「是不是
+  // JSON」:整份照 schema 驗,重複代號、超過上限都在這裡擋掉。
+  if (field.key === EXTRA_FIELDS_SETTING) {
+    return extraFieldsSettingSchema.safeParse(value).success ? null : "invalid_extra_fields";
   }
   const empty =
     value === undefined ||

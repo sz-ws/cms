@@ -10,6 +10,13 @@ import {
   registerExtensionLayout,
   type LayoutComponentProps,
 } from "@/ext/dx/extension-layouts";
+import { getMessages } from "@/lib/i18n/index";
+import { readExtraValues } from "@/lib/extra-fields";
+import { ExtraFieldsPanel } from "@/ext/dx/fields/ExtraFieldsPanel";
+import { StatusToggle, type EntryStatus } from "@/ext/dx/views/StatusToggle";
+import { PublishScheduleControl } from "@/ext/dx/views/PublishScheduleControl";
+import { sameFieldValues } from "@/ext/dx/views/form-dirty";
+import { buildBlogPayload } from "./payload";
 
 // `extensions/blog/layout.tsx` — Notion-style editor, Paper & Ink visual
 // language. Cover hero at top (with generate presets), then a concentric-card
@@ -80,12 +87,23 @@ export function BlogLayout(props: LayoutComponentProps) {
   const [showBar, setShowBar] = useState(false);
   const [coverPreset] = useState(0);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  // 狀態與排程照 FormView 的做法:存檔帶著目前的狀態,發佈/取消發佈在版面裡切。
+  const [initialStatus] = useState<EntryStatus>(() => props.initialStatus ?? "draft");
+  const [initialPublishAt] = useState(() => props.initialPublishAt ?? null);
+  const [status, setStatus] = useState<EntryStatus>(initialStatus);
+  const [publishAt, setPublishAt] = useState<number | null>(initialPublishAt);
+  const [initialExtra] = useState(() => readExtraValues(props.initialData?.extra));
+  const [extra, setExtra] = useState<Record<string, unknown>>(initialExtra);
+  const extraFields = props.extraFields ?? [];
+  const m = useMemo(() => getMessages(props.locale), [props.locale]);
 
   const baseline = useMemo(() => seedStrings(props, timeZone), [props, timeZone]);
   const dirty = useMemo(() => {
     if (STRING_FIELDS.some((k) => str[k] !== baseline[k])) return true;
+    if (status !== initialStatus || publishAt !== initialPublishAt) return true;
+    if (!sameFieldValues(extra, initialExtra)) return true;
     return JSON.stringify(body) !== JSON.stringify(initialBody);
-  }, [str, baseline, body, initialBody]);
+  }, [str, baseline, body, initialBody, status, initialStatus, publishAt, initialPublishAt, extra, initialExtra]);
   const isEdit = Boolean(props.initialId);
 
   useEffect(() => autoGrow(titleRef.current), [titleRef]);
@@ -102,6 +120,21 @@ export function BlogLayout(props: LayoutComponentProps) {
     if (error) setError(null);
   }
 
+  function updateStatus(next: EntryStatus) {
+    setShowBar(true);
+    setStatus(next);
+  }
+
+  function updatePublishAt(next: number | null) {
+    setShowBar(true);
+    setPublishAt(next);
+  }
+
+  function updateExtra(key: string, value: unknown) {
+    setShowBar(true);
+    setExtra((p) => ({ ...p, [key]: value }));
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setShowBar(true);
@@ -111,11 +144,14 @@ export function BlogLayout(props: LayoutComponentProps) {
     const url = isEdit
       ? `/api/ext/${props.extId}/${props.typeName}/${encodeURIComponent(props.initialId!)}`
       : `/api/ext/${props.extId}/${props.typeName}`;
-    const payload: Record<string, unknown> = { ...str, body, status: "draft" };
-    if (str.publishedAt) {
-      const t = Date.parse(str.publishedAt);
-      if (Number.isFinite(t)) payload.publishedAt = t;
-    }
+    const payload = buildBlogPayload({
+      strings: str,
+      body,
+      status,
+      publishAt,
+      extraFields,
+      extra,
+    });
     try {
       const res = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
@@ -256,6 +292,37 @@ export function BlogLayout(props: LayoutComponentProps) {
               />
             </div>
           </div>
+
+          {extraFields.length > 0 && (
+            <div className="mt-5">
+              <ExtraFieldsPanel
+                defs={extraFields}
+                values={extra}
+                onChange={updateExtra}
+                disabled={pending || props.readOnly}
+              />
+            </div>
+          )}
+
+          {/* status — 同 FormView:草稿才有排程 */}
+          <div className="mt-5 flex flex-col gap-1.5 border-t border-black/[0.06] pt-4">
+            <Label>{m["extForm.admin.status"]}</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusToggle
+                value={status}
+                onChange={updateStatus}
+                m={m}
+                disabled={props.readOnly}
+              />
+              {status === "draft" && (
+                <PublishScheduleControl
+                  value={publishAt}
+                  onChange={updatePublishAt}
+                  disabled={pending || props.readOnly}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -282,6 +349,9 @@ export function BlogLayout(props: LayoutComponentProps) {
                 onClick={() => {
                   setStr(baseline);
                   setBody(initialBody);
+                  setStatus(initialStatus);
+                  setPublishAt(initialPublishAt);
+                  setExtra(initialExtra);
                   router.push(props.backHref);
                 }}
                 disabled={!dirty}
@@ -294,7 +364,8 @@ export function BlogLayout(props: LayoutComponentProps) {
                 disabled={pending || !dirty}
                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-black pr-3 pl-3.5 text-[14px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.15)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <span>{pending ? "Saving…" : isEdit ? "Save" : "Publish"}</span>
+                {/* 以前新文章寫「Publish」,送出的卻是草稿;發不發佈看上面的狀態。 */}
+                <span>{pending ? "Saving…" : "Save"}</span>
                 {!pending && <span aria-hidden className="text-white/70">→</span>}
               </button>
             </div>

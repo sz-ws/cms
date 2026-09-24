@@ -425,6 +425,20 @@ export const CORE_SETTINGS: SettingField[] = [
     type: "textarea",
     default: DEFAULT_INSIGHT_CONFIG,
   },
+  {
+    key: "core.content.extraFields",
+    group: "advanced",
+    label: { en: "Additional fields", "zh-Hant": "額外欄位" },
+    description: {
+      en: "Extra fields editors fill in on each entry, per content type.",
+      "zh-Hant": "每種內容額外要填的欄位。",
+    },
+    // 值是 { "<extId>.<typeName>": ExtraFieldDef[] },只由設定頁的額外欄位管理元件寫入,
+    // 不進通用設定表單(settings/page.tsx 排除)。形狀與驗證在 lib/extra-fields.ts;
+    // PUT /api/settings 經 setting-validation 用同一份 zod schema 擋壞值(同 core.adminTheme)。
+    type: "textarea",
+    default: {},
+  },
 ];
 
 /** extension settings 的完整 key:ext.<extId>.<key>(03 §7 / 05 §3)。 */
