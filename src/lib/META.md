@@ -20,6 +20,14 @@
 - `public-csp.ts`: script hosts of approved declarative scripts, read straight from the
   D1 binding (runs in the edge middleware, so no drizzle / zod). The middleware uses
   `cachedApprovedScriptHosts`, memoised per isolate behind a version stamp.
+- `stamps.ts`: the version stamps behind the settings, extension-runtime and CSP
+  memos — the SQL, the exact string formats, and the optional Workers KV copy
+  (`CMS_KV`) that public GET pages read instead of D1. Zero deps (the middleware
+  loads it). Writes publish through `invalidateSettingsCache` /
+  `invalidateExtRuntimeMemo`; a copy older than five minutes is ignored.
+- `request-stamps.ts`: one round trip per request for the settings + runtime stamps
+  (`getRequestStamps`, React-cached); KV only when the middleware marked the request
+  as a public page (`x-cms-public-page`), D1 otherwise.
 - `rate-limit.ts`: shared `hitRateLimit` (D1 KV-style table).
 - `extra-fields.ts`: additional fields an admin adds per content type
   (`core.content.extraFields`; values in `data.extra`). Pure (zod only) so the settings

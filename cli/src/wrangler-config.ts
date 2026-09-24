@@ -1,8 +1,9 @@
 // wrangler.jsonc 的讀取與外科式寫回。
 //
-// 這個模組只准外科式修改兩種 setup 擁有的欄位:
+// 這個模組只准外科式修改三種 setup 擁有的欄位:
 //   - 租戶命名:name、WORKER_SELF_REFERENCE.service、D1/R2 的資源名稱。
 //   - D1 的 database_id。
+//   - kv_namespaces 裡 setup 自己那一項(binding CMS_KV)的 id;其他 KV binding 一律不碰。
 // main / triggers / assets 等執行行為欄位一律不動。用 span 替換而不是重新序列化,
 // 這條鐵律就不是靠自律,而是結構上做不到:編輯區間只會落在允許的值字面量上。
 
@@ -41,6 +42,12 @@ export interface R2Entry {
   nameSpan: Span;
 }
 
+export interface KvEntry {
+  binding: string;
+  /** 目前設定檔裡的 namespace id;鍵不存在或不是字串時為 undefined。 */
+  currentId: string | undefined;
+}
+
 export interface WranglerConfig {
   /** Worker 名稱(secret / deploy 都掛在它身上)。 */
   workerName: string | undefined;
@@ -56,6 +63,7 @@ export interface WranglerConfig {
   accountId: string | undefined;
   d1: D1Entry[];
   r2: R2Entry[];
+  kv: KvEntry[];
 }
 
 export class ConfigShapeError extends Error {
@@ -117,6 +125,23 @@ function readR2(node: JsoncNode): R2Entry[] {
   });
 }
 
+function readKv(node: JsoncNode): KvEntry[] {
+  const member = getMember(node, "kv_namespaces");
+  if (!member) return [];
+  if (member.value.kind !== "array") {
+    throw new ConfigShapeError("wrangler.jsonc kv_namespaces is not an array");
+  }
+  return member.value.items.map((item, i) => {
+    if (item.kind !== "object") {
+      throw new ConfigShapeError(`kv_namespaces[${i}] is not an object`);
+    }
+    return {
+      binding: getStringMember(item, "binding") ?? `kv_namespaces[${i}]`,
+      currentId: getStringMember(item, "id"),
+    };
+  });
+}
+
 function readSelfReference(node: JsoncNode): {
   service: string | undefined;
   span: Span | undefined;
@@ -166,6 +191,7 @@ export function readWranglerConfig(text: string): WranglerConfig {
     accountId: getStringMember(root, "account_id"),
     d1: readD1(root),
     r2: readR2(root),
+    kv: readKv(root),
   };
 }
 
@@ -267,6 +293,102 @@ export function writeD1Ids(
   }
 
   return { text: applyEdits(text, edits), changed };
+}
+
+// ---- kv_namespaces --------------------------------------------------------
+
+/** 新插入的 kv_namespaces 成員上方那一行說明 —— 這份設定檔的文件就是它的註解。 */
+const KV_MEMBER_COMMENT =
+  "// CMS_KV(選用):公開頁從這裡讀「版本戳」,不必每次請求都查 D1;拿掉它就回到直接查 D1。";
+
+/**
+ * `offset` 所在那一行、它前面的縮排。前面還有別的字元(代表不是獨佔一行)時回 null ——
+ * 呼叫端據此決定要換行對齊,還是維持單行寫法。
+ */
+function lineIndent(text: string, offset: number): string | null {
+  const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
+  const lead = text.slice(lineStart, offset);
+  return /^[ \t]*$/.test(lead) ? lead : null;
+}
+
+/**
+ * 把 `binding` 那一項 KV 的 id 寫進 kv_namespaces。
+ *
+ * 三種情況,全部是 span 級的插入或替換,檔案其餘 byte 一個都不動:
+ *   1. 已有這個 binding → 只換它的 id 字面量(鍵不存在就補在 binding 之後)。
+ *   2. 有 kv_namespaces 但沒有這個 binding → 接在最後一項之後,沿用它的縮排。
+ *      陣列裡的其他 binding 是別人的,一律不碰。
+ *   3. 整個 kv_namespaces 都沒有 → 以新成員插在 `r2_buckets` 的值之後
+ *      (沒有 r2 就退回 d1_databases,再沒有就最後一個成員),排版照抄 r2_buckets。
+ *      插在「值之後、原本的逗號之前」,下一個欄位上方的註解才不會被隔開
+ *      (同 writeAccountId 的理由)。
+ *
+ * 冪等:值已經相同時零編輯,`changed` 為空,重跑不動 mtime。
+ * 與 writeD1Ids 一樣,呼叫端必須傳入**寫入前重讀**的內容。
+ */
+export function writeKvNamespace(text: string, binding: string, id: string): ConfigWriteResult {
+  const root = parseJsonc(text);
+  if (root.kind !== "object") {
+    throw new ConfigShapeError("wrangler.jsonc root is not an object");
+  }
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const field = `kv_namespaces.${binding}`;
+  const entry = `{ "binding": ${quoteJsonString(binding)}, "id": ${quoteJsonString(id)} }`;
+  const insert = (at: number, replacement: string): ConfigWriteResult => ({
+    text: applyEdits(text, [{ span: { start: at, end: at }, replacement }]),
+    changed: [field],
+  });
+
+  const member = getMember(root, "kv_namespaces");
+  if (member) {
+    if (member.value.kind !== "array") {
+      throw new ConfigShapeError("wrangler.jsonc kv_namespaces is not an array, refusing to edit it");
+    }
+    const list = member.value;
+    const existing = list.items.find(
+      (item) => item.kind === "object" && getStringMember(item, "binding") === binding,
+    );
+    if (existing) {
+      const idMember = getMember(existing, "id");
+      if (idMember) {
+        if (idMember.value.kind === "string" && idMember.value.value === id) {
+          return { text, changed: [] }; // 已經對了 → 不動
+        }
+        return {
+          text: applyEdits(text, [{ span: idMember.value.span, replacement: quoteJsonString(id) }]),
+          changed: [field],
+        };
+      }
+      // id 鍵被人手工砍掉了 → 補在 binding 之後。成員後面必定接 `,` 或 `}`,插入後仍合法。
+      return insert(getMember(existing, "binding")!.value.span.end, `, "id": ${quoteJsonString(id)}`);
+    }
+    const last = list.items[list.items.length - 1];
+    if (!last) return insert(list.span.start + 1, entry); // 空陣列:不能帶前導逗號
+    // 插在最後一項的值之後而不是 `]` 之前:遇到尾逗號才不會產出 `, ,`。
+    const indent = lineIndent(text, last.span.start);
+    return insert(last.span.end, indent === null ? `, ${entry}` : `,${eol}${indent}${entry}`);
+  }
+
+  const anchor =
+    getMember(root, "r2_buckets") ??
+    getMember(root, "d1_databases") ??
+    root.members[root.members.length - 1];
+  if (!anchor) {
+    return insert(root.span.start + 1, `"kv_namespaces": [${entry}]`);
+  }
+  const memberIndent = lineIndent(text, anchor.keySpan.start);
+  if (memberIndent === null) {
+    // 單行寫法的設定檔:維持單行,也不插 `//` 註解(會把同一行後面的東西一起註解掉)。
+    return insert(anchor.value.span.end, `, "kv_namespaces": [${entry}]`);
+  }
+  const firstItem = anchor.value.kind === "array" ? anchor.value.items[0] : undefined;
+  const itemIndent = firstItem ? lineIndent(text, firstItem.span.start) : null;
+  const value =
+    itemIndent === null ? `[${entry}]` : `[${eol}${itemIndent}${entry}${eol}${memberIndent}]`;
+  return insert(
+    anchor.value.span.end,
+    `,${eol}${memberIndent}${KV_MEMBER_COMMENT}${eol}${memberIndent}"kv_namespaces": ${value}`,
+  );
 }
 
 /** 設定檔裡還是佔位值(或空)的 D1 項目 —— 部署前一定要換掉的那些。 */

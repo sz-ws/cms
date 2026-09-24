@@ -1,12 +1,14 @@
 // `sz-ws-cms setup` —— 從「本機跑得起來」到「線上跑得起來」的引導流程。
 //
-// 取代 DEPLOY.md 的手工步驟:建兩組 D1 + 兩組 R2、把回傳的 id 貼回 wrangler.jsonc、
+// 取代 DEPLOY.md 的手工步驟:建兩組 D1 + 兩組 R2 + 一個 KV、把回傳的 id 貼回 wrangler.jsonc、
 // 套 migrations、設 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN。
 //
 // 冪等性怎麼保證的:每一步都先「看帳號上有什麼」再決定要不要動作,而不是記錄自己做過什麼。
 //   - 先把這份 repo 的 site slug 寫成唯一資源名稱;只有這個本地租戶邊界已驗證後,
 //     D1 才用**名字**去 `wrangler d1 list` 找,找到就沿用它的 uuid,不會重建。
 //   - R2 先 `r2 bucket info`;真的去建到已存在的 bucket 也被當成成功。
+//   - KV 跟 D1 一樣用**名字**(cms-<slug>-kv)去 `kv namespace list` 找;KV 的 title 在帳號內
+//     唯一,就算真的去建到同名的也只會拿到 10014,不會出現第二個。
 //   - wrangler.jsonc 的值已經對了就完全不產生編輯。
 //   - migrations 本來就有 applied 紀錄表,重跑是 no-op。
 //   - 三把 worker secret 已存在就跳過(**絕不覆寫** —— 換掉任一把都是不可逆的災難,
@@ -21,13 +23,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "./exit.js";
 import { displayWidth, padVisual, type Prompter, type Reporter } from "./ui.js";
-import { WranglerClient } from "./wrangler.js";
+import { WranglerClient, isPlaceholderId, type KvNamespace } from "./wrangler.js";
 import {
   ConfigShapeError,
   readWranglerConfig,
   writeSiteResources,
   writeAccountId,
   writeD1Ids,
+  writeKvNamespace,
   type D1Entry,
   type SiteResources,
   type WranglerConfig,
@@ -187,6 +190,61 @@ export function siteResourcesForSlug(
     r2Names: [`${base}-storage`, `${base}-next-cache`],
   };
 }
+
+/**
+ * core 讀的 KV binding。沒有它 CMS 的行為與以前完全相同(公開頁直接查 D1),
+ * 所以 KV 這一步的每一種失敗都只是警告,見 ensureKvNamespace。
+ */
+export const KV_BINDING = "CMS_KV";
+
+/**
+ * KV namespace 名稱,跟 D1 / R2 一樣由 slug 衍生:cms-<slug>-kv(共用預設名稱模式是 cms-kv)。
+ * 設定檔的 kv_namespaces 只記 binding 與 id、不記名稱,所以這個名字是重跑時
+ * 認得回「自己那個 namespace」的唯一依據 —— 不要讓它跟著別的東西變。
+ */
+export function siteKvName(siteSlug: string | undefined): string {
+  return siteSlug ? `cms-${siteSlug}-kv` : "cms-kv";
+}
+
+interface KvPlan {
+  name: string;
+  /** 帳號上的 KV 清單;null = 查不到,這一輪不動 KV。 */
+  namespaces: KvNamespace[] | null;
+  /** 要寫進 CMS_KV 的既有 id;null = 要新建。 */
+  existingId: string | null;
+  /** 設定檔的 CMS_KV 需不需要改(新增或換 id)。 */
+  needsConfigWrite: boolean;
+  /** 設定檔裡已經有 CMS_KV 這一項(決定計畫說「新增」還是「更新」)。 */
+  hasEntry: boolean;
+}
+
+function planKv(
+  config: WranglerConfig,
+  namespaces: KvNamespace[] | null,
+  isNewScaffold: boolean,
+): KvPlan {
+  const name = siteKvName(config.siteSlug);
+  const entry = config.kv.find((e) => e.binding === KV_BINDING);
+  const currentId = isPlaceholderId(entry?.currentId) ? undefined : entry?.currentId;
+  const base = { name, namespaces, hasEntry: entry !== undefined };
+  if (namespaces === null) return { ...base, existingId: null, needsConfigWrite: false };
+  const named = namespaces.find((n) => n.title === name);
+  if (named) return { ...base, existingId: named.id, needsConfigWrite: currentId !== named.id };
+  // 名字找不到,但設定檔的 CMS_KV 指向帳號上確實存在的 namespace → 那是有人手動接好的,
+  // 沿用它,不要另建一個再把它蓋掉。新 scaffold 例外:從別站 clone 過來的 id 正是
+  // 租戶邊界要擋的東西,一律照名字新建。
+  if (!isNewScaffold && currentId && namespaces.some((n) => n.id === currentId)) {
+    return { ...base, existingId: currentId, needsConfigWrite: false };
+  }
+  return { ...base, existingId: null, needsConfigWrite: true };
+}
+
+/** 失敗訊息裡「修好之後重跑哪一支」—— 受管部署下是 cms deploy,不是另一支指令。 */
+function rerunCommand(o: SetupOptions): string {
+  return o.managedDeploy ? "cms deploy" : "sz-ws-cms setup";
+}
+
+const KV_OPTIONAL_NOTE = `${KV_BINDING} is optional: without it the site reads D1 directly, as before.`;
 
 export function validateSiteSlug(siteSlug: string): string | null {
   if (!SITE_SLUG_RE.test(siteSlug)) {
@@ -545,6 +603,28 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     }
   }
 
+  const kvList = await r.task("checking account KV namespaces", () => client.listKv());
+  const kvPlan = planKv(config, kvList.namespaces, prepared.pending !== null);
+  if (kvPlan.namespaces === null) {
+    r.step(
+      "warn",
+      `could not list KV namespaces, skipping ${KV_BINDING}`,
+      [
+        KV_OPTIONAL_NOTE,
+        `rerun \`${rerunCommand(o)}\` once \`wrangler kv namespace list\` works (API tokens need Workers KV Storage permission).`,
+        ...(kvList.detail ? [`wrangler said: ${kvList.detail}`] : []),
+      ].join("\n"),
+    );
+  } else if (kvPlan.existingId) {
+    r.step(
+      kvPlan.needsConfigWrite ? "todo" : "ok",
+      `KV ${kvPlan.name} (${KV_BINDING}) exists`,
+      kvPlan.needsConfigWrite ? `config needs update to ${kvPlan.existingId}` : "config id is correct",
+    );
+  } else {
+    r.step("todo", `KV ${kvPlan.name} (${KV_BINDING}) needs to be created`);
+  }
+
   if (prepared.pending) {
     const collisions = [...r2States].filter(([, state]) => state !== false).map(([name]) => name);
     if (collisions.length > 0) {
@@ -559,6 +639,14 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       ]);
       return EXIT.SETUP_PREREQ;
     }
+    if (kvPlan.existingId) {
+      r.step("fail", "new scaffold will not claim existing KV namespace on account", kvPlan.name);
+      r.outro([
+        "this means site slug is already in use or the namespace belongs to another site. use a new --site-slug instead.",
+        "to protect tenant data, existing resources are only reused when rerunning an existing repo with same slug.",
+      ]);
+      return EXIT.SETUP_PREREQ;
+    }
   }
 
   // 建立的是「資料庫」不是「binding」—— 合併模式下兩個 binding 共用一個名字,
@@ -568,6 +656,8 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   ).size;
   const willWriteConfig = d1Plans.filter((p) => p.needsConfigWrite).length;
   const willCreateR2 = [...r2States.values()].filter((v) => v !== true).length;
+  const willCreateKv = kvPlan.namespaces !== null && !kvPlan.existingId ? 1 : 0;
+  const willWriteKv = kvPlan.needsConfigWrite ? 1 : 0;
   const migrationTargets = config.d1.filter((e) => e.hasMigrationsDir);
 
   // ---- 4. 確認 ----
@@ -575,7 +665,17 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     r.note("rehearsal results", [
       `create D1: ${willCreateD1}`,
       `create R2: ${willCreateR2}`,
+      `create KV: ${willCreateKv}`,
       `update database_id in ${relConfig}: ${willWriteConfig} fields`,
+      `${KV_BINDING} binding in ${relConfig}: ${
+        kvPlan.namespaces === null
+          ? "skipped (could not list KV namespaces)"
+          : !kvPlan.needsConfigWrite
+            ? "already correct"
+            : kvPlan.hasEntry
+              ? "update id"
+              : "add"
+      }`,
       prepared.pending
         ? `set site slug: ${prepared.pending.siteSlug} (atomically updates 7 tenant fields)`
         : "set site slug: use existing config",
@@ -596,12 +696,20 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     return EXIT.OK;
   }
 
-  if (willCreateD1 + willCreateR2 + willWriteConfig === 0) {
+  if (willCreateD1 + willCreateR2 + willWriteConfig + willCreateKv + willWriteKv === 0) {
     r.step("ok", "resources and config are ready, nothing to create.");
   } else if (!o.assumeYes) {
+    // 只列真的要建的東西:改版前設定好的站重跑時只差一個 KV,
+    // 問「create 0 D1 databases, 0 R2 buckets, 1 KV namespace」只會讓人多讀兩個零。
+    const creations = [
+      willCreateD1 > 0 ? plural(willCreateD1, "D1 database") : null,
+      willCreateR2 > 0 ? plural(willCreateR2, "R2 bucket") : null,
+      willCreateKv > 0 ? plural(willCreateKv, "KV namespace") : null,
+    ].filter((part): part is string => part !== null);
     const go = await prompter.confirm(
-      `create ${plural(willCreateD1, "D1 database")}, ` +
-        `${plural(willCreateR2, "R2 bucket")}, and update ${relConfig}?`,
+      creations.length > 0
+        ? `create ${creations.join(", ")}, and update ${relConfig}?`
+        : `update ${relConfig}?`,
       true,
     );
     if (!go) {
@@ -667,6 +775,9 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     }
     r.step("ok", `created R2 ${bucket.bucketName}`);
   }
+
+  // ---- 6.5. KV(選用,失敗只警告)----
+  await ensureKvNamespace(o, kvPlan, relConfig);
 
   // ---- 7. migrations ----
   // 只對宣告了 migrations_dir 的 D1 跑。cms-tag-cache 沒有那個欄位,它的
@@ -826,6 +937,57 @@ async function persistIds(
     ]);
     o.reporter.outro(["after filling, rerun `sz-ws-cms setup`, created resources will be detected and skipped."]);
     return EXIT.SETUP_FAILED;
+  }
+}
+
+/**
+ * 建立或認回 CMS_KV 的 namespace,並把 id 寫進設定檔。
+ *
+ * 這一步的每一種失敗都只**警告**、不回傳 exit code:沒有 CMS_KV 時 CMS 的行為與以前
+ * 完全相同,為了一個選用的快取擋下整個 setup / cms deploy 不划算 —— 尤其 CI 用的
+ * API token 常常只給了 D1 / R2 / Workers 權限,改版前能部署的站不該因此部署不了。
+ * 重跑會從偵測重新來過,已建好的 namespace 用名字認回來。
+ */
+async function ensureKvNamespace(o: SetupOptions, plan: KvPlan, relConfig: string): Promise<void> {
+  const { reporter: r } = o;
+  if (plan.namespaces === null) return; // 偵測階段已經警告過
+  const rerun = rerunCommand(o);
+
+  let id = plan.existingId;
+  if (!id) {
+    const created = await r.task(`creating KV ${plan.name}`, () => o.client.createKv(plan.name));
+    if (created.outcome.status === "failed") {
+      r.step("warn", `failed to create KV ${plan.name}, ${KV_BINDING} not bound`,
+        `${created.outcome.detail}\n${KV_OPTIONAL_NOTE} rerun \`${rerun}\` to try again.`);
+      return;
+    }
+    id = created.id;
+    if (!id) {
+      // 同名已存在(10014),或建好了但輸出裡撈不到 id —— 兩種都依名稱去清單裡找,不猜。
+      const listed = await r.task(`looking up KV ${plan.name}`, () => o.client.listKv());
+      id = listed.namespaces?.find((n) => n.title === plan.name)?.id ?? null;
+    }
+    if (!id) {
+      r.step("warn", `KV ${plan.name} exists but its id could not be read, ${KV_BINDING} not bound`,
+        `check \`wrangler kv namespace list\`, then rerun \`${rerun}\`.`);
+      return;
+    }
+    r.step("ok", created.existed ? `KV ${plan.name} already exists, reusing it` : `created KV ${plan.name}`, id);
+  }
+
+  if (!plan.needsConfigWrite) return;
+  try {
+    // 寫入前重讀:前面的 D1 回填剛改過這個檔,用舊內容算出來的位移會落錯地方。
+    const fresh = await readFile(o.configPath, "utf8");
+    const { text, changed } = writeKvNamespace(fresh, KV_BINDING, id);
+    if (changed.length === 0) return;
+    await writeFile(o.configPath, text, "utf8");
+    r.step("ok", `updated ${relConfig}`, `kv_namespaces: ${KV_BINDING} → ${id}`);
+  } catch (e) {
+    r.step("warn", `could not write ${KV_BINDING} to ${relConfig}`, e instanceof Error ? e.message : String(e));
+    r.note(`add this to ${relConfig} by hand`, [
+      `"kv_namespaces": [{ "binding": "${KV_BINDING}", "id": "${id}" }]`,
+    ]);
   }
 }
 

@@ -5,6 +5,16 @@ import {
   scriptHosts,
   type ScriptSourceLike,
 } from "@/ext/dx/scripts-core";
+import {
+  SCRIPTS_STAMP_SQL,
+  readStampsFromKv,
+  readStampsRecordFromD1,
+  refreshStamps,
+  scriptsStampFromRow,
+  type KvTarget,
+  type ScriptsStampRow,
+  type StampsRecord,
+} from "./stamps";
 
 // [core] 公開頁 CSP 的主機白名單:啟用中、而且核准紀錄對得上目前內容的宣告式插件
 // scripts,它們的 src 主機與宣告的 domains。判斷與 ext/dx/scripts-widget.tsx 同一條
@@ -88,16 +98,50 @@ export async function approvedScriptHosts(d1: D1Database): Promise<string[]> {
 // 戳在讀清單之前算:兩次讀之間若有寫入,存下來的是「較新的清單 + 較舊的戳」,下一個
 // 請求的戳對不上、重讀一次而已,不會拿舊清單配新戳。middleware 與 route 是不同的
 // bundle,module 狀態不共用,所以這裡沒有「寫入後主動清掉」的出口 —— 也不需要。
-
-const STAMP_SQL = `SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), 0) AS m, COALESCE(SUM(enabled), 0) AS e
-  FROM declarative_extensions`;
+//
+// 綁了 CMS_KV 的站,戳先從 KV 的副本拿(./stamps.ts):核准、撤銷、啟停 script 的寫入路徑
+// 都會發布新戳,所以同樣是「寫入後就換戳」,只是其他機房要等 KV 快取過期(約 60 秒)。
+// 副本拿到的戳可能比 D1 舊一點,但清單永遠是當下從 D1 讀的,「較新的清單 + 較舊的戳」
+// 的方向不變。
 
 let memo: { stamp: string; hosts: readonly string[] } | null = null;
 
-/** approvedScriptHosts 加上版本戳 memo(middleware 用)。讀不到會丟例外,由呼叫端處理。 */
-export async function cachedApprovedScriptHosts(d1: D1Database): Promise<readonly string[]> {
-  const row = await d1.prepare(STAMP_SQL).first<{ n: number; m: number; e: number }>();
-  const stamp = `${row?.n ?? 0}:${row?.m ?? 0}:${row?.e ?? 0}`;
+async function combinedFromD1(d1: D1Database): Promise<StampsRecord | null> {
+  try {
+    return await readStampsRecordFromD1(d1);
+  } catch {
+    // 合併查詢要三張表都在;缺一張(只建了 declarative_extensions 的庫)就退回單表那條。
+    return null;
+  }
+}
+
+/** 白名單的版本戳。有夠新的 KV 副本就用它(零 D1),否則照舊問 D1。 */
+async function scriptsStamp(d1: D1Database, kv: KvTarget | undefined): Promise<string> {
+  if (kv) {
+    const cached = await readStampsFromKv(kv.kv);
+    if (cached.state === "fresh") return cached.stamps.scripts;
+    if (cached.state === "refresh") {
+      // 副本沒有、壞了、太舊:用合併查詢算(同樣一趟),順手把三組戳一起寫回 KV。
+      const record = await combinedFromD1(d1);
+      if (record) {
+        refreshStamps(kv, record);
+        return record.scripts;
+      }
+    }
+  }
+  const row = await d1.prepare(SCRIPTS_STAMP_SQL).first<ScriptsStampRow>();
+  return scriptsStampFromRow(row);
+}
+
+/**
+ * approvedScriptHosts 加上版本戳 memo(middleware 用)。kv 只在綁了 CMS_KV 的公開頁請求
+ * 傳進來;沒傳就與以前一字不差。讀不到會丟例外,由呼叫端處理。
+ */
+export async function cachedApprovedScriptHosts(
+  d1: D1Database,
+  kv?: KvTarget,
+): Promise<readonly string[]> {
+  const stamp = await scriptsStamp(d1, kv);
   if (memo && memo.stamp === stamp) return memo.hosts;
   const hosts = Object.freeze(await approvedScriptHosts(d1));
   memo = { stamp, hosts };

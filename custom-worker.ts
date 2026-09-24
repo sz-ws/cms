@@ -1,6 +1,7 @@
 import openNextHandler from "./.open-next/worker.js";
 import { runCronTick } from "./extensions/cron/scheduled";
 import { withScheduledReporting } from "./extensions/sentry/scheduled";
+import { stripPublicPageHeader } from "./src/lib/stamps";
 
 // Worker 入口(wrangler.jsonc 的 `main`)—— OpenNext 產出的 handler 再包一層。
 //
@@ -15,7 +16,12 @@ import { withScheduledReporting } from "./extensions/sentry/scheduled";
 export * from "./.open-next/worker.js";
 
 const worker = {
-  fetch: openNextHandler.fetch,
+  async fetch(incoming: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
+    // 「這是公開頁,版本戳可以從 KV 拿」只能由 middleware 說(src/lib/stamps.ts)。middleware
+    // 不經過 /api 與 /_next,瀏覽器自己帶來的這個標頭在這裡對每個請求刪掉;沒帶就原樣。
+    const request = stripPublicPageHeader(incoming);
+    return openNextHandler.fetch(request, env, ctx);
+  },
 
   // 分鐘級準時排程的「錶」。實作在 extensions/cron/scheduled.ts —— core 本身
   // 永遠只有 lazy sweep,secret 與 tick 入口都屬於 cron extension(見該檔註解)。

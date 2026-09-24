@@ -14,6 +14,7 @@ import { EXIT } from "./exit.js";
 let cwd: string;
 const id = "11111111-2222-3333-4444-555555555555";
 const origin = "https://cms-demo.example.workers.dev";
+const kvId = "0123456789abcdef0123456789abcdef";
 const env = { CMS_ADMIN_EMAIL: "owner@example.com", CMS_ADMIN_NAME: "Owner", CMS_ADMIN_PASSWORD: "private-test-password", CMS_SITE_TITLE: "Demo" };
 const prompter: Prompter = {
   confirm: async () => true, text: async () => "demo", select: async (_q, options) => options[0].value,
@@ -65,6 +66,8 @@ function harness(options: {
       stdout = '{"email":"owner@example.com"}';
     }
     if (args[0] === "d1" && args[1] === "list") stdout = JSON.stringify([{ name: "cms-demo-db", uuid: id }]);
+    if (args[0] === "kv" && args[2] === "list") stdout = "[]";
+    if (args[0] === "kv" && args[2] === "create") stdout = JSON.stringify({ kv_namespaces: [{ binding: "cms_demo_kv", id: kvId }] }, null, 2);
     if (args[0] === "d1" && args[1] === "execute") {
       const results = args.includes("SELECT COUNT(*) AS count FROM users")
         ? [{ count: options.users ?? 0 }]
@@ -169,8 +172,19 @@ describe("open-source deployment workflow", () => {
   it("dry run only discovers resources and does not install, build, migrate or contact the site", async () => {
     const h = harness();
     expect(await h.run({ dryRun: true })).toBe(0);
-    expect(h.calls.every((s) => /whoami|d1 list|r2 bucket info/.test(s))).toBe(true);
+    expect(h.calls.every((s) => /whoami|d1 list|r2 bucket info|kv namespace list/.test(s))).toBe(true);
     expect(h.requests).toHaveLength(0);
+  });
+
+  // 在 CMS_KV 出現之前就部署過的站:照常跑 cms deploy 就會補上 namespace 與 binding,
+  // 不需要另一支指令,D1 / R2 也不會被重建。
+  it("adds the CMS_KV namespace and binding to a site deployed before it existed", async () => {
+    const h = harness({ existingKeys: true, users: 1 });
+    expect(await h.run()).toBe(0);
+    expect(h.calls).toContain("wrangler kv namespace create cms-demo-kv");
+    expect(h.calls.some((c) => /d1 create|r2 bucket create/.test(c))).toBe(false);
+    const config = await readFile(path.join(cwd, "wrangler.jsonc"), "utf8");
+    expect(config).toContain(`"kv_namespaces": [{ "binding": "CMS_KV", "id": "${kvId}" }]`);
   });
 
   // 使用者沒下 --skip-migrations / --skip-secrets,而且這兩步之後真的會做。

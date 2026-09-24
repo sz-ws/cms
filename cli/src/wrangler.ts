@@ -2,10 +2,10 @@
 // (也絕不會)碰到真的 Cloudflare 帳號。
 //
 // 讀 / 寫分得很開,理由是 `--dry-run`:
-//   - 讀(whoami / d1 list / r2 bucket info / secret list)在 dry-run 下**照跑**。
+//   - 讀(whoami / d1 list / r2 bucket info / kv namespace list / secret list)在 dry-run 下**照跑**。
 //     不跑就偵測不出「哪些已經存在」,dry-run 印出來的計畫會是編的。
-//   - 寫(d1 create / r2 bucket create / secret put / migrations apply)在 dry-run 下
-//     只回報「將要做什麼」,一次都不送出。
+//   - 寫(d1 create / r2 bucket create / kv namespace create / secret put / migrations apply)
+//     在 dry-run 下只回報「將要做什麼」,一次都不送出。
 
 import type { Executor, ExecResult } from "./exec.js";
 
@@ -27,6 +27,59 @@ export function parseCreatedD1Id(output: string): string | null {
   if (keyed) return keyed[1];
   const loose = UUID_RE.exec(output);
   return loose ? loose[0] : null;
+}
+
+/**
+ * 從 `wrangler kv namespace create` 的輸出裡撈 namespace id(32 位 hex)。
+ *
+ * wrangler 依設定檔格式印兩種片段,兩種都要認:
+ *   - JSON / JSONC:`"kv_namespaces": [{ "binding": "…", "id": "…" }]`
+ *   - TOML:`[[kv_namespaces]]` 底下的 `id = "…"`(舊版是單行的 `{ binding = "…", id = "…" }`)
+ * `preview_id` 刻意不收 —— 那是 `--preview` 建的另一個 namespace,不是我們要的。
+ *
+ * 刻意**沒有**「撈第一個像 id 的東西」的退路:account id 也是 32 位 hex,
+ * 猜錯的代價是把別的東西寫進 binding。撈不到就回 null,呼叫端改用 list 依名稱查。
+ */
+export function parseCreatedKvId(output: string): string | null {
+  const json = /"id"\s*:\s*"([0-9a-f]{32})"/i.exec(output);
+  if (json) return json[1].toLowerCase();
+  const toml = /(?:^|[\s{,])id\s*=\s*"([0-9a-f]{32})"/im.exec(output);
+  return toml ? toml[1].toLowerCase() : null;
+}
+
+export interface KvNamespace {
+  id: string;
+  title: string;
+}
+
+/**
+ * `kv namespace list` 的輸出本來就是 JSON(wrangler 對這條指令關掉了 banner)。
+ * 還是防一手:整段 parse 失敗時,從每個「行首的 `[`」到最後一個 `]` 逐一再試 ——
+ * 萬一哪一版在前面多印一行提示,不該因此把「查得到」誤判成「查不到」。
+ * 只認行首:提示行自己就常帶 `[WARNING]` 這種方括號。
+ */
+function parseKvList(stdout: string): KvNamespace[] | null {
+  const attempt = (text: string): unknown => {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return undefined;
+    }
+  };
+  let parsed = attempt(stdout);
+  const end = stdout.lastIndexOf("]");
+  for (const m of parsed === undefined ? stdout.matchAll(/^\[/gm) : []) {
+    parsed = attempt(stdout.slice(m.index, end + 1));
+    if (parsed !== undefined) break;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const out: KvNamespace[] = [];
+  for (const raw of parsed as { id?: unknown; title?: unknown }[]) {
+    if (typeof raw?.id === "string" && typeof raw.title === "string") {
+      out.push({ id: raw.id, title: raw.title });
+    }
+  }
+  return out;
 }
 
 export interface D1Database {
@@ -232,6 +285,49 @@ export class WranglerClient {
       return { status: "failed", detail: (r.stderr || r.stdout).trim() };
     }
     return { status: "done" };
+  }
+
+  /**
+   * 帳號裡現有的 KV namespace。`namespaces` 為 null 代表查不到,不等於「沒有」。
+   * 最常見的原因是 API token 沒有 Workers KV 權限 —— 呼叫端要能分辨這種情況。
+   */
+  async listKv(): Promise<{ namespaces: KvNamespace[] | null; detail: string | null }> {
+    const r = await this.run(["kv", "namespace", "list"]);
+    if (r.code !== 0) {
+      return { namespaces: null, detail: (r.stderr || r.stdout).trim() || null };
+    }
+    const namespaces = parseKvList(r.stdout);
+    return namespaces
+      ? { namespaces, detail: null }
+      : { namespaces: null, detail: `wrangler output is not a JSON array: ${excerpt(r.stdout)}` };
+  }
+
+  /**
+   * 建一個 KV namespace。wrangler 4 的 title 就是傳進去的名字(不再自動加 Worker 名稱前綴),
+   * 所以之後用 `listKv` 依 title 找得回來。
+   *
+   * `id: null` 有兩種情況,呼叫端都該改用 `listKv` 依名稱查:
+   *   - `existed: true`:同帳號已有同名 namespace(Cloudflare 錯誤 10014)。KV 的 title
+   *     在帳號內是唯一的,所以重跑**不可能**建出第二個 —— 這裡當成功,不當失敗。
+   *   - 建立成功但輸出格式變了、撈不到 id。資源確實建起來了,絕不能假裝沒事。
+   */
+  async createKv(
+    title: string,
+  ): Promise<{ outcome: MutationOutcome; id: string | null; existed: boolean }> {
+    if (this.o.dryRun) return { outcome: { status: "planned" }, id: null, existed: false };
+    const r = await this.run(["kv", "namespace", "create", title]);
+    const text = `${r.stdout}\n${r.stderr}`;
+    if (r.code !== 0) {
+      if (/already exists|\b10014\b/i.test(text)) {
+        return { outcome: { status: "done" }, id: null, existed: true };
+      }
+      return {
+        outcome: { status: "failed", detail: (r.stderr || r.stdout).trim() },
+        id: null,
+        existed: false,
+      };
+    }
+    return { outcome: { status: "done" }, id: parseCreatedKvId(text), existed: false };
   }
 
   /**

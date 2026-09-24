@@ -3,7 +3,7 @@
 //
 //   add <id>   code-extension 安裝器:讀 registry 索引 → 抓 extensions/<id>/files/*
 //              → 寫本機 extensions/<id>/ → patch extensions/registry.ts。
-//   setup      把 repo 接上自己的 Cloudflare 帳號:建 D1 / R2、回填 wrangler.jsonc、
+//   setup      把 repo 接上自己的 Cloudflare 帳號:建 D1 / R2 / KV、回填 wrangler.jsonc、
 //              套 migrations、設 SECRETS_KEY(見 setup.ts)。
 //   secrets    確保三把受管金鑰在**已部署的** Worker 上存在(見 secrets.ts)。
 //              `pnpm run deploy` 的 postdeploy hook 跑的就是這一支。

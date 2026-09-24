@@ -3,6 +3,7 @@ import { recordingExecutor, type ExecResult } from "./exec.js";
 import {
   isPlaceholderId,
   parseCreatedD1Id,
+  parseCreatedKvId,
   PLACEHOLDER_ID,
   WranglerClient,
 } from "./wrangler.js";
@@ -47,6 +48,40 @@ describe("parseCreatedD1Id", () => {
   it("完全撈不到就回 null(不能瞎猜)", () => {
     expect(parseCreatedD1Id("Successfully created DB 'cms-db'")).toBeNull();
     expect(parseCreatedD1Id("")).toBeNull();
+  });
+});
+
+describe("parseCreatedKvId", () => {
+  const KV = "0f2ac74b498b48028cb68387c421e279";
+
+  it("認 JSON / JSONC 設定檔會拿到的片段", () => {
+    expect(
+      parseCreatedKvId(`🌀 Creating namespace with title "cms-acme-kv"
+✨ Success!
+To access your new KV Namespace in your Worker, add the following snippet to your configuration file:
+{
+  "kv_namespaces": [
+    {
+      "binding": "cms_acme_kv",
+      "id": "${KV}"
+    }
+  ]
+}`),
+    ).toBe(KV);
+  });
+
+  it("認 TOML 設定檔會拿到的片段(區塊與舊版單行兩種)", () => {
+    expect(parseCreatedKvId(`[[kv_namespaces]]\nbinding = "cms_acme_kv"\nid = "${KV}"\n`)).toBe(KV);
+    expect(parseCreatedKvId(`{ binding = "cms_acme_kv", id = "${KV}" }`)).toBe(KV);
+  });
+
+  it("preview_id 不是我們要的 namespace", () => {
+    expect(parseCreatedKvId(`{ binding = "X", preview_id = "${KV}" }`)).toBeNull();
+    expect(parseCreatedKvId(`"preview_id": "${KV}"`)).toBeNull();
+  });
+
+  it("撈不到就回 null,不拿看起來像 id 的東西(account id 也是 32 位 hex)", () => {
+    expect(parseCreatedKvId(`✨ Success! account ${KV}`)).toBeNull();
   });
 });
 
@@ -135,11 +170,36 @@ describe("WranglerClient — 唯讀操作", () => {
     ).resolves.toBeNull();
   });
 
+  it("listKv 解析 JSON 陣列,丟掉形狀不對的項目", async () => {
+    const { client, calls } = makeClient(() =>
+      ok(JSON.stringify([{ id: "a".repeat(32), title: "cms-kv", supports_url_encoding: true }, { bad: 1 }], null, "  ")),
+    );
+    await expect(client.listKv()).resolves.toEqual({
+      namespaces: [{ id: "a".repeat(32), title: "cms-kv" }],
+      detail: null,
+    });
+    expect(calls[0].args).toEqual(["kv", "namespace", "list"]);
+  });
+
+  it("listKv 前面多印一行提示也照樣解析", async () => {
+    const res = await makeClient(() => ok(`▲ [WARNING] something\n[{"id":"${"b".repeat(32)}","title":"x"}]`)).client.listKv();
+    expect(res.namespaces).toEqual([{ id: "b".repeat(32), title: "x" }]);
+  });
+
+  it("listKv 失敗或非 JSON 回 namespaces:null,並帶回原因 —— 呼叫端不可當成空清單", async () => {
+    for (const make of [() => fail("Authentication error [code: 10000]"), () => ok("not json"), () => ok(`{"x":1}`)]) {
+      const res = await makeClient(make).client.listKv();
+      expect(res.namespaces).toBeNull();
+      expect(res.detail).toBeTruthy();
+    }
+  });
+
   it("唯讀操作在 dry-run 下照樣執行(不然計畫是編的)", async () => {
     const { client, calls } = makeClient(() => ok("[]"), true);
     await client.listD1();
     await client.r2Exists("b");
-    expect(calls.length).toBe(2);
+    await client.listKv();
+    expect(calls.length).toBe(3);
   });
 });
 
@@ -160,6 +220,26 @@ describe("WranglerClient — 寫入操作", () => {
     expect(
       res.outcome.status === "failed" ? res.outcome.detail : "",
     ).toMatch(/created D1 "cms-db"/);
+  });
+
+  it("createKv 成功時回傳 id,指令是 kv namespace create <title>", async () => {
+    const id = "c".repeat(32);
+    const { client, calls } = makeClient(() => ok(`{\n  "kv_namespaces": [{ "binding": "cms_kv", "id": "${id}" }]\n}`));
+    await expect(client.createKv("cms-kv")).resolves.toEqual({ outcome: { status: "done" }, id, existed: false });
+    expect(calls[0].args).toEqual(["kv", "namespace", "create", "cms-kv"]);
+  });
+
+  it("createKv 撞到同名(10014)視為成功,但 id 留給呼叫端用 list 查", async () => {
+    const { client } = makeClient(() =>
+      fail(`✘ [ERROR] A KV namespace with the title "cms-kv" already exists.`),
+    );
+    await expect(client.createKv("cms-kv")).resolves.toEqual({ outcome: { status: "done" }, id: null, existed: true });
+  });
+
+  it("createKv 其他錯誤才算失敗", async () => {
+    const res = await makeClient(() => fail("Authentication error")).client.createKv("cms-kv");
+    expect(res.outcome.status).toBe("failed");
+    expect(res.id).toBeNull();
   });
 
   it("createR2 把 already exists 視為成功(冪等)", async () => {
@@ -199,6 +279,7 @@ describe("WranglerClient — 寫入操作", () => {
     expect(await client.createR2("b")).toEqual({ status: "planned" });
     expect(await client.putSecret("K", "v")).toEqual({ status: "planned" });
     expect(await client.applyMigrations("cms-db")).toEqual({ status: "planned" });
+    expect((await client.createKv("cms-kv")).outcome).toEqual({ status: "planned" });
     expect(calls).toEqual([]);
   });
 

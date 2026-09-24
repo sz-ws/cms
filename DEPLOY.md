@@ -172,6 +172,31 @@ stored in the R2 object's `customMetadata` (`w` / `h`), next to the alt text.
 Files uploaded before this existed simply have no dimensions recorded; they keep
 serving normally, just without `width`/`height` attributes in the markup.
 
+## Optional: faster public pages with Workers KV
+
+On every public page the Worker asks D1 whether settings or extensions changed
+since it last read them. Far from the database, those questions are most of the
+server time. Bind a KV namespace as `CMS_KV` and public pages get that answer
+from KV instead; a warm Worker then serves a page without querying D1.
+
+```sh
+pnpm exec wrangler kv namespace create cms-kv
+```
+
+```jsonc
+// wrangler.jsonc
+"kv_namespaces": [{ "binding": "CMS_KV", "id": "<id printed by the command above>" }]
+```
+
+- A change saved in the admin reaches visitors in the admin's region on their
+  next page, and everywhere else within about a minute. A change made outside the
+  admin (SQL by hand, a seed script) shows within five minutes.
+- Admin pages and `/api` keep reading D1, so the admin always sees its own changes.
+- Each public page costs one or two KV reads; writes are one or two per save plus
+  about one per active Cloudflare location every five minutes. The Free plan's KV
+  allowance (100,000 reads and 1,000 writes a day) runs out on a site with real
+  traffic; bind it on a paid plan.
+
 ## Content-Security-Policy on public pages
 
 Public pages send an enforced `Content-Security-Policy` that only covers script

@@ -6,7 +6,7 @@ CLI for the open-source sz.ws CMS. Each user deploys to their own Cloudflare acc
 |---|---|
 | `cms create <dir> --deploy` | Clone the project and continue through deployment and first-admin setup |
 | `cms deploy` | Install dependencies, provision resources, build, apply migrations, deploy, initialize the site, and verify readiness |
-| `cms setup` | Connect repo to your Cloudflare account: create D1 / R2, fill ids back into `wrangler.jsonc`, apply migrations, set three secrets (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`) |
+| `cms setup` | Connect repo to your Cloudflare account: create D1 / R2 / KV, fill ids back into `wrangler.jsonc`, apply migrations, set three secrets (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`) |
 | `cms secrets` | Ensure those three secrets exist on the **deployed** Worker. Run automatically by the repo's `postdeploy` hook, because `wrangler secret put` needs a Worker that already exists |
 | `cms add <id>` | Install code extension: fetch files from registry → write to `extensions/<id>/` → patch `extensions/registry.ts`, then ask for the extension's declared settings |
 | `cms preflight` | Read-only: list extension settings that are still unset. `--gate` exits non-zero on missing required ones (used by the repo's `predeploy`) |
@@ -58,10 +58,12 @@ npx @sz.ws/cms setup
 
 Processes each D1 / R2 resource from `wrangler.jsonc` — resource list comes from the config file itself, not hardcoded in the CLI, so adding or removing bindings later does not require CLI changes.
 
+It also provisions one KV namespace, `cms-<slug>-kv`, bound as **`CMS_KV`**. Public pages read small version stamps from it instead of querying D1 on every request. The binding is optional: without it the site reads D1 directly, as before.
+
 1. **Login check** (`wrangler whoami`) — stops here if not logged in and prints instructions.
-2. **Discovery**: `wrangler d1 list --json` to match names by UUID, `wrangler r2 bucket info` to confirm each bucket.
-3. **Create missing resources**: `wrangler d1 create` / `wrangler r2 bucket create`.
-4. **Fill IDs back into** `wrangler.jsonc` (see next section).
+2. **Discovery**: `wrangler d1 list --json` to match names by UUID, `wrangler r2 bucket info` to confirm each bucket, `wrangler kv namespace list` to find `cms-<slug>-kv` by title.
+3. **Create missing resources**: `wrangler d1 create` / `wrangler r2 bucket create` / `wrangler kv namespace create`.
+4. **Fill IDs back into** `wrangler.jsonc` (see next section). For KV only the `CMS_KV` entry of `kv_namespaces` is written; if the array is missing it is added right after `r2_buckets`, and other KV bindings are never touched.
 5. **Apply migrations**: only for D1 databases that **declare `migrations_dir`**. `cms-tag-cache` has no such field; its `revalidations` table is created by `opennextjs-cloudflare deploy`'s populate-cache step (schema belongs to OpenNext; hand-copying into version control drifts).
 6. **Three secrets** (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`): if already present, skipped and **never overwritten**. When newly set, CLI generates 32-byte random values and pipes them via **stdin** to `wrangler secret put` — not passed via argv (visible to `ps`), not left in shell history, not printed to the terminal, no local copy kept. On a **first** setup the Worker does not exist yet, so this step cannot run at all; `cms secrets` (below) picks it up right after the first deploy.
 
@@ -71,9 +73,12 @@ Each step inspects what exists on the account before deciding to act, rather tha
 
 - D1 databases found by **name** in `d1 list`; if found, existing UUID is reused — no duplicate created.
 - R2 checks `bucket info` first; if bucket creation hits `already exists`, that counts as success.
+- KV is found by **title** in `kv namespace list`. KV titles are unique per account, so a second namespace cannot be created; if creation reports `already exists`, the id is read from the list instead. A `CMS_KV` entry you wired by hand to another namespace on the same account is kept.
 - `wrangler.jsonc` values that are already correct do not trigger writes (file mtime unchanged).
 - Migrations already have applied tracking; re-running is a no-op.
 - If interrupted mid-run, **already-fetched IDs are written back to config first** — otherwise the user would think nothing succeeded.
+
+**Sites set up before `CMS_KV` existed** need no extra command: re-run `cms setup` (or `cms deploy`, which runs the same step). It creates the namespace, adds the binding, and leaves D1 / R2 as they are.
 
 ## Why not `JSON.parse` to edit `wrangler.jsonc`
 
@@ -81,7 +86,7 @@ The config file has inline comments on nearly every field (explaining why `main`
 
 So `cli/src/jsonc.ts` is a JSONC parser that tracks **character offsets**: edits replace only the literal value's byte range, leaving everything else unchanged — comments, indentation, trailing commas, key order all preserved.
 
-Side benefit is safety: the edit range can structurally only land on `d1_databases[].database_id`; `main` / `triggers` / `assets` / `services` **cannot be touched**. Before writing, the file is re-read and offsets recalculated, avoiding conflicts with other processes editing the same config.
+Side benefit is safety: the edit range can structurally only land on `d1_databases[].database_id` and the `CMS_KV` entry of `kv_namespaces`; `main` / `triggers` / `assets` / `services` **cannot be touched**. Before writing, the file is re-read and offsets recalculated, avoiding conflicts with other processes editing the same config.
 
 ## Exit codes (setup)
 
@@ -93,6 +98,8 @@ Side benefit is safety: the edit range can structurally only land on `d1_databas
 | 9 | User cancelled at confirmation prompt (no side effects) |
 
 When `d1 list` fails, the command deliberately **does not proceed** — without that list, it cannot determine which resources already exist, and proceeding would risk duplicate databases.
+
+KV problems never change the exit code. If `kv namespace list` or `kv namespace create` fails (often an API token without **Workers KV Storage** permission), the command prints a warning, skips `CMS_KV`, and finishes the rest; re-run once the token allows it.
 
 ## What it does not do
 

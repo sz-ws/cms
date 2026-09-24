@@ -25,7 +25,7 @@ export interface ParsedArgs {
   // ---- setup ----
   /** 覆寫 wrangler 設定檔路徑(預設 <cwd>/wrangler.jsonc)。 */
   config?: string;
-  /** 新 clone 的唯一站點識別;由 setup 衍生 Worker/D1/R2 名稱。 */
+  /** 新 clone 的唯一站點識別;由 setup 衍生 Worker/D1/R2/KV 名稱。 */
   siteSlug?: string;
   /** 部署後驗證的正式 HTTPS origin；省略時由部署輸出取得 workers.dev URL。 */
   siteUrl?: string;

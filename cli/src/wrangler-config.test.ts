@@ -8,6 +8,7 @@ import {
   readVars,
   readWranglerConfig,
   writeD1Ids,
+  writeKvNamespace,
   writeVars,
 } from "./wrangler-config.js";
 import { PLACEHOLDER_ID } from "./wrangler.js";
@@ -353,5 +354,158 @@ describe("writeAccountId", () => {
     const again = writeAccountId(once, "abc123");
     expect(again.changed).toEqual([]);
     expect(again.text).toBe(once);
+  });
+});
+
+// ---- kv_namespaces ----------------------------------------------------------
+// setup 只擁有 binding CMS_KV 那一項的 id。插入 / 替換都必須是純粹的 span 編輯:
+// 原文一個字都不改、註解留在它描述的欄位上方、其他 KV binding 一律不碰。
+
+const KV_A = "aaaabbbbccccddddeeeeffff00001111";
+const KV_B = "22223333444455556666777788889999";
+
+/** before → after 只能是一段連續的插入;回傳插進來的那段。 */
+function insertedText(before: string, after: string): string {
+  let head = 0;
+  while (head < before.length && before[head] === after[head]) head++;
+  let tail = 0;
+  while (
+    tail < before.length - head &&
+    before[before.length - 1 - tail] === after[after.length - 1 - tail]
+  ) {
+    tail++;
+  }
+  expect(head + tail).toBe(before.length);
+  return after.slice(head, after.length - tail);
+}
+
+describe("readWranglerConfig — kv_namespaces", () => {
+  it("沒有 kv_namespaces → 空陣列", () => {
+    expect(readWranglerConfig(FIXTURE).kv).toEqual([]);
+  });
+
+  it("讀出 binding 與 id", () => {
+    const c = readWranglerConfig(`{ "kv_namespaces": [{ "binding": "CMS_KV", "id": "${KV_A}" }, { "binding": "X" }] }`);
+    expect(c.kv).toEqual([
+      { binding: "CMS_KV", currentId: KV_A },
+      { binding: "X", currentId: undefined },
+    ]);
+  });
+
+  it("形狀不對時給得出人看得懂的錯誤", () => {
+    expect(() => readWranglerConfig(`{ "kv_namespaces": {} }`)).toThrow(/kv_namespaces is not an array/);
+    expect(() => readWranglerConfig(`{ "kv_namespaces": ["x"] }`)).toThrow(/kv_namespaces\[0\] is not an object/);
+  });
+});
+
+describe("writeKvNamespace", () => {
+  it("沒有 kv_namespaces:插在 r2_buckets 之後,排版照抄 r2,原文與註解一個字都沒動", () => {
+    const { text, changed } = writeKvNamespace(FIXTURE, "CMS_KV", KV_A);
+    expect(changed).toEqual(["kv_namespaces.CMS_KV"]);
+    const added = insertedText(FIXTURE, text);
+    expect(added).toMatch(/^,\n  \/\/ CMS_KV/);
+    expect(added).toContain(`\n  "kv_namespaces": [\n    { "binding": "CMS_KV", "id": "${KV_A}" }\n  ]`);
+    expect(text.indexOf('"kv_namespaces"')).toBeGreaterThan(text.indexOf('"NEXT_INC_CACHE_R2_BUCKET"'));
+    expect(readWranglerConfig(text).kv).toEqual([{ binding: "CMS_KV", currentId: KV_A }]);
+    // 其餘解析結果不變。
+    expect(readWranglerConfig(text).r2).toEqual(readWranglerConfig(FIXTURE).r2);
+  });
+
+  it("r2_buckets 後面還有欄位時,下一個欄位的註解仍緊貼著它", () => {
+    const before = `{
+  "r2_buckets": [
+    { "binding": "STORAGE", "bucket_name": "cms-storage" }
+  ],
+  // 圖片 binding 的說明。
+  "images": { "binding": "IMAGES" }
+}
+`;
+    const { text } = writeKvNamespace(before, "CMS_KV", KV_A);
+    insertedText(before, text);
+    // 原本 r2 後面的逗號改由新成員接著,下一個欄位與它的註解之間沒有東西插進去。
+    expect(text).toContain(`  ],\n  // 圖片 binding 的說明。\n  "images": { "binding": "IMAGES" }`);
+    expect(text.indexOf('"kv_namespaces"')).toBeLessThan(text.indexOf("// 圖片 binding 的說明。"));
+    expect(readWranglerConfig(text).kv).toEqual([{ binding: "CMS_KV", currentId: KV_A }]);
+  });
+
+  it("既有的 CMS_KV:只換它的 id,其他 binding 與註解原樣,只有一行不同", () => {
+    const before = `{
+  "kv_namespaces": [
+    // 別人的 binding,setup 不該碰。
+    { "binding": "SESSIONS", "id": "${KV_B}" },
+    // 這一項由 setup 管理。
+    { "binding": "CMS_KV", "id": "${KV_B}" }
+  ]
+}
+`;
+    const { text, changed } = writeKvNamespace(before, "CMS_KV", KV_A);
+    expect(changed).toEqual(["kv_namespaces.CMS_KV"]);
+    const beforeLines = before.split("\n");
+    const afterLines = text.split("\n");
+    expect(afterLines.length).toBe(beforeLines.length);
+    const diff = beforeLines.map((line, i) => (line === afterLines[i] ? -1 : i)).filter((i) => i >= 0);
+    expect(diff).toEqual([5]);
+    expect(readWranglerConfig(text).kv).toEqual([
+      { binding: "SESSIONS", currentId: KV_B },
+      { binding: "CMS_KV", currentId: KV_A },
+    ]);
+  });
+
+  it("冪等:id 已經正確時零編輯", () => {
+    const once = writeKvNamespace(FIXTURE, "CMS_KV", KV_A);
+    const twice = writeKvNamespace(once.text, "CMS_KV", KV_A);
+    expect(twice.changed).toEqual([]);
+    expect(twice.text).toBe(once.text);
+    expect(twice.text.match(/"kv_namespaces"/g)).toHaveLength(1);
+  });
+
+  it("kv_namespaces 裡沒有 CMS_KV:接在最後一項之後、同樣縮排,別人的那項不動", () => {
+    const before = `{
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "${KV_B}" }
+  ]
+}
+`;
+    const { text } = writeKvNamespace(before, "CMS_KV", KV_A);
+    expect(insertedText(before, text)).toBe(`,\n    { "binding": "CMS_KV", "id": "${KV_A}" }`);
+    expect(readWranglerConfig(text).kv.map((e) => e.binding)).toEqual(["SESSIONS", "CMS_KV"]);
+  });
+
+  it("最後一項有尾逗號時仍是合法 JSONC", () => {
+    const before = `{ "kv_namespaces": [ { "binding": "SESSIONS", "id": "${KV_B}" }, ] }`;
+    const { text } = writeKvNamespace(before, "CMS_KV", KV_A);
+    expect(text).not.toMatch(/,\s*,/);
+    expect(readWranglerConfig(text).kv.map((e) => e.binding)).toEqual(["SESSIONS", "CMS_KV"]);
+  });
+
+  it("空的 kv_namespaces 不會產出 `[, …]`", () => {
+    const { text } = writeKvNamespace(`{ "kv_namespaces": [] }`, "CMS_KV", KV_A);
+    expect(text).toBe(`{ "kv_namespaces": [{ "binding": "CMS_KV", "id": "${KV_A}" }] }`);
+  });
+
+  it("CMS_KV 的 id 鍵被砍掉時補在 binding 之後", () => {
+    const { text } = writeKvNamespace(`{ "kv_namespaces": [{ "binding": "CMS_KV" }] }`, "CMS_KV", KV_A);
+    expect(text).toBe(`{ "kv_namespaces": [{ "binding": "CMS_KV", "id": "${KV_A}" }] }`);
+  });
+
+  it("單行寫法的設定檔維持單行,也不插 // 註解(會把同一行後面的東西註解掉)", () => {
+    const before = JSON.stringify({ name: "cms", r2_buckets: [{ binding: "STORAGE", bucket_name: "b" }], vars: {} });
+    const { text } = writeKvNamespace(before, "CMS_KV", KV_A);
+    expect(text).not.toContain("//");
+    expect(JSON.parse(text)).toMatchObject({
+      kv_namespaces: [{ binding: "CMS_KV", id: KV_A }],
+      vars: {},
+    });
+  });
+
+  it("CRLF 的檔案插入的也是 CRLF", () => {
+    const before = FIXTURE.replace(/\n/g, "\r\n");
+    const { text } = writeKvNamespace(before, "CMS_KV", KV_A);
+    expect(insertedText(before, text)).not.toMatch(/[^\r]\n/);
+    expect(readWranglerConfig(text).kv).toEqual([{ binding: "CMS_KV", currentId: KV_A }]);
+  });
+
+  it("kv_namespaces 不是陣列時拒絕動手", () => {
+    expect(() => writeKvNamespace(`{ "kv_namespaces": {} }`, "CMS_KV", KV_A)).toThrow(ConfigShapeError);
   });
 });

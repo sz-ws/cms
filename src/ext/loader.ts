@@ -18,7 +18,7 @@ import {
   builtinWanted,
   reconcileBuiltinDeclaratives,
 } from "./builtin-declaratives";
-import { getRequestStamps } from "@/lib/request-stamps";
+import { getRequestStamps, publishRequestStamps } from "@/lib/request-stamps";
 import { getPlainSetting } from "@/lib/settings";
 import type { Extension, HookName } from "./types";
 
@@ -77,9 +77,13 @@ async function wantedBuiltins(
  * 主動失效 memo(belt-and-braces:同 isolate 的 mutation 後立即清,讓下個 request
  * 不必等 stamp 比對就重建)。跨 isolate 的正確性已由每 request 的 stamp 重算涵蓋。
  * 由 manager.ts 的 enable/disable/uninstall 與 install route 於寫入後呼叫。
+ *
+ * 綁了 CMS_KV 的站同時把新戳發布到 KV(公開頁從那裡拿戳,見 @/lib/stamps);背景、
+ * 永不 throw,沒綁 KV 或不在 request 裡就什麼都不做。
  */
 export function invalidateExtRuntimeMemo(): void {
   runtimeMemo = null;
+  publishRequestStamps();
 }
 
 // 03 §7:兩個 extension 的 id 重複 → registry 載入時 throw(在 loader 加檢查)。
@@ -185,7 +189,11 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     let builtinsSettled = wanted !== null;
     if (wanted !== null) {
       try {
-        if (await reconcileBuiltinDeclaratives(wanted)) builtinsSettled = false;
+        if (await reconcileBuiltinDeclaratives(wanted)) {
+          builtinsSettled = false;
+          // 這是一筆沒經過 manager 的寫入:KV 的戳副本(若有)要在這裡發布。
+          publishRequestStamps();
+        }
       } catch (e) {
         console.error("[loader] reconciling built-in extensions failed", e);
         builtinsSettled = false;
@@ -205,10 +213,16 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     // 理由見 dx/scripts-compiled.ts)。同內建插件:有寫入就不寫 memo;失敗只 log。
     let approvalsSettled = true;
     try {
-      if (await retireReplacedScriptApprovals(dxRows)) approvalsSettled = false;
+      if (await retireReplacedScriptApprovals(dxRows)) {
+        approvalsSettled = false;
+        // 同上:核准清掉了,CSP 白名單的戳也要換 —— 發布到 KV(若有)。
+        publishRequestStamps();
+      }
     } catch (e) {
       console.error("[loader] retiring replaced script approvals failed", e);
       approvalsSettled = false;
+      // 一列一個 batch:前面幾列可能已經寫進去了。
+      publishRequestStamps();
     }
 
     const dx: Extension[] = [];

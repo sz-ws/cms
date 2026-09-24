@@ -2,7 +2,7 @@ import { cache } from "react";
 import { db } from "./db";
 import { settings } from "./schema";
 import { getEnv } from "./cf";
-import { getRequestStamps } from "./request-stamps";
+import { getRequestStamps, publishRequestStamps } from "./request-stamps";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
 
@@ -528,11 +528,15 @@ const readAll = cache(async (): Promise<Map<string, string>> => {
 /**
  * 主動清 module 級 settings memo(belt-and-braces:同 graph 的寫入後立即清,讓下個
  * request 連 stamp 都不必比就重讀)。跨 graph / 跨 isolate 的正確性已由每 request 的
- * stamp 重算涵蓋,故此函式非正確性必需——與 loader.ts 的 invalidateExtRuntimeMemo 對稱。
- * 測試亦以此重置。
+ * stamp 重算涵蓋 —— 與 loader.ts 的 invalidateExtRuntimeMemo 對稱。測試亦以此重置。
+ *
+ * 綁了 CMS_KV 的站,公開頁的戳改從 KV 的副本拿(./stamps.ts),那份副本要靠寫入的人發布:
+ * 所以這裡同時把新戳發布到 KV(背景、永不 throw;沒綁 KV 或不在 request 裡就什麼都不做)。
+ * 每條寫入 settings 的路徑本來就會在寫完之後呼叫這裡。
  */
 export function invalidateSettingsCache(): void {
   settingsMemo = null;
+  publishRequestStamps();
 }
 
 /**
