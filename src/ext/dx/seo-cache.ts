@@ -221,9 +221,10 @@ async function computeSnapshot(): Promise<SeoSnapshot> {
     }
   }
 
-  // list route 本身也進 sitemap(不含 lastModified 語意,落 now)。
+  // list route 本身也進 sitemap(不含 lastModified 語意,落 now)。首頁每個站都有
+  // ((public)/page.tsx 或站台自己的首頁),也一起列進去。
   const now = Date.now();
-  for (const p of listPaths) {
+  for (const p of ["/", ...listPaths]) {
     if (sitemapPathSet.has(p)) continue;
     sitemapPathSet.add(p);
     sitemapUrls.push({ path: p, lastModified: now });

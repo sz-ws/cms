@@ -1158,4 +1158,5 @@
 // CSP: the public Report-Only policy allows frame-src https://www.google.com (map embeds).
 // Additive: sites without CMS_KV, extra-field definitions or CMS_SERVER_TIMING behave as in
 // 1.52.0.
-export const CORE_API_VERSION = "1.53.0";
+// 1.53.1: the sitemap lists the home page (/) along with the list routes (dx/seo-cache.ts).
+export const CORE_API_VERSION = "1.53.1";

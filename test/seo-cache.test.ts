@@ -161,7 +161,7 @@ describe("getSeoSnapshot", () => {
 
     const paths = snap.sitemapUrls.map((u) => u.path);
     expect(paths).toEqual(
-      expect.arrayContaining(["/gallery/first-post", "/gallery/second-post", "/gallery"]),
+      expect.arrayContaining(["/", "/gallery/first-post", "/gallery/second-post", "/gallery"]),
     );
     expect(paths).not.toContain("/gallery/draft-post");
 
@@ -346,9 +346,10 @@ describe("getSeoSnapshot", () => {
       [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]),
     );
 
-    // 10,001 detail pages + the static /gallery list route; no gaps or duplicate URLs.
-    expect(urls).toHaveLength(SITEMAP_PAGE_SIZE + 2);
-    expect(new Set(urls).size).toBe(SITEMAP_PAGE_SIZE + 2);
+    // 10,001 detail pages + the home page + the static /gallery list route; no gaps or duplicate URLs.
+    expect(urls).toHaveLength(SITEMAP_PAGE_SIZE + 3);
+    expect(new Set(urls).size).toBe(SITEMAP_PAGE_SIZE + 3);
+    expect(urls).toContain("https://cms.test/");
     expect(urls).toContain("https://cms.test/gallery/item-0");
     expect(urls).toContain("https://cms.test/gallery/item-10000");
     expect(urls).toContain("https://cms.test/gallery");
