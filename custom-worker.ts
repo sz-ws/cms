@@ -1,6 +1,7 @@
 import openNextHandler from "./.open-next/worker.js";
 import { runCronTick } from "./extensions/cron/scheduled";
 import { withScheduledReporting } from "./extensions/sentry/scheduled";
+import { runTimed, startTiming, timedEnv, withServerTiming } from "./src/lib/server-timing";
 import { stripPublicPageHeader } from "./src/lib/stamps";
 
 // Worker 入口(wrangler.jsonc 的 `main`)—— OpenNext 產出的 handler 再包一層。
@@ -16,11 +17,18 @@ import { stripPublicPageHeader } from "./src/lib/stamps";
 export * from "./.open-next/worker.js";
 
 const worker = {
+  // Worker 變數 CMS_SERVER_TIMING = "1" 時量每個請求等 D1、R2、KV、對外 fetch 各多久(src/lib/server-timing.ts),
+  // 寫進 Server-Timing 標頭與 log;沒設就直接交給 OpenNext,不多包任何東西。
   async fetch(incoming: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
     // 「這是公開頁,版本戳可以從 KV 拿」只能由 middleware 說(src/lib/stamps.ts)。middleware
     // 不經過 /api 與 /_next,瀏覽器自己帶來的這個標頭在這裡對每個請求刪掉;沒帶就原樣。
     const request = stripPublicPageHeader(incoming);
-    return openNextHandler.fetch(request, env, ctx);
+    if ((env as unknown as { CMS_SERVER_TIMING?: string }).CMS_SERVER_TIMING !== "1") {
+      return openNextHandler.fetch(request, env, ctx);
+    }
+    const timing = startTiming();
+    const response = await runTimed(timing, () => openNextHandler.fetch(request, timedEnv(env, timing), ctx));
+    return withServerTiming(request, response, timing, ctx);
   },
 
   // 分鐘級準時排程的「錶」。實作在 extensions/cron/scheduled.ts —— core 本身
