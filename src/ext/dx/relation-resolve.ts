@@ -6,6 +6,7 @@ import { parseManifest } from "./manifest";
 import type { DeclarativeContentType } from "./manifest";
 import { pickTitleField } from "./views/field-utils";
 import { displayValue } from "./views/field-utils";
+import { detailPath } from "./route-matcher";
 
 // 08 §2: SERVER-side relation resolution for the public DetailView. Turns a
 // relation `to = "<extId>.<typeName>"` + entry id(s) into display titles and,
@@ -108,7 +109,7 @@ export async function resolveRelations(
       entry.id;
     const href =
       target?.detailBase && entry.slug && entry.status === "published"
-        ? `${target.detailBase}/${entry.slug}`
+        ? detailPath(target.detailBase, entry.slug)
         : null;
     return { id, title, href };
   });

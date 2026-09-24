@@ -7,6 +7,7 @@ import {
   cachedPublicQuery,
 } from "@/ext/dx/content-cache";
 import { isSubmissionTypeName } from "@/ext/dx/submission";
+import { decodePathSegments } from "@/ext/dx/route-matcher";
 import type {
   ContentEntry,
   ContentFilterValue,
@@ -202,7 +203,11 @@ export async function GET(
   // detail:GET /<extId>/<type>/<slug>(published only)。
   if (segments.length > 0) {
     if (segments.length > 1) return notFound(); // 多餘段落 → 404
-    const slug = segments[0];
+    // 中文 slug 以編碼或已解碼的形式到這裡都要對得上;壞掉的 `%` 序列 → 404
+    // (理由見 decodePathSegments)。
+    const decoded = decodePathSegments(segments);
+    if (!decoded) return notFound();
+    const slug = decoded[0];
     const entry = await cachedPublicGetBySlug(extId, fullType, slug);
     if (!entry || entry.status !== "published") return notFound();
     return Response.json(serialize(entry));

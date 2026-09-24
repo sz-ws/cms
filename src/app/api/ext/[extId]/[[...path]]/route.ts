@@ -9,6 +9,7 @@ import { runWithAccessScope, type AccessScope } from "@/lib/access-scope";
 import { getExtRuntime } from "@/ext/loader";
 import { createServices } from "@/ext/services";
 import { apiRouteLevel, atLeast, neededFor } from "@/ext/admin-access";
+import { decodePathSegments } from "@/ext/dx/route-matcher";
 import type { ApiRoute } from "@/ext/types";
 
 // 03 §6b:Extension API dispatch。Next.js 15 簽名:params 是 Promise,要 await。
@@ -28,9 +29,16 @@ function matchApiRoute(
     const params: Record<string, string> = {};
     let ok = true;
     for (let i = 0; i < pat.length; i++) {
-      if (pat[i].startsWith(":"))
-        params[pat[i].slice(1)] = decodeURIComponent(segments[i]);
-      else if (pat[i] !== segments[i]) {
+      if (pat[i].startsWith(":")) {
+        // 壞掉的 `%` 序列(%E6%98、%zz)視為不匹配 → 最後 404;直接 decodeURIComponent
+        // 會丟 URIError,任何人都打得出一個 500。
+        const decoded = decodePathSegments([segments[i]]);
+        if (!decoded) {
+          ok = false;
+          break;
+        }
+        params[pat[i].slice(1)] = decoded[0];
+      } else if (pat[i] !== segments[i]) {
         ok = false;
         break;
       }

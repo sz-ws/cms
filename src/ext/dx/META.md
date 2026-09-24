@@ -11,7 +11,8 @@
   - `content-provider.ts`: default ContentProvider over shared `contents`.
   - `crud.ts`: auto-CRUD API route builders.
   - `webhook.ts`: `on:` action webhook dispatcher.
-  - `route-matcher.ts`: pure compile/match for public routes (no ReDoS).
+  - `route-matcher.ts`: pure compile/match for public routes (no ReDoS); safe URL-segment decode + encoded detail links.
+  - `slug.ts`: the one slug normaliser (Unicode letters/numbers kept), shared by server + SlugField.
   - `public-create.ts`: public anonymous create payload sanitizer.
   - `views/`: generic declarative UI surfaces (platform-level — see its own META).
   - `fields/`: per-type field components + value shapers.

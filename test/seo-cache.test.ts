@@ -30,6 +30,7 @@ import {
 import { escapeXml } from "../src/ext/dx/seo-xml";
 import { GET as sitemapIndex } from "../src/app/sitemap.xml/route";
 import { GET as sitemapChild } from "../src/app/sitemap/[page]/route";
+import { GET as feedXml } from "../src/app/feed.xml/route";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -278,6 +279,43 @@ describe("getSeoSnapshot", () => {
       (url) => url.path === "/gallery/about",
     );
     expect(urls).toEqual([{ path: "/gallery/about", lastModified: 2000 }]);
+  });
+
+  it("中文 slug:sitemap <loc> 與 RSS <link> 是 percent-encoded 的合法 URL", async () => {
+    await insertDx("gallery", GALLERY_MANIFEST);
+    await insertContent({
+      id: "zh-1",
+      type: "gallery.item",
+      locale: "zh-Hant",
+      slug: "春季新品-2026",
+      data: { title: "春季新品 2026" },
+      updatedAt: 1000,
+    });
+    settingsStore.set("core.siteUrl", "https://cms.test");
+    const encoded = `https://cms.test/gallery/${encodeURIComponent("春季新品-2026")}`;
+
+    const snap = await getSeoSnapshot();
+    expect(snap.sitemapUrls.map((u) => u.path)).toContain(
+      `/gallery/${encodeURIComponent("春季新品-2026")}`,
+    );
+
+    const child = await sitemapChild(new Request("https://cms.test/sitemap/0.xml"), {
+      params: Promise.resolve({ page: "0.xml" }),
+    });
+    const childXml = await child.text();
+    const locs = [...childXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    expect(locs).toContain(encoded);
+
+    const feed = await feedXml();
+    const feedText = await feed.text();
+    expect(feedText).toContain(`<link>${encoded}</link>`);
+    expect(feedText).toContain(`<guid isPermaLink="true">${encoded}</guid>`);
+    // 標題照原文輸出(text node,只跳脫 XML 保留字),只有網址要編碼。
+    expect(feedText).toContain("<title>春季新品 2026</title>");
+    // 每一個 <loc> / <link> 都只含 ASCII —— 原始中文字不會出現在網址裡。
+    for (const url of [...locs, ...[...feedText.matchAll(/<link>([^<]+)<\/link>/g)].map((m) => m[1])]) {
+      expect(url).toMatch(/^[\x21-\x7e]+$/);
+    }
   });
 
   it("serves a sitemap index whose reachable child pages cover every published URL", async () => {

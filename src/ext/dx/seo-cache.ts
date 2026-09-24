@@ -5,6 +5,7 @@ import { getSetting } from "@/lib/settings";
 import { parseManifest } from "./manifest";
 import type { DeclarativeField } from "./manifest";
 import { displayValue, pickTitleField } from "./views/field-utils";
+import { detailPath } from "./route-matcher";
 
 // SEO 基礎(robots.txt / sitemap.xml / feed.xml)共用的 isolate 內 TTL cache。
 // 三個公開端點都經 getSeoSnapshot() 讀資料:settings(core.seo.* / core.siteUrl /
@@ -26,7 +27,8 @@ export const SITEMAP_PAGE_SIZE = 10_000;
 const FEED_MAX = 50;
 
 export interface SitemapUrl {
-  /** 站內相對路徑(含開頭 "/")。絕對化交給呼叫端(resolveSiteOrigin)。 */
+  /** 站內相對路徑(含開頭 "/",slug 段已 percent-encode)。絕對化交給呼叫端
+   * (resolveSiteOrigin)。 */
   path: string;
   lastModified: number; // epoch ms
 }
@@ -185,7 +187,9 @@ async function computeSnapshot(): Promise<SeoSnapshot> {
         if (!row.slug) continue;
         const info = byType.get(row.type);
         if (!info) continue;
-        const path = `${info.base}/${row.slug}`;
+        // sitemap <loc> / RSS <link> 必須是合法 URL:中文 slug 要 percent-encode,
+        // 不能原樣塞進 XML(見 detailPath)。
+        const path = detailPath(info.base, row.slug);
         // 多語內容可合法共用 slug，但目前 public detail route 不帶 locale。保留排序靠前
         // (最新) 的 lastmod，避免 sitemap 重覆同一 canonical URL。
         if (!sitemapPathSet.has(path)) {

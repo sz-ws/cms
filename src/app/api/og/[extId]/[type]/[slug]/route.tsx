@@ -10,6 +10,7 @@ import { fmtDate } from "@/ext/dx/views/field-utils";
 import { getContentProvider, toTypeDef } from "@/ext/dx/runtime";
 import type { DeclarativeContentType } from "@/ext/dx/manifest";
 import { getOgTemplate } from "@/components/og/templates";
+import { decodePathSegments } from "@/ext/dx/route-matcher";
 // ⚠️ 不要加回 `export const runtime = "edge"`。
 //
 // 它原本寫著「刻意用 edge runtime,避免 OG template 查找拉進 Node 側的
@@ -84,7 +85,12 @@ function categoryText(
 }
 
 export async function GET(_req: Request, { params }: RouteParams) {
-  const { extId, type, slug } = await params;
+  const { extId, type, slug: rawSlug } = await params;
+  // 中文 slug 可能以編碼或已解碼的形式到這裡;解一次、壞掉的 `%` 序列 → 404
+  // (理由見 decodePathSegments)。
+  const decoded = decodePathSegments([rawSlug]);
+  if (!decoded) return new Response("Not found", { status: 404 });
+  const [slug] = decoded;
   const rt = await getExtRuntime();
   const ext = rt.byId(extId);
   if (!ext) return new Response("Not found", { status: 404 });

@@ -4,6 +4,7 @@ import { cachedPublicQuery } from "../content-cache";
 import type { DeclarativeContentType, ListLayout } from "../manifest";
 import { displayValue } from "./field-utils";
 import { inferCardConfig } from "./collection/card-config";
+import { detailPath } from "../route-matcher";
 import { StackedList, StackedListItem } from "@/components/ui/stacked-list";
 import { MediaImage } from "@/components/ui/media-image";
 import { getLocale } from "@/lib/i18n/server";
@@ -51,8 +52,9 @@ export async function ListView({
     contentType.fields.find((f) => f.key === contentType.slugField) ??
     contentType.fields[0];
 
+  // slug 可能是中文,經 detailPath 編碼(與 sitemap / RSS / relation 連結同一支)。
   const hrefFor = (slug: string | null): string | null =>
-    detailBase && slug ? `${detailBase}/${slug}` : null;
+    detailBase && slug ? detailPath(detailBase, slug) : null;
 
   const locale = await getLocale();
   const heading =

@@ -226,6 +226,30 @@ describe("published-only (§6.3)", () => {
     );
     expect(detailDraft.status).toBe(404);
   });
+
+  it("中文 slug:編碼過的與已解碼的段都查得到;壞掉的 % 序列 → 404 而非 500", async () => {
+    await seedBlog();
+    await insertContent("blog.post", "營業時間異動", "published", {
+      title: "營業時間異動",
+    });
+    const { raw } = await createApiToken("ok");
+    const encoded = encodeURIComponent("營業時間異動");
+
+    for (const segment of [encoded, "營業時間異動"]) {
+      const res = await GET(
+        makeReq(`/api/content/blog/post/${encoded}`, { token: raw }),
+        params("blog", "post", [segment]),
+      );
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { slug: string }).slug).toBe("營業時間異動");
+    }
+
+    const malformed = await GET(
+      makeReq("/api/content/blog/post/%E7%87", { token: raw }),
+      params("blog", "post", ["%E7%87"]),
+    );
+    expect(malformed.status).toBe(404);
+  });
 });
 
 // ---- §6.4:perPage clamp 到 100;filter 只吃白名單欄位(未宣告 → 忽略)----

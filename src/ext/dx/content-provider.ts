@@ -13,6 +13,7 @@ import type {
 import type { HookBus } from "../hooks";
 import { isTiptapDoc, isValidRichtextDoc, stringToDoc } from "./fields/richtext-schema";
 import { isMediaKey } from "./media-key";
+import { slugify } from "./slug";
 import { revalidateContent } from "./cache-invalidate";
 import { indexContentEntry, removeContentIndex } from "@/lib/search";
 import {
@@ -432,18 +433,6 @@ export async function getContentPublishAt(id: string): Promise<number | null> {
   return rows[0]?.publishAt ?? null;
 }
 
-// ---- slug ----
-
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 // ---- row <-> entry ----
 
 interface ContentRow {
@@ -576,7 +565,9 @@ export class CoreContentProvider implements ContentProvider {
     def: ContentTypeDef | undefined,
     data: Record<string, unknown>,
   ): string | null {
-    // 明確 slug 欄位優先,其次 slugField 指定的來源欄位。
+    // 明確 slug 欄位優先,其次 slugField 指定的來源欄位。手打的 slug 與標題走同一支
+    // slugify(./slug.ts,client 的 SlugField 也用它),所以存下來的就是表單上預覽的那個;
+    // 明確給了但正規化後是空的(純標點 / 純 emoji)→ "",不退回標題 —— 沿用既有契約。
     const explicit = data["slug"];
     if (typeof explicit === "string" && explicit.length > 0)
       return slugify(explicit);
@@ -730,9 +721,19 @@ export class CoreContentProvider implements ContentProvider {
 
     const locale = existing.locale ?? DEFAULT_CONTENT_LOCALE;
     const rawSlug = this.deriveSlug(def, merged);
-    const slug = rawSlug
-      ? await this.uniqueSlug(type, locale, rawSlug, id)
-      : existing.slug;
+    // slug 只在「來源換了」或「還沒有 slug」時重算。以前每次 update 都重算,於是:
+    //   · slug 規則一改(例如 CJK 標題從空 slug 變成可讀 slug、加上長度上限),既有文章
+    //     下次隨手一存網址就變,外面的連結全部失效;
+    //   · `hello-2` 在原本的 `hello` 被刪之後再存一次,會悄悄變成 `hello`;
+    //   · 還原版本時因撞號而保留下來的 slug(revision-restore.ts 的 slugKept)下次一存
+    //     就被標題蓋掉。
+    // 兩邊都用**目前**的規則算,所以比的是「來源的意思有沒有變」,不是規則有沒有變。
+    const sourceUnchanged =
+      existing.slug !== null && rawSlug === this.deriveSlug(def, existing.data);
+    const slug =
+      rawSlug && !sourceUnchanged
+        ? await this.uniqueSlug(type, locale, rawSlug, id)
+        : existing.slug;
     const status =
       data["status"] === "published"
         ? "published"

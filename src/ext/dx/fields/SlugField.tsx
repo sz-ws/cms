@@ -7,23 +7,13 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { SlugFieldProps } from "./types";
 import { useExtT } from "../ext-locale";
+import { slugify, slugifyDraft } from "../slug";
 
-// slug field: auto-kebab-cases from the slugField source value (wired by
+// slug field: auto-slugifies from the slugField source value (wired by
 // FormView via the `sourceValue` prop) until the user edits the slug input
 // manually — then it locks and stops following the source. Lock/unlock is
-// also a manual toggle. Stored value: kebab-case string
-// (content-provider.ts also re-slugifies + uniquifies server-side; this is
-// just the friendly live preview).
-
-function kebabCase(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+// also a manual toggle. 正規化規則與 server 同一支(../slug.ts),預覽的就是
+// 存下來的(content-provider.ts 存檔時還會再正規化 + 唯一化)。
 
 export function SlugField({
   value,
@@ -35,13 +25,19 @@ export function SlugField({
 }: SlugFieldProps) {
   // Locked = auto-sync from sourceValue. Unlocks the moment the user types
   // directly into the slug input, or can be manually re-locked/unlocked.
-  const [locked, setLocked] = useState(true);
+  // 開啟既有項目時,只有 slug 本來就是「由標題算出來的那個」(或還是空的)才上鎖;
+  // 否則一打開表單就會用標題把手打過的 slug 蓋掉,存檔後網址跟著變。
+  const [locked, setLocked] = useState(
+    () => !value || value === slugify(sourceValue ?? ""),
+  );
   const lastAutoValue = useRef<string>("");
+  // 輸入法組字中不正規化:拼音 / 注音的草稿字一被改寫,組字就斷了。
+  const composing = useRef(false);
   const t = useExtT();
 
   useEffect(() => {
     if (!locked || sourceValue === undefined) return;
-    const next = kebabCase(sourceValue);
+    const next = slugify(sourceValue);
     if (next === lastAutoValue.current && next === value) return;
     lastAutoValue.current = next;
     onChange(next);
@@ -56,10 +52,22 @@ export function SlugField({
         disabled={disabled}
         aria-invalid={Boolean(error)}
         className="flex-1"
+        onCompositionStart={() => {
+          composing.current = true;
+        }}
+        onCompositionEnd={(e) => {
+          composing.current = false;
+          onChange(slugifyDraft(e.currentTarget.value));
+        }}
         onChange={(e) => {
-          const typed = kebabCase(e.target.value);
           if (locked) setLocked(false);
-          onChange(typed);
+          const raw = e.target.value;
+          // 逐字時保留結尾的 `-`,才打得出第二個詞;離開輸入框再收尾(onBlur)。
+          onChange(composing.current ? raw : slugifyDraft(raw));
+        }}
+        onBlur={(e) => {
+          const done = slugify(e.currentTarget.value);
+          if (done !== e.currentTarget.value) onChange(done);
         }}
       />
       <Button
