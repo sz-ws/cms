@@ -539,7 +539,9 @@ const loginProviderFirebaseSchema = z
   })
   .strict();
 
-// 兩種登入二選一:issuer(標準 OIDC,引擎走 authorization code 導轉)或 firebase。
+// 兩種接法:issuer(標準 OIDC,引擎走 authorization code 導轉)與 firebase,至少一種。
+// 1.57.0 起可以兩種都宣告(例:Google 登入可接 Google OAuth,也可接 Firebase 專案):
+// 站台填了哪一組設定就用哪一種,兩組都填時用 Firebase(src/lib/oidc.ts listLoginProviders)。
 const loginProviderSchema = z
   .object({
     issuer: z.string().regex(/^https:\/\//, "issuer must be https").optional(), // OIDC issuer,discovery 由引擎抓
@@ -549,10 +551,10 @@ const loginProviderSchema = z
   })
   .strict()
   .superRefine((lp, ctx) => {
-    if ((lp.issuer === undefined) === (lp.firebase === undefined)) {
-      ctx.addIssue({ code: "custom", message: "loginProvider needs exactly one of issuer or firebase" });
+    if (lp.issuer === undefined && lp.firebase === undefined) {
+      ctx.addIssue({ code: "custom", message: "loginProvider needs issuer, firebase or both" });
     }
-    if (lp.firebase && lp.scopes !== undefined) {
+    if (lp.issuer === undefined && lp.scopes !== undefined) {
       ctx.addIssue({ code: "custom", message: "loginProvider scopes only apply to issuer", path: ["scopes"] });
     }
   });
@@ -788,7 +790,8 @@ export const manifestSchema = z
     // spec-login-providers.md §4(1.16.0):declarative 第三方 OIDC 登入宣告。
     // issuer/scopes/button;client 憑證走 settings[](secret:true)慣例。manifestSchema
     // 是 .strict() —— 宣告 loginProvider 的 manifest 在 <1.16.0 的 core 會整包驗證失敗,
-    // 故其 coreApi 必須宣告 "^1.16.0";用 firebase 的必須宣告 "^1.54.0"。
+    // 故其 coreApi 必須宣告 "^1.16.0";用 firebase 的必須宣告 "^1.54.0";issuer 與 firebase
+    // 都宣告的必須宣告 "^1.57.0"(舊 core 會拒絕兩者並存)。
     loginProvider: loginProviderSchema.optional(),
     // 1.48.0:公開頁插入 script。安裝前要管理員核准,核准綁內容 hash(見 ./scripts.ts)。
     scripts: scriptsSchema.optional(),
@@ -1022,6 +1025,7 @@ export const manifestSchema = z
       });
     }
 
+    // 兩種都宣告時,兩組設定都要有(站台填哪一組就用哪一種)。
     if (m.loginProvider?.firebase) {
       // Firebase 的 web config 本來就會出現在頁面上,不是秘密。
       for (const key of FIREBASE_SETTING_KEYS) {
@@ -1034,7 +1038,8 @@ export const manifestSchema = z
           });
         }
       }
-    } else if (m.loginProvider) {
+    }
+    if (m.loginProvider?.issuer !== undefined) {
       const clientId = settingsByKey.get("clientId");
       const clientSecret = settingsByKey.get("clientSecret");
       if (!clientId || clientId.type !== "text") {

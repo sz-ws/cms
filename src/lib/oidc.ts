@@ -468,11 +468,15 @@ export async function listLoginProviders(): Promise<LoginProviderInfo[]> {
       background: lp.button.background,
       foreground: lp.button.foreground,
     };
+    // 兩種都宣告時(1.57.0):Firebase 設定填齊就用 Firebase,否則看 OIDC 的設定。
     if (lp.firebase) {
       const firebase = await loadFirebaseConfig(row.id, lp.firebase.signIn);
-      if (firebase) out.push({ ...button, kind: "firebase", firebase });
-      continue;
+      if (firebase) {
+        out.push({ ...button, kind: "firebase", firebase });
+        continue;
+      }
     }
+    if (lp.issuer === undefined) continue;
     const clientId = await getSetting<string>(extSetting(row.id, "clientId"), "");
     const clientSecret = await getSetting<string>(
       extSetting(row.id, "clientSecret"),

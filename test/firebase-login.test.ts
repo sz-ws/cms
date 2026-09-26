@@ -152,6 +152,29 @@ describe("listLoginProviders — firebase", () => {
     settingsStore.delete(`ext.${PROVIDER}.projectId`);
     expect(await listLoginProviders()).toEqual([]);
   });
+
+  it("with both issuer and firebase declared: Firebase when its config is set, else OIDC (1.57.0)", async () => {
+    const both = {
+      ...FIREBASE_LOGIN_MANIFEST,
+      coreApi: "^1.57.0",
+      loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, issuer: "https://accounts.google.com" },
+      settings: [
+        ...FIREBASE_LOGIN_MANIFEST.settings,
+        { key: "clientId", label: "Client ID", type: "text" as const, default: "" },
+        { key: "clientSecret", label: "Client secret", type: "text" as const, secret: true, default: "" },
+      ],
+    };
+    await d1().prepare("UPDATE declarative_extensions SET manifest = ?1").bind(JSON.stringify(both)).run();
+    settingsStore.set(`ext.${PROVIDER}.clientId`, "client-1");
+    settingsStore.set(`ext.${PROVIDER}.clientSecret`, "secret-1");
+    expect((await listLoginProviders())[0]).toMatchObject({ id: PROVIDER, kind: "firebase" });
+
+    settingsStore.delete(`ext.${PROVIDER}.apiKey`);
+    expect((await listLoginProviders())[0]).toMatchObject({ id: PROVIDER, kind: "oidc" });
+
+    settingsStore.delete(`ext.${PROVIDER}.clientId`);
+    expect(await listLoginProviders()).toEqual([]);
+  });
 });
 
 describe("completeFirebaseLogin", () => {

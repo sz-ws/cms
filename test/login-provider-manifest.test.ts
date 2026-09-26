@@ -212,20 +212,30 @@ describe("loginProvider manifest — firebase", () => {
     expect(r.manifest?.loginProvider?.issuer).toBeUndefined();
   });
 
-  it("rejects both issuer and firebase, or neither", () => {
+  it("accepts issuer and firebase together when both sets of settings are declared (1.57.0)", () => {
     const both = parseManifest({
+      ...FIREBASE_LOGIN_MANIFEST,
+      coreApi: "^1.57.0",
+      loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, issuer: "https://accounts.google.com" },
+      settings: [...FIREBASE_LOGIN_MANIFEST.settings, ...GOOGLE_LOGIN_MANIFEST.settings],
+    });
+    expect(both.ok).toBe(true);
+
+    const missingClient = parseManifest({
       ...FIREBASE_LOGIN_MANIFEST,
       loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, issuer: "https://accounts.google.com" },
     });
-    expect(both.ok).toBe(false);
-    expect(both.error).toMatch(/exactly one of issuer or firebase/);
+    expect(missingClient.ok).toBe(false);
+    expect(missingClient.error).toMatch(/clientId/);
+  });
 
+  it("rejects a loginProvider with neither issuer nor firebase", () => {
     const neither = parseManifest({
       ...FIREBASE_LOGIN_MANIFEST,
       loginProvider: { button: { label: "Google" } },
     });
     expect(neither.ok).toBe(false);
-    expect(neither.error).toMatch(/exactly one of issuer or firebase/);
+    expect(neither.error).toMatch(/issuer, firebase or both/);
   });
 
   it("rejects scopes, an unknown sign-in method and a missing web config setting", () => {
