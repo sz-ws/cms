@@ -38,6 +38,20 @@ export async function sendEmail(msg: EmailMessage): Promise<EmailSendResult> {
 }
 
 /**
+ * 1.56.0:寄信服務現在寄得出去嗎(不實際寄信)。provider 沒實作 isConfigured 當作可以;
+ * 查詢本身出錯(registry、設定讀不到)當作不行 —— 呼叫端拿它決定要不要給「忘記密碼」,
+ * 寧可不給也不要給一個一定收不到信的流程。
+ */
+export async function emailReady(): Promise<boolean> {
+  try {
+    const provider = await activeEmailProvider();
+    return provider.isConfigured ? await provider.isConfigured() : true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * active provider 帳號下的寄信網域(settings 的 from-address 後綴提示)。
  * provider 不支援 listDomains / 未設定 / 查詢失敗 → null(提示性,永不 throw 到 UI)。
  */

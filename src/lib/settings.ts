@@ -449,6 +449,19 @@ export const CORE_SETTINGS: SettingField[] = [
     default: "guest",
   },
   {
+    // 1.56.0:忘記密碼(src/lib/password-reset.ts)。關掉時後台人員(管理員、工作人員、
+    // 自訂角色)申請重設只會收到「請聯絡網站管理員」,不會收到驗證碼;會員不受影響。
+    key: "core.auth.staffPasswordReset",
+    group: "advanced",
+    label: { en: "Staff can reset their password by email", "zh-Hant": "後台人員可用 Email 重設密碼" },
+    description: {
+      en: "Admins and staff who forget their password get a code by email and set a new one. When off, an admin sets it for them on the Users page. Members can always reset their own.",
+      "zh-Hant": "管理員與工作人員忘記密碼時，收 Email 驗證碼就能自己設定新密碼。關閉後，要由管理員在「成員」頁幫他們設定。會員一律可以自己重設。",
+    },
+    type: "boolean",
+    default: true,
+  },
+  {
     key: "core.apiSecret",
     group: "advanced",
     label: { en: "API secret", "zh-Hant": "API 密鑰" },

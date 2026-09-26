@@ -48,6 +48,22 @@ export const loginAttempts = sqliteTable("login_attempts", {
   windowStart: integer("window_start").notNull(),
 });
 
+// migrations/0023_password_reset_codes.sql:忘記密碼的 Email 驗證碼(1.56.0)。一個 Email
+// 一列(帳號不存在也寫,回應才分不出來);code_hash 是 HMAC,用過或錯滿 5 次設 NULL。
+// 讀寫在 src/lib/password-reset-codes.ts。
+export const passwordResetCodes = sqliteTable(
+  "password_reset_codes",
+  {
+    email: text("email").primaryKey(),
+    nonce: text("nonce").notNull(),
+    codeHash: text("code_hash"),
+    attempts: integer("attempts").notNull().default(0),
+    sentAt: integer("sent_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (t) => [index("password_reset_codes_sent_idx").on(t.sentAt)],
+);
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

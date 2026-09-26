@@ -10,11 +10,13 @@ export function LoginScreen({
   next,
   providers,
   oauthError,
+  resetAvailable,
 }: {
   siteTitle: string;
   next?: string;
   providers?: LoginProviderButton[];
   oauthError?: string;
+  resetAvailable?: boolean;
 }) {
   const [phase, setPhase] = useState<"loading" | "playing" | "held">(
     "loading",
@@ -70,6 +72,7 @@ export function LoginScreen({
           siteTitle={siteTitle}
           providers={providers}
           oauthError={oauthError}
+          resetAvailable={resetAvailable}
         />
       </main>
     </div>

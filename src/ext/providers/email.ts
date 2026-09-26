@@ -44,6 +44,12 @@ export interface EmailProvider {
    * 絕不阻斷 settings 頁)。
    */
   listDomains?(): Promise<EmailDomain[] | null>;
+  /**
+   * 可選(1.56.0):不寄信,只回答「現在寄得出去嗎」(該填的都填了、該綁的都綁了)。
+   * core 用它決定要不要在登入頁放「忘記密碼」。沒實作的 provider 當作寄得出去 ——
+   * 寄的當下失敗時使用者一樣收不到信,但不會因為問不到就永遠不給這個功能。
+   */
+  isConfigured?(): Promise<boolean>;
 }
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
@@ -126,6 +132,15 @@ export class ResendEmailProvider implements EmailProvider {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  /** 寄件地址與 API 金鑰都有(金鑰解不開 —— SECRETS_KEY 換過 —— 也算沒有)。 */
+  async isConfigured(): Promise<boolean> {
+    const [apiKey, from] = await Promise.all([
+      getSetting<string>("core.resendApiKey", "").catch(() => ""),
+      getSetting<string>("core.emailFrom", ""),
+    ]);
+    return Boolean(apiKey) && typeof from === "string" && from.trim() !== "";
   }
 
   async listDomains(): Promise<EmailDomain[] | null> {

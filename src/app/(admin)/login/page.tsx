@@ -6,6 +6,7 @@ import { getLocale, getMessages } from "@/lib/i18n/server";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import { listLoginProviders } from "@/lib/oidc";
 import { publicSignInPage } from "@/lib/sign-in-page";
+import { emailReady } from "@/lib/email";
 import { LoginScreen } from "./LoginScreen";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,8 @@ export default async function LoginPage({
       redirect(query ? `${page}?${query}` : page);
     }
   }
-  const providers = await listLoginProviders();
+  // 1.56.0:寄得出信才給「忘記密碼」。
+  const [providers, resetAvailable] = await Promise.all([listLoginProviders(), emailReady()]);
 
   return (
     <I18nProvider locale={locale} messages={messages}>
@@ -48,6 +50,7 @@ export default async function LoginPage({
         next={nextParam}
         providers={providers}
         oauthError={oauthError}
+        resetAvailable={resetAvailable}
       />
     </I18nProvider>
   );

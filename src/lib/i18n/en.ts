@@ -48,6 +48,41 @@ export const en = {
   "login.error.emailExists":
     "A user with this email already exists. Sign in with your password, then link this account from your account page.",
 
+  // 1.56.0:忘記密碼(LoginForm.tsx → ResetPasswordForm.tsx)
+  "login.forgot": "Forgot password?",
+  "login.forgotContact": "Forgot your password? Contact the site admin.",
+  "reset.title": "Reset your password",
+  "reset.lede": "Enter your account's email and we'll send you a code.",
+  "reset.send": "Send code",
+  "reset.sending": "Sending…",
+  "reset.sent": "If {email} has an account here, a 6-digit code is on its way. It works for 10 minutes.",
+  "reset.code": "Code",
+  "reset.newPassword": "New password",
+  "reset.passwordHint": "At least 8 characters.",
+  "reset.submit": "Save and sign in",
+  "reset.saving": "Saving…",
+  "reset.resend": "Send a new code",
+  "reset.resendIn": "Send a new code in {n}s",
+  "reset.back": "Back to sign in",
+  "reset.error.cooldown": "Wait {n} seconds before asking for another code.",
+  "reset.error.codeWrong": "That code isn't right. {n} tries left.",
+  "reset.error.codeExpired": "This code no longer works. Ask for a new one.",
+  "reset.error.weakPassword": "Use at least 8 characters.",
+  "reset.error.staffOff": "Staff accounts can't reset their password by email here. Ask the site admin to set a new one.",
+  "reset.error.invalidEmail": "Enter a valid email address.",
+  "reset.error.unavailable": "Password reset isn't available right now. Contact the site admin.",
+  // 忘記密碼的信(src/lib/password-reset-mail.ts)
+  "passwordReset.mail.codeSubject": "Your password reset code: {code}",
+  "passwordReset.mail.codeBody": "Use this code to set a new password. It works for 10 minutes.",
+  "passwordReset.mail.codeIgnore": "If you didn't ask for this, you can ignore this email. Your password stays the same.",
+  "passwordReset.mail.staffOffSubject": "About your password reset",
+  "passwordReset.mail.staffOffBody":
+    "Someone asked to reset the password for this account. Staff accounts can't reset their password by email on this site. Ask the site admin to set a new one.",
+  "passwordReset.mail.changedSubject": "Your password was changed",
+  "passwordReset.mail.changedBody":
+    "The password for {email} was just changed, and this account was signed out on every device.",
+  "passwordReset.mail.changedNotYou": "If this wasn't you, reset your password again right away and let the site admin know.",
+
   // dashboard (page.tsx + components)
   "dashboard.title": "Dashboard",
   "dashboard.subtitle.withTypes": "Everything across your installed extensions, at a glance.",

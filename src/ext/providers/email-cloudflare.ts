@@ -57,6 +57,12 @@ function sendBinding(): CloudflareSendEmail | null {
 }
 
 export class CloudflareEmailProvider implements EmailProvider {
+  /** 寄件地址與 EMAIL 綁定都有。 */
+  async isConfigured(): Promise<boolean> {
+    const from = await getSetting<string>("core.emailFrom", "");
+    return sendBinding() !== null && typeof from === "string" && from.trim() !== "";
+  }
+
   async send(msg: EmailMessage): Promise<EmailSendResult> {
     const to = validRecipients(msg);
     if (!to) return { ok: false, error: "invalid_message" };
