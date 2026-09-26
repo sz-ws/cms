@@ -1209,4 +1209,37 @@
 //   form, shared with sign-in pages in extensions. The admin form's automatic attempt no longer
 //   shows an error when the options request fails.
 // Additive: without an extension that declares signInPage nothing changes.
-export const CORE_API_VERSION = "1.55.0";
+// 1.56.0: account basics, the site announcement, multi-status filters, and paid-plugin
+// requests and notices.
+// Accounts:
+// - Forgot password for every account on the core sign-in form. A 6-digit email code
+//   (HMAC-stored, 10 min, 5 tries, 60 s resend, per-email and per-IP limits, the same answer
+//   whether or not the account exists; mail is sent after the response) sets a new password,
+//   signs out every device, marks the email verified, signs in and sends a "password changed"
+//   notice. Setting core.auth.staffPasswordReset (default on) can refuse staff resets.
+//   Migration 0023 password_reset_codes. Email providers may implement isConfigured(); core
+//   has emailReady().
+// - Action hook auth:signed-in { userId, method, provider?, emailVerified } after password,
+//   passkey, OAuth, Firebase and reset sign-ins; fireSignedIn() lets plugins announce their
+//   own ("code"). Hook failures never block a sign-in.
+// - /admin/users splits 後台人員 and 會員 (?view=members).
+// Site announcement: Settings → 網站公告, one line of plain text (≤ 120), optional site path or
+// https link, optional start/end days in the site time zone. getSiteNotice() returns
+// { text, href? } | null from the stamped settings memo; the core public frame renders it above
+// the header. Core text settings may declare format ("line" | "link" | "date") and maxLength
+// (not accepted in manifests).
+// Status filters: list filters are multi-select. lib/status-filter.ts parses ?status= as a
+// single value, a comma list or repeated params; <StatusMultiFilter> is the admin control;
+// GET /api/ext/<id>/<type> accepts several statuses and answers 400 invalid_status for unknown
+// values.
+// Paid plugins (registry protocol, not plugin API):
+// - Stage 2: an offer with action "request" opens a dialog listing exactly what is sent;
+//   POST /api/registry/request forwards { extension, note?, contact? } to <source>/requests
+//   with that source's token (admin only, same-origin, no redirects). action "link" opens the
+//   provider's page. access "requested" + requestedAt shows 已申請 · <date>.
+// - Stage 4: registry.json `notices` (≤ 20 per source, must name an extension in the same
+//   index, no external url). Off for every source until switched on in the source settings
+//   (notices + noticesSince). Fetched only when a full admin opens the admin and the cache is
+//   older than 12 h; each admin sees each notice once, at most one per rolling 24 h.
+//   Migration 0024 registry_notices + registry_notice_seen.
+export const CORE_API_VERSION = "1.56.0";
