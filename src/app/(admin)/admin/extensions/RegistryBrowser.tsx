@@ -44,6 +44,7 @@ import { ScriptReviewDialog } from "./ScriptReviewDialog";
 import {
   entryUnmetPlugins,
   markInstalled,
+  markRequested,
   sourceHost,
   sourceLabel,
   type IndexResponse,
@@ -52,7 +53,8 @@ import {
   type SourceFetchError,
 } from "./registry-types";
 import { InstallGate, RequiredPluginItems, UsedBySection, requiredPluginName } from "./PluginRequirements";
-import { ContactProvider, OfferBlock, OfferLine, isLocked, showsOffer } from "./PaidOffer";
+import { OfferBlock, OfferLine, isLocked, showsOffer } from "./PaidOffer";
+import { PaidAction, RequestProvider } from "./RequestAccess";
 
 // Marketplace browse — App Store vibe: hero featured cards, category pills,
 // search, deployment badges, Paper & Ink visual language.
@@ -417,7 +419,7 @@ export function FeaturedCard({
           {showsOffer(entry) && <OfferLine entry={entry} className="max-w-[12rem] shrink-0 text-[12px]" />}
           <div className="shrink-0">
             {entry.kind === "code" && isLocked(entry) && !entry.installed ? (
-              <ContactProvider entry={entry} size="md" />
+              <PaidAction entry={entry} size="md" />
             ) : entry.kind === "code" ? (
               <CodeStateChip
                 entry={entry}
@@ -460,7 +462,7 @@ export function FeaturedCard({
               entry.installed ? (
                 <StatusButton size="md" status="success" label={t("registryBrowser.install.installed")} />
               ) : (
-                <ContactProvider entry={entry} size="md" />
+                <PaidAction entry={entry} size="md" />
               )
             ) : (
               // stopPropagation:卡片本身 onClick 會開 detail 頁,包一層擋住冒泡,
@@ -709,7 +711,7 @@ export function StoreCard({
         ) : null}
         <div className="ml-auto">
           {entry.kind === "code" && locked && !entry.installed ? (
-            <ContactProvider entry={entry} size="sm" />
+            <PaidAction entry={entry} size="sm" />
           ) : entry.kind === "code" ? (
             <CodeStateChip
               entry={entry}
@@ -734,7 +736,7 @@ export function StoreCard({
             entry.installed ? (
               <StatusButton size="sm" status="success" label={t("registryBrowser.install.installed")} />
             ) : (
-              <ContactProvider entry={entry} size="sm" />
+              <PaidAction entry={entry} size="sm" />
             )
           ) : (
             // stopPropagation:同 FeaturedCard —— 卡片 onClick 會開 detail 頁,
@@ -784,6 +786,18 @@ export function StoreCard({
   );
 }
 
+type EntryRef = { source: string; id: string };
+
+/** GET /api/registry/index;失敗回 null(呼叫端決定要不要顯示錯誤)。 */
+async function fetchIndex(): Promise<IndexResponse | null> {
+  try {
+    const res = await fetch("/api/registry/index");
+    return res.ok ? ((await res.json()) as IndexResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function RegistryBrowser() {
   const t = useT();
   const [data, setData] = useState<IndexResponse | null>(null);
@@ -791,7 +805,7 @@ export function RegistryBrowser() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category>("all");
-  const [selected, setSelected] = useState<{ source: string; id: string } | null>(null);
+  const [selected, setSelected] = useState<EntryRef | null>(null);
   const setSelectedEntry = (entry: RegistryEntry | null) =>
     setSelected(entry ? { source: entry.source, id: entry.id } : null);
 
@@ -886,6 +900,24 @@ export function RegistryBrowser() {
     setData((prev) => (prev ? markInstalled(prev, id, source) : prev));
   }, []);
 
+  // 1.56.0:申請送出(或閘道說已經開通)→ 先就地改成已申請,再安靜地重讀索引,
+  // 狀態以閘道回報的為準(core 不存申請狀態)。
+  const requestContext = useMemo(
+    () => ({
+      contact: data?.contact ?? null,
+      onRequested: (entry: RegistryEntry, outcome: "requested" | "granted") => {
+        if (outcome === "requested") {
+          const today = new Date().toISOString().slice(0, 10);
+          setData((prev) => (prev ? markRequested(prev, entry.id, entry.source, today) : prev));
+        }
+        void fetchIndex().then((fresh) => {
+          if (fresh) setData(fresh);
+        });
+      },
+    }),
+    [data?.contact],
+  );
+
   if (loading) {
     return <LoadingState label={t("registryBrowser.loading")} />;
   }
@@ -905,8 +937,13 @@ export function RegistryBrowser() {
   const selectedEntry = selected
     ? data.entries.find((e) => e.source === selected.source && e.id === selected.id)
     : undefined;
+  // 申請視窗要的聯絡資料與「送出之後」的處理,商店與詳情頁共用。
+  const withRequests = (node: React.ReactNode) => (
+    <RequestProvider value={requestContext}>{node}</RequestProvider>
+  );
+
   if (selectedEntry) {
-    return (
+    return withRequests(
       <ExtensionDetail
         // key:從一個插件的詳情前往另一個(必要插件)時,安裝流程的狀態全新。
         key={`${selectedEntry.source}:${selectedEntry.id}`}
@@ -917,11 +954,11 @@ export function RegistryBrowser() {
         onBack={() => setSelectedEntry(null)}
         onOpen={setSelectedEntry}
         onInstalled={handleInstalled}
-      />
+      />,
     );
   }
 
-  return (
+  return withRequests(
     <div className="flex flex-col gap-6">
       {/* Errors */}
       {data.errors.length > 0 && (
@@ -1048,7 +1085,7 @@ export function RegistryBrowser() {
           ))}
         </motion.div>
       )}
-    </div>
+    </div>,
   );
 }
 
@@ -1373,7 +1410,7 @@ export function ExtensionDetail({
           <div className="flex flex-col gap-2">
             {showsOffer(entry) && <OfferBlock entry={entry} />}
             {entry.kind === "code" && locked && !entry.installed ? (
-              <ContactProvider entry={entry} size="lg" />
+              <PaidAction entry={entry} size="lg" />
             ) : entry.kind === "code" ? (
               <CodeStateChip
                 entry={entry}
@@ -1395,7 +1432,7 @@ export function ExtensionDetail({
             ) : locked && entry.installed ? (
               <StatusButton size="lg" status="success" label={t("registryBrowser.install.installed")} />
             ) : locked ? (
-              <ContactProvider entry={entry} size="lg" />
+              <PaidAction entry={entry} size="lg" />
             ) : gated ? (
               gate
             ) : (
@@ -1416,7 +1453,7 @@ export function ExtensionDetail({
                 <p className="text-[12.5px] leading-relaxed text-ink/50">
                   {t("registryBrowser.paid.updateNeedsAccess", { host: sourceHost(entry.source) })}
                 </p>
-                <ContactProvider entry={entry} size="lg" />
+                <PaidAction entry={entry} size="lg" />
               </>
             )}
             {entry.kind === "declarative" && entry.scriptsCompiled && (

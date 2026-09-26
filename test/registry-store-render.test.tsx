@@ -123,9 +123,9 @@ describe("paid entries this key has not been given", () => {
   it("requested and expired are not installable either", () => {
     for (const access of ["requested", "expired"] as const) {
       const html = card({ ...PAID, access });
-      expect(html).toMatch(contactLink);
       expect(text(html)).not.toContain("取得");
     }
+    expect(card({ ...PAID, access: "expired" })).toMatch(contactLink);
   });
 
   it("an email is the contact when there is no support URL; with neither, it says not activated", () => {
@@ -234,3 +234,60 @@ describe("the same id from another source", () => {
     expect(cardBlockLabel(t, { ...entry, access: "granted" }, new Map())).toBe("需要其他插件");
   });
 });
+
+// 1.56.0:offer.action —— request = 站內申請、link = 外部結帳;requested = 閘道回報已申請。
+describe("request and buy", () => {
+  const REQUEST: RegistryEntry = { ...PAID, offer: { ...PAID.offer, action: "request" } };
+  const LINK: RegistryEntry = {
+    ...PAID,
+    offer: { ...PAID.offer, action: "link", url: "https://pay.example.com/checkout/abc" },
+  };
+
+  it("request: the button is Request access, next to the price", () => {
+    for (const html of [card(REQUEST), featured(REQUEST), detail(REQUEST)]) {
+      expect(html).toMatch(/<button type="button"[^>]*>申請使用<\/button>/);
+      expect(html).toContain("NT$25,000");
+      expect(html).not.toContain("聯絡提供者");
+    }
+    const code = { ...REQUEST, id: "loyalty", kind: "code" as const };
+    expect(card(code)).toContain("申請使用");
+    expect(detail(code)).toContain("申請使用");
+  });
+
+  it("link: opens the provider's page in a new tab, with nothing added to the address", () => {
+    for (const html of [card(LINK), featured(LINK), detail(LINK)]) {
+      expect(html).toMatch(
+        /<a href="https:\/\/pay\.example\.com\/checkout\/abc" target="_blank" rel="noopener noreferrer"[^>]*>前往購買/,
+      );
+      expect(html).not.toContain("申請使用");
+    }
+  });
+
+  it("requested: a line of text with the date, not a button", () => {
+    const requested: RegistryEntry = { ...REQUEST, access: "requested", requestedAt: "2026-09-23" };
+    for (const html of [card(requested), featured(requested), detail(requested)]) {
+      expect(html).toContain("已申請 · 9/23");
+      expect(html).not.toContain("申請使用");
+      expect(html).not.toMatch(/<button[^>]*>[^<]*已申請/);
+    }
+    expect(card(requested)).toContain("NT$25,000 / 年");
+    expect(card({ ...requested, requestedAt: undefined })).toContain("已申請");
+    // 外部結帳的來源也一樣:閘道說已申請就是已申請。
+    expect(card({ ...LINK, access: "requested", requestedAt: "2026-09-23T10:00:00Z" })).toContain("已申請 · 9/23");
+  });
+
+  it("installed but not given, with a newer version: the update asks through the same action", () => {
+    const page = detail({ ...REQUEST, installed: true, installedVersion: "1.0.0" });
+    expect(page).toContain("新版要先請 registry.example.com 開通才能更新");
+    expect(page).toContain("申請使用");
+  });
+
+  it("free entries never show any of it", () => {
+    for (const html of [card(FREE), featured(FREE), detail(FREE)].map(text)) {
+      expect(html).not.toContain("申請使用");
+      expect(html).not.toContain("前往購買");
+      expect(html).not.toContain("已申請");
+    }
+  });
+});
+

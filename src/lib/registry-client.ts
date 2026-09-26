@@ -6,6 +6,7 @@ import type { LocalizedString } from "@/lib/i18n/localized";
 import {
   httpsUrl,
   parseAccess,
+  parseIsoDate,
   parseOffer,
   type RegistryAccess,
   type RegistryOffer,
@@ -62,6 +63,8 @@ export interface RegistryIndexEntry {
   access?: RegistryAccess;
   /** 價格與說明。只有同時有 access 時才會有(見 parseIndexEntries)。 */
   offer?: RegistryOffer;
+  /** 1.56.0:access 為 requested 時,閘道記下的申請日期(商店的「已申請 · 9/23」)。 */
+  requestedAt?: string;
 }
 
 export interface SourceFetchError {
@@ -159,7 +162,10 @@ export class RegistryHttpError extends Error {
 const ERROR_BODY_MAX = 4 * 1024;
 const ERROR_CODE_RE = /^[a-z][a-z0-9_]{0,63}$/;
 
-/** 錯誤回應的 body 只讀前 4 KB,解析得出 `{ error, message }` 才用,否則當作沒有。 */
+/**
+ * 錯誤回應的 body 只讀前 4 KB,解析得出 `{ error, message }` 才用,否則當作沒有。
+ * 1.56.0 起申請(sendAccessRequest)的成功回應 `{ message? }` 也走這裡。
+ */
 async function readErrorBody(res: Response): Promise<{ code?: string; detail?: string }> {
   try {
     let text: string;
@@ -408,6 +414,7 @@ interface RawIndexEntry {
   requiresExtensions?: unknown;
   access?: unknown;
   offer?: unknown;
+  requestedAt?: unknown;
 }
 
 /** raw requires 陣列 → 正規化的 ServiceRequirement[](非法項直接丟棄)。 */
@@ -533,6 +540,7 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
         // offer 只有閘道同時給了 access 才算數:靜態 registry(GitHub raw)給不出 access,
         // 它寫的 offer 忽略、卡片照免費顯示 —— 不會出現「看起來要錢、按下去卻能裝」。
         offer: access ? parseOffer(raw.offer) : undefined,
+        requestedAt: access === "requested" ? parseIsoDate(raw.requestedAt) : undefined,
       });
     }
   }
@@ -579,6 +587,7 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
 
   return { entries, errors };
 }
+
 
 export class UnknownRegistrySource extends Error {
   constructor(source: string) {
@@ -721,4 +730,71 @@ export function registryErrorResponse(e: unknown): Response | null {
     return Response.json({ error: "source_key_invalid" }, { status: 502 });
   }
   return null;
+}
+
+/** 1.56.0:轉送給 registry 的申請內容(`POST <source>/requests` 的 body)。 */
+export interface AccessRequestBody {
+  extension: string;
+  /** 管理員的留言,有寫才送。 */
+  note?: string;
+  /** 管理員勾了才送;名字與 email 取自登入的帳號,不收瀏覽器送來的值。 */
+  contact?: { name: string; email: string };
+}
+
+export interface AccessRequestReply {
+  /** registry 回的 http 狀態碼(202 = 收到)。 */
+  status: number;
+  /** 錯誤回應的 `error`(例如 already_granted)。 */
+  code?: string;
+  /** 回應的 `message`,消毒過、截到 200 字。 */
+  message?: string;
+}
+
+/** `https://registry.example.com/` → `https://registry.example.com/requests`。 */
+export function requestsUrl(source: string): string {
+  return `${source.replace(/\/+$/, "")}/requests`;
+}
+
+/**
+ * 1.56.0 付費插件協定:站內申請。伺服器帶這個來源的 token POST 到 `<source>/requests`
+ * (token 永遠不進瀏覽器)。和讀檔的 followRedirects 不同,這裡**完全不跟 redirect**:
+ * 申請帶著 token 與管理員的聯絡資料,只送給設定裡那一台主機;任何 3xx 都當失敗。
+ * 8 秒逾時;回應只讀前 4 KB(遠低於 1 MB 上限,registry 只會回一句 message)。
+ *
+ * 呼叫端必須先以 assertKnownRegistrySource 驗證 source;這裡再找一次設定當作 defense-in-depth。
+ */
+export async function sendAccessRequest(source: string, body: AccessRequestBody): Promise<AccessRequestReply> {
+  if (!isHttpsUrl(source)) throw new Error("source must be an https URL");
+  const config = (await getRegistrySources()).find((c) => c.url === source);
+  if (!config) throw new UnknownRegistrySource(source);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Registry-Protocol": REGISTRY_PROTOCOL,
+  };
+  if (config.token) headers["Authorization"] = `token ${config.token}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(requestsUrl(source), {
+      method: "POST",
+      redirect: "manual",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+      await res.body?.cancel();
+      throw new Error("redirect refused");
+    }
+    const { code, detail } = await readErrorBody(res);
+    return {
+      status: res.status,
+      ...(!res.ok && code ? { code } : {}),
+      ...(detail ? { message: detail } : {}),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }

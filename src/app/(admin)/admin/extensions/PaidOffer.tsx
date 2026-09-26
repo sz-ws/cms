@@ -11,8 +11,9 @@ import { sourceHost, type RegistryEntry } from "./registry-types";
 // 還沒開通的只多一行價格,按鈕換成「聯絡提供者」。不加「付費」標籤、不加鎖頭。
 // 價格排版與按鈕文字由 core 決定,registry 只給數字與一句 note(伺服器已驗證、消毒)。
 //
-// 「聯絡提供者」導向 registry 條目現有的 support 聯絡方式(網址優先,其次 email)。站內
-// 申請、外部結帳是之後的階段,這裡不管 offer.action。
+// 「聯絡提供者」導向 registry 條目現有的 support 聯絡方式(網址優先,其次 email)。
+// 1.56.0:offer.action(站內申請、外部結帳)由 ./RequestAccess 的 PaidAction 決定按鈕;
+// 省略 action、或 registry 不收線上申請時,仍是這裡的「聯絡提供者」。
 
 type Translator = ReturnType<typeof useT>;
 
@@ -42,6 +43,11 @@ function contactHref(entry: RegistryEntry): string | null {
   if (entry.supportUrl) return entry.supportUrl;
   if (entry.supportEmail) return `mailto:${entry.supportEmail}`;
   return null;
+}
+
+/** 有沒有「聯絡提供者」可以開的網址或信箱。 */
+export function hasContact(entry: RegistryEntry): boolean {
+  return contactHref(entry) !== null;
 }
 
 /** 卡片上的一行:`NT$25,000 / 年`;沒有價格就是 note(「依人數報價」)。 */

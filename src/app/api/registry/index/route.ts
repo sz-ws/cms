@@ -26,9 +26,12 @@ import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 // script,商店詳情改顯示一句說明(見 @/ext/dx/scripts-compiled)。只在 true 時帶。
 // 1.52.0:付費插件的 access / offer 由 registry-client 解析,原樣帶給商店;errors 帶上
 // registry 回的 http 狀態碼(401 / 403 = 金鑰不能用),商店據此換成白話。
+// 1.56.0:contact —— 申請視窗「附上我的名字和 email」旁邊列出的就是這兩個值(POST
+// /api/registry/request 送出的也是伺服器端同一份,不收瀏覽器送來的)。
 export async function GET(): Promise<Response> {
+  let user;
   try {
-    await requireAuth("admin");
+    user = await requireAuth("admin");
   } catch (e) {
     const r = authErrorResponse(e);
     if (r) return r;
@@ -81,7 +84,14 @@ export async function GET(): Promise<Response> {
     name: p.name,
   }));
 
-  return Response.json({ entries: items, errors, services, installedCode, installedPlugins });
+  return Response.json({
+    entries: items,
+    errors,
+    services,
+    installedCode,
+    installedPlugins,
+    contact: { name: user.name, email: user.email },
+  });
 }
 
 type Match =

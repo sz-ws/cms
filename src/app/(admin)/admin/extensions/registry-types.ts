@@ -62,6 +62,8 @@ export interface RegistryEntry {
   access?: RegistryAccess;
   /** 價格與說明;只有同時有 access 時才會出現(伺服器已驗證、消毒)。 */
   offer?: RegistryOffer;
+  /** 1.56.0:access 為 requested 時,閘道記下的申請日期。 */
+  requestedAt?: string;
 }
 
 /** 站上已安裝的插件(name 可能是多語物件,畫面依語系解析)。 */
@@ -85,6 +87,8 @@ export interface IndexResponse {
   installedCode?: { id: string; version: string; enabled: boolean }[];
   /** 1.50.0:站上所有已安裝的插件(判斷相依用)。 */
   installedPlugins?: InstalledPluginRef[];
+  /** 1.56.0:目前這位管理員的名字與 email(申請視窗勾了才送,列出來讓他看見會送什麼)。 */
+  contact?: { name: string; email: string };
 }
 
 /** 來源的顯示名稱:去掉 https:// 與結尾的斜線(路徑保留,同一台主機上的兩個來源分得開)。 */
@@ -150,4 +154,17 @@ export function markInstalled(
     },
   ];
   return { ...data, entries, installedPlugins };
+}
+
+/**
+ * 1.56.0:申請送出之後,重讀索引之前先就地改成「已申請 · 今天」(閘道之後回的 requestedAt
+ * 會蓋掉這個日期)。只動 (來源, id) 那一筆。
+ */
+export function markRequested(data: IndexResponse, id: string, source: string, today: string): IndexResponse {
+  return {
+    ...data,
+    entries: data.entries.map((e): RegistryEntry =>
+      e.id === id && e.source === source ? { ...e, access: "requested", requestedAt: today } : e,
+    ),
+  };
 }

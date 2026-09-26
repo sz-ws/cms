@@ -11,6 +11,10 @@ import { registryTextLength, sanitizeRegistryText } from "./registry-text";
 //
 // core 只顯示,不收錢、不驗授權:真正擋下未開通安裝的是送出 bytes 的閘道(manifest 與
 // 檔案回 402)。這個模組是純資料 + 純函式,server 解析與商店畫面共用。
+//
+// 1.56.0:offer.action —— request = 站內申請(core 伺服器帶 token 轉送到 `<source>/requests`,
+// 見 registry-client 的 sendAccessRequest);link = 新分頁開 offer.url,core 不附加任何參數。
+// 申請狀態(access: "requested" + requestedAt)由閘道依金鑰回報,core 不存。
 
 const ACCESS_STATES = ["granted", "locked", "requested", "expired"] as const;
 export type RegistryAccess = (typeof ACCESS_STATES)[number];
@@ -70,26 +74,41 @@ function parsePrice(raw: unknown): OfferPrice | undefined | typeof INVALID {
   return { amount, currency, period: period as PricePeriod };
 }
 
-function noteText(raw: unknown): string | undefined | typeof INVALID {
+type LimitedText = { ok: true; value?: LocalizedString } | { ok: false };
+
+function limitedText(raw: unknown, max: number): string | undefined | typeof INVALID {
   if (typeof raw !== "string") return INVALID;
   const text = sanitizeRegistryText(raw);
-  if (registryTextLength(text) > NOTE_MAX) return INVALID;
+  if (registryTextLength(text) > max) return INVALID;
   return text || undefined;
 }
 
-function parseNote(raw: unknown): LocalizedString | undefined | typeof INVALID {
-  if (raw === undefined) return undefined;
-  if (typeof raw === "string") return noteText(raw);
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return INVALID;
+/**
+ * registry 寫的一段短文字(offer.note、notice 的 title / body):字串或 `{ en, "zh-Hant" }`,
+ * 先消毒再算字數,任何一個語系超過 max 就整段不合格(ok: false)—— 呼叫端據此整筆丟掉。
+ * 沒寫、或消毒後是空字串 = ok 但沒有 value。
+ */
+export function parseLimitedText(raw: unknown, max: number): LimitedText {
+  if (raw === undefined) return { ok: true };
+  if (typeof raw === "string") {
+    const text = limitedText(raw, max);
+    return text === INVALID ? { ok: false } : { ok: true, value: text };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false };
   const out: { en?: string; "zh-Hant"?: string } = {};
   for (const locale of ["en", "zh-Hant"] as const) {
     const value = (raw as Record<string, unknown>)[locale];
     if (value === undefined) continue;
-    const text = noteText(value);
-    if (text === INVALID) return INVALID;
+    const text = limitedText(value, max);
+    if (text === INVALID) return { ok: false };
     if (text !== undefined) out[locale] = text;
   }
-  return out.en !== undefined || out["zh-Hant"] !== undefined ? out : undefined;
+  return { ok: true, value: out.en !== undefined || out["zh-Hant"] !== undefined ? out : undefined };
+}
+
+function parseNote(raw: unknown): LocalizedString | undefined | typeof INVALID {
+  const note = parseLimitedText(raw, NOTE_MAX);
+  return note.ok ? note.value : INVALID;
 }
 
 function optionalHttps(raw: unknown): string | undefined | typeof INVALID {
@@ -120,6 +139,17 @@ export function parseOffer(raw: unknown): RegistryOffer | undefined {
     ...(url ? { url } : {}),
     ...(termsUrl ? { termsUrl } : {}),
   };
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+
+/**
+ * registry 寫的日期(`requestedAt`、notice 的 `publishedAt` / `expiresAt`):只收 ISO 8601 的
+ * 日期(`2026-09-23`)或帶時區的日期時間。回傳原字串;格式不對或不是真的日期回 undefined。
+ */
+export function parseIsoDate(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || !ISO_DATE_RE.test(raw)) return undefined;
+  return Number.isNaN(Date.parse(raw)) ? undefined : raw;
 }
 
 /** 這個站能不能裝、能不能更新:沒有 access(免費、靜態 registry)或已開通。 */
