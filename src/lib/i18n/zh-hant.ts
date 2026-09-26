@@ -585,6 +585,8 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "registry.allowScripts": "允許插件在前台插入 script",
   "registry.allowScriptsHint": "這個來源的插件可以在前台加入程式。每一個在執行前都還是要經過檢查和核准。",
   "registry.scriptsBadge": "可插入 script",
+  "registry.notices": "上新通知",
+  "registry.noticesHint": "這個來源上架新服務時，每位管理員會在後台看到一次介紹。",
 
   // AdminSidebar
   "sidebar.account": "帳戶",
@@ -692,6 +694,8 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "registryBrowser.request.tooLong": "留言太長了，請縮短一些。",
   "registryBrowser.request.rateLimited": "申請次數太多，請稍後再試。",
   "registryBrowser.request.failed": "沒有送出，請稍後再試。",
+  "registryNotice.dismiss": "知道了",
+  "registryNotice.view": "查看",
   "registryBrowser.plugins.enabled": "已啟用",
   "registryBrowser.plugins.disabled": "已停用",
   "registryBrowser.plugins.missing": "未安裝",

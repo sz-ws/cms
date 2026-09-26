@@ -8,6 +8,8 @@ import { getExtRuntime } from "@/ext/loader";
 import { byId, listInstalledPlugins, type InstalledPluginInfo } from "@/ext/installed-plugins";
 import { listingVerdict } from "@/ext/plugin-ref";
 import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
+import { rememberNotices } from "@/lib/registry-notice-store";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // core-v2 §3.4:GET /api/registry/index。admin only。
 // 對每個 configured source 抓 registry.json,merge entries,並附上
@@ -27,7 +29,8 @@ import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 // 1.52.0:付費插件的 access / offer 由 registry-client 解析,原樣帶給商店;errors 帶上
 // registry 回的 http 狀態碼(401 / 403 = 金鑰不能用),商店據此換成白話。
 // 1.56.0:contact —— 申請視窗「附上我的名字和 email」旁邊列出的就是這兩個值(POST
-// /api/registry/request 送出的也是伺服器端同一份,不收瀏覽器送來的)。
+// /api/registry/request 送出的也是伺服器端同一份,不收瀏覽器送來的)。打開上新通知的來源,
+// 這次讀到的通知順便寫進通知快取(回應之後做)。
 export async function GET(): Promise<Response> {
   let user;
   try {
@@ -38,7 +41,7 @@ export async function GET(): Promise<Response> {
     throw e;
   }
 
-  const [{ entries, errors }, installed] = await Promise.all([
+  const [{ entries, errors, notices }, installed] = await Promise.all([
     fetchRegistryIndex(),
     getExtRuntime().then((rt) => listInstalledPlugins(rt.all)),
   ]);
@@ -84,6 +87,8 @@ export async function GET(): Promise<Response> {
     name: p.name,
   }));
 
+  if (notices.length > 0) await afterResponse(rememberNotices(notices, Date.now()));
+
   return Response.json({
     entries: items,
     errors,
@@ -92,6 +97,16 @@ export async function GET(): Promise<Response> {
     installedPlugins,
     contact: { name: user.name, email: user.email },
   });
+}
+
+/** 通知快取的寫入不擋商店回應;失敗只記錄。 */
+async function afterResponse(task: Promise<void>): Promise<void> {
+  const safe = task.catch((e: unknown) => console.error("[registry-index] notice cache write failed", e));
+  try {
+    getCloudflareContext().ctx.waitUntil(safe);
+  } catch {
+    await safe;
+  }
 }
 
 type Match =

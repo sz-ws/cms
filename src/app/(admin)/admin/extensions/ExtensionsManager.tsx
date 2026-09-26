@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useOptimistic, useState } from "react";
+import { startTransition, useMemo, useOptimistic, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import NumberFlow from "@number-flow/react";
 import { TextMorph } from "torph/react";
@@ -474,6 +474,13 @@ export function ExtensionsManager({ extensions }: ExtensionsManagerProps) {
   // useSearchParams without a server round trip (and the sidebar highlight follows).
   const searchParams = useSearchParams();
   const tab: Tab = searchParams.get("tab") === "browse" ? "browse" : "installed";
+  // 1.56.0:?tab=browse&source=<來源>&ext=<id> 直接打開那個插件的詳情(上新通知的「查看」)。
+  const openSource = searchParams.get("source");
+  const openId = searchParams.get("ext");
+  const open = useMemo(
+    () => (openSource && openId ? { source: openSource, id: openId } : null),
+    [openSource, openId],
+  );
   const setTab = (next: Tab) => {
     if (next === tab) return;
     const params = new URLSearchParams(searchParams.toString());
@@ -515,7 +522,7 @@ export function ExtensionsManager({ extensions }: ExtensionsManagerProps) {
       {tab === "installed" ? (
         <InstalledTab extensions={extensions} />
       ) : (
-        <RegistryBrowser />
+        <RegistryBrowser open={open} />
       )}
     </div>
   );

@@ -849,6 +849,7 @@ export async function splitRegistrySourceTokens(
   incoming: unknown,
 ): Promise<Record<string, unknown>> {
   const existing = await getRegistryTokenMap();
+  const stored = await getSetting<unknown>("core.registrySources", []);
   const tokens: Record<string, string> = {};
   const sources: unknown[] = [];
   if (Array.isArray(incoming)) {
@@ -875,7 +876,7 @@ export async function splitRegistrySourceTokens(
         } else if (existing[rest.url]) {
           tokens[rest.url] = existing[rest.url];
         }
-        sources.push(rest);
+        sources.push(stampNoticesSince(rest, stored, new Date().toISOString()));
       }
     }
   }
@@ -883,6 +884,33 @@ export async function splitRegistrySourceTokens(
     "core.registrySources": sources,
     "core.registryTokens": JSON.stringify(tokens),
   };
+}
+
+/**
+ * 1.56.0:上新通知的 noticesSince 由伺服器決定,不收瀏覽器送來的值 ——
+ *   - notices 打開、而且存著的同一個來源本來就開著 → 沿用原本的時間
+ *   - 這次才打開 → now(早於它發布的通知不補跳)
+ *   - 關掉 → 兩個欄位都拿掉(之後再打開算新的一次)
+ */
+export function stampNoticesSince<T extends { url: string; notices?: unknown; noticesSince?: unknown }>(
+  source: T,
+  stored: unknown,
+  now: string,
+): Omit<T, "notices" | "noticesSince"> & { notices?: true; noticesSince?: string } {
+  const { notices, noticesSince, ...rest } = source;
+  void noticesSince;
+  if (notices !== true) return rest;
+  const before = Array.isArray(stored)
+    ? (stored as unknown[]).find(
+        (item): item is { url: string; notices?: unknown; noticesSince?: unknown } =>
+          !!item && typeof item === "object" && (item as { url?: unknown }).url === source.url,
+      )
+    : undefined;
+  const kept =
+    before?.notices === true && typeof before.noticesSince === "string" && !Number.isNaN(Date.parse(before.noticesSince))
+      ? before.noticesSince
+      : now;
+  return { ...rest, notices: true, noticesSince: kept };
 }
 
 /** Shape guard for core.registrySources before token extraction mutates it. */
@@ -911,7 +939,9 @@ export function isValidRegistrySources(value: unknown): boolean {
     return (
       (source.token === undefined || typeof source.token === "string") &&
       (source.hasToken === undefined || typeof source.hasToken === "boolean") &&
-      (source.allowScripts === undefined || typeof source.allowScripts === "boolean")
+      (source.allowScripts === undefined || typeof source.allowScripts === "boolean") &&
+      (source.notices === undefined || typeof source.notices === "boolean") &&
+      (source.noticesSince === undefined || typeof source.noticesSince === "string")
     );
   });
 }

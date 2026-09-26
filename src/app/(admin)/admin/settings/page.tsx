@@ -106,12 +106,20 @@ export default async function SettingsPage({
           typeof item === "object" &&
           typeof (item as { url?: unknown }).url === "string"
         ) {
-          const src = item as { url: string; name?: unknown; icon?: unknown; token?: unknown; allowScripts?: unknown };
+          const src = item as {
+            url: string;
+            name?: unknown;
+            icon?: unknown;
+            token?: unknown;
+            allowScripts?: unknown;
+            notices?: unknown;
+          };
           return [{
             url: src.url,
             name: typeof src.name === "string" ? src.name : undefined,
             icon: typeof src.icon === "string" ? src.icon : undefined,
             allowScripts: src.allowScripts === true || undefined,
+            notices: src.notices === true || undefined,
             hasToken: Boolean(
               tokenMap[src.url] ??
                 (typeof src.token === "string" && src.token.length > 0),

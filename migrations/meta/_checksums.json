@@ -24,6 +24,7 @@
     "0020_dx_scripts_approval.sql": "93bb568a311df60d153dd0362492bc79ca842fde91439509a0055f60aa5398bc",
     "0021_staff_roles.sql": "6bcd7f76bc1c3745203f7ee99d507dd19d6a4eec383242f466c1b6cc6751ac3a",
     "0022_user_email_verified.sql": "eaa6bef69cb1af1c43a682e5cdfe58a22a2df53acba02b938b97ec58e3572afe",
-    "0023_password_reset_codes.sql": "21ee748046451856c27749d021a7d2a82b547b535e95aa1988594480ee05f211"
+    "0023_password_reset_codes.sql": "21ee748046451856c27749d021a7d2a82b547b535e95aa1988594480ee05f211",
+    "0024_registry_notices.sql": "74ad9e80f8ad6f0d4e2ef1e5e325e617048e534cd70153d969388b6ee81579fe"
   }
 }

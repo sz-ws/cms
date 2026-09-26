@@ -11,6 +11,7 @@ import {
   type RegistryAccess,
   type RegistryOffer,
 } from "./registry-offer";
+import { parseNotices, type RegistryNotice } from "./registry-notices";
 import { REGISTRY_MESSAGE_MAX, sanitizeRegistryText } from "./registry-text";
 
 // core-v2 §3.4 / §5:registry client — 只信任 core.registrySources 白名單內的來源,
@@ -77,6 +78,8 @@ export interface SourceFetchError {
 export interface RegistryIndexResult {
   entries: RegistryIndexEntry[];
   errors: SourceFetchError[];
+  /** 1.56.0:打開上新通知的來源,這次讀到的通知(商店讀索引時順便更新通知快取)。 */
+  notices: { source: string; notices: RegistryNotice[] }[];
 }
 
 export interface RegistrySourceConfig {
@@ -84,6 +87,13 @@ export interface RegistrySourceConfig {
   token?: string;
   /** 1.48.0:這個來源的宣告式插件可以帶 manifest.scripts。預設不行。 */
   allowScripts?: boolean;
+  /**
+   * 1.56.0:收這個來源的上新通知。預設關 —— 只接公開 registry 的站不會跳任何彈窗;
+   * 設定站台的人填 token 時一起打開。
+   */
+  notices?: boolean;
+  /** 打開通知的時間(ISO,伺服器存檔時蓋上):早於它發布的通知不補跳。 */
+  noticesSince?: string;
 }
 
 /**
@@ -258,9 +268,9 @@ async function followRedirects(
   return res;
 }
 
-async function boundedFetchText(url: string, token?: string): Promise<string> {
+async function boundedFetchText(url: string, token?: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await followRedirects(url, token, controller.signal);
     const contentLength = res.headers.get("content-length");
@@ -555,6 +565,7 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
   const sourceConfigs = await getRegistrySources();
   const entries: RegistryIndexEntry[] = [];
   const errors: SourceFetchError[] = [];
+  const notices: RegistryIndexResult["notices"] = [];
 
   await Promise.all(
     sourceConfigs.map(async (config) => {
@@ -574,7 +585,9 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
         } catch {
           throw new Error("invalid JSON in registry.json");
         }
-        entries.push(...parseIndexEntries(json, source));
+        const parsed = parseIndexEntries(json, source);
+        entries.push(...parsed);
+        if (config.notices === true) notices.push({ source, notices: parseNotices(json, parsed) });
       } catch (e) {
         errors.push({
           source,
@@ -585,9 +598,28 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
     }),
   );
 
-  return { entries, errors };
+  return { entries, errors, notices };
 }
 
+const NOTICE_FETCH_TIMEOUT_MS = 3_000;
+
+/**
+ * 1.56.0:上新通知的背景更新 —— 只讀這一個來源的 registry.json(先試記住的路徑變體,
+ * 3 秒逾時),回傳解析過的通知。任何失敗照常 throw,由呼叫端記錄。
+ */
+export async function fetchSourceNotices(config: RegistrySourceConfig): Promise<RegistryNotice[]> {
+  if (!isHttpsUrl(config.url)) throw new Error("source must be an https URL");
+  const text = await fetchFromVariants(config.url, "/registry.json", (url) =>
+    boundedFetchText(url, config.token, NOTICE_FETCH_TIMEOUT_MS),
+  );
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error("invalid JSON in registry.json");
+  }
+  return parseNotices(json, parseIndexEntries(json, config.url));
+}
 
 export class UnknownRegistrySource extends Error {
   constructor(source: string) {

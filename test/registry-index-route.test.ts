@@ -38,6 +38,7 @@ vi.mock("@/lib/registry-client", () => ({
   fetchRegistryIndex: async () => ({
     entries: registryState.entries,
     errors: registryState.errors,
+    notices: [],
   }),
 }));
 

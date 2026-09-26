@@ -25,6 +25,8 @@ export interface RegistrySource {
   hasToken?: boolean;
   /** 1.48.0:這個來源的插件可以帶前台 script(安裝時仍要逐一核准)。 */
   allowScripts?: boolean;
+  /** 1.56.0:收這個來源的上新通知。預設關;打開的時間由伺服器記下(noticesSince)。 */
+  notices?: boolean;
 }
 
 interface RegistrySourcesManagerProps {
@@ -48,6 +50,7 @@ export function RegistrySourcesManager({
   const [newIcon, setNewIcon] = useState("");
   const [newToken, setNewToken] = useState("");
   const [newAllowScripts, setNewAllowScripts] = useState(false);
+  const [newNotices, setNewNotices] = useState(false);
   const [testResult, setTestResult] = useState<TestResult>({ status: "idle" });
 
   async function testConnection(url: string, token?: string): Promise<TestResult> {
@@ -97,6 +100,7 @@ export function RegistrySourcesManager({
     setNewIcon("");
     setNewToken("");
     setNewAllowScripts(false);
+    setNewNotices(false);
     setTestResult({ status: "idle" });
     setDialogOpen(true);
   }
@@ -109,6 +113,7 @@ export function RegistrySourcesManager({
     setNewIcon(source.icon ?? "");
     setNewToken(""); // token 不下發也不預填;留空 = 保留既有 token
     setNewAllowScripts(source.allowScripts === true);
+    setNewNotices(source.notices === true);
     setTestResult({ status: "idle" });
     setDialogOpen(true);
   }
@@ -136,6 +141,7 @@ export function RegistrySourcesManager({
         ? true
         : Boolean(editing?.hasToken && editing.url === newUrl),
       allowScripts: newAllowScripts || undefined,
+      notices: newNotices || undefined,
     };
 
     let updatedPayload: RegistrySource[];
@@ -383,6 +389,18 @@ export function RegistrySourcesManager({
                   checked={newAllowScripts}
                   onCheckedChange={setNewAllowScripts}
                 />
+              </label>
+
+              <label className="flex cursor-pointer items-start justify-between gap-3">
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-[12px] font-medium text-ink/70">
+                    {t("registry.notices")}
+                  </span>
+                  <span className="text-[11px] leading-relaxed text-ink/40">
+                    {t("registry.noticesHint")}
+                  </span>
+                </span>
+                <Switch checked={newNotices} onCheckedChange={setNewNotices} />
               </label>
             </div>
 

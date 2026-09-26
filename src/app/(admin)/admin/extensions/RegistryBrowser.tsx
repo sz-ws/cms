@@ -798,14 +798,20 @@ async function fetchIndex(): Promise<IndexResponse | null> {
   }
 }
 
-export function RegistryBrowser() {
+export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}) {
   const t = useT();
   const [data, setData] = useState<IndexResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category>("all");
-  const [selected, setSelected] = useState<EntryRef | null>(null);
+  // 1.56.0:open —— 網址帶的插件(上新通知的「查看」)。換了一個就直接打開它的詳情。
+  const [selected, setSelected] = useState<EntryRef | null>(open);
+  const [openedFrom, setOpenedFrom] = useState<EntryRef | null>(open);
+  if (open && (open.source !== openedFrom?.source || open.id !== openedFrom?.id)) {
+    setOpenedFrom(open);
+    setSelected(open);
+  }
   const setSelectedEntry = (entry: RegistryEntry | null) =>
     setSelected(entry ? { source: entry.source, id: entry.id } : null);
 

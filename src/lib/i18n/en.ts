@@ -603,6 +603,8 @@ export const en = {
   "registry.allowScriptsHint":
     "Extensions from this source can add code to your public pages. Each one still needs a review before it runs.",
   "registry.scriptsBadge": "Scripts allowed",
+  "registry.notices": "New service notices",
+  "registry.noticesHint": "When this source adds a new service, each admin sees one short introduction.",
 
   // AdminSidebar
   "sidebar.account": "Account",
@@ -710,6 +712,8 @@ export const en = {
   "registryBrowser.request.tooLong": "The message is too long.",
   "registryBrowser.request.rateLimited": "Too many requests. Try again later.",
   "registryBrowser.request.failed": "Couldn't send the request. Try again later.",
+  "registryNotice.dismiss": "Got it",
+  "registryNotice.view": "View",
   "registryBrowser.plugins.enabled": "Enabled",
   "registryBrowser.plugins.disabled": "Disabled",
   "registryBrowser.plugins.missing": "Not installed",

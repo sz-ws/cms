@@ -13,6 +13,7 @@ import { AdminTheme } from "@/components/admin/AdminTheme";
 import { maybeRunJobs } from "@/lib/jobs";
 import { getExtRuntime } from "@/ext/loader";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { RegistryNoticeDialog } from "@/components/admin/RegistryNoticeDialog";
 import type { AdminMenuItem } from "@/ext/admin-menu";
 import {
   customRoleCanOpen,
@@ -153,6 +154,8 @@ export default async function AdminLayout({
         >
           {children}
         </AdminShell>
+        {/* 1.56.0:上新通知只給預設的管理員(editor、guest、自訂角色永遠看不到)。 */}
+        {fullAdmin && <RegistryNoticeDialog />}
       </AdminTheme>
     </I18nProvider>
   );

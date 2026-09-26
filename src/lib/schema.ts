@@ -455,3 +455,30 @@ export const recordStatusNotes = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.statusSet, t.recordId, t.status] })],
 );
+
+// migrations/0024_registry_notices.sql:上新通知(registry 協定的 notices,1.56.0)。
+// 執行期契約見 src/lib/registry-notice-store.ts;解析與挑選規則見 src/lib/registry-notices.ts。
+//
+// 每個來源一列通知快取。刻意不放在 settings(同 heartbeats 的理由:更新會推動設定版本戳)。
+// fetched_at 在開始抓的那一刻就寫上,12 小時內同一個來源最多抓一次。
+export const registryNotices = sqliteTable("registry_notices", {
+  source: text("source").primaryKey(),
+  // 解析、消毒過的 RegistryNotice[](JSON)。
+  notices: text("notices").notNull(),
+  fetchedAt: integer("fetched_at").notNull(),
+});
+
+// 每位管理員看過哪些通知(「只跳一次」= 每位管理員一次)。seen_at 同時是「24 小時內最多
+// 一則」的依據。
+export const registryNoticeSeen = sqliteTable(
+  "registry_notice_seen",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    noticeId: text("notice_id").notNull(),
+    seenAt: integer("seen_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.source, t.noticeId] })],
+);
