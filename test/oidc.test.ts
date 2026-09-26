@@ -26,6 +26,7 @@ import {
   completeOAuth,
   listLoginProviders,
   listUserIdentities,
+  loginErrorLocation,
   __clearOidcCaches,
 } from "../src/lib/oidc";
 import { GOOGLE_LOGIN_MANIFEST } from "./login-provider-manifest.test";
@@ -130,7 +131,7 @@ beforeAll(async () => {
     "CREATE TABLE IF NOT EXISTS staff_roles (id TEXT PRIMARY KEY, name TEXT NOT NULL, access TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
   );
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'editor', created_at INTEGER NOT NULL, avatar_key TEXT, staff_role_id TEXT);",
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'editor', created_at INTEGER NOT NULL, avatar_key TEXT, staff_role_id TEXT, email_verified_at INTEGER);",
   );
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS user_identities (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT NOT NULL, provider_user_id TEXT NOT NULL, display TEXT, created_at INTEGER NOT NULL, last_used_at INTEGER);",
@@ -190,6 +191,8 @@ async function runFlow(opts: {
   userId?: string;
   claimOverride?: Record<string, unknown>;
   reuseState?: { state: string; nonce: string };
+  back?: string;
+  next?: string;
 }): Promise<{ outcome: Awaited<ReturnType<typeof completeOAuth>>; state: string; nonce: string }> {
   const alg = opts.alg ?? "RS256";
   let state: string;
@@ -201,7 +204,8 @@ async function runFlow(opts: {
       providerId: PROVIDER,
       mode: opts.mode ?? "login",
       userId: opts.userId,
-      next: "/admin",
+      next: opts.next ?? "/admin",
+      back: opts.back,
       req: req(),
     });
     if ("error" in begin) throw new Error(`beginOAuth failed: ${begin.error}`);
@@ -232,12 +236,12 @@ async function runFlow(opts: {
   return { outcome, state, nonce };
 }
 
-async function seedUser(id: string, email: string, role = "editor"): Promise<void> {
+async function seedUser(id: string, email: string, role = "editor", emailVerified = false): Promise<void> {
   await d1()
     .prepare(
-      "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (?1, ?2, 'x', ?3, ?4, ?5)",
+      "INSERT INTO users (id, email, password_hash, name, role, created_at, email_verified_at) VALUES (?1, ?2, 'x', ?3, ?4, ?5, ?6)",
     )
-    .bind(id, email.toLowerCase(), "Name", role, Date.now())
+    .bind(id, email.toLowerCase(), "Name", role, Date.now(), emailVerified ? Date.now() : null)
     .run();
 }
 
@@ -425,5 +429,105 @@ describe("completeOAuth — registration policy + linking", () => {
     const ids = await listUserIdentities("u-fresh");
     expect(ids).toHaveLength(1);
     expect(ids[0].provider).toBe(PROVIDER);
+  });
+});
+
+// 1.54.0:前台會員也用第三方登入 —— Email 已驗證的一般會員自動綁上;失敗回到 back 那一頁。
+describe("completeOAuth — members and back (1.54.0)", () => {
+  it("links a verified email to an existing plain member and signs in", async () => {
+    await seedUser("u-member", "member@test.com", "guest", true);
+    const { outcome } = await runFlow({ sub: "member-1", email: "member@test.com", next: "/shop/checkout" });
+    expect(outcome).toEqual({ kind: "session", userId: "u-member", location: "/shop/checkout" });
+    const ids = await listUserIdentities("u-member");
+    expect(ids).toHaveLength(1);
+  });
+
+  it("does not link a member whose own email was never proven (pre-hijacking)", async () => {
+    // 寄不出信時直接註冊、或管理員手動建立:任何人都能拿別人的 Email 建這種帳號。
+    await seedUser("u-unproven", "unproven@test.com", "guest", false);
+    const { outcome } = await runFlow({ sub: "unproven-1", email: "unproven@test.com" });
+    expect(outcome).toEqual({ kind: "redirect", location: "/login?error=email_exists" });
+    expect(await listUserIdentities("u-unproven")).toHaveLength(0);
+  });
+
+  it("marks a new account's email verified only when the provider verified it", async () => {
+    const verified = await runFlow({ sub: "fresh-verified", email: "fresh-v@test.com" });
+    const unverified = await runFlow({
+      sub: "fresh-unverified",
+      email: "fresh-u@test.com",
+      claimOverride: { email_verified: undefined },
+    });
+    const at = async (email: string) =>
+      (await d1().prepare("SELECT email_verified_at FROM users WHERE email = ?1").bind(email).first<{ email_verified_at: number | null }>())?.email_verified_at;
+    expect(verified.outcome.kind).toBe("session");
+    expect(unverified.outcome.kind).toBe("session");
+    expect(await at("fresh-v@test.com")).toEqual(expect.any(Number));
+    expect(await at("fresh-u@test.com")).toBeNull();
+  });
+
+  it("does not link when the provider does not say the email is verified", async () => {
+    await seedUser("u-member2", "member2@test.com", "guest", true);
+    const { outcome } = await runFlow({
+      sub: "member-2",
+      email: "member2@test.com",
+      claimOverride: { email_verified: undefined },
+    });
+    expect(outcome).toEqual({ kind: "redirect", location: "/login?error=email_exists" });
+    expect(await listUserIdentities("u-member2")).toHaveLength(0);
+  });
+
+  it("does not link a guest account that carries a custom staff role", async () => {
+    await seedUser("u-staff", "staff@test.com", "guest", true);
+    await d1().prepare("UPDATE users SET staff_role_id = 'r-1' WHERE id = 'u-staff'").run();
+    const { outcome } = await runFlow({ sub: "staff-1", email: "staff@test.com" });
+    expect(outcome).toEqual({ kind: "redirect", location: "/login?error=email_exists" });
+  });
+
+  it("sends a failed sign-in back to the page it started from", async () => {
+    await seedUser("u-editor", "editor@test.com");
+    const { outcome } = await runFlow({
+      sub: "editor-1",
+      email: "editor@test.com",
+      back: "/member/sign-in?next=%2Fshop%2Forders",
+    });
+    expect(outcome).toEqual({
+      kind: "redirect",
+      location: "/member/sign-in?next=%2Fshop%2Forders&login_error=email_exists",
+    });
+  });
+
+  it("sends a provider ?error= back to the page it started from", async () => {
+    const begin = await beginOAuth({
+      providerId: PROVIDER,
+      mode: "login",
+      next: "/shop/checkout",
+      back: "/shop/checkout",
+      req: req(),
+    });
+    if ("error" in begin) throw new Error(begin.error);
+    const state = new URL(begin.location).searchParams.get("state");
+    const outcome = await completeOAuth({
+      providerId: PROVIDER,
+      code: null,
+      state,
+      error: "access_denied",
+      req: req(),
+    });
+    expect(outcome).toEqual({ kind: "redirect", location: "/shop/checkout?login_error=oauth_denied" });
+  });
+});
+
+describe("loginErrorLocation", () => {
+  it("falls back to the admin sign-in page without a usable back path", () => {
+    expect(loginErrorLocation("oauth_failed")).toBe("/login?error=oauth_failed");
+    expect(loginErrorLocation("oauth_failed", "//evil.test/x")).toBe("/login?error=oauth_failed");
+    expect(loginErrorLocation("oauth_failed", "https://evil.test/")).toBe("/login?error=oauth_failed");
+    expect(loginErrorLocation("oauth_failed", "/\\evil.test")).toBe("/login?error=oauth_failed");
+  });
+
+  it("keeps the back page's query and hash", () => {
+    expect(loginErrorLocation("oauth_denied", "/member/sign-in?a=1#top")).toBe(
+      "/member/sign-in?a=1&login_error=oauth_denied#top",
+    );
   });
 });

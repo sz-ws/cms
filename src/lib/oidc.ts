@@ -1,14 +1,14 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { getDB } from "./cf";
-import {
-  declarativeExtensions as dxTable,
-  userIdentities,
-  users,
-} from "./schema";
+import { declarativeExtensions as dxTable, userIdentities } from "./schema";
 import { getSetting, extSetting } from "./settings";
-import { PLACEHOLDER_EMAIL_SUFFIX } from "./auth";
-import { parseManifest, type DeclarativeLoginProvider } from "@/ext/dx/manifest";
+import { linkIdentity, signInWithIdentity, SENTINEL_PASSWORD_HASH } from "./login-accounts";
+import {
+  FIREBASE_SETTING_KEYS,
+  parseManifest,
+  type DeclarativeLoginProvider,
+} from "@/ext/dx/manifest";
 
 // spec-login-providers.md §5:core OIDC 引擎(role-agnostic;第三方身分只對應 user
 // 列,role/permission 全走既有機制)。Google(RS256)/ LINE(ES256)皆標準 OIDC
@@ -21,13 +21,26 @@ import { parseManifest, type DeclarativeLoginProvider } from "@/ext/dx/manifest"
 
 // ---- 型別 ----
 
-/** 登入頁/帳號頁渲染用的 provider 摘要(clientId/secret 已設定者才列出)。 */
+/** Firebase 的 web config(本來就會出現在頁面上)與登入方式。 */
+export interface FirebaseWebConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  signIn: string;
+}
+
+/**
+ * 登入頁/帳號頁/會員元件渲染用的 provider 摘要(設定齊全者才列出)。
+ * kind "oidc" 走 /api/auth/oauth/<id>/start 導轉;"firebase" 在瀏覽器彈出 Firebase 登入。
+ */
 export interface LoginProviderInfo {
   id: string;
+  kind: "oidc" | "firebase";
   label: string;
   svg?: string;
   background?: string;
   foreground?: string;
+  firebase?: FirebaseWebConfig;
 }
 
 /** completeOAuth 的結果。route handler 依 kind 決定是否建 session / 設 cookie。 */
@@ -44,10 +57,12 @@ interface StatePayload {
   mode: OAuthMode;
   userId?: string;
   next?: string;
+  /** 登入失敗時回到的站內路徑(帶 ?login_error=<code>);沒有就回 /login。 */
+  back?: string;
 }
 
 interface LoadedProvider {
-  loginProvider: DeclarativeLoginProvider;
+  loginProvider: DeclarativeLoginProvider & { issuer: string };
   clientId: string;
   clientSecret: string;
 }
@@ -75,7 +90,6 @@ const STATE_TTL_MS = 10 * 60 * 1000; // 10 分鐘
 const FETCH_TIMEOUT_MS = 10_000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000; // 1h(isolate 內 in-memory)
 const DEFAULT_SCOPES = ["openid", "profile", "email"];
-const SENTINEL_PASSWORD_HASH = "!oauth-only"; // 非 pbkdf2 格式 → verifyPassword 恆 false
 
 // ---- base64url / bytes helpers ----
 
@@ -282,7 +296,8 @@ async function getDiscovery(issuer: string): Promise<Discovery> {
   return value;
 }
 
-async function getJwks(jwksUri: string): Promise<Jwk[]> {
+/** JWKS(isolate 內快取 1h;https + SSRF guard)。Firebase 登入也用這一份。 */
+export async function getJwks(jwksUri: string): Promise<Jwk[]> {
   const now = Date.now();
   const cached = jwksCache.get(jwksUri);
   if (cached && now - cached.at < DISCOVERY_TTL_MS) return cached.value;
@@ -320,11 +335,16 @@ const VERIFY_ALG: Record<string, { import: EcKeyImportParams | RsaHashedImportPa
   },
 };
 
-async function verifyIdToken(
+/**
+ * 驗 JWT:alg allowlist、JWKS 簽章、iss、aud、exp;給了 nonce 就一併比對(OIDC 一定給;
+ * Firebase 的 ID token 沒有 nonce,freshness 由 firebase-login.ts 看 auth_time)。
+ * 回傳整理過的 claims 與原始 payload(呼叫端要再看其他 claim 時用)。
+ */
+export async function verifyJwt(
   idToken: string,
   jwks: Jwk[],
-  expected: { issuer: string; clientId: string; nonce: string },
-): Promise<IdTokenClaims> {
+  expected: { issuer: string; audience: string; nonce?: string },
+): Promise<{ claims: IdTokenClaims; payload: Record<string, unknown> }> {
   const parts = idToken.split(".");
   if (parts.length !== 3) throw new OidcError("idtoken_malformed");
   const [headerB64, payloadB64, sigB64] = parts;
@@ -367,23 +387,25 @@ async function verifyIdToken(
   }
   if (!verified) throw new OidcError("idtoken_bad_signature");
 
-  // claims 驗證:iss 一致、aud === clientId、exp > now-60s、nonce 相符。
+  // claims 驗證:iss 一致、aud === audience、exp > now-60s、nonce 相符。
   if (normalizeIssuer(String(payload.iss ?? "")) !== normalizeIssuer(expected.issuer)) {
     throw new OidcError("idtoken_bad_iss");
   }
   const aud = payload.aud;
   const audOk = Array.isArray(aud)
-    ? aud.includes(expected.clientId)
-    : aud === expected.clientId;
+    ? aud.includes(expected.audience)
+    : aud === expected.audience;
   if (!audOk) throw new OidcError("idtoken_bad_aud");
   const exp = typeof payload.exp === "number" ? payload.exp : 0;
   if (exp * 1000 <= Date.now() - 60_000) throw new OidcError("idtoken_expired");
-  if (payload.nonce !== expected.nonce) throw new OidcError("idtoken_bad_nonce");
+  if (expected.nonce !== undefined && payload.nonce !== expected.nonce) {
+    throw new OidcError("idtoken_bad_nonce");
+  }
 
   const sub = payload.sub;
   if (typeof sub !== "string" || sub.length === 0) throw new OidcError("idtoken_no_sub");
 
-  return {
+  const claims: IdTokenClaims = {
     sub,
     email: typeof payload.email === "string" ? payload.email : undefined,
     email_verified:
@@ -391,6 +413,7 @@ async function verifyIdToken(
     name: typeof payload.name === "string" ? payload.name : undefined,
     picture: typeof payload.picture === "string" ? payload.picture : undefined,
   };
+  return { claims, payload };
 }
 
 // ---- provider 載入(manifest loginProvider + settings clientId/secret)----
@@ -404,7 +427,10 @@ async function loadProvider(providerId: string): Promise<LoadedProvider | null> 
   const row = rows[0];
   if (!row || row.enabled !== 1) return null;
   const parsed = parseManifest(JSON.parse(row.manifest));
-  if (!parsed.ok || !parsed.manifest?.loginProvider) return null;
+  const lp = parsed.ok ? parsed.manifest?.loginProvider : undefined;
+  // Firebase 的 provider 不走導轉流程(見 firebase-login.ts)。
+  if (!lp || lp.issuer === undefined) return null;
+  const issuer = lp.issuer;
 
   const clientId = await getSetting<string>(extSetting(providerId, "clientId"), "");
   const clientSecret = await getSetting<string>(
@@ -412,7 +438,7 @@ async function loadProvider(providerId: string): Promise<LoadedProvider | null> 
     "",
   );
   if (!clientId || !clientSecret) return null; // 未設定 → 視為未啟用
-  return { loginProvider: parsed.manifest.loginProvider, clientId, clientSecret };
+  return { loginProvider: { ...lp, issuer }, clientId, clientSecret };
 }
 
 /**
@@ -434,21 +460,39 @@ export async function listLoginProviders(): Promise<LoginProviderInfo[]> {
     }
     const lp = parsed.ok ? parsed.manifest?.loginProvider : undefined;
     if (!lp) continue;
+    const button = {
+      id: row.id,
+      label: lp.button.label,
+      svg: lp.button.svg,
+      background: lp.button.background,
+      foreground: lp.button.foreground,
+    };
+    if (lp.firebase) {
+      const firebase = await loadFirebaseConfig(row.id, lp.firebase.signIn);
+      if (firebase) out.push({ ...button, kind: "firebase", firebase });
+      continue;
+    }
     const clientId = await getSetting<string>(extSetting(row.id, "clientId"), "");
     const clientSecret = await getSetting<string>(
       extSetting(row.id, "clientSecret"),
       "",
     );
     if (!clientId || !clientSecret) continue;
-    out.push({
-      id: row.id,
-      label: lp.button.label,
-      svg: lp.button.svg,
-      background: lp.button.background,
-      foreground: lp.button.foreground,
-    });
+    out.push({ ...button, kind: "oidc" });
   }
   return out;
+}
+
+/** Firebase provider 的 web config;任一個沒填 → null(視為未啟用)。 */
+export async function loadFirebaseConfig(
+  providerId: string,
+  signIn: string,
+): Promise<FirebaseWebConfig | null> {
+  const [apiKey, authDomain, projectId] = await Promise.all(
+    FIREBASE_SETTING_KEYS.map((key) => getSetting<string>(extSetting(providerId, key), "")),
+  );
+  if (!apiKey?.trim() || !authDomain?.trim() || !projectId?.trim()) return null;
+  return { apiKey: apiKey.trim(), authDomain: authDomain.trim(), projectId: projectId.trim(), signIn };
 }
 
 // ---- state 表存取(一次性,照 webauthn_challenges precedent)----
@@ -501,12 +545,26 @@ async function resolveOrigin(req: Request): Promise<string> {
   return new URL(req.url).origin;
 }
 
-/** 只放行同站絕對路徑(以單一 "/" 起頭、非 "//"、無控制字元);否則退回 "/admin"。 */
-function safeNext(next: string | null | undefined): string {
-  if (!next) return "/admin";
-  if (!next.startsWith("/") || next.startsWith("//")) return "/admin";
-  if (/[\x00-\x1F\x7F]/.test(next)) return "/admin";
-  return next;
+/** 同站絕對路徑(以單一 "/" 起頭、非 "//"、無反斜線與控制字元)才算數。 */
+function sitePath(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return null;
+  if (/[\x00-\x1F\x7F]/.test(path)) return null;
+  return path;
+}
+
+/** 成功後去哪:同站路徑,否則 "/admin"。 */
+export function safeNext(next: string | null | undefined): string {
+  return sitePath(next) ?? "/admin";
+}
+
+/** 失敗時去哪:有 back 就回那一頁(帶 login_error),否則後台登入頁(帶 error)。 */
+export function loginErrorLocation(code: string, back?: string | null): string {
+  const path = sitePath(back);
+  if (!path) return `/login?error=${encodeURIComponent(code)}`;
+  const url = new URL(path, "https://site.invalid");
+  url.searchParams.set("login_error", code);
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function redirectUriFor(origin: string, providerId: string): string {
@@ -527,6 +585,7 @@ export interface BeginOptions {
   mode: OAuthMode;
   userId?: string; // mode=link 必填(呼叫端已 requireAuth)
   next?: string | null;
+  back?: string | null;
   req: Request;
 }
 
@@ -556,6 +615,7 @@ export async function beginOAuth(
     mode: opts.mode,
     userId: opts.mode === "link" ? opts.userId : undefined,
     next: safeNext(opts.next),
+    back: sitePath(opts.back) ?? undefined,
   };
   await insertState(state, payload);
 
@@ -583,82 +643,31 @@ export interface CompleteOptions {
   req: Request;
 }
 
-async function upsertLastUsed(identityId: string): Promise<void> {
-  await db()
-    .update(userIdentities)
-    .set({ lastUsedAt: Date.now() })
-    .where(eq(userIdentities.id, identityId));
-}
-
-/** 建立 OAuth-only 新帳號(role=guest、sentinel 密碼、真實或 placeholder email)。 */
-async function createGuestUser(
-  providerId: string,
-  claims: IdTokenClaims,
-  fallbackName: string,
-): Promise<string> {
-  const id = crypto.randomUUID();
-  const now = Date.now();
-  // placeholder email(spec §2):`.invalid` TLD 保證不可寄達;sub 前 8 碼 hex 由
-  // SHA-256(sub) 取(sub 本身未必是 hex,雜湊後取前 8 hex 保證格式且穩定)。
-  const subHex = toHex(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", encUtf8(claims.sub))),
-  ).slice(0, 8);
-  const email =
-    claims.email && claims.email.length > 0
-      ? claims.email.toLowerCase()
-      : `oauth-${providerId}-${subHex}${PLACEHOLDER_EMAIL_SUFFIX}`;
-  const name = claims.name && claims.name.length > 0 ? claims.name : fallbackName;
-  await db().insert(users).values({
-    id,
-    email,
-    passwordHash: SENTINEL_PASSWORD_HASH,
-    name,
-    role: "guest",
-    createdAt: now,
-  });
-  return id;
-}
-
-async function insertIdentity(
-  userId: string,
-  providerId: string,
-  sub: string,
-  display: string | null,
-): Promise<void> {
-  await db().insert(userIdentities).values({
-    id: crypto.randomUUID(),
-    userId,
-    provider: providerId,
-    providerUserId: sub,
-    display,
-    createdAt: Date.now(),
-    lastUsedAt: Date.now(),
-  });
-}
-
 /**
  * callback 主流程。回傳 OAuthOutcome —— route 依 kind 設 cookie / redirect。
- * 所有錯誤都轉為帶機器可讀 error code 的 redirect(登入頁/帳號頁翻 i18n)。
+ * 所有錯誤都轉為帶機器可讀 error code 的 redirect:有 back 就回那一頁(?login_error=),
+ * 否則後台登入頁(?error=);連結模式回帳號頁。
  */
 export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome> {
-  const loginErr = (code: string): OAuthOutcome => ({
-    kind: "redirect",
-    location: `/login?error=${code}`,
-  });
-  const accountRedirect = (q: string): OAuthOutcome => ({
-    kind: "redirect",
-    location: `/admin/account?${q}`,
-  });
+  const redirect = (location: string): OAuthOutcome => ({ kind: "redirect", location });
+  const accountRedirect = (q: string): OAuthOutcome => redirect(`/admin/account?${q}`);
 
-  if (opts.error) return loginErr("oauth_denied");
-  if (!opts.code || !opts.state) return loginErr("oauth_state");
+  // state 拿不到就不知道 back,只能回後台登入頁。
+  if (!opts.state) {
+    return redirect(loginErrorLocation(opts.error ? "oauth_denied" : "oauth_state"));
+  }
 
-  // 1) state 一次性取用。
+  // 1) state 一次性取用(IdP 回錯誤時也帶 state,取掉它才知道要回哪一頁)。
   const payload = await consumeState(opts.state);
-  if (!payload || payload.provider !== opts.providerId) return loginErr("oauth_state");
+  if (!payload || payload.provider !== opts.providerId) {
+    return redirect(loginErrorLocation(opts.error ? "oauth_denied" : "oauth_state"));
+  }
 
   const isLink = payload.mode === "link";
-  const failLocation = isLink ? "/admin/account?error=oauth_failed" : "/login?error=oauth_failed";
+  const fail = (code: string): OAuthOutcome =>
+    isLink ? accountRedirect(`error=${code}`) : redirect(loginErrorLocation(code, payload.back));
+  if (opts.error) return fail(isLink ? "oauth_failed" : "oauth_denied");
+  if (!opts.code) return fail("oauth_state");
 
   try {
     const provider = await loadProvider(opts.providerId);
@@ -679,9 +688,9 @@ export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome
 
     // 3) id_token 完整驗證。
     const jwks = await getJwks(discovery.jwks_uri);
-    const claims = await verifyIdToken(token.id_token, jwks, {
+    const { claims } = await verifyJwt(token.id_token, jwks, {
       issuer: provider.loginProvider.issuer,
-      clientId: provider.clientId,
+      audience: provider.clientId,
       nonce: payload.nonce,
     });
     // 明確標記「未驗證」的 email 視同沒有 email(走 placeholder)—— 防止用未驗證
@@ -704,61 +713,23 @@ export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome
     const display = claims.email ?? displayName ?? null;
 
     // 4) 分支。
-    const existing = await db()
-      .select({ id: userIdentities.id, userId: userIdentities.userId })
-      .from(userIdentities)
-      .where(
-        and(
-          eq(userIdentities.provider, opts.providerId),
-          eq(userIdentities.providerUserId, claims.sub),
-        ),
-      )
-      .limit(1);
-    const identity = existing[0];
-
     if (isLink) {
       if (!payload.userId) throw new OidcError("link_no_user");
-      if (identity && identity.userId !== payload.userId) {
-        return accountRedirect("error=identity_taken");
-      }
-      if (identity && identity.userId === payload.userId) {
-        await upsertLastUsed(identity.id);
-        return accountRedirect("linked=1");
-      }
-      await insertIdentity(payload.userId, opts.providerId, claims.sub, display);
-      return accountRedirect("linked=1");
+      const linked = await linkIdentity(payload.userId, opts.providerId, claims.sub, display);
+      return accountRedirect(linked === "linked" ? "linked=1" : "error=identity_taken");
     }
 
-    // mode=login
-    if (identity) {
-      await upsertLastUsed(identity.id);
-      return { kind: "session", userId: identity.userId, location: safeNext(payload.next) };
-    }
-
-    // identity 不存在 → 註冊 policy。
-    const policy = await getSetting<string>("core.auth.oauthRegistration", "guest");
-    if (policy !== "guest") return loginErr("not_linked");
-
-    // email 撞既有 user → 不自動綁(防接管)。
-    if (claims.email) {
-      const clash = await db()
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.email, claims.email.toLowerCase()))
-        .limit(1);
-      if (clash.length > 0) return loginErr("email_exists");
-    }
-
-    const newUserId = await createGuestUser(
+    const result = await signInWithIdentity(
       opts.providerId,
-      claims,
+      { ...claims, name: claims.name || displayName },
+      display,
       provider.loginProvider.button.label,
     );
-    await insertIdentity(newUserId, opts.providerId, claims.sub, display);
-    return { kind: "session", userId: newUserId, location: safeNext(payload.next) };
+    if (!result.ok) return fail(result.code);
+    return { kind: "session", userId: result.userId, location: safeNext(payload.next) };
   } catch {
     // 任何引擎錯誤(discovery/token/簽章/DB)→ 帶 oauth_failed 導回。訊息不外洩。
-    return { kind: "redirect", location: failLocation };
+    return fail("oauth_failed");
   }
 }
 

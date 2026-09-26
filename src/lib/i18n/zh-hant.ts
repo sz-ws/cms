@@ -43,6 +43,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "login.error.oauthDenied": "登入已取消或遭拒絕。",
   "login.error.oauthState": "登入流程已逾時，請再試一次。",
   "login.error.oauthFailed": "第三方登入失敗，請再試一次。",
+  "login.error.popupBlocked": "瀏覽器擋下了登入視窗。請允許這個網站開啟彈出式視窗，再試一次。",
   "login.error.notLinked": "此帳號尚未連結。請先以密碼登入，再到帳戶頁連結。",
   "login.error.emailExists": "此電子郵件已有使用者。請以密碼登入後，到帳戶頁連結這個帳號。",
 

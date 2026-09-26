@@ -42,6 +42,7 @@ export const en = {
   "login.error.oauthDenied": "Sign-in was cancelled or denied.",
   "login.error.oauthState": "Sign-in session expired. Please try again.",
   "login.error.oauthFailed": "Third-party sign-in failed. Please try again.",
+  "login.error.popupBlocked": "Your browser blocked the sign-in window. Allow pop-ups for this site and try again.",
   "login.error.notLinked":
     "This account isn't linked yet. Sign in with your password first, then link it from your account page.",
   "login.error.emailExists":

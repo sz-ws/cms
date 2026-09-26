@@ -2,7 +2,7 @@ import { requireAuth, AuthError } from "@/lib/auth";
 import { hitRateLimit } from "@/lib/rate-limit";
 
 // spec-login-providers.md §5 start:GET /api/auth/oauth/[provider]/start
-//   ?mode=login|link&next=...
+//   ?mode=login|link&next=...&back=...(1.54.0:失敗時回的站內路徑)
 // - mode=link 先 requireAuth("guest")(任何已登入者可綁);payload 記 userId。
 // - 產 state/nonce/PKCE、寫 oauth_states(TTL 10 分鐘),302 到 authorization_endpoint。
 //
@@ -29,6 +29,8 @@ export async function GET(
   const url = new URL(req.url);
   const mode = url.searchParams.get("mode") === "link" ? "link" : "login";
   const next = url.searchParams.get("next");
+  // 1.54.0:失敗時回哪一頁(前台會員元件帶自己的路徑);沒帶就是後台登入頁。
+  const back = url.searchParams.get("back");
 
   // rate limit:防 state 表灌爆(開新 namespace,keyed by IP)。
   if (
@@ -55,14 +57,14 @@ export async function GET(
     }
   }
 
-  const { beginOAuth } = await import("@/lib/oidc");
-  const result = await beginOAuth({ providerId: provider, mode, userId, next, req });
+  const { beginOAuth, loginErrorLocation } = await import("@/lib/oidc");
+  const result = await beginOAuth({ providerId: provider, mode, userId, next, back, req });
 
   if ("error" in result) {
     const dest =
       mode === "link"
         ? `/admin/account?error=${result.error}`
-        : `/login?error=${result.error}`;
+        : loginErrorLocation(result.error, back);
     return Response.redirect(absolute(req, dest), 302);
   }
   return Response.redirect(result.location, 302);

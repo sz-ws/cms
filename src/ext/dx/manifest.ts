@@ -527,13 +527,35 @@ const loginProviderButtonSchema = z
   })
   .strict();
 
-const loginProviderSchema = z
+// 1.54.0:Firebase Authentication。瀏覽器用 Firebase SDK 彈出登入視窗,伺服器驗
+// Firebase 簽的 ID token(src/lib/firebase-login.ts)。signIn 是 Firebase 的
+// provider id;目前只有 Google。web config(apiKey/authDomain/projectId)走 settings。
+const FIREBASE_SIGN_IN_METHODS = ["google.com"] as const;
+export const FIREBASE_SETTING_KEYS = ["apiKey", "authDomain", "projectId"] as const;
+
+const loginProviderFirebaseSchema = z
   .object({
-    issuer: z.string().regex(/^https:\/\//, "issuer must be https"), // OIDC issuer,discovery 由引擎抓
-    scopes: z.array(z.string().min(1)).max(8).optional(), // 預設 ["openid","profile","email"]
-    button: loginProviderButtonSchema,
+    signIn: z.enum(FIREBASE_SIGN_IN_METHODS),
   })
   .strict();
+
+// 兩種登入二選一:issuer(標準 OIDC,引擎走 authorization code 導轉)或 firebase。
+const loginProviderSchema = z
+  .object({
+    issuer: z.string().regex(/^https:\/\//, "issuer must be https").optional(), // OIDC issuer,discovery 由引擎抓
+    scopes: z.array(z.string().min(1)).max(8).optional(), // 預設 ["openid","profile","email"]
+    firebase: loginProviderFirebaseSchema.optional(),
+    button: loginProviderButtonSchema,
+  })
+  .strict()
+  .superRefine((lp, ctx) => {
+    if ((lp.issuer === undefined) === (lp.firebase === undefined)) {
+      ctx.addIssue({ code: "custom", message: "loginProvider needs exactly one of issuer or firebase" });
+    }
+    if (lp.firebase && lp.scopes !== undefined) {
+      ctx.addIssue({ code: "custom", message: "loginProvider scopes only apply to issuer", path: ["scopes"] });
+    }
+  });
 
 // ---- top-level manifest ----
 
@@ -766,7 +788,7 @@ export const manifestSchema = z
     // spec-login-providers.md §4(1.16.0):declarative 第三方 OIDC 登入宣告。
     // issuer/scopes/button;client 憑證走 settings[](secret:true)慣例。manifestSchema
     // 是 .strict() —— 宣告 loginProvider 的 manifest 在 <1.16.0 的 core 會整包驗證失敗,
-    // 故其 coreApi 必須宣告 "^1.16.0"。
+    // 故其 coreApi 必須宣告 "^1.16.0";用 firebase 的必須宣告 "^1.54.0"。
     loginProvider: loginProviderSchema.optional(),
     // 1.48.0:公開頁插入 script。安裝前要管理員核准,核准綁內容 hash(見 ./scripts.ts)。
     scripts: scriptsSchema.optional(),
@@ -1000,7 +1022,19 @@ export const manifestSchema = z
       });
     }
 
-    if (m.loginProvider) {
+    if (m.loginProvider?.firebase) {
+      // Firebase 的 web config 本來就會出現在頁面上,不是秘密。
+      for (const key of FIREBASE_SETTING_KEYS) {
+        const setting = settingsByKey.get(key);
+        if (!setting || setting.type !== "text") {
+          ctx.addIssue({
+            code: "custom",
+            message: `firebase loginProvider requires a text setting named ${key}`,
+            path: ["loginProvider"],
+          });
+        }
+      }
+    } else if (m.loginProvider) {
       const clientId = settingsByKey.get("clientId");
       const clientSecret = settingsByKey.get("clientSecret");
       if (!clientId || clientId.type !== "text") {

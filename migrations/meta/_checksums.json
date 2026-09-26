@@ -22,6 +22,7 @@
     "0018_heartbeats.sql": "0a9aad7e7f125c8cc023e09f3ef7e787f1a08eccc54349dbce8bc97bc3e63af9",
     "0019_record_status_notes.sql": "4349fa5f99e9746c1b5ed4ae6efcce6b0a0c45a96e3f9a4883cf5481958e76b4",
     "0020_dx_scripts_approval.sql": "93bb568a311df60d153dd0362492bc79ca842fde91439509a0055f60aa5398bc",
-    "0021_staff_roles.sql": "6bcd7f76bc1c3745203f7ee99d507dd19d6a4eec383242f466c1b6cc6751ac3a"
+    "0021_staff_roles.sql": "6bcd7f76bc1c3745203f7ee99d507dd19d6a4eec383242f466c1b6cc6751ac3a",
+    "0022_user_email_verified.sql": "eaa6bef69cb1af1c43a682e5cdfe58a22a2df53acba02b938b97ec58e3572afe"
   }
 }

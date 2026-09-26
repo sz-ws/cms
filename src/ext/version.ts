@@ -1159,4 +1159,40 @@
 // Additive: sites without CMS_KV, extra-field definitions or CMS_SERVER_TIMING behave as in
 // 1.52.0.
 // 1.53.1: the sitemap lists the home page (/) along with the list routes (dx/seo-cache.ts).
-export const CORE_API_VERSION = "1.53.1";
+// 1.54.0: sign-in providers for storefront members, and Firebase Authentication.
+// - loginProvider takes either `issuer` (OIDC, as before) or `firebase: { signIn }`
+//   (dx/manifest.ts; exactly one). A Firebase provider declares text settings apiKey,
+//   authDomain and projectId (the web config is public) instead of clientId/clientSecret.
+//   manifestSchema is .strict(), so a Firebase manifest must declare coreApi "^1.54.0".
+// - lib/firebase-login.ts verifies the Firebase ID token: RS256 against Google's securetoken
+//   JWKS, iss https://securetoken.google.com/<projectId>, aud <projectId>, exp, iat,
+//   auth_time within 10 minutes, and firebase.sign_in_provider equal to the declared
+//   signIn. POST /api/auth/firebase/[provider] { idToken, mode?, next } (same-origin,
+//   rate-limited) sets the session cookie and answers { location } or { error }.
+// - components/auth/FirebaseSignInButton loads the Firebase SDK (new dependency `firebase`)
+//   only on pages that show such a button and opens the popup within the click. The admin
+//   sign-in page and the account page's "connect" buttons use it.
+// - Cross-Origin-Opener-Policy is now same-origin-allow-popups (next.config.ts): the popup
+//   needs its opener.
+// - lib/login-accounts.ts holds the identity → user mapping for both engines. New: when the
+//   provider says the email is verified (email_verified === true) and it belongs to a plain
+//   member (role guest, no custom staff role) whose own email was proven
+//   (users.email_verified_at set), the identity is linked and signed in instead of failing
+//   with email_exists. Staff accounts, accounts whose email was never proven (created by an
+//   admin, or by a direct sign-up without a code) and providers without email_verified (LINE)
+//   still get email_exists, so nobody can pre-register someone else's email and share the
+//   account once its owner signs in with Google. A LINE account's userinfo name now names the
+//   new user.
+// - Migration 0022: users.email_verified_at (ms, NULL = never proven; existing rows NULL).
+//   Third-party sign-ups with a verified email set it; markEmailVerified(userId) sets it for
+//   other proofs (the members plugin calls it after its email-code flows).
+// - The OAuth start route takes `back` (a site path): a failed sign-in returns there with
+//   ?login_error=<code>; without it errors still go to /login?error=<code>. An IdP ?error=
+//   now consumes the state, so it also returns to `back`; in link mode it returns to the
+//   account page with error=oauth_failed.
+// - listLoginProviders() entries carry kind ("oidc" | "firebase") and, for Firebase, the web
+//   config. safeNext and loginErrorLocation are exported from lib/oidc.ts; verifyJwt and
+//   getJwks are exported for the Firebase engine.
+// Additive: sites without Firebase providers see the same sign-in flows, apart from the
+// verified-email link for members and the COOP value.
+export const CORE_API_VERSION = "1.54.0";

@@ -16,6 +16,8 @@ import {
 } from "@simplewebauthn/browser";
 import { cn } from "@/lib/utils";
 import { FaceIdIcon } from "@/components/ui/face-id-icon";
+import { FirebaseSignInButton } from "@/components/auth/FirebaseSignInButton";
+import type { FirebaseWebConfig } from "@/lib/oidc";
 import { useT } from "@/lib/i18n/I18nProvider";
 
 // 05 §5:next = searchParams.next 僅當以 "/" 開頭、不以 "//" 開頭、且不含反斜線(防 open
@@ -58,12 +60,15 @@ function safeNext(next: string | undefined): string {
 
 // 登入頁渲染第三方登入按鈕所需的最小資料 —— 由 server 端 listLoginProviders()
 // (src/lib/oidc.ts)產出;svg 已在 manifest 安裝時經 svg-guard 驗證,此處視為可信。
+// kind "firebase"(1.54.0)不走導轉,按鈕在頁面上彈出 Firebase 登入(FirebaseSignInButton)。
 export interface LoginProviderButton {
   id: string;
+  kind?: "oidc" | "firebase";
   label: string;
   svg?: string;
   background?: string;
   foreground?: string;
+  firebase?: FirebaseWebConfig;
 }
 
 // OAuth callback 以 /login?error=<code> 帶回機器可讀錯誤;未知 code 一律泛化。
@@ -72,7 +77,10 @@ function oauthErrorKey(code: string) {
     case "oauth_denied":
       return "login.error.oauthDenied" as const;
     case "oauth_state":
+    case "oauth_stale":
       return "login.error.oauthState" as const;
+    case "popup_blocked":
+      return "login.error.popupBlocked" as const;
     case "not_linked":
       return "login.error.notLinked" as const;
     case "email_exists":
@@ -403,32 +411,56 @@ export function LoginForm({
               </div>
               <div className="flex flex-col gap-2">
                 {passkeySecondaryButton}
-                {providers.map((p) => (
-                  <a
-                    key={p.id}
-                    href={`/api/auth/oauth/${encodeURIComponent(p.id)}/start?next=${encodeURIComponent(safeNext(next))}`}
-                    className={cn(
-                      "flex h-10 items-center justify-center gap-2 rounded-[8px] px-3.5 text-[14px] font-medium",
-                      "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[filter,transform] duration-150 ease-out",
-                      "hover:brightness-[0.97] active:scale-[0.96]",
-                      "focus-visible:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_0_0_3px_rgba(0,0,0,0.1)] focus-visible:outline-none",
-                    )}
-                    style={{
-                      background: p.background ?? "#ffffff",
-                      color: p.foreground ?? "rgba(0,0,0,0.85)",
-                    }}
-                  >
-                    {p.svg && (
-                      <span
-                        aria-hidden
-                        className="inline-flex [&>svg]:size-[18px]"
-                        // 安裝時已過 svg-guard(allowlist 驗證),渲染端視為可信。
-                        dangerouslySetInnerHTML={{ __html: p.svg }}
-                      />
-                    )}
-                    <span>{p.label}</span>
-                  </a>
-                ))}
+                {providers.map((p) => {
+                  const className = cn(
+                    "flex h-10 items-center justify-center gap-2 rounded-[8px] px-3.5 text-[14px] font-medium",
+                    "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] transition-[filter,transform] duration-150 ease-out",
+                    "hover:brightness-[0.97] active:scale-[0.96] disabled:opacity-60",
+                    "focus-visible:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_0_0_3px_rgba(0,0,0,0.1)] focus-visible:outline-none",
+                  );
+                  const style = {
+                    background: p.background ?? "#ffffff",
+                    color: p.foreground ?? "rgba(0,0,0,0.85)",
+                  };
+                  const content = (
+                    <>
+                      {p.svg && (
+                        <span
+                          aria-hidden
+                          className="inline-flex [&>svg]:size-[18px]"
+                          // 安裝時已過 svg-guard(allowlist 驗證),渲染端視為可信。
+                          dangerouslySetInnerHTML={{ __html: p.svg }}
+                        />
+                      )}
+                      <span>{p.label}</span>
+                    </>
+                  );
+                  if (p.kind === "firebase" && p.firebase) {
+                    return (
+                      <FirebaseSignInButton
+                        key={p.id}
+                        providerId={p.id}
+                        config={p.firebase}
+                        next={safeNext(next)}
+                        className={className}
+                        style={style}
+                        onError={(code) => setError(code ? t(oauthErrorKey(code)) : null)}
+                      >
+                        {content}
+                      </FirebaseSignInButton>
+                    );
+                  }
+                  return (
+                    <a
+                      key={p.id}
+                      href={`/api/auth/oauth/${encodeURIComponent(p.id)}/start?next=${encodeURIComponent(safeNext(next))}`}
+                      className={className}
+                      style={style}
+                    >
+                      {content}
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}

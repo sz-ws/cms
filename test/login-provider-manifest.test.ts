@@ -184,3 +184,68 @@ describe("loginProvider manifest — rejects", () => {
     expect(publicSecret.error).toMatch(/clientSecret/);
   });
 });
+
+// 1.54.0:Firebase Authentication(loginProvider.firebase + apiKey/authDomain/projectId)。
+export const FIREBASE_LOGIN_MANIFEST = {
+  kind: "declarative" as const,
+  id: "firebase-login",
+  name: "Firebase Login",
+  version: "1.0.0",
+  coreApi: "^1.54.0",
+  description: "Sign in with Google through Firebase Authentication.",
+  loginProvider: {
+    firebase: { signIn: "google.com" as const },
+    button: { label: "使用 Google 繼續", svg: GOOGLE_SVG, background: "#ffffff", foreground: "#1f1f1f" },
+  },
+  settings: [
+    { key: "apiKey", label: "API key", type: "text" as const, default: "" },
+    { key: "authDomain", label: "Auth domain", type: "text" as const, default: "" },
+    { key: "projectId", label: "Project ID", type: "text" as const, default: "" },
+  ],
+};
+
+describe("loginProvider manifest — firebase", () => {
+  it("accepts the firebase-login fixture without client credentials", () => {
+    const r = parseManifest(FIREBASE_LOGIN_MANIFEST);
+    expect(r.ok).toBe(true);
+    expect(r.manifest?.loginProvider?.firebase?.signIn).toBe("google.com");
+    expect(r.manifest?.loginProvider?.issuer).toBeUndefined();
+  });
+
+  it("rejects both issuer and firebase, or neither", () => {
+    const both = parseManifest({
+      ...FIREBASE_LOGIN_MANIFEST,
+      loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, issuer: "https://accounts.google.com" },
+    });
+    expect(both.ok).toBe(false);
+    expect(both.error).toMatch(/exactly one of issuer or firebase/);
+
+    const neither = parseManifest({
+      ...FIREBASE_LOGIN_MANIFEST,
+      loginProvider: { button: { label: "Google" } },
+    });
+    expect(neither.ok).toBe(false);
+    expect(neither.error).toMatch(/exactly one of issuer or firebase/);
+  });
+
+  it("rejects scopes, an unknown sign-in method and a missing web config setting", () => {
+    const scopes = parseManifest({
+      ...FIREBASE_LOGIN_MANIFEST,
+      loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, scopes: ["openid"] },
+    });
+    expect(scopes.ok).toBe(false);
+
+    const method = parseManifest({
+      ...FIREBASE_LOGIN_MANIFEST,
+      loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, firebase: { signIn: "password" } },
+    });
+    expect(method.ok).toBe(false);
+
+    const noProject = parseManifest({
+      ...FIREBASE_LOGIN_MANIFEST,
+      settings: FIREBASE_LOGIN_MANIFEST.settings.filter((s) => s.key !== "projectId"),
+    });
+    expect(noProject.ok).toBe(false);
+    expect(noProject.error).toMatch(/projectId/);
+  });
+});

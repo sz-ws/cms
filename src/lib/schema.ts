@@ -30,6 +30,9 @@ export const users = sqliteTable("users", {
   staffRoleId: text("staff_role_id").references(() => staffRoles.id, {
     onDelete: "set null",
   }),
+  // migrations/0022_user_email_verified.sql:Email 被證明是本人的時間(ms)。NULL = 沒
+  // 證明過。第三方登入只把身分自動綁到有這個值的一般會員(src/lib/login-accounts.ts)。
+  emailVerifiedAt: integer("email_verified_at"),
 }, (t) => [index("users_staff_role_idx").on(t.staffRoleId)]);
 
 export const sessions = sqliteTable("sessions", {

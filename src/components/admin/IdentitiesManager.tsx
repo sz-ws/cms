@@ -5,6 +5,8 @@ import { AlertCircle, Check, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StackedList } from "@/components/ui/stacked-list";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { FirebaseSignInButton } from "@/components/auth/FirebaseSignInButton";
+import type { FirebaseWebConfig } from "@/lib/oidc";
 
 // 帳號頁「已連結帳號」區(spec-login-providers §6/§7)。資料由 server
 // (admin/account/page.tsx)備好:identities 直接查 user_identities,providers 走
@@ -21,10 +23,12 @@ export interface IdentitySummary {
 
 export interface IdentityProviderOption {
   id: string;
+  kind?: "oidc" | "firebase";
   label: string;
   svg?: string;
   background?: string;
   foreground?: string;
+  firebase?: FirebaseWebConfig;
 }
 
 interface IdentitiesManagerProps {
@@ -199,32 +203,59 @@ export function IdentitiesManager({
 
       {connectable.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {connectable.map((p) => (
-            <a
-              key={p.id}
-              href={`/api/auth/oauth/${encodeURIComponent(p.id)}/start?mode=link&next=/admin/account`}
-              className={cn(
-                "flex h-9 items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium",
-                "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[filter,transform] duration-150 ease-out",
-                "hover:brightness-[0.97] active:scale-[0.96]",
-              )}
-              style={{
-                background: p.background ?? "#ffffff",
-                color: p.foreground ?? "rgba(0,0,0,0.85)",
-              }}
-            >
-              {p.svg && (
-                <span
-                  aria-hidden
-                  className="inline-flex [&>svg]:size-[15px]"
-                  dangerouslySetInnerHTML={{ __html: p.svg }}
-                />
-              )}
-              <span>
-                {t("account.identityConnect")} · {p.label}
-              </span>
-            </a>
-          ))}
+          {connectable.map((p) => {
+            const className = cn(
+              "flex h-9 items-center gap-2 rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium",
+              "shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.08))] transition-[filter,transform] duration-150 ease-out",
+              "hover:brightness-[0.97] active:scale-[0.96] disabled:opacity-60",
+            );
+            const style = {
+              background: p.background ?? "#ffffff",
+              color: p.foreground ?? "rgba(0,0,0,0.85)",
+            };
+            const content = (
+              <>
+                {p.svg && (
+                  <span
+                    aria-hidden
+                    className="inline-flex [&>svg]:size-[15px]"
+                    dangerouslySetInnerHTML={{ __html: p.svg }}
+                  />
+                )}
+                <span>
+                  {t("account.identityConnect")} · {p.label}
+                </span>
+              </>
+            );
+            if (p.kind === "firebase" && p.firebase) {
+              return (
+                <FirebaseSignInButton
+                  key={p.id}
+                  providerId={p.id}
+                  config={p.firebase}
+                  mode="link"
+                  className={className}
+                  style={style}
+                  onError={(code) => {
+                    setNotice(null);
+                    setError(code ? t(urlErrorKey(code)) : null);
+                  }}
+                >
+                  {content}
+                </FirebaseSignInButton>
+              );
+            }
+            return (
+              <a
+                key={p.id}
+                href={`/api/auth/oauth/${encodeURIComponent(p.id)}/start?mode=link&next=/admin/account`}
+                className={className}
+                style={style}
+              >
+                {content}
+              </a>
+            );
+          })}
         </div>
       )}
     </div>

@@ -24,14 +24,13 @@ const SECURITY_HEADERS = [
   // HSTS。Cloudflare 前面已經強制 https,這條是給直連與預載清單用的。
   // 不加 preload —— 那是不可逆的,應該由站台擁有者自己決定。
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
-  // 切斷跨來源開啟者關係(XS-Leaks / tabnabbing)。這個 app 目前**沒有任何 popup
-  // 流程**:OIDC 走整頁 redirect(/api/auth/oauth/[provider]/start),passkey 是
-  // WebAuthn 不開視窗,全 repo 零 `window.open`。所以取最嚴的 same-origin。
+  // 切斷跨來源開啟者關係(XS-Leaks / tabnabbing)。OIDC 走整頁 redirect
+  // (/api/auth/oauth/[provider]/start),passkey 是 WebAuthn 不開視窗。
   //
-  // ⚠️ 下游若裝了走 **popup OAuth** 的 extension,popup 會拿不到 opener、
-  // postMessage 回不來(而且是靜默的)。那種情況把值改成
-  // `same-origin-allow-popups` —— 仍擋得住「被別人開啟」,只放行自己開的視窗。
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // 1.54.0 起是 `same-origin-allow-popups`:Firebase 登入(loginProvider.firebase)
+  // 用 SDK 的 popup,`same-origin` 會讓 popup 拿不到 opener、結果回不來(而且是靜默的)。
+  // 這個值仍擋得住「被別人開啟」,只放行自己開的視窗。
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
   // 關掉這個 app 完全用不到的強權能力。
   //
   // ⚠️ publickey-credentials-get / -create 必須明確保留 self ——
