@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { DEFAULT_ADMIN_ACCENT } from "./admin-accent";
 import { normalizeHex, readableOn, relativeLuminance } from "./color";
+import { resolveLocalizedString, type LocalizedString } from "./i18n/localized";
+import type { Locale } from "./i18n";
 
 const hex = z.string().regex(/^#[0-9a-f]{6}$/);
 
@@ -74,6 +76,91 @@ export const ADMIN_THEME_PRESETS: {
   { id: "atelier", name: { en: "Atelier", "zh-Hant": "工坊" }, appearance: { theme: { version: 1, background: "#eae9f4", surface: "#faf9ff", ink: "#29233d", radius: "sharp", elevation: "flat", font: "default", icons: "solid" }, accent: "#7054b3" } },
 ];
 
+// ---- 1.57.0:插件提供的預設風格(Extension.appearances / manifest appearances)----
+// 插件只能給「一組設定值」:theme 走同一個 adminThemeSchema(含對比檢查),主色只收
+// #rrggbb。不收任何 CSS —— 後台風格只影響 /admin 的保證、以及升版相容,都靠這一點。
+// 選了之後跟內建預設一樣只是填進編輯器,管理員照常儲存;插件停用只會讓選項消失,
+// 已存的風格原樣保留(存的是值,不是插件的參照)。
+
+/** 一個插件最多幾組。 */
+export const ADMIN_APPEARANCES_MAX = 6;
+export const ADMIN_APPEARANCE_ID_RE = /^[a-z][a-z0-9-]{0,30}$/;
+export const adminAccentSchema = hex;
+
+/** 插件宣告的一組後台風格。theme 是 adminThemeSchema 的輸入形狀(font/icons 可省略)。 */
+export interface ExtensionAppearance {
+  id: string;
+  name: LocalizedString;
+  description?: LocalizedString;
+  theme: z.input<typeof adminThemeSchema>;
+  /** 可省略:省略時保留管理員目前的主色。 */
+  accent?: string;
+}
+
+/** 編輯器用的插件預設風格(字串已依語系解析)。 */
+export interface PluginAdminPreset {
+  /** `<extId>:<id>`,在所有插件之間唯一。 */
+  key: string;
+  name: string;
+  description?: string;
+  /** 插件名稱,標在選項上。 */
+  plugin: string;
+  theme: AdminTheme;
+  accent?: string;
+}
+
+/**
+ * 把已啟用插件宣告的風格整理成編輯器的選項,順序照插件、再照宣告。每組再驗一次
+ * (code extension 的 defineExtension 只檢查、不回傳 parse 過的值,font/icons 可能沒補);
+ * 驗不過的略過,不影響其他選項。
+ */
+export function pluginAdminPresets(
+  extensions: readonly { id: string; name: LocalizedString; appearances?: readonly ExtensionAppearance[] }[],
+  locale: Locale,
+): PluginAdminPreset[] {
+  return extensions.flatMap((ext) =>
+    (ext.appearances ?? []).slice(0, ADMIN_APPEARANCES_MAX).flatMap((item) => {
+      const theme = adminThemeSchema.safeParse(item.theme);
+      if (!theme.success) return [];
+      if (item.accent !== undefined && !adminAccentSchema.safeParse(item.accent).success) return [];
+      const description = resolveLocalizedString(item.description, locale);
+      return [{
+        key: `${ext.id}:${item.id}`,
+        name: resolveLocalizedString(item.name, locale) ?? item.id,
+        ...(description ? { description } : {}),
+        plugin: resolveLocalizedString(ext.name, locale) ?? ext.id,
+        theme: theme.data,
+        ...(item.accent !== undefined ? { accent: item.accent } : {}),
+      }];
+    }),
+  );
+}
+
+function sameTheme(a: AdminTheme, b: AdminTheme): boolean {
+  return (Object.keys(DEFAULT_ADMIN_THEME) as (keyof AdminTheme)[]).every((key) => a[key] === b[key]);
+}
+
+/** 「從一款風格開始」的一個選項。插件的沒寫主色時 accent 是 undefined:選了保留目前的主色。 */
+export interface AdminPresetOption { key: string; name: string; plugin?: string; description?: string; theme: AdminTheme; accent?: string }
+
+/** 內建預設在前、插件的在後(1.57.0)。 */
+export function presetOptions(locale: Locale, plugins: readonly PluginAdminPreset[]): AdminPresetOption[] {
+  return [
+    ...ADMIN_THEME_PRESETS.map((item) => ({ key: item.id, name: item.name[locale], theme: item.appearance.theme, accent: item.appearance.accent })),
+    ...plugins.map((item) => ({ key: item.key, name: item.name, plugin: item.plugin, description: item.description, theme: item.theme, accent: item.accent })),
+  ];
+}
+
+/** 選項套到目前的草稿上:整組換掉;插件沒寫主色就沿用草稿的主色。 */
+export function applyPreset(option: AdminPresetOption, draft: AdminAppearance): AdminAppearance {
+  return { theme: option.theme, accent: option.accent ?? draft.accent };
+}
+
+/** 草稿目前對應哪一個選項(第一個相符的);都不符回 undefined。 */
+export function activePresetKey(options: readonly AdminPresetOption[], draft: AdminAppearance): string | undefined {
+  return options.find((option) => sameTheme(option.theme, draft.theme) && (option.accent ?? draft.accent) === draft.accent)?.key;
+}
+
 export function contrast(a: string, b: string): number {
   const x = relativeLuminance(a), y = relativeLuminance(b);
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
@@ -89,7 +176,7 @@ export function resolveAdminAppearance(theme: unknown, accent: unknown): AdminAp
 
 /** 紙與墨 = 改版前的後台。預設風格不寫任何主題變數,元件走各自原本的 fallback。 */
 export function isDefaultAdminTheme(theme: AdminTheme): boolean {
-  return (Object.keys(DEFAULT_ADMIN_THEME) as (keyof AdminTheme)[]).every((key) => theme[key] === DEFAULT_ADMIN_THEME[key]);
+  return sameTheme(theme, DEFAULT_ADMIN_THEME);
 }
 
 /** Safe declarations only; never accepts CSS, selectors or arbitrary keys. */

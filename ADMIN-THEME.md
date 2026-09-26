@@ -34,6 +34,24 @@
 
 `icons: "solid"`（預設）是原本的 Heroicons 16 實心；`"outline"` 換成 Lucide 線條。`adminNavIcons.tsx` 裡每個圖示代號都同時對應兩套，manifest 的 `icon: "truck"` 不用改。`AdminTheme` 把已存的圖示組交給 `NavIcon`（`admin-icon-set.tsx` 的 context），編輯器預覽另外包一層草稿值。只影響側欄；後台其他地方本來就是 Lucide。
 
+## 插件提供的預設風格（1.57.0）
+
+插件可以宣告幾組後台風格（`appearances`，最多 6 組），出現在「從一款風格開始」的內建預設之後，卡片下方標「<插件名稱> 提供」，`description` 當滑過的提示。宣告式 manifest 與 code extension 都用同一個欄位：
+
+```json
+"coreApi": "^1.57.0",
+"appearances": [
+  { "id": "warm", "name": { "zh-Hant": "暖櫃台", "en": "Warm counter" },
+    "theme": { "version": 1, "background": "#f4ede2", "surface": "#fffaf3", "ink": "#3a2a20", "radius": "round", "elevation": "line" },
+    "accent": "#b5532f" }
+]
+```
+
+- `theme` 用 `adminThemeSchema` 驗證（同一套對比、字體白名單與 enum），`font`、`icons` 可省略。`accent` 只收 `#rrggbb`，省略時保留管理員目前的主色。`id` 在同一個插件內不重複。
+- 不收自訂 CSS：後台風格只影響 `/admin/**`、升版後照樣相容，都靠只存設定值。
+- 選了只是填進編輯器，照常儲存。存的是值，不是插件的參照：插件停用後選項消失，已存的風格不變。
+- 收集在 `pluginAdminPresets()`（`lib/admin-theme.ts`），每組再驗一次，驗不過的略過。
+
 ## 編輯器
 
 設定頁「風格」是獨立分頁（`?tab=style`），不進核心設定那條捲動錨點。版面：預設風格 → 配色 → 字體 → 形狀在左，預覽在右並跟著捲動停在畫面裡；窄螢幕依序為預設風格、預覽、細部調整。預覽是一張縮小的訂單頁，用後台真正在用的輸入框、按鈕、`CoreTable` 與對話框。儲存與放棄走和核心設定同一條浮動儲存列（`SaveBar`）。

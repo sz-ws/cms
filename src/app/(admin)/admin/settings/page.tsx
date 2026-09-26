@@ -15,7 +15,7 @@ import {
   type SettingsSection,
 } from "@/components/admin/SettingsWorkspace";
 import { AdminThemeEditor } from "@/components/admin/AdminThemeEditor";
-import { resolveAdminAppearance } from "@/lib/admin-theme";
+import { pluginAdminPresets, resolveAdminAppearance } from "@/lib/admin-theme";
 import { RegistrySourcesManager, type RegistrySource } from "@/components/admin/RegistrySourcesManager";
 import { ApiTokensManager } from "@/components/admin/ApiTokensManager";
 import {
@@ -169,6 +169,8 @@ export default async function SettingsPage({
         styleTab={
           <AdminThemeEditor
             initial={resolveAdminAppearance(values["core.adminTheme"], values["core.adminAccent"])}
+            // 1.57.0:已啟用插件提供的預設風格;停用的插件不在 rt.enabled,選項跟著消失。
+            pluginPresets={pluginAdminPresets(rt.enabled, locale)}
           />
         }
         extraFieldsSection={

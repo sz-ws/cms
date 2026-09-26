@@ -684,6 +684,8 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   }
   p.scripts.description =
     "1.48.0: scripts added to every public page (never admin pages). Nothing runs until an admin reviews and approves them; the approval is tied to a SHA-256 of this array, so any change needs a new approval. The registry source must also allow scripts. {{settings.<key>}} must name a declared, non-secret setting; values are URL-encoded in src and inserted as escaped JSON literals in inline code. Inline code may also use {{content.<type>}} (published entries of a declared, non-inbox content type, or <extId>.<type> of another extension, which yields titles only) and {{feed.<extId>.<name>}} (a code extension's public feed). These cross-checks are zod superRefine rules, not expressible in JSON Schema. A manifest using this field must declare coreApi \"^1.48.0\".";
+  p.appearances.description =
+    "1.57.0: admin style presets (<=6) listed under Settings -> Style after the built-in presets, labelled with this extension's name. Choosing one only fills the editor; the admin saves as usual, and a saved style stays when the extension is disabled. `theme` is validated by the admin style's own schema (src/lib/admin-theme.ts adminThemeSchema): version 1, #rrggbb colours, light background and surface with text contrast of at least 7:1 (a zod superRefine, not expressible in JSON Schema), whitelisted font ids; font and icons may be omitted. `accent` is #rrggbb; omitted keeps the admin's current accent. No CSS is accepted and public pages are never affected. `id` must be unique within appearances[] (zod superRefine). A manifest using this field must declare coreApi \"^1.57.0\".";
   root = { ...(root as MutableSchema), properties: p };
 }
 
@@ -739,7 +741,7 @@ const PROPERTY_ORDER = [
   "deployment", "files", "installPrompts", "customApiRoutes", "capabilities", "requires", "requiresExtensions",
   "author", "homepage", "repository", "license", "tags", "category", "support",
   "theme", "stylesheet", "contentTypes", "settings", "adminPages", "publicRoutes", "og",
-  "migrations", "on", "dashboardCards", "schedule", "loginProvider", "scripts",
+  "migrations", "on", "dashboardCards", "schedule", "loginProvider", "scripts", "appearances",
 ];
 
 function orderedDefs(): Record<string, Json> {

@@ -431,6 +431,8 @@ export function interpretManifest(row: DeclarativeRow): ManifestInterpretation {
       // roadmap #16:dashboard 卡直接透傳(同 contentTypes;實際查詢與渲染交給
       // dashboard-cards.ts + 卡片元件)。
       dashboardCards: manifest.dashboardCards,
+      // 1.57.0:後台預設風格直接透傳(設定 → 風格的選項;admin-theme.ts pluginAdminPresets)。
+      appearances: manifest.appearances,
       // B(docs/spec-declarative-notify-schedule.md):manifest.schedule[] → jobs,
       // 騎在 ext-jobs 引擎上(src/lib/jobs.ts 既有 reconcile/claim/執行,零引擎改動)。
       jobs: buildScheduleJobs(manifest.id, manifest, types),

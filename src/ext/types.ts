@@ -23,6 +23,13 @@ import { normalizeHex } from "../lib/color";
 import { rangeStartsAtOrAfter } from "./semver";
 import { IDENTITY_MAX, IDENTITY_RE } from "./plugin-ref";
 import {
+  ADMIN_APPEARANCES_MAX,
+  ADMIN_APPEARANCE_ID_RE,
+  adminAccentSchema,
+  adminThemeSchema,
+  type ExtensionAppearance,
+} from "../lib/admin-theme";
+import {
   adminIconIssue,
   extensionMenuSchema,
   type ExtensionMenu,
@@ -230,6 +237,13 @@ export interface Extension {
    * 給插件頁壞掉時救急。
    */
   signInPage?: string;
+  /**
+   * 1.57.0:後台預設風格(≤6)。出現在設定 → 風格 →「從一款風格開始」,排在內建預設之後、
+   * 標上插件名稱;選了只是填進編輯器,管理員照常儲存。theme 用後台風格的 adminThemeSchema
+   * 驗證(font/icons 可省略),accent 只收 #rrggbb,省略時保留目前的主色。沒有自訂 CSS。
+   * 插件停用時選項消失,已存的風格不變。
+   */
+  appearances?: ExtensionAppearance[];
   // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth);不必走 Extension 介面,
   // 直接由 interpret.tsx 從 manifest.contentTypes 衍生。
   contentTypes?: DeclarativeContentType[];
@@ -610,6 +624,21 @@ const manifestSchema = z
       .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
       .optional(),
     dashboardStats: fn.optional(),
+    appearances: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(ADMIN_APPEARANCE_ID_RE, "invalid appearance id"),
+            name: nonEmptyLocalizedString,
+            description: localizedStringSchema.optional(),
+            theme: adminThemeSchema,
+            accent: adminAccentSchema.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(ADMIN_APPEARANCES_MAX)
+      .optional(),
   })
   // 其餘欄位(migrations/settings/adminPages/publicRoutes/hooks/uninstall)含 React
   // 型別與 function,不在 zod 深驗範圍,passthrough 保留。
@@ -670,6 +699,9 @@ const manifestSchema = z
         path: ["coreApi"],
       });
     }
+    duplicate((ext.appearances ?? []).map((item) => item.id), "appearances", "appearance id");
+    // passthrough 的舊 core 會安靜忽略這個欄位(選項不出現、沒有錯誤),同 agentTools 的理由標版號。
+    if (ext.appearances !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.57.0")) ctx.addIssue({ code: "custom", message: 'appearances requires coreApi "^1.57.0" or newer', path: ["coreApi"] });
     // 1.30.0:agentTools 的命名空間 / 重複名(規則見 agentToolIssues)。
     for (const message of agentToolIssues(ext.id, ext.agentTools ?? [])) {
       ctx.addIssue({ code: "custom", message, path: ["agentTools"] });

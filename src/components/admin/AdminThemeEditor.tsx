@@ -4,8 +4,8 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode
 import { Check } from "lucide-react";
 import { useLocale } from "@/lib/i18n/I18nProvider";
 import {
-  ADMIN_FONTS, ADMIN_ICON_SETS, ADMIN_THEME_PRESETS, adminFont, adminFontHref, adminThemeSchema, adminThemeVariables,
-  cacheAdminAppearance, isDefaultAdminTheme, type AdminAppearance,
+  ADMIN_FONTS, ADMIN_ICON_SETS, ADMIN_THEME_PRESETS, activePresetKey, adminFont, adminFontHref, adminThemeSchema, adminThemeVariables,
+  applyPreset, cacheAdminAppearance, isDefaultAdminTheme, presetOptions, type AdminAppearance, type PluginAdminPreset,
 } from "@/lib/admin-theme";
 import { ADMIN_ACCENT_SWATCHES } from "@/lib/admin-accent";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
@@ -28,6 +28,7 @@ const copy = {
     failedTitle: "Could not save", failed: "Your changes are still here. Please try again.",
     forbidden: "Your session cannot save settings. Sign in as an administrator.",
     unreadable: (where: string) => `Text is hard to read on the ${where.toLowerCase()}. Choose a lighter color there, or darker text.`, and: " and ",
+    from: (plugin: string) => `From ${plugin}`,
   },
   "zh-Hant": {
     title: "風格", subtitle: "為所有管理員設定一致的後台外觀。公開網站維持原本設計。",
@@ -41,6 +42,7 @@ const copy = {
     failedTitle: "儲存失敗", failed: "調整仍保留在這裡，請再試一次。",
     forbidden: "目前登入狀態無法儲存，請以管理員帳號重新登入。",
     unreadable: (where: string) => `文字在${where}上不夠清楚，請改用淺一點的底色，或深一點的文字。`, and: "、",
+    from: (plugin: string) => `${plugin} 提供`,
   },
 };
 
@@ -50,7 +52,6 @@ const COLOR_KEYS = ["accent", "background", "surface", "ink"] as const;
 const SHAPE_OPTIONS = { radius: ["sharp", "soft", "round"], elevation: ["flat", "line", "soft"] } as const;
 const readable = (next: AdminAppearance) => adminThemeSchema.safeParse(next.theme).success && isHex(next.accent);
 const FONT_HREFS = ADMIN_FONTS.map((font) => adminFontHref(font.id)).filter((href): href is string => href !== null);
-
 /** 字體選項用自己的字體寫名字:打開編輯器才載入 Google Fonts 的 CSS(不擋首次繪製),
  * 字檔只在文字真的畫出來時才下載。AdminTheme 已經載入的同一支會被略過。 */
 function useFontStylesheets() {
@@ -74,7 +75,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function AdminThemeEditor({ initial }: { initial: AdminAppearance }) {
+export function AdminThemeEditor({ initial, pluginPresets = [] }: { initial: AdminAppearance; pluginPresets?: readonly PluginAdminPreset[] }) {
   const locale = useLocale();
   const c = copy[locale];
   const [saved, setSaved] = useState(initial);
@@ -141,7 +142,8 @@ export function AdminThemeEditor({ initial }: { initial: AdminAppearance }) {
   const previewStyle = { ...adminThemeVariables(preview), fontFamily: adminFont(preview.theme.font).family } as CSSProperties;
   // 紙與墨預覽要回到原本的 token,即使外層已存了別的風格(admin-theme.css)。
   const previewMode = isDefaultAdminTheme(preview.theme) ? "default" : "custom";
-  const preset = ADMIN_THEME_PRESETS.find((item) => equal(item.appearance, draft));
+  const options = presetOptions(locale, pluginPresets);
+  const activeKey = activePresetKey(options, draft);
   const bar = pending
     ? { title: c.saving, note: c.dirtyNote }
     : failure ? { title: c.failedTitle, note: failure }
@@ -163,30 +165,35 @@ export function AdminThemeEditor({ initial }: { initial: AdminAppearance }) {
         <fieldset disabled={pending} className="min-w-0 [grid-area:presets]">
           <legend className="mb-3.5 text-[13px] font-medium text-ink/85">{c.presets}</legend>
           <div className="grid grid-cols-2 gap-2.5">
-            {ADMIN_THEME_PRESETS.map((item) => {
-              const active = preset?.id === item.id;
+            {options.map((item) => {
+              const active = activeKey === item.key;
+              const accent = item.accent ?? draft.accent;
               return (
                 <button
-                  key={item.id}
+                  key={item.key}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => change(item.appearance)}
+                  title={item.description}
+                  onClick={() => change(applyPreset(item, draft))}
                   className={cn(
                     "rounded-[calc(12px*var(--admin-radius-scale,1))] p-1.5 text-left transition-shadow duration-150 outline-none focus-visible:shadow-[0_0_0_2px_var(--admin-accent)]",
                     active ? "shadow-[0_0_0_1.5px_var(--admin-accent)]" : "shadow-[0_0_0_1px_rgba(0,0,0,0.08)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.18)]",
                   )}
                 >
-                  <span aria-hidden className="flex h-14 gap-1.5 rounded-[8px] p-1.5" style={{ background: item.appearance.theme.background }}>
-                    <span className="w-3.5 rounded-[3px]" style={{ background: item.appearance.accent }} />
-                    <span className="flex-1 p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.05)]" style={{ background: item.appearance.theme.surface, borderRadius: { sharp: 0, soft: 5, round: 9 }[item.appearance.theme.radius] }}>
-                      <span className="block h-1.5 w-2/3 rounded-full opacity-60" style={{ background: item.appearance.theme.ink }} />
-                      <span className="mt-2 block h-1 w-1/2 rounded-full opacity-20" style={{ background: item.appearance.theme.ink }} />
+                  <span aria-hidden className="flex h-14 gap-1.5 rounded-[8px] p-1.5" style={{ background: item.theme.background }}>
+                    <span className="w-3.5 rounded-[3px]" style={{ background: accent }} />
+                    <span className="flex-1 p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.05)]" style={{ background: item.theme.surface, borderRadius: { sharp: 0, soft: 5, round: 9 }[item.theme.radius] }}>
+                      <span className="block h-1.5 w-2/3 rounded-full opacity-60" style={{ background: item.theme.ink }} />
+                      <span className="mt-2 block h-1 w-1/2 rounded-full opacity-20" style={{ background: item.theme.ink }} />
                     </span>
                   </span>
                   <span className="mt-1.5 flex items-center justify-between gap-1 px-1 pb-0.5 text-[12px] font-medium text-ink/80">
-                    {item.name[locale]}
+                    {item.name}
                     {active && <Check className="size-3.5 text-(--admin-accent)" aria-hidden />}
                   </span>
+                  {item.plugin && (
+                    <span className="block truncate px-1 pb-0.5 text-[11px] text-ink/40">{c.from(item.plugin)}</span>
+                  )}
                 </button>
               );
             })}

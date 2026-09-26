@@ -2,6 +2,13 @@ import { z } from "zod";
 import { validateSvg } from "./svg-guard";
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { validateSettingValue } from "../../lib/setting-validation";
+import {
+  ADMIN_APPEARANCES_MAX,
+  ADMIN_APPEARANCE_ID_RE,
+  adminAccentSchema,
+  adminThemeSchema,
+  type ExtensionAppearance,
+} from "../../lib/admin-theme";
 import { rangeStartsAtOrAfter } from "../semver";
 import {
   adminIconIssue,
@@ -466,6 +473,21 @@ const themeSchema = z
   })
   .strict();
 
+// ---- appearances(1.57.0:插件提供的後台預設風格)----
+// 出現在設定 → 風格 →「從一款風格開始」,排在內建預設之後。theme 直接用後台風格自己的
+// adminThemeSchema(同一份對比檢查、字體白名單、圓角/層次 enum),accent 只收 #rrggbb。
+// 與上面的 `theme`(public 頁 tokens)是兩回事:這裡只影響後台,也不收任何 CSS。
+// 陣列 ≤ ADMIN_APPEARANCES_MAX,id 陣列內唯一(superRefine)。
+const appearanceSchema = z
+  .object({
+    id: z.string().regex(ADMIN_APPEARANCE_ID_RE, "invalid appearance id"),
+    name: localized(z.string().min(1).max(40)),
+    description: localized(z.string().max(200)).optional(),
+    theme: adminThemeSchema,
+    accent: adminAccentSchema.optional(),
+  })
+  .strict();
+
 // ---- schedule(B:docs/spec-declarative-notify-schedule.md —— 宣告式排程動作,騎在
 // ext-jobs 表面上(docs/spec-extension-jobs.md),v1 只有一個 op:deleteOlderThan)----
 // id 同 spec-extension-jobs.md 的 job id 規則(^[a-z][a-z0-9-]{0,30}$)且陣列內唯一
@@ -795,6 +817,10 @@ export const manifestSchema = z
     loginProvider: loginProviderSchema.optional(),
     // 1.48.0:公開頁插入 script。安裝前要管理員核准,核准綁內容 hash(見 ./scripts.ts)。
     scripts: scriptsSchema.optional(),
+    // 1.57.0:後台預設風格(見上方 appearanceSchema)。manifestSchema 是 .strict() ——
+    // 宣告 appearances 的 manifest 在 <1.57.0 的 core 會整包驗證失敗,故其 coreApi 必須
+    // 宣告 "^1.57.0"。
+    appearances: z.array(appearanceSchema).min(1).max(ADMIN_APPEARANCES_MAX).optional(),
   })
   .strict()
   .superRefine((m, ctx) => {
@@ -901,6 +927,17 @@ export const manifestSchema = z
         ctx.addIssue({ code: "custom", message: "extension cannot require itself", path: ["requiresExtensions", idx, "id"] });
       }
     });
+
+    if (m.appearances) {
+      if (!rangeStartsAtOrAfter(m.coreApi, "1.57.0")) {
+        ctx.addIssue({
+          code: "custom",
+          message: 'appearances requires coreApi "^1.57.0" or newer',
+          path: ["coreApi"],
+        });
+      }
+      addDuplicateIssues(m.appearances.map((item) => item.id), "appearances", "appearance id");
+    }
 
     if (m.scripts) {
       if (!rangeStartsAtOrAfter(m.coreApi, "1.48.0")) {
@@ -1297,6 +1334,8 @@ export interface DeclarativeManifest {
   /** 1.48.0:公開頁插入的 script(src 或 inline 擇一)。管理員核准後才會執行,核准綁
    * 內容 hash;`{{settings.<key>}}` 代入自己的非機密設定值。見 ./scripts.ts。 */
   scripts?: DeclarativeScript[];
+  /** 1.57.0:後台預設風格(≤6),出現在設定 → 風格。theme 已由 adminThemeSchema 驗過並補好預設。 */
+  appearances?: ExtensionAppearance[];
 }
 
 export interface ParseResult {
