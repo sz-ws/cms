@@ -104,7 +104,7 @@ export async function CollectionView({
     `${base}/edit${id ? `?id=${encodeURIComponent(id)}` : ""}`;
 
   const hasFilters =
-    state.status !== "all" ||
+    state.status.length > 0 ||
     Object.keys(state.selects).length > 0 ||
     state.search.length > 0;
 

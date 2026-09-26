@@ -699,6 +699,7 @@ export const en = {
   "collection.entry": "entry",
   "collection.entries": "entries",
   "collection.filter.all": "All",
+  "collection.filter.status": "Status",
   "collection.filter.published": "Published",
   "collection.filter.draft": "Draft",
   "collection.filter.any": "Any",

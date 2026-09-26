@@ -37,6 +37,8 @@
 - `site-notice.ts`: the one-line site announcement (`core.notice.*`) — pure rules shared
   by the settings validator and `site-notice-server.ts` (`getSiteNotice()`, read by public
   frames; dates count in the site time zone, re-checked every request).
+- `status-filter.ts`: multi-select status filters in list URLs (`?status=a,b`, repeated
+  params and the old single value all parse; unknown values are reported).
 - `utils.ts`: `cn(...)` etc.
 - `observe/`: error reporting (GlitchTip / Sentry protocol). `sentry-options.ts` is
   pure + type-only imports on purpose — the Worker entry (`custom-worker.ts`) reaches

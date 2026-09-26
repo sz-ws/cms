@@ -686,6 +686,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "collection.entry": "則",
   "collection.entries": "則",
   "collection.filter.all": "全部",
+  "collection.filter.status": "狀態",
   "collection.filter.published": "已發布",
   "collection.filter.draft": "草稿",
   "collection.filter.any": "不限",

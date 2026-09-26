@@ -13,6 +13,8 @@ import { readBoundedJsonObject } from "@/lib/body-limit";
 import { withCoercedExtra } from "@/lib/extra-fields";
 import { getExtraFieldDefs } from "@/lib/extra-fields-server";
 import { isSubmissionState } from "./submission";
+import { CONTENT_STATUSES } from "./views/collection/params";
+import { coversAllStatuses, readStatusList } from "@/lib/status-filter";
 import {
   deleteSubmissionRecord,
   setSubmissionReplied,
@@ -46,6 +48,7 @@ async function protectPublicCreate(
 
 // core-v2 §3.3:auto-CRUD routes for one content type。
 //   GET    /api/ext/<id>/<type>          list(query params: page, perPage, sort, dir, status)
+//                                        1.56.0:status 可多選(?status=draft,published 或重複參數)
 //   POST   /api/ext/<id>/<type>          create
 //   GET    /api/ext/<id>/<type>/options  08 §2:relation picker 用的搜尋端點(?q=&limit=)
 //   GET    /api/ext/<id>/<type>/:id      get one
@@ -70,6 +73,18 @@ const OPTIONS_LIMIT_CAP = 20;
 // reaches JSON.parse/validateData — a Content-Length above this is rejected
 // with a 413 without touching the body stream.
 const MAX_BODY_BYTES = 1_000_000;
+
+/**
+ * 1.56.0:列表 API 的 status 參數。單一值(舊寫法)、逗號分隔、重複參數都收;認不得的值
+ * 回 400(以前會原樣丟進查詢,永遠查不到東西)。兩種都勾 = 不篩。
+ */
+function listStatusFilter(params: URLSearchParams): string | undefined | Response {
+  const { statuses, invalid } = readStatusList(params.getAll("status"), CONTENT_STATUSES);
+  if (invalid.length > 0) {
+    return Response.json({ error: "invalid_status", allowed: CONTENT_STATUSES }, { status: 400 });
+  }
+  return coversAllStatuses(statuses, CONTENT_STATUSES) ? undefined : statuses[0];
+}
 
 /** 08 §2:把 entry 解析成 picker 的 { id, title }。title = 標題欄位值,退回 slug/id。 */
 function toOption(
@@ -217,7 +232,8 @@ export function buildCrudRoutes(
           const perPage = Math.min(Math.max(1, perPageRaw), MAX_PER_PAGE);
           const sortField = url.searchParams.get("sort") ?? undefined;
           const dir = url.searchParams.get("dir") === "asc" ? "asc" : "desc";
-          const status = url.searchParams.get("status") ?? undefined;
+          const status = listStatusFilter(url.searchParams);
+          if (status instanceof Response) return status;
           const result = await p.query(def.type, {
             filter: status ? { status } : undefined,
             sort: sortField ? { field: sortField, dir } : undefined,

@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -11,10 +10,12 @@ import {
 } from "@/components/ui/select";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { inlineLabel } from "../field-utils";
-import type { StatusFilter } from "./params";
+import { StatusMultiFilter } from "@/components/admin/StatusMultiFilter";
+import { formatStatusList } from "@/lib/status-filter";
+import { CONTENT_STATUSES, type ContentStatus, type StatusFilter } from "./params";
 import { useCollectionParams } from "./useCollectionParams";
 
-// filter bar:status 分段控制(always)+ 每個 select 欄位一個下拉 + 主 text 欄位的
+// filter bar:status 多選(always,1.56.0 起可勾好幾個)+ 每個 select 欄位一個下拉 + 主 text 欄位的
 // contains 搜尋框。全部寫入 searchParams。Paper & Ink:白 surface + shadow-ring,
 // 8px 控制圓角,active = dither blue,40px hit area,無 all-caps。
 
@@ -32,38 +33,23 @@ interface CollectionToolbarProps {
   search: string;
 }
 
-function StatusSegments({ status }: { status: StatusFilter }) {
+// 1.56.0:狀態可以一次勾好幾個(StatusMultiFilter);寫進網址是 ?status=published,draft,
+// 一個都沒勾就拿掉參數(= 全部)。
+function StatusFilterControl({ status }: { status: StatusFilter }) {
   const { setParam } = useCollectionParams();
   const t = useT();
-  const statusTabs: { value: StatusFilter; label: string }[] = [
-    { value: "all", label: t("collection.filter.all") },
-    { value: "published", label: t("collection.filter.published") },
-    { value: "draft", label: t("collection.filter.draft") },
-  ];
+  const labels: Record<ContentStatus, string> = {
+    published: t("collection.filter.published"),
+    draft: t("collection.filter.draft"),
+  };
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black/[0.03] admin:bg-ink/[0.03] p-0.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]">
-      {statusTabs.map((tab) => {
-        const active = status === tab.value;
-        return (
-          <button
-            key={tab.value}
-            type="button"
-            onClick={() =>
-              setParam("status", tab.value === "all" ? null : tab.value)
-            }
-            className={cn(
-              "inline-flex h-8 items-center rounded-[8px] admin:rounded-[calc(8px*var(--admin-radius-scale,1))] px-3 text-[13px] font-medium transition-[background,color,box-shadow] duration-150 active:scale-[0.96]",
-              active
-                ? "bg-white admin:bg-surface text-black/90 admin:text-ink/90 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06)] admin:shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06))]"
-                : "text-black/45 admin:text-ink/45 hover:text-black/70 admin:hover:text-ink/70",
-            )}
-            aria-pressed={active}
-          >
-            {tab.label}
-          </button>
-        );
-      })}
-    </div>
+    <StatusMultiFilter
+      label={t("collection.filter.status")}
+      allLabel={t("collection.filter.all")}
+      options={CONTENT_STATUSES.map((value) => ({ value, label: labels[value] }))}
+      selected={status}
+      onChange={(next) => setParam("status", formatStatusList(next))}
+    />
   );
 }
 
@@ -155,7 +141,7 @@ export function CollectionToolbar({
 }: CollectionToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <StatusSegments status={status} />
+      <StatusFilterControl status={status} />
       {searchField && <SearchBox field={searchField} initial={search} />}
       {selects.map((def) => (
         <SelectFilter key={def.key} def={def} />

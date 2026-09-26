@@ -1,5 +1,6 @@
 import type { ContentFilterValue } from "../../../capabilities";
 import type { DeclarativeField } from "../../manifest";
+import { coversAllStatuses, parseStatusList } from "@/lib/status-filter";
 
 // collection view 的 URL state 解析 / 序列化。分頁·排序·filter 全部住在 searchParams,
 // server component 讀取後餵給 query(),互動控制件只改 searchParams(router)。
@@ -8,7 +9,14 @@ export const DEFAULT_PER_PAGE = 20;
 export const PER_PAGE_OPTIONS = [10, 20, 50, 100] as const;
 export const PER_PAGE_CAP = 100;
 
-export type StatusFilter = "all" | "draft" | "published";
+/** 內容的狀態,照篩選列的順序。 */
+export const CONTENT_STATUSES = ["published", "draft"] as const;
+export type ContentStatus = (typeof CONTENT_STATUSES)[number];
+/**
+ * 1.56.0:狀態篩選可以一次勾好幾個(lib/status-filter.ts)。空陣列 = 全部。
+ * 以前是單選的 "all" | "draft" | "published";舊網址的 ?status=draft 照收。
+ */
+export type StatusFilter = ContentStatus[];
 export type SortDir = "asc" | "desc";
 
 export interface CollectionState {
@@ -33,33 +41,37 @@ function toInt(v: string | undefined, fallback: number): number {
  * filter key,searchField 指定 text-search 綁定的欄位 key。
  */
 export function parseState(
-  sp: Record<string, string>,
+  // Next 的 searchParams 遇到重複參數(?status=a&status=b)給的是陣列。
+  sp: Record<string, string | string[] | undefined>,
   opts: {
     selectFields: DeclarativeField[];
     searchField?: string;
     sortableKeys: Set<string>;
   },
 ): CollectionState {
-  const page = toInt(sp.page, 1);
-  const perPageRaw = toInt(sp.perPage, DEFAULT_PER_PAGE);
+  const one = (key: string): string | undefined => {
+    const value = sp[key];
+    return Array.isArray(value) ? value[0] : value;
+  };
+  const page = toInt(one("page"), 1);
+  const perPageRaw = toInt(one("perPage"), DEFAULT_PER_PAGE);
   const perPage = Math.min(Math.max(1, perPageRaw), PER_PAGE_CAP);
 
   let sort: CollectionState["sort"];
-  const sortKey = sp.sort;
+  const sortKey = one("sort");
   if (sortKey && opts.sortableKeys.has(sortKey)) {
-    sort = { field: sortKey, dir: sp.dir === "asc" ? "asc" : "desc" };
+    sort = { field: sortKey, dir: one("dir") === "asc" ? "asc" : "desc" };
   }
 
-  const status: StatusFilter =
-    sp.status === "draft" || sp.status === "published" ? sp.status : "all";
+  const status: StatusFilter = parseStatusList(sp.status, CONTENT_STATUSES);
 
   const selects: Record<string, string> = {};
   for (const f of opts.selectFields) {
-    const raw = sp[`f_${f.key}`];
+    const raw = one(`f_${f.key}`);
     if (raw && (f.options ?? []).includes(raw)) selects[f.key] = raw;
   }
 
-  const search = (sp.q ?? "").slice(0, 100);
+  const search = (one("q") ?? "").slice(0, 100);
 
   return {
     page,
@@ -75,7 +87,11 @@ export function parseState(
 /** state → ContentProvider filter 物件。 */
 export function toFilter(state: CollectionState): Record<string, ContentFilterValue> {
   const filter: Record<string, ContentFilterValue> = {};
-  if (state.status !== "all") filter.status = state.status;
+  // 內容只有兩種狀態(capabilities 的 ContentEntry.status):勾一個才需要條件,
+  // 兩個都勾等於全部 —— 所以不必讓 provider 的 filter 支援 IN。
+  if (!coversAllStatuses(state.status, CONTENT_STATUSES) && state.status.length === 1) {
+    filter.status = state.status[0];
+  }
   for (const [key, value] of Object.entries(state.selects)) filter[key] = value;
   if (state.search && state.searchField) {
     filter[state.searchField] = { contains: state.search };
