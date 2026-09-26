@@ -20,14 +20,22 @@ import {
 // 檔,那一層不經過 Next 的 `@/` alias),middleware 的 edge bundle 也能載入。manifest 裡的 scripts
 // 安裝時已經過 zod;這裡只做「形狀對、值合規」的最小檢查,因為結果會寫進回應標頭。
 
-export const APPROVED_SCRIPTS_SQL = `SELECT json_extract(manifest, '$.scripts') AS scripts, scripts_approval AS approval
+// 1.57.0:啟用中的 Firebase 登入(loginProvider.firebase)也要一台主機 —— Firebase SDK 的
+// 登入視窗要從 apis.google.com 載入 Google 的 gapi 載入器。沒有 Firebase 登入的站不放行。
+export const APPROVED_SCRIPTS_SQL = `SELECT json_extract(manifest, '$.scripts') AS scripts, scripts_approval AS approval,
+  json_extract(manifest, '$.loginProvider.firebase') IS NOT NULL AS firebase
   FROM declarative_extensions
-  WHERE enabled = 1 AND scripts_approval IS NOT NULL`;
+  WHERE enabled = 1 AND (scripts_approval IS NOT NULL OR json_extract(manifest, '$.loginProvider.firebase') IS NOT NULL)`;
+
+/** Firebase 登入視窗要載入程式的主機(SDK 的 gapi 載入器)。 */
+export const FIREBASE_SCRIPT_HOSTS = ["apis.google.com"] as const;
 
 export interface ApprovedScriptsRow {
   /** manifest.scripts:SQL 的 json_extract 給的是 JSON 字串,已經 parse 過的陣列也收。 */
   scripts: unknown;
   approval: string | null;
+  /** 1.57.0:這個插件宣告了 Firebase 登入(SQL 給 0/1)。 */
+  firebase?: unknown;
 }
 
 /** CSP 主機的形狀:網域(可帶 `*.`)加上可選的連接埠。KV 副本讀回來時也用它擋。 */
@@ -61,10 +69,13 @@ function asScripts(raw: unknown): ScriptSourceLike[] | null {
   return out;
 }
 
-/** 核准過(hash 對得上)的 scripts 會用到的主機,去重、依列的順序。 */
+/** 核准過(hash 對得上)的 scripts 會用到的主機,加上 Firebase 登入要的主機;去重、依列的順序。 */
 export async function hostsFromApprovedRows(rows: readonly ApprovedScriptsRow[]): Promise<string[]> {
   const hosts: string[] = [];
   for (const row of rows) {
+    if (row.firebase === true || row.firebase === 1) {
+      for (const host of FIREBASE_SCRIPT_HOSTS) if (!hosts.includes(host)) hosts.push(host);
+    }
     const scripts = asScripts(row.scripts);
     const approval = parseScriptsApproval(row.approval);
     if (!scripts || !approval) continue;

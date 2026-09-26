@@ -57,12 +57,9 @@
 // 回報可看;而後台要驗的東西比公開頁多 —— code extension 的後台頁、QuickJS 沙盒
 // ('wasm-unsafe-eval')、/login 的 Firebase 按鈕(見下)、大量 inline style。證明不了就不動。
 //
-// ⚠️ 已知缺口(讀程式碼得出,未在瀏覽器驗證):Firebase 登入按鈕(components/auth/
-// FirebaseSignInButton,1.54.0)用的 SDK 會動態載入 https://apis.google.com/js/api.js,
-// 那個 script 沒有 nonce。公開頁 enforce 的 script-src 會擋掉它,所以放在公開頁(會員
-// 登入頁)的 Firebase 登入按鈕在 enforce 下開不了視窗;/login 只有 Report-Only,不受影響。
-// 要修得讓 middleware 知道有 Firebase 登入插件(宣告式插件的 loginProvider.firebase),
-// 只在那時放行 apis.google.com —— 放行本身是放寬 enforce 的 script-src,要另外決定。
+// Firebase 登入(1.57.0):SDK 的登入視窗會動態載入 https://apis.google.com/js/api.js,那個
+// script 沒有 nonce。有啟用的 Firebase 登入插件(宣告式插件的 loginProvider.firebase)時,
+// apis.google.com 跟核准過的 scripts 主機一起進白名單(lib/script-hosts.ts);沒有就不放行。
 
 /** CSP 違規回報的收件端點(src/app/api/csp-report/route.ts)。 */
 export const CSP_REPORT_URI = "/api/csp-report";

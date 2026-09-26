@@ -71,9 +71,9 @@ interface Pending {
 let started = false;
 let pending: Pending | null = null;
 
-function manifestScripts(manifest: string): unknown {
+function parsedManifest(manifest: string): { scripts?: unknown; loginProvider?: { firebase?: unknown } } | null {
   try {
-    return (JSON.parse(manifest) as { scripts?: unknown } | null)?.scripts ?? null;
+    return JSON.parse(manifest) as { scripts?: unknown; loginProvider?: { firebase?: unknown } } | null;
   } catch {
     return null;
   }
@@ -93,8 +93,16 @@ async function readSnapshot(): Promise<ColdSnapshot | null> {
     // 與 script-hosts.ts 的 APPROVED_SCRIPTS_SQL 同一個條件,只是從已經讀回來的列算。
     const hosts = await hostsFromApprovedRows(
       dxRows
-        .filter((row) => row.enabled === 1 && row.scriptsApproval !== null)
-        .map((row) => ({ scripts: manifestScripts(row.manifest), approval: row.scriptsApproval })),
+        .filter((row) => row.enabled === 1)
+        .map((row) => {
+          const manifest = parsedManifest(row.manifest);
+          return {
+            scripts: manifest?.scripts ?? null,
+            approval: row.scriptsApproval,
+            firebase: manifest?.loginProvider?.firebase !== undefined,
+          };
+        })
+        .filter((row) => row.approval !== null || row.firebase),
     );
     const settingRows = (settings.results ?? []) as { key: string; value: string }[];
     return {

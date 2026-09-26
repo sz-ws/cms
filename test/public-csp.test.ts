@@ -162,6 +162,26 @@ describe("approved script hosts", () => {
     await insertDx("bad-approval", GA, "{not json");
     expect(await approvedScriptHosts(d1())).toEqual([]);
   });
+
+  // 1.57.0:Firebase 登入的視窗要從 apis.google.com 載入 gapi,只在有啟用的 Firebase 登入時放行。
+  it("allows apis.google.com only while a Firebase sign-in plugin is enabled", async () => {
+    const insertLogin = async (id: string, enabled: number) =>
+      d1()
+        .prepare(
+          "INSERT INTO declarative_extensions (id, manifest, version, enabled, source, installed_at, updated_at, scripts_approval) VALUES (?, ?, '1.0.0', ?, NULL, 1, 1, NULL)",
+        )
+        .bind(id, JSON.stringify({ kind: "declarative", id, name: id, version: "1.0.0", coreApi: "^1.57.0", loginProvider: { firebase: { signIn: "google.com" }, button: { label: "Google" } } }), enabled)
+        .run();
+    await insertLogin("login-off", 0);
+    expect(await approvedScriptHosts(d1())).toEqual([]);
+    await insertLogin("login-on", 1);
+    await insertDx("ga", GA, await approvalFor(GA));
+    const hosts = await approvedScriptHosts(d1());
+    expect(hosts).toHaveLength(4);
+    expect(hosts).toEqual(
+      expect.arrayContaining(["apis.google.com", "www.googletagmanager.com", "www.google-analytics.com", "*.doubleclick.net"]),
+    );
+  });
 });
 
 describe("middleware", () => {
