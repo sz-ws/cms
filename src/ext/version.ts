@@ -1242,4 +1242,24 @@
 //   (notices + noticesSince). Fetched only when a full admin opens the admin and the cache is
 //   older than 12 h; each admin sees each notice once, at most one per rolling 24 h.
 //   Migration 0024 registry_notices + registry_notice_seen.
-export const CORE_API_VERSION = "1.56.0";
+// 1.57.0: plugin-provided admin styles, one sign-in plugin for OIDC and Firebase, and a
+// faster cold start.
+// - Declarative manifests and code extensions may declare `appearances` (up to 6):
+//   { id, name, description?, theme, accent? }. theme is checked by adminThemeSchema (same
+//   contrast rules, font whitelist and shape options; font/icons may be left out), accent is
+//   #rrggbb. Enabled plugins' presets appear under Settings → 風格 after the built-in ones,
+//   labelled with the plugin name; choosing one fills the editor. No CSS; public pages are never
+//   affected; a disabled plugin's presets disappear and a saved style stays. Manifests using
+//   it must declare coreApi "^1.57.0".
+// - loginProvider may declare issuer and firebase together (both sets of settings declared).
+//   listLoginProviders() uses Firebase when its web config is complete, else the OAuth client.
+//   Such manifests must declare coreApi "^1.57.0".
+// - Public CSP: apis.google.com joins the script allowlist while an enabled declarative plugin
+//   declares loginProvider.firebase (the SDK's popup loads gapi from there without a nonce).
+// - Cold start: a cold isolate reads the version stamps, settings, enabled extension ids and all
+//   declarative_extensions rows in one D1 batch (lib/cold-snapshot.ts), used only when its
+//   stamps match the request's; a cold public GET went from 5 D1 round trips to 1. The KV
+//   stamps copy also carries the CSP allowlist (optional `hosts`). Content lists read a page and
+//   its total in one batch. Other CSP directives stay Report-Only: reports are not stored
+//   anywhere readable yet (see lib/csp.ts).
+export const CORE_API_VERSION = "1.57.0";
