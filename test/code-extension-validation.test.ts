@@ -126,3 +126,16 @@ describe("code extension manifest validation", () => {
     ).toThrow(/secret setting default must be empty/);
   });
 });
+
+// 1.55.0:統一登入入口。
+describe("signInPage", () => {
+  it("accepts a site path", () => {
+    expect(defineExtension({ ...base, signInPage: "/member/sign-in" }).signInPage).toBe("/member/sign-in");
+  });
+
+  it("rejects off-site, admin, login and api paths", () => {
+    for (const signInPage of ["https://evil.test/", "//evil.test", "member", "/admin/login", "/login", "/api/x", "/setup", "/a?b=1"]) {
+      expect(() => defineExtension({ ...base, signInPage })).toThrow();
+    }
+  });
+});

@@ -1195,4 +1195,18 @@
 //   getJwks are exported for the Firebase engine.
 // Additive: sites without Firebase providers see the same sign-in flows, apart from the
 // verified-email link for members and the COOP value.
-export const CORE_API_VERSION = "1.54.0";
+// 1.55.0: one sign-in entry for everyone.
+// - Extension.signInPage (code extensions; a site path, not /admin, /login, /setup or /api):
+//   the site's only sign-in page. When an enabled extension declares one, /login redirects
+//   there, carrying ?next= and an OAuth ?error= as ?login_error=. /login?form=1 still shows
+//   the admin form, for when that page is broken. lib/sign-in-page.ts publicSignInPage().
+// - GET /api/auth/continue?next=&stay= sends a signed-in user on by role
+//   (lib/sign-in-continue.ts, pure and client-safe): staff (role other than guest, custom
+//   roles included) go to next or /admin; members go to next unless it is an admin, login,
+//   setup or api path, else to stay, else /. Signed out, it goes to the sign-in page. Every
+//   sign-in method on a unified page finishes there (OAuth and Firebase pass it as next).
+// - components/auth/passkey-sign-in.ts signInWithPasskey(): the passkey ceremony from the admin
+//   form, shared with sign-in pages in extensions. The admin form's automatic attempt no longer
+//   shows an error when the options request fails.
+// Additive: without an extension that declares signInPage nothing changes.
+export const CORE_API_VERSION = "1.55.0";

@@ -223,6 +223,13 @@ export interface Extension {
   adminPages?: AdminPage[];
   apiRoutes?: ApiRoute[];
   publicRoutes?: PublicRoute[];
+  /**
+   * 1.55.0:這個插件提供網站唯一的登入頁(站內路徑,例:"/member/sign-in")。有啟用的插件
+   * 宣告時,/login 轉到這一頁;所有人(後台人員、會員)從同一個入口登入,登入後由
+   * /api/auth/continue 依身分分流(lib/sign-in-page.ts)。/login?form=1 仍是後台的表單,
+   * 給插件頁壞掉時救急。
+   */
+  signInPage?: string;
   // Alpha:讓 dispatch 識別 public type(POST 跳 requireAuth);不必走 Extension 介面,
   // 直接由 interpret.tsx 從 manifest.contentTypes 衍生。
   contentTypes?: DeclarativeContentType[];
@@ -579,6 +586,13 @@ const manifestSchema = z
     settings: z.array(settingSchema).optional(),
     adminPages: z.array(adminPageSchema).optional(),
     publicRoutes: z.array(publicRouteSchema).optional(),
+    // 站內絕對路徑,不能是後台、/login、/api(否則 /login 會轉回自己或轉進後台)。
+    signInPage: z
+      .string()
+      .max(200)
+      .regex(/^\/[a-z0-9][a-z0-9/_-]*$/i, "signInPage must be a site path like /member/sign-in")
+      .refine((p) => !/^\/(admin|login|setup|api)(\/|$)/i.test(p), "signInPage cannot be an admin, login, setup or api path")
+      .optional(),
     apiRoutes: z.array(apiRouteSchema).optional(),
     provides: z
       .array(

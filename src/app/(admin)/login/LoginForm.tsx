@@ -9,14 +9,11 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  startAuthentication,
-  browserSupportsWebAuthn,
-  type PublicKeyCredentialRequestOptionsJSON,
-} from "@simplewebauthn/browser";
+import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import { cn } from "@/lib/utils";
 import { FaceIdIcon } from "@/components/ui/face-id-icon";
 import { FirebaseSignInButton } from "@/components/auth/FirebaseSignInButton";
+import { signInWithPasskey } from "@/components/auth/passkey-sign-in";
 import type { FirebaseWebConfig } from "@/lib/oidc";
 import { useT } from "@/lib/i18n/I18nProvider";
 
@@ -188,48 +185,27 @@ export function LoginForm({
     }
   }
 
-  // L1 §5:passkey 登入 —— options → startAuthentication → verify → router.push(next)。
+  // L1 §5:passkey 登入(流程在 components/auth/passkey-sign-in.ts)。
   // auto = 進頁自動觸發的那一次:ceremony 被取消/無 credential 時保持安靜,
   // 不對「只是想用密碼登入」的人噴錯誤;但 ceremony 完成而 verify 失敗仍要講。
   async function onPasskey(auto = false) {
     setError(null);
     setPasskeyPending(true);
     try {
-      const optRes = await fetch("/api/auth/passkey/login/options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      if (!optRes.ok) throw new Error("options_failed");
-      const optionsJSON =
-        (await optRes.json()) as PublicKeyCredentialRequestOptionsJSON;
-
-      let assertion;
-      try {
-        assertion = await startAuthentication({ optionsJSON });
-      } catch (e) {
-        if (auto) return; // 自動嘗試被取消 → 靜默,留在登入頁
-        throw e;
-      }
-
-      const verifyRes = await fetch("/api/auth/passkey/login/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(assertion),
-      });
-      if (verifyRes.ok) {
+      const result = await signInWithPasskey();
+      if (result === "ok") {
         writeLastLogin("passkey");
         startTransition(() => {
           router.push(safeNext(next));
         });
         return;
       }
-      if (verifyRes.status === 429)
-        setError(t("login.error.passkeyRateLimit"));
-      else setError(t("login.error.passkeyFailed"));
-    } catch {
-      // 使用者取消 / 無可用 credential / 網路錯誤 —— 一律泛化訊息。
-      setError(t("login.error.passkeyCancelled"));
+      if (result === "cancelled") {
+        // 使用者取消 / 無可用 credential / 網路錯誤 —— 一律泛化訊息。
+        if (!auto) setError(t("login.error.passkeyCancelled"));
+        return;
+      }
+      setError(t(result === "rate_limited" ? "login.error.passkeyRateLimit" : "login.error.passkeyFailed"));
     } finally {
       setPasskeyPending(false);
     }
