@@ -10,6 +10,7 @@ import type { LocalizedString } from "./i18n/localized";
 import type { BatchItem } from "drizzle-orm/batch";
 import { ADMIN_ACCENT_SWATCHES, DEFAULT_ADMIN_ACCENT } from "./admin-accent";
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from "./datetime";
+import { SITE_NOTICE_KEYS, SITE_NOTICE_MAX_LENGTH } from "./site-notice";
 
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
@@ -55,9 +56,20 @@ export interface SettingOption {
  */
 export type SettingNumberUnit = "minutes";
 
+/**
+ * 1.56.0:單行文字的格式(只給 core 設定用;extension manifest 的 settingSchema 不收)。
+ *   - "line":一行純文字,不能換行、不能有 HTML 標籤。
+ *   - "link":站內路徑(/products)或 https 網址。
+ *   - "date":`YYYY-MM-DD`,設定頁畫成日期選擇器。
+ * 驗證在 lib/setting-validation.ts,規則本體在 lib/site-notice.ts。
+ */
+export type SettingTextFormat = "line" | "link" | "date";
+
 export type SettingField = SettingFieldBase &
   (
-    | { type: "text" | "textarea" }
+    // 1.56.0:maxLength 以字數(code point)算,伺服器擋、輸入框也限制。
+    | { type: "text"; format?: SettingTextFormat; maxLength?: number }
+    | { type: "textarea" }
     | { type: "number"; unit?: SettingNumberUnit }
     | { type: "boolean" }
     // 1.44.0:presentation: "tabs" 畫成一排分頁(佔整列),適合二選一、三選一的「用哪個服務」。
@@ -200,6 +212,68 @@ export const CORE_SETTINGS: SettingField[] = [
     type: "color",
     default: DEFAULT_ADMIN_ACCENT,
     swatches: ADMIN_ACCENT_SWATCHES,
+  },
+  {
+    // 1.56.0:網站公告 —— 前台每一頁最上方的一行字(lib/site-notice*.ts)。core 的
+    // (public)/layout.tsx 預設畫出來;站台自己的外框用 getSiteNotice() 自己畫。
+    key: SITE_NOTICE_KEYS.enabled,
+    group: "notice",
+    label: { en: "Show announcement", "zh-Hant": "顯示公告" },
+    type: "boolean",
+    default: false,
+  },
+  {
+    key: SITE_NOTICE_KEYS.text,
+    group: "notice",
+    showWhen: { key: SITE_NOTICE_KEYS.enabled, equals: true },
+    label: { en: "Announcement", "zh-Hant": "公告內容" },
+    description: {
+      en: `Up to ${SITE_NOTICE_MAX_LENGTH} characters of plain text on one line.`,
+      "zh-Hant": `一行純文字，最多 ${SITE_NOTICE_MAX_LENGTH} 字。`,
+    },
+    type: "text",
+    format: "line",
+    maxLength: SITE_NOTICE_MAX_LENGTH,
+    default: "",
+  },
+  {
+    key: SITE_NOTICE_KEYS.href,
+    group: "notice",
+    showWhen: { key: SITE_NOTICE_KEYS.enabled, equals: true },
+    label: { en: "Link", "zh-Hant": "連結" },
+    description: {
+      en: "Optional. A page on this site such as /products, or a full address starting with https://.",
+      "zh-Hant": "選填。站內頁面（例如 /products），或 https:// 開頭的完整網址。",
+    },
+    type: "text",
+    format: "link",
+    default: "",
+  },
+  {
+    key: SITE_NOTICE_KEYS.startsOn,
+    group: "notice",
+    showWhen: { key: SITE_NOTICE_KEYS.enabled, equals: true },
+    label: { en: "Show from", "zh-Hant": "開始日期" },
+    description: {
+      en: "Optional. Leave empty to show it now.",
+      "zh-Hant": "選填。留空就馬上顯示。",
+    },
+    type: "text",
+    format: "date",
+    default: "",
+  },
+  {
+    key: SITE_NOTICE_KEYS.endsOn,
+    group: "notice",
+    showWhen: { key: SITE_NOTICE_KEYS.enabled, equals: true },
+    label: { en: "Show until", "zh-Hant": "結束日期" },
+    description: {
+      en: "Optional. It comes down when this day ends. Leave empty to keep it up.",
+      "zh-Hant": "選填。這一天過完就收起來；留空就一直顯示。",
+    },
+    type: "text",
+    format: "date",
+    default: "",
   },
   {
     key: "core.seo.robots",

@@ -112,6 +112,12 @@ function fieldWrapperClass(field: SettingField): string {
     : "col-span-full sm:col-span-1";
 }
 
+/** 1.56.0:一般輸入框的 type —— 數字、日期(text 的 format: "date"),其餘是文字。 */
+function inputType(field: SettingField): "number" | "date" | "text" {
+  if (field.type === "number") return "number";
+  return field.type === "text" && field.format === "date" ? "date" : "text";
+}
+
 function labelClass(): string {
   return "text-[13px] font-medium text-ink/55";
 }
@@ -182,6 +188,10 @@ function fieldErrorText(code: string, t: ReturnType<typeof useT>): string {
   if (code === "invalid_option") return t("settingsWorkspace.fieldInvalidOption");
   if (code === "expected_number") return t("settingsWorkspace.fieldExpectedNumber");
   if (code === "invalid_color") return t("settingsWorkspace.fieldInvalidColor");
+  if (code === "too_long") return t("settingsWorkspace.fieldTooLong");
+  if (code === "not_plain_text") return t("settingsWorkspace.fieldNotPlainText");
+  if (code === "invalid_link") return t("settingsWorkspace.fieldInvalidLink");
+  if (code === "invalid_date") return t("settingsWorkspace.fieldInvalidDate");
   return t("settingsWorkspace.fieldInvalid");
 }
 
@@ -391,7 +401,8 @@ export function SettingsWorkspace({
                   aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
                   className="rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
-                  type={field.type === "number" ? "number" : "text"}
+                  type={inputType(field)}
+                  maxLength={field.type === "text" ? field.maxLength : undefined}
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}

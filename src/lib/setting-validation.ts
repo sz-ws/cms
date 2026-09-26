@@ -1,6 +1,7 @@
 import { normalizeHex } from "./color";
 import { adminThemeSchema } from "./admin-theme";
 import { EXTRA_FIELDS_SETTING, extraFieldsSettingSchema } from "./extra-fields";
+import { isIsoDay, isNoticeLink, isPlainLine, textLength } from "./site-notice";
 
 export type SettingValueField = {
   key: string;
@@ -8,6 +9,9 @@ export type SettingValueField = {
   required?: boolean;
   secret?: boolean;
   options?: readonly { value: string }[];
+  /** 1.56.0:text 的格式與字數上限(只有 core 設定會帶)。 */
+  format?: "line" | "link" | "date";
+  maxLength?: number;
 };
 
 export type SettingValueErrorCode =
@@ -19,11 +23,36 @@ export type SettingValueErrorCode =
   | "invalid_color"
   | "invalid_theme"
   | "invalid_extra_fields"
+  | "too_long"
+  | "not_plain_text"
+  | "invalid_link"
+  | "invalid_date"
   | "not_serializable";
 
 export interface SettingValueError {
   key: string;
   code: SettingValueErrorCode;
+}
+
+/** 1.56.0:text 欄位的字數與格式(format / maxLength 都沒給就不檢查)。 */
+function textFieldError(
+  field: SettingValueField,
+  value: string,
+): SettingValueErrorCode | null {
+  const trimmed = value.trim();
+  if (field.maxLength !== undefined && textLength(trimmed) > field.maxLength) {
+    return "too_long";
+  }
+  switch (field.format) {
+    case "line":
+      return isPlainLine(value) ? null : "not_plain_text";
+    case "link":
+      return isNoticeLink(trimmed) ? null : "invalid_link";
+    case "date":
+      return isIsoDay(trimmed) ? null : "invalid_date";
+    default:
+      return null;
+  }
 }
 
 function isJsonSerializable(value: unknown): boolean {
@@ -62,7 +91,7 @@ export function validateSettingValue(
 
   switch (field.type) {
     case "text":
-      return typeof value === "string" ? null : "expected_string";
+      return typeof value === "string" ? textFieldError(field, value) : "expected_string";
     case "textarea":
       return typeof value === "string" || isJsonSerializable(value)
         ? null

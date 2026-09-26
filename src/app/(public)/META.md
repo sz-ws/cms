@@ -4,3 +4,4 @@
 - `[...slug]/page.tsx`: dispatch into extension `publicRoutes`.
 - No auth, no admin chrome.
 - Code extensions can ship public UI under `extensions/<id>/public/` and register a `publicRoute`.
+- `layout.tsx` draws the site announcement (`site-notice.tsx`, settings → Announcement) above the header.

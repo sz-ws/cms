@@ -39,6 +39,12 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
     description: "Site name, languages, time zone and admin look.",
   },
   {
+    id: "notice",
+    order: 15,
+    title: "Announcement",
+    description: "A line of text at the top of the public site.",
+  },
+  {
     id: "seo",
     order: 20,
     title: "SEO",

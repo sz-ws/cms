@@ -34,6 +34,9 @@
   manager and editors share it; `extra-fields-server.ts` reads the setting. Anything that
   leaves the admin (Content API, inlined script data, webhooks) goes through
   `publicExtras`.
+- `site-notice.ts`: the one-line site announcement (`core.notice.*`) — pure rules shared
+  by the settings validator and `site-notice-server.ts` (`getSiteNotice()`, read by public
+  frames; dates count in the site time zone, re-checked every request).
 - `utils.ts`: `cn(...)` etc.
 - `observe/`: error reporting (GlitchTip / Sentry protocol). `sentry-options.ts` is
   pure + type-only imports on purpose — the Worker entry (`custom-worker.ts`) reaches
