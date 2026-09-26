@@ -885,18 +885,13 @@ export class CoreContentProvider implements ContentProvider {
       orderExpr = dir(sql`json_extract(${contents.data}, ${"$." + sortField})`);
     }
 
-    const rows = await this.conn()
-      .select()
-      .from(contents)
-      .where(where)
-      .orderBy(orderExpr)
-      .limit(perPage)
-      .offset(offset);
-
-    const countRows = await this.conn()
-      .select({ n: sql<number>`count(*)` })
-      .from(contents)
-      .where(where);
+    // 一頁的列與總數放在同一個 D1 batch:一趟來回(以前是一前一後兩趟),而且兩者讀的是
+    // 同一個時間點,總數不會跟這一頁對不上。
+    const conn = this.conn();
+    const [rows, countRows] = await conn.batch([
+      conn.select().from(contents).where(where).orderBy(orderExpr).limit(perPage).offset(offset),
+      conn.select({ n: sql<number>`count(*)` }).from(contents).where(where),
+    ]);
     const total = countRows[0]?.n ?? 0;
 
     return { items: rows.map(rowToEntry), total };

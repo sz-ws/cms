@@ -3,6 +3,7 @@ import { db } from "./db";
 import { settings } from "./schema";
 import { getEnv } from "./cf";
 import { getRequestStamps, publishRequestStamps } from "./request-stamps";
+import { dropColdSnapshot, takeColdSettings } from "./cold-snapshot";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
 
@@ -607,7 +608,10 @@ const readAll = cache(async (): Promise<Map<string, string>> => {
   if (stamp !== null && settingsMemo !== null && settingsMemo.stamp === stamp) {
     return settingsMemo.value; // 命中:重用已 parse 的整包 Map。
   }
-  const value = await loadAllSettings();
+  // memo 是空的(冷的 isolate):先看冷啟動的合併讀取(./cold-snapshot.ts)—— 與 extension
+  // runtime 的列同一趟 D1,戳對得上這個請求才會拿到。
+  const cold = stamp !== null && settingsMemo === null ? await takeColdSettings(stamp) : null;
+  const value = cold ?? (await loadAllSettings());
   if (stamp !== null) settingsMemo = { stamp, value };
   return value;
 });
@@ -623,6 +627,7 @@ const readAll = cache(async (): Promise<Map<string, string>> => {
  */
 export function invalidateSettingsCache(): void {
   settingsMemo = null;
+  dropColdSnapshot();
   publishRequestStamps();
 }
 

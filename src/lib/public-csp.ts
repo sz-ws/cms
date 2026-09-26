@@ -1,10 +1,4 @@
-import {
-  DOMAIN_RE,
-  hashScripts,
-  parseScriptsApproval,
-  scriptHosts,
-  type ScriptSourceLike,
-} from "@/ext/dx/scripts-core";
+import { APPROVED_SCRIPTS_SQL, approvedScriptHosts, hostsFromApprovedRows, type ApprovedScriptsRow } from "./script-hosts";
 import {
   SCRIPTS_STAMP_SQL,
   readStampsFromKv,
@@ -16,72 +10,19 @@ import {
   type StampsRecord,
 } from "./stamps";
 
-// [core] 公開頁 CSP 的主機白名單:啟用中、而且核准紀錄對得上目前內容的宣告式插件
-// scripts,它們的 src 主機與宣告的 domains。判斷與 ext/dx/scripts-widget.tsx 同一條
-// (hash 對不上就不渲染 = 也不放行)。
+export { approvedScriptHosts };
+
+// [core] 公開頁 CSP 的主機白名單(middleware 用):啟用中、而且核准紀錄對得上目前內容的
+// 宣告式插件 scripts,它們的 src 主機與宣告的 domains。清單怎麼算在 ./script-hosts.ts
+// (與 KV 副本、冷啟動的合併讀取共用);這個檔只管「什麼時候重算」。
 //
-// 在 middleware(edge)裡跑,所以只用 D1 binding 與零依賴的 scripts-core —— 不拉
-// drizzle、zod、loader。manifest 裡的 scripts 安裝時已經過 zod;這裡只做「形狀對、
-// 值合規」的最小檢查,因為結果會寫進回應標頭。
+// 在 middleware(edge)裡跑,所以只用 D1 binding 與零依賴的模組 —— 不拉 drizzle、zod、loader。
 //
 // 1.51.0:插件的前台編進了網站(public:scripts)時,它的 scripts 不會輸出,主機也不該
 // 在白名單上。middleware 是另一個 bundle,看不到編進來的程式碼 —— 靠的是「被取代的
 // script 沒有核准紀錄」:安裝時清掉、不能再核准、編進去之前的由 loader 清掉
 // (ext/dx/scripts-compiled.ts)。所以這裡照舊只看核准。編進來的元件是 bundle 裡的
 // 程式,'self' 就涵蓋,不用放行任何主機。
-
-const SQL = `SELECT json_extract(manifest, '$.scripts') AS scripts, scripts_approval AS approval
-  FROM declarative_extensions
-  WHERE enabled = 1 AND scripts_approval IS NOT NULL`;
-
-interface Row {
-  scripts: string | null;
-  approval: string | null;
-}
-
-function asScripts(raw: string | null): ScriptSourceLike[] | null {
-  if (!raw) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed)) return null;
-  const out: ScriptSourceLike[] = [];
-  for (const item of parsed) {
-    if (!item || typeof item !== "object") return null;
-    const { src, inline, domains } = item as Record<string, unknown>;
-    if (src !== undefined && typeof src !== "string") return null;
-    if (inline !== undefined && typeof inline !== "string") return null;
-    if (domains !== undefined && !(Array.isArray(domains) && domains.every((d) => typeof d === "string"))) {
-      return null;
-    }
-    out.push({
-      ...(src !== undefined ? { src } : {}),
-      ...(inline !== undefined ? { inline } : {}),
-      ...(domains !== undefined ? { domains: domains as string[] } : {}),
-    });
-  }
-  return out;
-}
-
-export async function approvedScriptHosts(d1: D1Database): Promise<string[]> {
-  const { results } = await d1.prepare(SQL).all<Row>();
-  const hosts: string[] = [];
-  for (const row of results ?? []) {
-    const scripts = asScripts(row.scripts);
-    const approval = parseScriptsApproval(row.approval);
-    if (!scripts || !approval) continue;
-    if ((await hashScripts(scripts)) !== approval.hash) continue;
-    for (const host of scriptHosts(scripts)) {
-      // src 主機可能帶連接埠(scriptHosts 用 URL.host),domains 則只能是網域。
-      const bare = host.replace(/:\d{1,5}$/, "");
-      if (DOMAIN_RE.test(bare) && !hosts.includes(host)) hosts.push(host);
-    }
-  }
-  return hosts;
-}
 
 // ---- isolate 級 memo ----
 //
@@ -101,8 +42,12 @@ export async function approvedScriptHosts(d1: D1Database): Promise<string[]> {
 //
 // 綁了 CMS_KV 的站,戳先從 KV 的副本拿(./stamps.ts):核准、撤銷、啟停 script 的寫入路徑
 // 都會發布新戳,所以同樣是「寫入後就換戳」,只是其他機房要等 KV 快取過期(約 60 秒)。
-// 副本拿到的戳可能比 D1 舊一點,但清單永遠是當下從 D1 讀的,「較新的清單 + 較舊的戳」
-// 的方向不變。
+// 副本拿到的戳可能比 D1 舊一點;副本帶的清單與它的戳是同一個 D1 batch 讀的,兩者一定
+// 對得上(不是「舊戳配新清單」,是同一個時間點的一對)。副本沒帶清單時照舊當下從 D1 讀,
+// 「較新的清單 + 較舊的戳」的方向不變。
+//
+// 冷的 isolate(memo 是空的)不再「先問戳、再讀清單」兩趟:有 KV 就用副本裡的清單,沒有
+// 就把戳與清單放進同一個 batch。
 
 let memo: { stamp: string; hosts: readonly string[] } | null = null;
 
@@ -115,35 +60,60 @@ async function combinedFromD1(d1: D1Database): Promise<StampsRecord | null> {
   }
 }
 
-/** 白名單的版本戳。有夠新的 KV 副本就用它(零 D1),否則照舊問 D1。 */
-async function scriptsStamp(d1: D1Database, kv: KvTarget | undefined): Promise<string> {
-  if (kv) {
-    const cached = await readStampsFromKv(kv.kv);
-    if (cached.state === "fresh") return cached.stamps.scripts;
-    if (cached.state === "refresh") {
-      // 副本沒有、壞了、太舊:用合併查詢算(同樣一趟),順手把三組戳一起寫回 KV。
-      const record = await combinedFromD1(d1);
-      if (record) {
-        refreshStamps(kv, record);
-        return record.scripts;
-      }
+/** 白名單的版本戳,以及(拿得到的話)與它同一個 D1 狀態的清單。 */
+interface StampedHosts {
+  stamp: string;
+  /** undefined = 只拿到戳,清單要看 memo 或另外問 D1。 */
+  hosts?: readonly string[];
+}
+
+/**
+ * 有夠新的 KV 副本就用它(零 D1);副本帶了清單,冷的 isolate 也不必再問。副本沒有 /
+ * 壞了 / 太舊:一個 batch 算三組戳加清單,順手寫回 KV。沒有 KV 時照舊問 D1 的戳。
+ */
+async function stampedFromKv(d1: D1Database, kv: KvTarget): Promise<StampedHosts | null> {
+  const cached = await readStampsFromKv(kv.kv);
+  if (cached.state === "fresh") return { stamp: cached.stamps.scripts, hosts: cached.hosts };
+  if (cached.state === "refresh") {
+    const record = await combinedFromD1(d1);
+    if (record) {
+      refreshStamps(kv, record);
+      return { stamp: record.scripts, hosts: record.hosts };
     }
   }
-  const row = await d1.prepare(SCRIPTS_STAMP_SQL).first<ScriptsStampRow>();
-  return scriptsStampFromRow(row);
+  return null;
+}
+
+/**
+ * 只有 D1 的那條路。memo 是空的(冷的 isolate)時,戳與清單在同一個 batch 裡一起讀:
+ * 一趟就好,而且兩者一定對得上。memo 在的時候只問戳 —— 絕大多數請求的答案是「沒變」。
+ */
+async function stampedFromD1(d1: D1Database): Promise<StampedHosts> {
+  if (memo) {
+    const row = await d1.prepare(SCRIPTS_STAMP_SQL).first<ScriptsStampRow>();
+    return { stamp: scriptsStampFromRow(row) };
+  }
+  const [stamp, approved] = await d1.batch<unknown>([
+    d1.prepare(SCRIPTS_STAMP_SQL),
+    d1.prepare(APPROVED_SCRIPTS_SQL),
+  ]);
+  return {
+    stamp: scriptsStampFromRow((stamp.results?.[0] ?? null) as ScriptsStampRow | null),
+    hosts: await hostsFromApprovedRows((approved.results ?? []) as ApprovedScriptsRow[]),
+  };
 }
 
 /**
  * approvedScriptHosts 加上版本戳 memo(middleware 用)。kv 只在綁了 CMS_KV 的公開頁請求
- * 傳進來;沒傳就與以前一字不差。讀不到會丟例外,由呼叫端處理。
+ * 傳進來。讀不到會丟例外,由呼叫端處理。
  */
 export async function cachedApprovedScriptHosts(
   d1: D1Database,
   kv?: KvTarget,
 ): Promise<readonly string[]> {
-  const stamp = await scriptsStamp(d1, kv);
-  if (memo && memo.stamp === stamp) return memo.hosts;
-  const hosts = Object.freeze(await approvedScriptHosts(d1));
-  memo = { stamp, hosts };
+  const stamped = (kv ? await stampedFromKv(d1, kv) : null) ?? (await stampedFromD1(d1));
+  if (memo && memo.stamp === stamped.stamp) return memo.hosts;
+  const hosts = Object.freeze(stamped.hosts ? [...stamped.hosts] : await approvedScriptHosts(d1));
+  memo = { stamp: stamped.stamp, hosts };
   return hosts;
 }

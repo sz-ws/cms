@@ -234,6 +234,7 @@ describe("stamp formats", () => {
     expect(await readStampsFromKv(kv as unknown as KVNamespace)).toEqual({
       state: "fresh",
       stamps: { settings: record.settings, extensions: record.extensions, scripts: record.scripts },
+      hosts: [], // CSP 白名單與戳同一個 batch 算的(這裡沒有核准過的 script)
     });
     const fromKv = await getRequestStamps();
     headerState.mode = "none";
@@ -300,7 +301,9 @@ describe("public page requests", () => {
     const stamps = await getRequestStamps();
     expect(stamps.settings).toEqual({ ok: true, stamp: truth.settings });
     expect(stamps.extensions).toEqual({ ok: true, stamp: truth.extensions });
-    expect(counter.prepares).toBe(1); // 一趟合併查詢,與沒有 KV 時一樣
+    // 一個 batch(一趟):合併查詢 + CSP 白名單 —— 寫回去的副本要帶著白名單,否則會蓋掉
+    // middleware 寫進去、帶著白名單的那一份。
+    expect(counter.prepares).toBe(2);
 
     expect(pending).toHaveLength(1);
     await settle();

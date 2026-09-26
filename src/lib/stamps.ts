@@ -7,7 +7,8 @@
 // memo 比對的是字串:D1 算的、合併查詢算的、KV 讀回來的,只要格式差一個字,每次換條路
 // 都會被當成「有變動」而重讀。所以 SQL 與格式化只寫在這裡,別處一律呼叫。
 //
-// 這個檔零依賴(只用 Workers 的全域型別):middleware 是 edge bundle,也要能載入。
+// 這個檔幾乎零依賴(Workers 的全域型別,加上同樣零依賴的 ./script-hosts):middleware 是
+// edge bundle,Worker 入口(custom-worker.ts)也直接載入它,兩邊都要能載入。
 //
 // ---- KV 副本(binding CMS_KV,選用)----
 //
@@ -29,6 +30,13 @@
 //
 // 費用:公開頁每個請求 1–2 次 KV 讀;寫入 = 每次存檔一次 + 每個有流量的機房每 5 分鐘約一次。
 // Workers 免費方案的 KV 額度(每天 10 萬讀、1 千寫)對有流量的站不夠 —— 付費方案再綁。
+//
+// 副本裡還有一份 CSP 主機白名單(hosts,./script-hosts.ts 算的):與三組戳同一趟 D1 batch
+// 讀出來,所以一定對得上其中的 scripts 戳。冷的 isolate 的 middleware 本來要為了白名單
+// 多打一趟 D1(memo 是空的),有了它就不用。舊版寫的副本沒有 hosts:照樣當戳用,白名單
+// 由 middleware 自己問 D1 —— 與以前相同。
+
+import { APPROVED_SCRIPTS_SQL, SCRIPT_HOST_RE, hostsFromApprovedRows, type ApprovedScriptsRow } from "./script-hosts";
 
 // ---- D1 ----
 
@@ -108,6 +116,11 @@ export interface StampSet {
 /** 一組戳加上「什麼時候從 D1 算的」—— KV 裡存的就是這個。 */
 export interface StampsRecord extends StampSet {
   at: number;
+  /**
+   * 與 scripts 戳同一個 D1 狀態的 CSP 主機白名單(./script-hosts.ts)。舊版寫的副本沒有,
+   * 那時 middleware 自己問 D1。
+   */
+  hosts?: string[];
 }
 
 export function stampsFromCombinedRow(row: CombinedStampRow | null): StampSet {
@@ -119,13 +132,18 @@ export function stampsFromCombinedRow(row: CombinedStampRow | null): StampSet {
 }
 
 /**
- * 從 D1 一趟算出三組戳。at 取查詢**之前**的時間:寧可讓副本早一點過期,也不要讓它看起來
- * 比實際新。失敗會 throw。
+ * 從 D1 一趟(一個 batch,同一個交易)算出三組戳與 CSP 主機白名單。at 取查詢**之前**的
+ * 時間:寧可讓副本早一點過期,也不要讓它看起來比實際新。失敗會 throw。
  */
 export async function readStampsRecordFromD1(d1: D1Database): Promise<StampsRecord> {
   const at = Date.now();
-  const row = await d1.prepare(COMBINED_STAMP_SQL).first<CombinedStampRow>();
-  return { ...stampsFromCombinedRow(row), at };
+  const [stamps, approved] = await d1.batch<unknown>([
+    d1.prepare(COMBINED_STAMP_SQL),
+    d1.prepare(APPROVED_SCRIPTS_SQL),
+  ]);
+  const row = (stamps.results?.[0] ?? null) as CombinedStampRow | null;
+  const hosts = await hostsFromApprovedRows((approved.results ?? []) as ApprovedScriptsRow[]);
+  return { ...stampsFromCombinedRow(row), at, hosts };
 }
 
 // ---- KV ----
@@ -166,8 +184,8 @@ export function kvTargetFrom(env: unknown, ctx: unknown): KvTarget | undefined {
 }
 
 export type KvStamps =
-  /** 副本在、格式對、還沒超過 STAMPS_MAX_AGE_MS:直接用。 */
-  | { state: "fresh"; stamps: StampSet }
+  /** 副本在、格式對、還沒超過 STAMPS_MAX_AGE_MS:直接用。hosts 只在副本帶了才有。 */
+  | { state: "fresh"; stamps: StampSet; hosts?: readonly string[] }
   /** 沒有、壞掉、或太舊:走 D1,並補寫一份。 */
   | { state: "refresh" }
   /** KV 本身讀不到:走 D1,不寫(寫大概也會失敗)。 */
@@ -182,14 +200,19 @@ function parseStampsRecord(raw: string | null): StampsRecord | null {
     return null;
   }
   if (!value || typeof value !== "object") return null;
-  const { settings, extensions, scripts, at } = value as Record<string, unknown>;
+  const { settings, extensions, scripts, at, hosts } = value as Record<string, unknown>;
   if (typeof settings !== "string" || typeof extensions !== "string" || typeof scripts !== "string") {
     return null;
   }
   if (typeof at !== "number" || !Number.isFinite(at)) return null;
   // extensions 的後半就是 scripts(同一組 declarative_extensions 聚合),對不上就不是我們寫的。
   if (!extensions.endsWith(`|${scripts}`)) return null;
-  return { settings, extensions, scripts, at };
+  if (hosts === undefined) return { settings, extensions, scripts, at };
+  // 白名單會原樣寫進回應標頭(之後 csp.ts 還會再擋一次):形狀不對就整份不認。
+  if (!Array.isArray(hosts) || !hosts.every((h) => typeof h === "string" && SCRIPT_HOST_RE.test(h))) {
+    return null;
+  }
+  return { settings, extensions, scripts, at, hosts: hosts as string[] };
 }
 
 /** 讀 KV 副本。永不 throw(KV 錯誤記一筆、回 unavailable)。 */
@@ -204,8 +227,8 @@ export async function readStampsFromKv(kv: KVNamespace): Promise<KvStamps> {
   const record = parseStampsRecord(raw);
   // 雙向都看:時鐘不準寫出「未來」的 at,也不能讓它永遠不過期。
   if (!record || Math.abs(Date.now() - record.at) >= STAMPS_MAX_AGE_MS) return { state: "refresh" };
-  const { settings, extensions, scripts } = record;
-  return { state: "fresh", stamps: { settings, extensions, scripts } };
+  const { settings, extensions, scripts, hosts } = record;
+  return { state: "fresh", stamps: { settings, extensions, scripts }, ...(hosts ? { hosts } : {}) };
 }
 
 // ---- 寫 KV ----

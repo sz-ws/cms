@@ -66,22 +66,39 @@ export function builtinSignature(wanted: ReadonlyMap<string, boolean>): string {
   return [...wanted].map(([id, on]) => `${id}:${on ? 1 : 0}`).join(",");
 }
 
-/** 把資料庫對齊到 wanted。回傳有沒有寫入。 */
+/** 對齊要看的欄位。 */
+export interface BuiltinDeclarativeRow {
+  id: string;
+  manifest: string;
+  enabled: number;
+  source: string | null;
+  updatedAt: number;
+}
+
+/**
+ * 把資料庫對齊到 wanted。回傳有沒有寫入。
+ *
+ * knownRows:呼叫端手上已經有整張 declarative_extensions(loader 冷啟動的合併讀取,
+ * @/lib/cold-snapshot)就傳進來,不再為了內建插件的那幾列多打一趟 D1。沒傳就自己查。
+ */
 export async function reconcileBuiltinDeclaratives(
   wanted: ReadonlyMap<string, boolean>,
   now: number = Date.now(),
+  knownRows?: readonly BuiltinDeclarativeRow[],
 ): Promise<boolean> {
   const ids = BUILTIN_DECLARATIVES.map((b) => b.id);
-  const rows = await db()
-    .select({
-      id: dxTable.id,
-      manifest: dxTable.manifest,
-      enabled: dxTable.enabled,
-      source: dxTable.source,
-      updatedAt: dxTable.updatedAt,
-    })
-    .from(dxTable)
-    .where(inArray(dxTable.id, ids));
+  const rows: readonly BuiltinDeclarativeRow[] = knownRows
+    ? knownRows.filter((row) => BUILTIN_IDS.has(row.id))
+    : await db()
+        .select({
+          id: dxTable.id,
+          manifest: dxTable.manifest,
+          enabled: dxTable.enabled,
+          source: dxTable.source,
+          updatedAt: dxTable.updatedAt,
+        })
+        .from(dxTable)
+        .where(inArray(dxTable.id, ids));
   const byId = new Map(rows.map((row) => [row.id, row]));
 
   const batch: BatchItem<"sqlite">[] = [];

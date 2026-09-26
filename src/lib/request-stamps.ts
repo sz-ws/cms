@@ -2,6 +2,7 @@ import { cache } from "react";
 import { getCloudflareContext } from "@opennextjs/cloudflare/cloudflare-context";
 import { getDB } from "./cf";
 import { computeExtRuntimeStamp } from "@/ext/runtime-stamp";
+import { coldStampsRecord } from "./cold-snapshot";
 import {
   COMBINED_STAMP_SQL,
   PUBLIC_PAGE_HEADER,
@@ -10,6 +11,7 @@ import {
   kvTargetFrom,
   publishStamps,
   readStampsFromKv,
+  readStampsRecordFromD1,
   refreshStamps,
   settingsStampFromRow,
   stampsFromCombinedRow,
@@ -48,6 +50,9 @@ export { SETTINGS_STAMP_SQL };
 // 綁了 CMS_KV 的站(./stamps.ts 的 KV 副本):middleware 認證過的公開頁 GET 先讀 KV 的
 // 副本,夠新就直接用 —— 戳對得上 memo 的暖 isolate 整個請求零 D1。副本沒有、壞了、太舊
 // 才照舊打 D1,並把算好的寫回 KV。後台、/api、背景工作一律照舊讀 D1。
+//
+// 冷的 isolate(./cold-snapshot.ts):這個 module graph 第一次要去 D1 算戳時,戳與設定、
+// extension runtime 的列放在同一個 batch 裡讀 —— 算戳那一趟順便把兩份 memo 要的資料帶回來。
 
 export type StampResult = { ok: true; stamp: string } | { ok: false; error: unknown };
 
@@ -88,19 +93,31 @@ async function computeSeparately(): Promise<RequestStamps> {
 /**
  * D1 那條路(沒有 KV 時唯一的一條)。合併查詢成功才有完整的 record 可以寫回 KV;
  * 退回兩條獨立查詢時沒有 scripts 戳,不寫。
+ *
+ * forKv:算好的 record 要寫回 KV —— 連 CSP 白名單一起算(同一個 batch,還是一趟),
+ * 否則這份副本會蓋掉 middleware 寫進去、帶著白名單的那一份。只在補寫時要;後台與 /api
+ * 每個請求都走這裡,不替它們多算白名單。
  */
-async function fromD1(): Promise<{ stamps: RequestStamps; record: StampsRecord | null }> {
+async function fromD1(forKv = false): Promise<{ stamps: RequestStamps; record: StampsRecord | null }> {
+  // 這個 graph 的第一趟:戳與兩份 memo 的資料一起讀(已含白名單)。
+  const cold = await coldStampsRecord();
+  if (cold) return { stamps: fromStampSet(cold), record: cold };
+
   const at = Date.now();
-  let row: CombinedStampRow | null;
+  let record: StampsRecord;
   try {
-    row = await getDB().prepare(COMBINED_STAMP_SQL).first<CombinedStampRow>();
+    if (forKv) {
+      record = await readStampsRecordFromD1(getDB());
+    } else {
+      const row = await getDB().prepare(COMBINED_STAMP_SQL).first<CombinedStampRow>();
+      record = { ...stampsFromCombinedRow(row), at };
+    }
   } catch {
     // 不在這裡記錯:退回的兩條獨立查詢會各自重現錯誤,由用到該組戳的呼叫端記錄;
     // 另一邊成功就不是錯誤(例如只建了 settings 表的環境)。
     return { stamps: await computeSeparately(), record: null };
   }
-  const set = stampsFromCombinedRow(row);
-  return { stamps: fromStampSet(set), record: { ...set, at } };
+  return { stamps: fromStampSet(record), record };
 }
 
 /** 這個請求能寫 KV 的東西;沒綁 CMS_KV、或根本不在 request 裡(測試、cron)→ null。 */
@@ -157,7 +174,7 @@ export const getRequestStamps = cache(async (): Promise<RequestStamps> => {
 
   const cached = await readStampsFromKv(target.kv);
   if (cached.state === "fresh") return fromStampSet(cached.stamps);
-  const { stamps, record } = await fromD1();
+  const { stamps, record } = await fromD1(cached.state === "refresh");
   if (cached.state === "refresh" && record) refreshStamps(target, record);
   return stamps;
 });

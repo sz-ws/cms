@@ -19,6 +19,7 @@ import {
   reconcileBuiltinDeclaratives,
 } from "./builtin-declaratives";
 import { getRequestStamps, publishRequestStamps } from "@/lib/request-stamps";
+import { dropColdSnapshot, takeColdRuntimeRows } from "@/lib/cold-snapshot";
 import { getPlainSetting } from "@/lib/settings";
 import type { Extension, HookName } from "./types";
 
@@ -83,6 +84,7 @@ async function wantedBuiltins(
  */
 export function invalidateExtRuntimeMemo(): void {
   runtimeMemo = null;
+  dropColdSnapshot();
   publishRequestStamps();
 }
 
@@ -97,6 +99,12 @@ export function invalidateExtRuntimeMemo(): void {
     seen.add(e.id);
   }
 })();
+
+/** 完整載入用到的 declarative_extensions 欄位(冷啟動的合併讀取與這裡自己查的同一個形狀)。 */
+type DeclarativeRuntimeRow = Pick<
+  typeof dxTable.$inferSelect,
+  "id" | "manifest" | "version" | "enabled" | "scriptsApproval" | "updatedAt"
+>;
 
 export interface ExtRuntime {
   enabled: Extension[]; // 只含 enabled=1 且存在於 registry 的
@@ -162,12 +170,22 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     unavailableById = runtimeMemo.unavailableById;
   } else {
     // 未命中(或 stamp 失敗):完整載入。
+    // memo 是空的(冷的 isolate):先看冷啟動的合併讀取(@/lib/cold-snapshot)—— 與整包設定
+    // 同一趟 D1,戳對得上這個請求才會拿到。拿到的是整張 declarative_extensions,下面的
+    // 內建插件對齊與啟用列都從它來;對齊真的寫了東西才回頭重讀。
+    const cold =
+      stamp !== null && runtimeMemo === null ? await takeColdRuntimeRows(stamp) : null;
     // --- code extensions(既有機制)---
-    const rows = await db()
-      .select()
-      .from(extTable)
-      .where(eq(extTable.enabled, 1));
-    const enabledIds = new Set(rows.map((r) => r.id));
+    const enabledIds = new Set(
+      cold
+        ? cold.enabledExtensionIds
+        : (
+            await db()
+              .select({ id: extTable.id })
+              .from(extTable)
+              .where(eq(extTable.enabled, 1))
+          ).map((r) => r.id),
+    );
     const unavailable = new Map<string, ExtensionRuntimeIssue>();
     codeEnabled = [];
     for (const ext of registry) {
@@ -187,16 +205,20 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     // 有寫入就不寫 memo:這次 request 開頭算的 stamp 已經過時,下一個 request 會重算。
     const wanted = await wantedBuiltins(codeEnabled);
     let builtinsSettled = wanted !== null;
+    // 冷啟動讀到的宣告式插件列還能不能用:對齊寫了(或可能寫了)東西就不能。
+    let coldDeclaratives = cold?.declaratives ?? null;
     if (wanted !== null) {
       try {
-        if (await reconcileBuiltinDeclaratives(wanted)) {
+        if (await reconcileBuiltinDeclaratives(wanted, Date.now(), coldDeclaratives ?? undefined)) {
           builtinsSettled = false;
+          coldDeclaratives = null;
           // 這是一筆沒經過 manager 的寫入:KV 的戳副本(若有)要在這裡發布。
           publishRequestStamps();
         }
       } catch (e) {
         console.error("[loader] reconciling built-in extensions failed", e);
         builtinsSettled = false;
+        coldDeclaratives = null;
       }
     }
 
@@ -204,10 +226,19 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     // ID 與 code 撞 → 跳過 declarative 並 log(§3.3)。無效 manifest 列 → interpret 回 invalid,
     // 亦跳過並 log(§5:絕不 crash loader)。code registry id 一律優先。
     const codeIds = new Set(registry.map((e) => e.id));
-    const dxRows = await db()
-      .select()
-      .from(dxTable)
-      .where(eq(dxTable.enabled, 1));
+    const dxRows: DeclarativeRuntimeRow[] = coldDeclaratives
+      ? coldDeclaratives.filter((row) => row.enabled === 1)
+      : await db()
+          .select({
+            id: dxTable.id,
+            manifest: dxTable.manifest,
+            version: dxTable.version,
+            enabled: dxTable.enabled,
+            scriptsApproval: dxTable.scriptsApproval,
+            updatedAt: dxTable.updatedAt,
+          })
+          .from(dxTable)
+          .where(eq(dxTable.enabled, 1));
 
     // 1.51.0:編進網站的插件,編進去之前留下的 script 核准清掉(CSP 只看得到核准,
     // 理由見 dx/scripts-compiled.ts)。同內建插件:有寫入就不寫 memo;失敗只 log。
