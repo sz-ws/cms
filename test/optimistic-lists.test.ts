@@ -11,6 +11,7 @@ import {
 import type { InboxRowDTO } from "../src/ext/dx/views/InboxTable";
 import { applyUsersAction } from "../src/app/(admin)/admin/users/users-optimistic";
 import type { UserRecord } from "../src/app/(admin)/admin/users/UsersTable";
+import { hrefForView, parseUsersView, usersInView } from "../src/app/(admin)/admin/users/users-view";
 import { applyExtensionsAction } from "../src/app/(admin)/admin/extensions/extensions-optimistic";
 import type { ExtensionRow } from "../src/app/(admin)/admin/extensions/ExtensionsManager";
 
@@ -149,6 +150,40 @@ describe("applyUsersAction(成員)", () => {
 
   it("remove", () => {
     expect(applyUsersAction(users, { kind: "remove", id: "u1" }).map((u) => u.id)).toEqual(["u2"]);
+  });
+});
+
+describe("usersInView(成員頁的後台人員 / 會員,1.56.0)", () => {
+  const user = (id: string, role: UserRecord["role"], staffRoleId: string | null = null): UserRecord => ({
+    id,
+    email: `${id}@example.com`,
+    name: id,
+    role,
+    staffRoleId,
+    createdAt: 1,
+    passkeys: 0,
+    lastActiveAt: null,
+  });
+  const users = [user("admin", "admin"), user("editor", "editor"), user("clerk", "guest", "role-1"), user("buyer", "guest")];
+
+  it("自訂角色(role 存 guest)算後台人員;沒有角色的 guest 才是會員", () => {
+    expect(usersInView(users, "staff").map((u) => u.id)).toEqual(["admin", "editor", "clerk"]);
+    expect(usersInView(users, "members").map((u) => u.id)).toEqual(["buyer"]);
+  });
+
+  it("樂觀地把人改成訪客:他從後台人員移到會員", () => {
+    const next = applyUsersAction(users, { kind: "upsert", user: user("editor", "guest") });
+    expect(usersInView(next, "staff").map((u) => u.id)).toEqual(["admin", "clerk"]);
+    expect(usersInView(next, "members").map((u) => u.id)).toEqual(["editor", "buyer"]);
+  });
+
+  it("網址:預設後台人員;?view=members 是會員;切換時保留其他參數", () => {
+    expect(parseUsersView(undefined)).toBe("staff");
+    expect(parseUsersView("members")).toBe("members");
+    expect(parseUsersView(["members"])).toBe("staff");
+    expect(parseUsersView("anything")).toBe("staff");
+    expect(hrefForView("https://cms.test/admin/users?x=1", "members")).toBe("/admin/users?x=1&view=members");
+    expect(hrefForView("https://cms.test/admin/users?view=members&x=1", "staff")).toBe("/admin/users?x=1");
   });
 });
 

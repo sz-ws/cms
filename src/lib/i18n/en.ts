@@ -242,6 +242,12 @@ export const en = {
   "userSheet.error.roleNotFound": "That role was just deleted. Pick another one.",
   "usersTable.customRoles": "Custom roles",
   "usersTable.manageRoles": "Manage roles…",
+  // 1.56.0:後台人員 / 會員
+  "usersTable.viewLabel": "Show",
+  "usersTable.viewStaff": "Staff",
+  "usersTable.viewMembers": "Members",
+  "usersTable.emptyStaff": "No staff yet.",
+  "usersTable.emptyMembers": "No members yet. People who sign up on the site show up here.",
 
   // roles (1.50.0 — /admin/roles)
   "roles.title": "Roles and access",

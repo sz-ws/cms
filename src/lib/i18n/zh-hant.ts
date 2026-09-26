@@ -235,6 +235,11 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "userSheet.error.roleNotFound": "這個角色剛被刪除了，請改選其他角色。",
   "usersTable.customRoles": "自訂角色",
   "usersTable.manageRoles": "管理角色…",
+  "usersTable.viewLabel": "顯示",
+  "usersTable.viewStaff": "後台人員",
+  "usersTable.viewMembers": "會員",
+  "usersTable.emptyStaff": "還沒有後台人員。",
+  "usersTable.emptyMembers": "還沒有會員。在網站上註冊的人會出現在這裡。",
 
   // roles
   "roles.title": "角色與權限",

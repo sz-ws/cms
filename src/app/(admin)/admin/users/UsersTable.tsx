@@ -44,6 +44,7 @@ import { useDateFormatter } from "@/components/DateTimeProvider";
 import type { DateFormatter } from "@/lib/datetime";
 import { UserSheet, type SheetMode } from "./UserSheet";
 import { applyUsersAction, type UsersAction } from "./users-optimistic";
+import { hrefForView, usersInView, type UsersView } from "./users-view";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import type { MessageKey, Locale } from "@/lib/i18n";
 
@@ -490,12 +491,15 @@ export function UsersTable({
   roles,
   selfId,
   now,
+  initialView = "staff",
 }: {
   initialUsers: UserRecord[];
   /** 1.50.0:自訂角色。 */
   roles: RoleOption[];
   selfId: string;
   now: number;
+  /** 1.56.0:後台人員 / 會員(網址的 ?view=,見 ./users-view.ts)。 */
+  initialView?: UsersView;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -510,6 +514,16 @@ export function UsersTable({
   const [sheet, setSheet] = useState<SheetMode | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<UsersView>(initialView);
+  // 分組只是篩選:樂觀更新仍作用在完整列表上(改了角色的人會自己移到另一組)。
+  const shown = usersInView(users, view);
+
+  function switchView(next: UsersView) {
+    setView(next);
+    setConfirmDelete(null);
+    // 只換網址、不重新要資料:兩組資料本來就都在手上。
+    window.history.replaceState(null, "", hrefForView(window.location.href, next));
+  }
 
   const colPref = useSyncExternalStore(subscribeCols, readColPref, () => null);
   const hidden = hiddenColumns(colPref);
@@ -550,17 +564,20 @@ export function UsersTable({
   }
 
   const memberCount =
-    users.length === 1
+    shown.length === 1
       ? t("usersTable.memberCount.one")
-      : t("usersTable.memberCount.other", { n: users.length });
+      : t("usersTable.memberCount.other", { n: shown.length });
 
   return (
     <div className="flex flex-col gap-4">
       {/* toolbar:數量在左,Display / Add member 在右(頁面 h1 已交代語境,不再包卡)。 */}
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[12.5px] text-ink/35 tabular-nums">
-          {memberCount}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <ViewSwitch view={view} onChange={switchView} />
+          <p className="text-[12.5px] text-ink/35 tabular-nums">
+            {memberCount}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <ColumnPicker hidden={hidden} />
           <button
@@ -588,51 +605,57 @@ export function UsersTable({
 
       {/* 表格本體:共用 CoreTable(rounded 白底 + hairline ring,窄視窗容器自己
           橫向捲)。編輯中的列上品牌藍 tint 跟右側 sheet 連動。 */}
-      <CoreTable
-        columns={columns}
-        rows={users}
-        rowKey={(u) => u.id}
-        onRowClick={(u) => setSheet({ mode: "edit", user: u })}
-        rowActive={(u) => sheet?.mode === "edit" && sheet.user.id === u.id}
-        trailingActions={(u) =>
-          confirmDelete === u.id ? (
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(null)}
-                className="rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 py-1 text-[12px] text-ink/45 transition-colors hover:bg-ink/[0.05]"
-              >
-                {t("usersTable.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => deleteUser(u.id)}
-                className="rounded-[calc(6px*var(--admin-radius-scale,1))] bg-red-600 px-2 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
-              >
-                {t("usersTable.remove")}
-              </button>
-            </span>
-          ) : (
-            <>
-              <RowIconButton
-                label={t("usersTable.editMember")}
-                onClick={() => setSheet({ mode: "edit", user: u })}
-              >
-                <Pencil className="size-3.5" />
-              </RowIconButton>
-              {u.id !== selfId && (
-                <RowIconButton
-                  label={t("usersTable.removeMember")}
-                  danger
-                  onClick={() => setConfirmDelete(u.id)}
+      {shown.length === 0 ? (
+        <p className="rounded-[calc(12px*var(--admin-radius-scale,1))] bg-white px-4 py-10 text-center text-[13px] text-ink/40 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+          {t(view === "members" ? "usersTable.emptyMembers" : "usersTable.emptyStaff")}
+        </p>
+      ) : (
+        <CoreTable
+          columns={columns}
+          rows={shown}
+          rowKey={(u) => u.id}
+          onRowClick={(u) => setSheet({ mode: "edit", user: u })}
+          rowActive={(u) => sheet?.mode === "edit" && sheet.user.id === u.id}
+          trailingActions={(u) =>
+            confirmDelete === u.id ? (
+              <span className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(null)}
+                  className="rounded-[calc(6px*var(--admin-radius-scale,1))] px-2 py-1 text-[12px] text-ink/45 transition-colors hover:bg-ink/[0.05]"
                 >
-                  <Trash2 className="size-3.5" />
+                  {t("usersTable.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteUser(u.id)}
+                  className="rounded-[calc(6px*var(--admin-radius-scale,1))] bg-red-600 px-2 py-1 text-[12px] font-medium text-white transition-[background-color,transform] hover:bg-red-700 active:scale-[0.96]"
+                >
+                  {t("usersTable.remove")}
+                </button>
+              </span>
+            ) : (
+              <>
+                <RowIconButton
+                  label={t("usersTable.editMember")}
+                  onClick={() => setSheet({ mode: "edit", user: u })}
+                >
+                  <Pencil className="size-3.5" />
                 </RowIconButton>
-              )}
-            </>
-          )
-        }
-      />
+                {u.id !== selfId && (
+                  <RowIconButton
+                    label={t("usersTable.removeMember")}
+                    danger
+                    onClick={() => setConfirmDelete(u.id)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </RowIconButton>
+                )}
+              </>
+            )
+          }
+        />
+      )}
 
       {/* 常駐 mount:open 切換才有進退場動畫(見 UserSheet 註解)。 */}
       <UserSheet
@@ -654,6 +677,44 @@ export function UsersTable({
           })
         }
       />
+    </div>
+  );
+}
+
+// 1.56.0:後台人員 / 會員。segmented control:同一組按鈕、目前那一個浮起來。
+const VIEW_TABS: { view: UsersView; label: MessageKey }[] = [
+  { view: "staff", label: "usersTable.viewStaff" },
+  { view: "members", label: "usersTable.viewMembers" },
+];
+
+function ViewSwitch({ view, onChange }: { view: UsersView; onChange: (view: UsersView) => void }) {
+  const t = useT();
+  return (
+    <div
+      role="group"
+      aria-label={t("usersTable.viewLabel")}
+      className="flex items-center gap-0.5 rounded-full bg-ink/[0.04] p-0.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
+    >
+      {VIEW_TABS.map((tab) => {
+        const active = tab.view === view;
+        return (
+          <button
+            key={tab.view}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(tab.view)}
+            className={cn(
+              "h-7 rounded-full px-3 text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.96]",
+              "focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)] focus-visible:outline-none",
+              active
+                ? "bg-white text-ink/85 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.06)]"
+                : "text-ink/45 hover:text-ink/70",
+            )}
+          >
+            {t(tab.label)}
+          </button>
+        );
+      })}
     </div>
   );
 }

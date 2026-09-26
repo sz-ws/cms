@@ -6,6 +6,7 @@ import { UsersTable, type UserRecord, type RoleOption } from "./UsersTable";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { listStaffRoles } from "@/lib/staff-roles";
 import { openablePageCount } from "@/ext/admin-access";
+import { USERS_VIEW_PARAM, parseUsersView } from "./users-view";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,14 @@ function requestTimestamp(): number {
 
 // 04 §7:僅 admin role 可見(sidebar 過濾 + page 內 requireAuth("admin"))。
 // SessionUser 不帶 createdAt/passkey 數 —— 這頁自己查,不動共用型別。
-export default async function UsersPage() {
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const self = await requireAuth("admin");
+  // 1.56.0:後台人員(預設)/ 會員。
+  const initialView = parseUsersView((await searchParams)[USERS_VIEW_PARAM]);
   const now = requestTimestamp();
   const locale = await getLocale();
   const m = getMessages(locale);
@@ -74,7 +81,7 @@ export default async function UsersPage() {
       </div>
 
       {/* 表格不包卡 —— 直接坐在畫布上,列 hover 時自己浮起(見 UsersTable)。 */}
-      <UsersTable initialUsers={list} roles={roleOptions} selfId={self.id} now={now} />
+      <UsersTable initialUsers={list} roles={roleOptions} selfId={self.id} now={now} initialView={initialView} />
     </div>
   );
 }
