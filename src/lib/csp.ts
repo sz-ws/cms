@@ -28,6 +28,41 @@
 // 為什麼不用 'strict-dynamic':它會讓被信任的 script 再載入任何主機的 script,
 // 並忽略主機白名單 —— 而宣告式插件核准畫面上的 `domains` 正是「這段 script 會連到
 // 哪裡」的承諾。沒有 strict-dynamic,核准過的 script 只能從列出的主機再載入程式。
+//
+// ## 其餘指令什麼時候改成 enforce(1.56 之後檢查過一次,結論:還不行)
+//
+// 規則:一個指令要有真實流量的回報、確認裡面只剩該擋的東西,才搬進 enforce。推論不算。
+//
+// 回報去了哪裡:/api/csp-report **刻意不落庫**(見該檔:公開寫入面),只轉給錯誤回報層
+// (lib/observe,要有 DSN)與 console(`wrangler tail` 即時看得到,沒開 Workers Logs 就不留)。
+// D1 裡唯一留下的是它的限流計數(login_attempts 的 `csp-report:<ip>`,每個來源只留最近
+// 5 分鐘那一窗)。檢查的那個正式站:沒設 DSN,所以沒有任何一筆違規的內容可看;計數顯示
+// 10 天內 23 個來源、至少 111 筆,多數來源一次造訪固定 2 筆。也就是說每次造訪都有東西
+// 違規,但不知道是哪個指令、哪個來源(2 筆的形狀像是同一個違規被 enforce 與 Report-Only
+// 兩份 policy 各報一次,也可能是瀏覽器外掛)。在知道之前改成 enforce 就是賭。
+//
+// 所以逐項維持 Report-Only,另外各有已知會被擋的正當流量:
+//   - form-action 'self':結帳會把表單 POST 到金流閘道(外站)。
+//   - img-src:內容裡可能有外站圖片(編輯器貼的網址)。
+//   - frame-src:清單只有 Google 地圖;Turnstile 的挑戰(challenges.cloudflare.com)與
+//     Firebase 登入(authDomain 的 iframe)都不在上面。
+//   - connect-src:Firebase 登入要連 identitytoolkit / securetoken.googleapis.com,不在上面。
+//   - style-src / font-src / default-src:宣告式插件的主機以外,沒有任何資料說明還有誰。
+//   - upgrade-insecure-requests:不會產生回報,沒有資料可看;瀏覽器對混合內容本來就會
+//     自動升級或擋下,改 enforce 幾乎沒有差別,也就沒有理由在沒資料時動它。
+// 要拿到資料:設 CMS_ERROR_DSN(或啟用 sentry 插件),或在 wrangler 開 Workers Logs 之後
+// 查 `[csp]` 開頭的 log。拿到之後照上面的規則一項一項搬。
+//
+// 後台、登入、/api 也維持 Report-Only,script-src 不改成 nonce:同樣沒有任何一筆後台的
+// 回報可看;而後台要驗的東西比公開頁多 —— code extension 的後台頁、QuickJS 沙盒
+// ('wasm-unsafe-eval')、/login 的 Firebase 按鈕(見下)、大量 inline style。證明不了就不動。
+//
+// ⚠️ 已知缺口(讀程式碼得出,未在瀏覽器驗證):Firebase 登入按鈕(components/auth/
+// FirebaseSignInButton,1.54.0)用的 SDK 會動態載入 https://apis.google.com/js/api.js,
+// 那個 script 沒有 nonce。公開頁 enforce 的 script-src 會擋掉它,所以放在公開頁(會員
+// 登入頁)的 Firebase 登入按鈕在 enforce 下開不了視窗;/login 只有 Report-Only,不受影響。
+// 要修得讓 middleware 知道有 Firebase 登入插件(宣告式插件的 loginProvider.firebase),
+// 只在那時放行 apis.google.com —— 放行本身是放寬 enforce 的 script-src,要另外決定。
 
 /** CSP 違規回報的收件端點(src/app/api/csp-report/route.ts)。 */
 export const CSP_REPORT_URI = "/api/csp-report";
