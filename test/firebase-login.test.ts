@@ -182,7 +182,7 @@ describe("completeFirebaseLogin", () => {
       mode: "login",
       next: "/",
     });
-    expect(outcome).toEqual({ kind: "session", userId: "u-member", location: "/" });
+    expect(outcome).toEqual({ kind: "session", userId: "u-member", location: "/", emailVerified: true });
   });
 
   it("refuses a token for another project", async () => {

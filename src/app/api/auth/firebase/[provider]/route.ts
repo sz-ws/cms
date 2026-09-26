@@ -11,6 +11,7 @@ import {
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { readBoundedJsonObject } from "@/lib/body-limit";
+import { fireSignedIn } from "@/lib/signed-in";
 
 // 1.54.0:POST /api/auth/firebase/[provider] { idToken, mode?, next? }
 // 瀏覽器用 Firebase SDK 登入後把 ID token 交過來(見 src/lib/firebase-login.ts)。
@@ -92,5 +93,11 @@ export async function POST(
   const token = await createSession(outcome.userId);
   const store = await cookies();
   store.set(SESSION_COOKIE, token, sessionCookieOptions());
+  await fireSignedIn({
+    userId: outcome.userId,
+    method: "firebase",
+    provider,
+    emailVerified: outcome.emailVerified,
+  });
   return Response.json({ location: outcome.location });
 }

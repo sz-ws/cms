@@ -409,7 +409,7 @@ describe("completeOAuth — registration policy + linking", () => {
     expect(first.outcome.kind).toBe("redirect"); // link → /admin/account?linked=1
     // 之後用 login 模式,identity 已存在 → session 到該 user。
     const second = await runFlow({ sub: "known-1", email: "known@test.com" });
-    expect(second.outcome).toEqual({ kind: "session", userId: "u-known", location: "/admin" });
+    expect(second.outcome).toEqual({ kind: "session", userId: "u-known", location: "/admin", emailVerified: true });
   });
 
   it("link mode: identity already bound to another user → identity_taken", async () => {
@@ -437,7 +437,7 @@ describe("completeOAuth — members and back (1.54.0)", () => {
   it("links a verified email to an existing plain member and signs in", async () => {
     await seedUser("u-member", "member@test.com", "guest", true);
     const { outcome } = await runFlow({ sub: "member-1", email: "member@test.com", next: "/shop/checkout" });
-    expect(outcome).toEqual({ kind: "session", userId: "u-member", location: "/shop/checkout" });
+    expect(outcome).toEqual({ kind: "session", userId: "u-member", location: "/shop/checkout", emailVerified: true });
     const ids = await listUserIdentities("u-member");
     expect(ids).toHaveLength(1);
   });
@@ -463,6 +463,16 @@ describe("completeOAuth — members and back (1.54.0)", () => {
     expect(unverified.outcome.kind).toBe("session");
     expect(await at("fresh-v@test.com")).toEqual(expect.any(Number));
     expect(await at("fresh-u@test.com")).toBeNull();
+    // 1.56.0:auth:signed-in 的 emailVerified 跟著同一個判斷走。
+    expect(verified.outcome).toMatchObject({ emailVerified: true });
+    expect(unverified.outcome).toMatchObject({ emailVerified: false });
+  });
+
+  it("emailVerified is false when the provider's email is not the account's email (1.56.0)", async () => {
+    await seedUser("u-moved", "old@test.com");
+    await runFlow({ sub: "moved-1", email: "old@test.com", mode: "link", userId: "u-moved" });
+    const { outcome } = await runFlow({ sub: "moved-1", email: "new@test.com" });
+    expect(outcome).toEqual({ kind: "session", userId: "u-moved", location: "/admin", emailVerified: false });
   });
 
   it("does not link when the provider does not say the email is verified", async () => {

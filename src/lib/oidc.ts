@@ -46,7 +46,8 @@ export interface LoginProviderInfo {
 /** completeOAuth 的結果。route handler 依 kind 決定是否建 session / 設 cookie。 */
 export type OAuthOutcome =
   | { kind: "redirect"; location: string }
-  | { kind: "session"; userId: string; location: string };
+  // 1.56.0:emailVerified = 這次登入證明了帳號的 Email(見 login-accounts.ts)。
+  | { kind: "session"; userId: string; location: string; emailVerified: boolean };
 
 export type OAuthMode = "login" | "link";
 
@@ -726,7 +727,12 @@ export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome
       provider.loginProvider.button.label,
     );
     if (!result.ok) return fail(result.code);
-    return { kind: "session", userId: result.userId, location: safeNext(payload.next) };
+    return {
+      kind: "session",
+      userId: result.userId,
+      location: safeNext(payload.next),
+      emailVerified: result.emailVerified,
+    };
   } catch {
     // 任何引擎錯誤(discovery/token/簽章/DB)→ 帶 oauth_failed 導回。訊息不外洩。
     return fail("oauth_failed");

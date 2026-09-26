@@ -9,6 +9,7 @@ import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { finishAuthentication } from "@/lib/passkey";
 import { readBoundedJsonObject } from "@/lib/body-limit";
+import { fireSignedIn } from "@/lib/signed-in";
 
 // WebAuthn 的 attestation/assertion 遠小於此;未驗證入口一律封頂。
 const MAX_BODY_BYTES = 64_000;
@@ -49,6 +50,8 @@ export async function POST(req: Request): Promise<Response> {
     const token = await createSession(user.id);
     const store = await cookies();
     store.set(SESSION_COOKIE, token, sessionCookieOptions());
+    // fireSignedIn 自己接住所有錯,不會掉進下面的 catch 變成 401。
+    await fireSignedIn({ userId: user.id, method: "passkey", emailVerified: false });
 
     return Response.json({ ok: true });
   } catch {

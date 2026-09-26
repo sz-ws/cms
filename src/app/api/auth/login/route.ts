@@ -18,6 +18,7 @@ import {
   recordLoginFailure,
 } from "@/lib/rate-limit";
 import { readBoundedJsonObject } from "@/lib/body-limit";
+import { fireSignedIn } from "@/lib/signed-in";
 
 // email + password;未驗證入口,body 上限訂死在遠小於任何合法請求的值。
 const MAX_BODY_BYTES = 16_000;
@@ -88,6 +89,7 @@ export async function POST(req: Request): Promise<Response> {
   const token = await createSession(user.id);
   const store = await cookies();
   store.set(SESSION_COOKIE, token, sessionCookieOptions());
+  await fireSignedIn({ userId: user.id, method: "password", emailVerified: false });
 
   return Response.json({ ok: true });
 }

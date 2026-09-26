@@ -26,7 +26,8 @@ const CLOCK_SKEW_MS = 60 * 1000;
 const PROJECT_ID_RE = /^[a-z0-9][a-z0-9-]{4,28}[a-z0-9]$/;
 
 export type FirebaseLoginOutcome =
-  | { kind: "session"; userId: string; location: string }
+  // 1.56.0:emailVerified = 這次登入證明了帳號的 Email(見 login-accounts.ts)。
+  | { kind: "session"; userId: string; location: string; emailVerified: boolean }
   | { kind: "linked" }
   | { kind: "error"; code: string };
 
@@ -114,7 +115,12 @@ export async function completeFirebaseLogin(
     }
     const result = await signInWithIdentity(opts.providerId, claims, display, provider.label);
     if (!result.ok) return { kind: "error", code: result.code };
-    return { kind: "session", userId: result.userId, location: safeNext(opts.next) };
+    return {
+      kind: "session",
+      userId: result.userId,
+      location: safeNext(opts.next),
+      emailVerified: result.emailVerified,
+    };
   } catch {
     return { kind: "error", code: "oauth_failed" };
   }

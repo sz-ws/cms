@@ -723,6 +723,14 @@ export type HookName =
   // 不必解讀各 gateway 形狀不一的 event。
   | "payment:succeeded" // (payload: { providerId; orderNo?; event: unknown })
   | "extraction:completed" // (payload: { providerId; event: unknown })
+  // 1.56.0:每一次成功登入之後(session 與 cookie 都已建好)。payload 是 SignedInEvent
+  // (src/lib/signed-in.ts):{ userId; method; provider?; emailVerified }。
+  //   method:"password" | "passkey" | "oauth"(provider = 登入插件 id)| "firebase"(同左)
+  //          | "reset"(忘記密碼設好新密碼)| "code"(插件自己的 Email 驗證碼,provider = 插件 id)。
+  //   emailVerified:**這一次**登入證明了帳號的 Email 是本人的 —— 驗證碼(reset / code),
+  //          或第三方說 email_verified === true 且就是帳號的 Email。密碼與 Passkey 恆為 false。
+  // handler 出錯只記錄,不擋登入。插件自己的登入流程用 fireSignedIn() 觸發同一個 hook。
+  | "auth:signed-in" // (event: SignedInEvent)
   // filters(第一個參數是值,回傳修改後的值)
   | "filter:adminMenu" // (items: AdminMenuItem[]) => AdminMenuItem[]
   // 1.40.0:側欄分區(id / label / order / collapse)。預設五區:workspace、content、

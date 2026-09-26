@@ -5,6 +5,7 @@ import {
   purgeExpiredSessions,
   sessionCookieOptions,
 } from "@/lib/auth";
+import { fireSignedIn } from "@/lib/signed-in";
 
 // spec-login-providers.md §5 callback:GET /api/auth/oauth/[provider]/callback
 //   ?code&state(?error= → redirect /login?error=oauth_denied)
@@ -40,6 +41,12 @@ export async function GET(
     const token = await createSession(outcome.userId);
     const store = await cookies();
     store.set(SESSION_COOKIE, token, sessionCookieOptions());
+    await fireSignedIn({
+      userId: outcome.userId,
+      method: "oauth",
+      provider,
+      emailVerified: outcome.emailVerified,
+    });
   }
   return Response.redirect(absolute(req, outcome.location), 302);
 }

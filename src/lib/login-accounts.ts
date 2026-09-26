@@ -16,6 +16,10 @@ import { PLACEHOLDER_EMAIL_SUFFIX } from "./placeholder-email";
 //   - 後台人員(admin/editor/自訂角色)一律不自動綁(防接管),要登入後從帳號頁連結。
 //   - 沒有 email_verified(如 LINE)也不自動綁。
 // 以已驗證 Email 建立的新帳號會記下 email_verified_at。
+//
+// 1.56.0:登入結果多帶 emailVerified —— 這一次登入本身有沒有證明帳號的 Email 是本人的
+// (IdP 說 email_verified === true,而且那個 Email 就是帳號的 Email)。core 把它放進
+// auth:signed-in hook(src/lib/signed-in.ts),插件據此做「證明過信箱才做的事」。
 
 export const SENTINEL_PASSWORD_HASH = "!oauth-only"; // 非 pbkdf2 格式 → verifyPassword 恆 false
 
@@ -27,7 +31,7 @@ export interface LoginClaims {
 }
 
 export type LoginResult =
-  | { ok: true; userId: string }
+  | { ok: true; userId: string; emailVerified: boolean }
   | { ok: false; code: "not_linked" | "email_exists" };
 
 export type LinkResult = "linked" | "identity_taken";
@@ -60,6 +64,21 @@ async function insertIdentity(
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
   });
+}
+
+/** IdP 證明了 email,而且它就是帳號的 Email(大小寫不計)。 */
+function provesEmail(claims: LoginClaims, accountEmail: string): boolean {
+  return (
+    claims.email_verified === true &&
+    typeof claims.email === "string" &&
+    claims.email.length > 0 &&
+    claims.email.toLowerCase() === accountEmail.toLowerCase()
+  );
+}
+
+async function accountEmail(userId: string): Promise<string | null> {
+  const rows = await db().select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  return rows[0]?.email ?? null;
 }
 
 async function findIdentity(
@@ -128,7 +147,8 @@ export async function signInWithIdentity(
   const identity = await findIdentity(providerId, claims.sub);
   if (identity) {
     await upsertLastUsed(identity.id);
-    return { ok: true, userId: identity.userId };
+    const email = await accountEmail(identity.userId);
+    return { ok: true, userId: identity.userId, emailVerified: email !== null && provesEmail(claims, email) };
   }
 
   const policy = await getSetting<string>("core.auth.oauthRegistration", "guest");
@@ -153,13 +173,15 @@ export async function signInWithIdentity(
         return { ok: false, code: "email_exists" };
       }
       await insertIdentity(existing.id, providerId, claims.sub, display);
-      return { ok: true, userId: existing.id };
+      return { ok: true, userId: existing.id, emailVerified: true };
     }
   }
 
   const userId = await createGuestUser(providerId, claims, fallbackName);
   await insertIdentity(userId, providerId, claims.sub, display);
-  return { ok: true, userId };
+  // 新帳號的 Email 就是 claims.email(有的話),所以已驗證 = 有 email 且 IdP 說驗證過。
+  const emailVerified = Boolean(claims.email) && claims.email_verified === true;
+  return { ok: true, userId, emailVerified };
 }
 
 /** 帳號頁的「連結」:把身分綁到已登入的 user;已綁在別人身上就拒絕。 */
