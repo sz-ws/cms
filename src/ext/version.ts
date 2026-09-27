@@ -1262,4 +1262,14 @@
 //   stamps copy also carries the CSP allowlist (optional `hosts`). Content lists read a page and
 //   its total in one batch. Other CSP directives stay Report-Only: reports are not stored
 //   anywhere readable yet (see lib/csp.ts).
-export const CORE_API_VERSION = "1.57.0";
+// 1.58.0: the plugin store is organised by category. Nine localized categories with counts
+// (manifest category adds auth, marketing, analytics; entries without a known one go under
+// 其他 / Other), "Installed only" as its own toggle. Tags show on cards (up to three) and on the
+// detail page, and choosing one filters the store. Cards show icon, name, one line of
+// description, tags, price and action; version, author, type and deployment moved to the detail
+// page's meta column. Manifests may declare plain-text `highlights` (1–6 lines, ≤ 80 chars) and
+// `details` (≤ 1200 chars, paragraphs split on blank lines), both string or LocalizedString.
+// Registry `name`, `description`, `highlights` and `details` may be a string or
+// { "zh-Hant", en }; the index route returns the admin language's text (lib/registry-localize.ts).
+// Manifests using the new categories or fields must declare coreApi "^1.58.0".
+export const CORE_API_VERSION = "1.58.0";
