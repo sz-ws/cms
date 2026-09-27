@@ -29,7 +29,6 @@ import {
   Package,
   type LucideIcon,
 } from "lucide-react";
-import { FluidTabs } from "@/components/ui/fluid-tabs";
 import {
   StatusButton,
   type StatusButtonStatus,
@@ -55,24 +54,23 @@ import {
 import { InstallGate, RequiredPluginItems, UsedBySection, requiredPluginName } from "./PluginRequirements";
 import { OfferBlock, OfferLine, isLocked, showsOffer } from "./PaidOffer";
 import { PaidAction, RequestProvider } from "./RequestAccess";
+import {
+  CARD_TAG_LIMIT,
+  NO_FILTER,
+  categoryCounts,
+  categoryLabel,
+  filterEntries,
+  isFiltered,
+  type StoreFilter,
+} from "./store-filter";
+import { ActiveTag, CategoryNav, InstalledToggle, TagChips } from "./StoreNav";
+import { StoreAbout } from "./StoreAbout";
 
-// Marketplace browse — App Store vibe: hero featured cards, category pills,
-// search, deployment badges, Paper & Ink visual language.
-
-// 基本分類 + registry entries 實際出現的 content category(動態附加 pills)
-const BASE_CATEGORIES = ["all", "declarative", "code", "installed"] as const;
-type Category = string;
+// Marketplace browse — Paper & Ink. 1.58.0:分類是主要的導覽(在地化名稱 + 數量),
+// 「只看已安裝」是另外一個開關,標籤可以點來篩選。卡片只放圖示、名稱、一句簡介、
+// 標籤、價格與動作;版本、作者、類型、部署方式都在詳情頁的資訊欄。
 
 type Translator = ReturnType<typeof useT>;
-
-const DEPLOYMENT_BADGE_CLASS: Record<
-  NonNullable<RegistryEntry["deployment"]>,
-  string
-> = {
-  instant: "bg-green-600/10 text-green-700",
-  progressive: "bg-(--admin-accent)/10 text-(--admin-accent)",
-  "code-only": "bg-amber-500/15 text-amber-700",
-};
 
 function deploymentLabel(
   t: Translator,
@@ -82,19 +80,6 @@ function deploymentLabel(
   if (deployment === "progressive")
     return t("registryBrowser.deployment.progressive");
   return t("registryBrowser.deployment.codeOnly");
-}
-
-function DeploymentBadge({ entry }: { entry: RegistryEntry }) {
-  const t = useT();
-  if (!entry.deployment) return null;
-  const className = DEPLOYMENT_BADGE_CLASS[entry.deployment];
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${className}`}
-    >
-      {deploymentLabel(t, entry.deployment)}
-    </span>
-  );
 }
 
 const HALO =
@@ -366,16 +351,16 @@ export function FeaturedCard({
           <img
             src={bannerUrl}
             alt=""
-            className="aspect-[5/2] w-full min-h-52 object-cover md:aspect-[3/1]"
+            className="aspect-[5/2] w-full min-h-44 object-cover md:aspect-[16/5]"
           />
         ) : (
           <div
-            // min-h-52:`md:aspect-[3/1]` 的 md 看的是**視窗**寬度而不是卡片寬度。
-            // 卡片在滑軌裡只佔一半寬,視窗卻仍然寬,於是選到最扁的比例、主視覺
-            // 高度掉到 ~154px:扣掉 p-6 的 24 與讓給玻璃列的 pb-20 的 80,只剩
-            // 50px,標題(行高 ~37)加 gap 就吃光了,description 一行都放不下。
-            // 給一個地板值,讓比例再扁也不會壓掉文字。
-            className="relative aspect-[5/2] w-full min-h-52 overflow-hidden md:aspect-[3/1]"
+            // min-h-44:`md:aspect-[16/5]` 的 md 看的是**視窗**寬度而不是卡片寬度。
+            // 卡片在滑軌裡只佔一部分寬,視窗卻仍然寬,於是選到最扁的比例、主視覺
+            // 高度會掉到放不下文字:扣掉 p-6 的 24 與讓給玻璃列的 pb-20 的 80,
+            // 標題(行高 ~37)加一行簡介要 ~64px。給一個地板值,比例再扁也不會壓掉文字。
+            // 1.58.0:精選不再搶走首屏 —— 比例更扁、簡介只留一行、滑軌卡片更窄。
+            className="relative aspect-[5/2] w-full min-h-44 overflow-hidden md:aspect-[16/5]"
             style={{
               backgroundImage: `linear-gradient(135deg, ${tintA}, ${tintB})`,
             }}
@@ -385,7 +370,7 @@ export function FeaturedCard({
                 {entry.name}
               </span>
               {entry.description && (
-                <span className="line-clamp-2 max-w-[560px] text-[13px] leading-relaxed text-ink/45">
+                <span className="line-clamp-1 max-w-[560px] text-[13px] leading-relaxed text-ink/45">
                   {entry.description}
                 </span>
               )}
@@ -406,7 +391,7 @@ export function FeaturedCard({
               {entry.name}
             </span>
             <span className="flex items-center gap-2 text-[11px] text-ink/45">
-              v{entry.version} · {kindLabel(t, entry.kind)}
+              {entry.category && categoryLabel(t, entry.category)}
               {entry.installed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-(--admin-accent)/10 px-2 py-0.5 font-medium text-(--admin-accent)">
                   <Check className="size-3" />
@@ -614,22 +599,13 @@ function kindLabel(t: Translator, kind: "declarative" | "code"): string {
     : t("registryBrowser.kind.code");
 }
 
-function categoryLabel(t: Translator, category: string): string {
-  if (category === "all") return t("registryBrowser.category.all");
-  if (category === "declarative")
-    return t("registryBrowser.category.declarative");
-  if (category === "code") return t("registryBrowser.category.code");
-  if (category === "installed") return t("registryBrowser.category.installed");
-  // 動態 content category 來自 registry 資料,沿用 capitalize 顯示
-  return category.charAt(0).toUpperCase() + category.slice(1);
-}
-
 export function StoreCard({
   entry,
   blocked,
   nameOf,
   onClick,
   onInstalled,
+  onTag,
 }: {
   entry: RegistryEntry;
   /** 1.50.0:不能直接裝的理由(見 cardBlockLabel);有就不畫安裝鈕。 */
@@ -638,6 +614,8 @@ export function StoreCard({
   nameOf: (id: string) => string;
   onClick: () => void;
   onInstalled: (id: string, source: string) => void;
+  /** 1.58.0:點了卡片上的標籤(篩選商店)。 */
+  onTag?: (tag: string) => void;
 }) {
   const t = useT();
   const {
@@ -668,39 +646,25 @@ export function StoreCard({
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
       onClick={onClick}
-      className={`group flex cursor-pointer flex-col gap-3 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4 ${CARD} transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_4px_12px_-2px_rgba(0,0,0,0.08)]`}
+      className={`group flex min-w-0 cursor-pointer flex-col gap-3 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-4 ${CARD} transition-[box-shadow] duration-150 hover:shadow-[0_0_0_1px_rgba(0,0,0,0.1),0_4px_12px_-2px_rgba(0,0,0,0.08)]`}
     >
-      {/* header */}
-      <div className="flex items-start gap-3">
+      {/* 圖示、名稱、一句簡介 */}
+      <div className="flex items-center gap-3">
         <ExtIcon entry={entry} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[14px] font-semibold text-ink/85">
+          <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-ink/85">
             {entry.name}
           </span>
-          <span className="line-clamp-2 text-[12px] leading-relaxed text-ink/45">
-            {entry.description ?? t("registryBrowser.noDescription")}
-          </span>
+          {entry.description && (
+            <span className="truncate text-[12.5px] text-ink/50" title={entry.description}>
+              {entry.description}
+            </span>
+          )}
         </div>
       </div>
-      {/* meta + badges */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-ink/[0.04] px-2 py-0.5 text-[10px] font-medium text-ink/45">
-          {kindLabel(t, entry.kind)}
-        </span>
-        {entry.category && (
-          <span className="rounded-full bg-ink/[0.04] px-2 py-0.5 text-[10px] font-medium capitalize text-ink/45">
-            {entry.category}
-          </span>
-        )}
-        <DeploymentBadge entry={entry} />
-        <span className="text-[10px] text-ink/35">v{entry.version}</span>
-        {entry.author && (
-          <span className="text-[10px] text-ink/35">· {entry.author}</span>
-        )}
-      </div>
-      {/* action */}
-      {/* gap-3 只在多了價格那一行時加:免費插件的卡片一個 class 都不變。 */}
-      <div className={cn("flex items-center justify-between pt-1", showsOffer(entry) && "gap-3")}>
+      <TagChips tags={entry.tags} limit={CARD_TAG_LIMIT} onTag={onTag} />
+      {/* 價格與動作;mt-auto 讓同一列的卡片動作對齊底部。 */}
+      <div className="mt-auto flex items-center justify-between gap-3 pt-1">
         {error ? (
           <span className="flex items-center gap-1 text-[11px] text-red-600">
             <AlertCircle className="size-3" />
@@ -803,8 +767,9 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
   const [data, setData] = useState<IndexResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<Category>("all");
+  // 1.58.0:分類、標籤、只看已安裝、搜尋字,四個條件同時成立。
+  const [filter, setFilter] = useState<StoreFilter>(NO_FILTER);
+  const updateFilter = (patch: Partial<StoreFilter>) => setFilter((prev) => ({ ...prev, ...patch }));
   // 1.56.0:open —— 網址帶的插件(上新通知的「查看」)。換了一個就直接打開它的詳情。
   const [selected, setSelected] = useState<EntryRef | null>(open);
   const [openedFrom, setOpenedFrom] = useState<EntryRef | null>(open);
@@ -845,44 +810,18 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // registry entries 實際帶的 content category → 動態附加成 pills
-  const contentCategories = useMemo(() => {
-    if (!data) return [];
-    const seen = new Set<string>();
-    for (const e of data.entries) if (e.category) seen.add(e.category);
-    return [...seen].sort();
-  }, [data]);
+  // 分類導覽:有插件的分類與數量(以全部插件計,不隨其他條件跳動)。
+  const counts = useMemo(() => categoryCounts(data?.entries ?? []), [data]);
 
-  const filtered = useMemo(() => {
-    if (!data) return [];
-    let list = data.entries;
-    if (category === "declarative") {
-      list = list.filter((e) => e.kind === "declarative");
-    } else if (category === "code") {
-      list = list.filter((e) => e.kind === "code");
-    } else if (category === "installed") {
-      list = list.filter((e) => e.installed);
-    } else if (category !== "all") {
-      list = list.filter((e) => e.category === category);
-    }
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      list = list.filter(
-        (e) =>
-          e.name.toLowerCase().includes(q) ||
-          e.id.toLowerCase().includes(q) ||
-          e.description?.toLowerCase().includes(q) ||
-          e.category?.toLowerCase().includes(q) ||
-          e.tags?.some((t) => t.toLowerCase().includes(q)),
-      );
-    }
-    return list;
-  }, [data, category, query]);
+  const filtered = useMemo(
+    () => filterEntries(data?.entries ?? [], filter, (category) => categoryLabel(t, category)),
+    [data, filter, t],
+  );
 
   const featured = useMemo(() => {
     if (!data) return [];
-    // Featured = compatible、尚未安裝的前幾個。上限從 2 提到 6:滑軌只放兩張
-    // 就沒有滑的意義,而卡片不再各佔一整屏之後,多放幾張也不會壓到下面的列表。
+    // Featured = compatible、尚未安裝的前幾個。滑軌放兩張就沒有滑的意義,
+    // 所以上限是 6;卡片只佔一屏的一部分,不會壓到下面的列表。
     return data.entries.filter((e) => e.compatible && !e.installed).slice(0, 6);
   }, [data]);
 
@@ -960,9 +899,16 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
         onBack={() => setSelectedEntry(null)}
         onOpen={setSelectedEntry}
         onInstalled={handleInstalled}
+        onTag={(tag) => {
+          // 從詳情頁點標籤:回到商店,只留這個標籤(別的分類可能把結果藏起來)。
+          setFilter({ ...NO_FILTER, tag });
+          setSelectedEntry(null);
+        }}
       />,
     );
   }
+
+  const filtering = isFiltered(filter);
 
   return withRequests(
     <div className="flex flex-col gap-6">
@@ -977,8 +923,34 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
         </div>
       )}
 
-      {/* Featured */}
-      {featured.length > 0 && (
+      {/* Search + installed only */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface px-3 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.04))] focus-within:border-ink/25">
+            <Search className="size-4 shrink-0 text-ink/35" aria-hidden />
+            <input
+              type="search"
+              value={filter.query}
+              onChange={(e) => updateFilter({ query: e.target.value })}
+              placeholder={t("registryBrowser.searchPlaceholder")}
+              aria-label={t("registryBrowser.searchPlaceholder")}
+              className="w-full min-w-0 bg-transparent text-[14px] text-ink/85 outline-none placeholder:text-ink/30"
+            />
+          </div>
+          <InstalledToggle checked={filter.installedOnly} onChange={(installedOnly) => updateFilter({ installedOnly })} />
+        </div>
+
+        {/* 分類:主要的導覽 */}
+        <CategoryNav
+          counts={counts}
+          total={data.entries.length}
+          active={filter.category}
+          onChange={(category) => updateFilter({ category })}
+        />
+      </div>
+
+      {/* Featured:只在沒有任何篩選時出現,篩選後列表緊接在導覽下面。 */}
+      {!filtering && featured.length > 0 && (
         // 同上:這層也要 min-w-0,否則寬度會沿著祖先鏈一路傳到 <main>。
         // gap-1 而非 gap-3:滑軌自帶 pt-2.5 的陰影空間,標題列與卡片之間的
         // 視覺間距由兩者相加,gap 維持 gap-3 會顯得太鬆。
@@ -997,7 +969,7 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
               // 刻意不是 w-full:下一張露出的一角就是「還有更多、可以捲」的訊號。
               <div
                 key={`f-${entry.source}:${entry.id}`}
-                className="w-[88%] shrink-0 snap-start sm:w-[72%] lg:w-[54%]"
+                className="w-[85%] shrink-0 snap-start sm:w-[62%] lg:w-[46%]"
               >
                 <FeaturedCard
                   entry={entry}
@@ -1012,67 +984,38 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
         </div>
       )}
 
-      {/* Search + Category */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/10 bg-surface px-3 py-2 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.04))]">
-          <Search className="size-4 shrink-0 text-ink/35" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("registryBrowser.searchPlaceholder")}
-            className="w-full bg-transparent text-[14px] text-ink/85 outline-none placeholder:text-ink/30"
-          />
-        </div>
-
-        <div className="flex justify-center">
-          <FluidTabs
-            compact
-            tabs={[
-              { id: "all", label: categoryLabel(t, "all") },
-              { id: "declarative", label: categoryLabel(t, "declarative") },
-              { id: "code", label: categoryLabel(t, "code") },
-              { id: "installed", label: categoryLabel(t, "installed") },
-              ...contentCategories.map((c) => ({
-                id: c,
-                label: c.charAt(0).toUpperCase() + c.slice(1),
-              })),
-            ]}
-            defaultActive="all"
-            onChange={(id) =>
-              setCategory(
-                (BASE_CATEGORIES as readonly string[]).includes(id) ||
-                  contentCategories.includes(id)
-                  ? id
-                  : "all",
-              )
-            }
-          />
-        </div>
+      {/* Count + active tag */}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <p className="text-[13px] text-ink/40">
+          {filtered.length === 1
+            ? t("registryBrowser.extensionCount.one")
+            : t("registryBrowser.extensionCount.other", { n: filtered.length })}
+        </p>
+        {filter.tag !== null && <ActiveTag tag={filter.tag} onClear={() => updateFilter({ tag: null })} />}
       </div>
-
-      {/* Count */}
-      <p className="text-[13px] text-ink/40">
-        {filtered.length === 1
-          ? t("registryBrowser.extensionCount.one")
-          : t("registryBrowser.extensionCount.other", { n: filtered.length })}
-        {category !== "all" &&
-          t("registryBrowser.countInCategory", {
-            category: categoryLabel(t, category),
-          })}
-      </p>
 
       {/* Grid */}
       {filtered.length === 0 ? (
-        <div className="rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/20 p-10 text-center">
+        <div className="flex flex-col items-center gap-1 rounded-[calc(14px*var(--admin-radius-scale,1))] border border-dashed border-ink/20 p-10 text-center">
           <p className="text-[14px] font-medium text-ink/45">
             {t("registryBrowser.empty.title")}
           </p>
-          <p className="mt-1 text-[12px] text-ink/30">
-            {query
-              ? t("registryBrowser.empty.noResultsFor", { query })
-              : t("registryBrowser.empty.checkSources")}
+          <p className="text-[12px] text-ink/35">
+            {filter.query.trim()
+              ? t("registryBrowser.empty.noResultsFor", { query: filter.query.trim() })
+              : filtering
+                ? t("registryBrowser.empty.tryOther")
+                : t("registryBrowser.empty.checkSources")}
           </p>
+          {filtering && (
+            <button
+              type="button"
+              onClick={() => setFilter(NO_FILTER)}
+              className="mt-3 inline-flex h-8 items-center rounded-full bg-ink/[0.05] px-3.5 text-[12.5px] font-medium text-ink/65 transition-[background-color,color] duration-150 hover:bg-ink/[0.09] hover:text-ink/85"
+            >
+              {t("registryBrowser.clearFilters")}
+            </button>
+          )}
         </div>
       ) : (
         <motion.div
@@ -1087,6 +1030,7 @@ export function RegistryBrowser({ open = null }: { open?: EntryRef | null } = {}
               nameOf={pluginNamer(entry)}
               onClick={() => setSelectedEntry(entry)}
               onInstalled={handleInstalled}
+              onTag={(tag) => updateFilter({ tag })}
             />
           ))}
         </motion.div>
@@ -1170,6 +1114,7 @@ export function ExtensionDetail({
   onBack,
   onOpen,
   onInstalled,
+  onTag,
 }: {
   entry: RegistryEntry;
   /** 商店裡全部的項目(找必要插件、列出需要它的插件)。 */
@@ -1180,6 +1125,8 @@ export function ExtensionDetail({
   /** 1.50.0:前往另一個插件的詳情(必要插件、需要它的插件)。 */
   onOpen: (entry: RegistryEntry) => void;
   onInstalled: (id: string, source: string) => void;
+  /** 1.58.0:點了標籤(回到商店,篩選這個標籤)。 */
+  onTag?: (tag: string) => void;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -1251,12 +1198,72 @@ export function ExtensionDetail({
     { label: t("registryBrowser.detail.link.support"), url: entry.supportUrl },
   ].filter((l): l is { label: string; url: string } => !!l.url);
 
+  // 1.58.0:價格與動作放在標題旁邊(窄螢幕在標題下面)。
+  const action = (
+    <div className="flex w-full shrink-0 flex-col gap-2 sm:w-64">
+      {showsOffer(entry) && <OfferBlock entry={entry} />}
+      {entry.kind === "code" && locked && !entry.installed ? (
+        <PaidAction entry={entry} size="lg" />
+      ) : entry.kind === "code" ? (
+        <CodeStateChip
+          entry={entry}
+          t={t}
+          className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium"
+        />
+      ) : !entry.compatible ? (
+        <span className="text-[12.5px] text-red-600/80">
+          {t("registryBrowser.install.requiresCore", { core: entry.coreApi })}
+        </span>
+      ) : missing.length > 0 ? (
+        <span className="text-[12.5px] text-red-600/80">
+          {t("registryBrowser.install.needsFeatures", { features: missing.join(", ") })}
+        </span>
+      ) : unmetServices.length > 0 ? (
+        <span className="text-[12.5px] text-red-600/80">
+          {t("registryBrowser.install.needsServices", { services: unmetServices.join(", ") })}
+        </span>
+      ) : locked && entry.installed ? (
+        <StatusButton size="lg" status="success" label={t("registryBrowser.install.installed")} />
+      ) : locked ? (
+        <PaidAction entry={entry} size="lg" />
+      ) : gated ? (
+        gate
+      ) : (
+        <StatusButton
+          size="lg"
+          variant={isUpdate ? "soft" : "solid"}
+          status={statusFromInstall(state)}
+          label={installLabel(t, state, isUpdate)}
+          idleIcon={isUpdate ? undefined : <Download className="size-4" />}
+          onClick={() => void install()}
+        />
+      )}
+      {codeNote && <p className="text-[12.5px] leading-relaxed text-ink/50">{codeNote}</p>}
+      {lockedUpdate && (
+        <>
+          <p className="text-[12.5px] leading-relaxed text-ink/50">
+            {t("registryBrowser.paid.updateNeedsAccess", { host: sourceHost(entry.source) })}
+          </p>
+          <PaidAction entry={entry} size="lg" />
+        </>
+      )}
+      {entry.kind === "declarative" && entry.scriptsCompiled && (
+        <p className="text-[12.5px] leading-relaxed text-ink/50">{t("scripts.compiled")}</p>
+      )}
+    </div>
+  );
+
+  const panel = `rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`;
+  const kindText = entry.deployment
+    ? `${kindLabel(t, entry.kind)} · ${deploymentLabel(t, entry.deployment)}`
+    : kindLabel(t, entry.kind);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 280, damping: 26 }}
-      className="flex flex-col gap-6"
+      className="flex min-w-0 flex-col gap-6"
     >
       <button
         type="button"
@@ -1266,17 +1273,18 @@ export function ExtensionDetail({
         ← {t("registryBrowser.detail.back")}
       </button>
 
-      <div className="flex items-center gap-4">
-        <ExtIcon entry={entry} size="large" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h1 className="text-[24px] font-bold tracking-[-0.02em] text-ink/90">
-            {entry.name}
-          </h1>
-          <span className="text-[13px] text-ink/45">
-            {kindLabel(t, entry.kind)}
-          </span>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <ExtIcon entry={entry} size="large" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <h1 className="break-words text-[24px] font-bold leading-tight tracking-[-0.02em] text-ink/90">
+              {entry.name}
+            </h1>
+            {entry.category && <span className="text-[13px] text-ink/45">{categoryLabel(t, entry.category)}</span>}
+          </div>
         </div>
-      </div>
+        {action}
+      </header>
 
       {prompts && (
         <InstallPromptsDialog
@@ -1311,29 +1319,53 @@ export function ExtensionDetail({
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
         <div className="flex min-w-0 flex-col gap-6">
-          {bannerUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={bannerUrl}
-              alt=""
-              className="h-40 w-full rounded-[calc(14px*var(--admin-radius-scale,1))] object-cover sm:h-52"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
+          <StoreAbout entry={entry} className={panel} />
+
+          {(bannerUrl || screenshots.length > 0) && (
+            <section className="flex min-w-0 flex-col gap-3">
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
+                {t("registryBrowser.detail.screenshots")}
+              </h2>
+              {bannerUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={bannerUrl}
+                  alt=""
+                  className="h-40 w-full rounded-[calc(14px*var(--admin-radius-scale,1))] object-cover sm:h-52"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              )}
+              {screenshots.length > 0 && (
+                <div className="flex gap-3 overflow-x-auto overscroll-x-contain pb-2">
+                  {screenshots.map((url, i) => (
+                    // 照原比例、固定高度,不裁切:介紹圖常是示範畫面(例如左下角浮層),裁掉就看不到重點。
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`${entry.name} ${i + 1}`}
+                      loading="lazy"
+                      className="h-56 w-auto max-w-full shrink-0 rounded-[calc(12px*var(--admin-radius-scale,1))] bg-surface shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_-2px_rgba(0,0,0,0.08))] sm:h-72"
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
           )}
 
-          <section className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
-            <h2 className="mb-2 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
-              {t("registryBrowser.detail.about")}
-            </h2>
-            <p className="text-[14px] leading-relaxed text-ink/65">
-              {entry.description || t("registryBrowser.noDescription")}
-            </p>
-          </section>
+          {(entry.tags?.length ?? 0) > 0 && (
+            <section className="flex flex-col gap-2.5">
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
+                {t("registryBrowser.detail.tags")}
+              </h2>
+              <TagChips tags={entry.tags} onTag={onTag} size="md" />
+            </section>
+          )}
 
           {showRequirements && (
-            <section className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}>
+            <section className={panel}>
               <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
                 {t("registryBrowser.detail.requires")}
               </h2>
@@ -1377,33 +1409,7 @@ export function ExtensionDetail({
             </section>
           )}
 
-          {screenshots.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
-                {t("registryBrowser.detail.screenshots")}
-              </h2>
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {screenshots.map((url, i) => (
-                  // 照原比例、固定高度,不裁切:介紹圖常是示範畫面(例如左下角浮層),裁掉就看不到重點。
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    src={url}
-                    alt={`Screenshot ${i + 1}`}
-                    loading="lazy"
-                    className="h-56 w-auto max-w-full shrink-0 rounded-[calc(12px*var(--admin-radius-scale,1))] bg-surface shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_-2px_rgba(0,0,0,0.08))] sm:h-72"
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          <UsedBySection
-            entry={entry}
-            entries={entries}
-            onOpen={onOpen}
-            className={`rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 py-5 ${CARD}`}
-          />
+          <UsedBySection entry={entry} entries={entries} onOpen={onOpen} className={panel} />
 
           {entry.kind === "code" && codeState !== "installed" && !locked && (
             <DevInstall entry={entry} update={codeState === "update"} />
@@ -1411,63 +1417,9 @@ export function ExtensionDetail({
         </div>
 
         <aside
-          className={`order-first flex flex-col gap-4 rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-5 lg:sticky lg:top-6 lg:order-none ${CARD}`}
+          className={`flex min-w-0 flex-col rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface p-5 lg:sticky lg:top-6 ${CARD}`}
         >
-          <div className="flex flex-col gap-2">
-            {showsOffer(entry) && <OfferBlock entry={entry} />}
-            {entry.kind === "code" && locked && !entry.installed ? (
-              <PaidAction entry={entry} size="lg" />
-            ) : entry.kind === "code" ? (
-              <CodeStateChip
-                entry={entry}
-                t={t}
-                className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-4 text-[13px] font-medium"
-              />
-            ) : !entry.compatible ? (
-              <span className="text-[12.5px] text-red-600/80">
-                {t("registryBrowser.install.requiresCore", { core: entry.coreApi })}
-              </span>
-            ) : missing.length > 0 ? (
-              <span className="text-[12.5px] text-red-600/80">
-                {t("registryBrowser.install.needsFeatures", { features: missing.join(", ") })}
-              </span>
-            ) : unmetServices.length > 0 ? (
-              <span className="text-[12.5px] text-red-600/80">
-                {t("registryBrowser.install.needsServices", { services: unmetServices.join(", ") })}
-              </span>
-            ) : locked && entry.installed ? (
-              <StatusButton size="lg" status="success" label={t("registryBrowser.install.installed")} />
-            ) : locked ? (
-              <PaidAction entry={entry} size="lg" />
-            ) : gated ? (
-              gate
-            ) : (
-              <StatusButton
-                size="lg"
-                variant={isUpdate ? "soft" : "solid"}
-                status={statusFromInstall(state)}
-                label={installLabel(t, state, isUpdate)}
-                idleIcon={isUpdate ? undefined : <Download className="size-4" />}
-                onClick={() => void install()}
-              />
-            )}
-            {codeNote && (
-              <p className="text-[12.5px] leading-relaxed text-ink/50">{codeNote}</p>
-            )}
-            {lockedUpdate && (
-              <>
-                <p className="text-[12.5px] leading-relaxed text-ink/50">
-                  {t("registryBrowser.paid.updateNeedsAccess", { host: sourceHost(entry.source) })}
-                </p>
-                <PaidAction entry={entry} size="lg" />
-              </>
-            )}
-            {entry.kind === "declarative" && entry.scriptsCompiled && (
-              <p className="text-[12.5px] leading-relaxed text-ink/50">{t("scripts.compiled")}</p>
-            )}
-          </div>
-
-          <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 border-t border-ink/[0.06] pt-4 text-[13px]">
+          <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-[13px]">
             <dt className="text-ink/45">{t("registryBrowser.detail.version")}</dt>
             <dd className="tabular-nums text-ink/80">
               {isUpdate
@@ -1478,8 +1430,7 @@ export function ExtensionDetail({
             </dd>
             {entry.author && (
               <>
-                {/* 1.52.0:付費插件多一列「提供者」(來源主機,在跟誰買),作者那列就改叫「作者」;
-                    免費插件照舊,畫面一個字都不變。 */}
+                {/* 1.52.0:付費插件多一列「提供者」(來源主機,在跟誰買),作者那列就改叫「作者」。 */}
                 <dt className="text-ink/45">
                   {t(entry.offer ? "registryBrowser.detail.madeBy" : "registryBrowser.detail.author")}
                 </dt>
@@ -1492,12 +1443,8 @@ export function ExtensionDetail({
                 <dd className="truncate text-ink/80">{sourceHost(entry.source)}</dd>
               </>
             )}
-            {entry.category && (
-              <>
-                <dt className="text-ink/45">{t("registryBrowser.detail.category")}</dt>
-                <dd className="text-ink/80">{categoryLabel(t, entry.category)}</dd>
-              </>
-            )}
+            <dt className="text-ink/45">{t("registryBrowser.detail.kind")}</dt>
+            <dd className="text-ink/80">{kindText}</dd>
             {entry.license && (
               <>
                 <dt className="text-ink/45">{t("registryBrowser.detail.license")}</dt>

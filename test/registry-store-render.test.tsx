@@ -3,8 +3,8 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // 商店卡片與詳情頁的伺服器端渲染。
-//   - 免費插件(沒有 offer / access):渲染結果與付費插件功能加入之前逐字相同(snapshot 由
-//     改版前的元件產生)
+//   - 免費插件(沒有 offer / access):snapshot 鎖住版面。1.58.0 刻意重拍過一次:卡片拿掉
+//     版本、作者、類型、部署方式,改列標籤;詳情頁的價格與動作移到標題旁、類型移進資訊欄
 //   - 付費插件:沒開通只多一行價格、按鈕換成「聯絡提供者」;已安裝的沒有更新鈕;已開通的
 //     跟免費一樣;別的來源列出的同 id 寫「已從 <主機> 安裝」
 
@@ -59,7 +59,7 @@ const FREE: RegistryEntry = {
 };
 
 const card = (entry: RegistryEntry, blocked: string | null = null) =>
-  zh(createElement(StoreCard, { entry, blocked, nameOf, onClick: noop, onInstalled: noop }));
+  zh(createElement(StoreCard, { entry, blocked, nameOf, onClick: noop, onInstalled: noop, onTag: noop }));
 const featured = (entry: RegistryEntry, blocked: string | null = null) =>
   zh(createElement(FeaturedCard, { entry, blocked, nameOf, onClick: noop, onInstalled: noop }));
 const detail = (entry: RegistryEntry) =>
@@ -72,10 +72,11 @@ const detail = (entry: RegistryEntry) =>
       onBack: noop,
       onOpen: noop,
       onInstalled: noop,
+      onTag: noop,
     }),
   );
 
-describe("free entries render exactly as before", () => {
+describe("free entries (1.58.0 store layout)", () => {
   const cases: [string, RegistryEntry][] = [
     ["declarative", FREE],
     ["declarative with an update", { ...FREE, installed: true, installedVersion: "1.0.0" }],
@@ -291,3 +292,52 @@ describe("request and buy", () => {
   });
 });
 
+// 1.58.0:分類、標籤、重點與說明。
+describe("store categories, tags and detail text", () => {
+  const RICH: RegistryEntry = {
+    ...FREE,
+    category: "marketing",
+    deployment: "instant",
+    tags: ["評論", "星等", "商品頁", "SEO"],
+    highlights: ["顧客在商品頁留下星等與評論", "你審過才會公開 <b>不是標籤</b>"],
+    details: "第一段說明。\n\n第二段說明。",
+  };
+
+  it("the card shows the first three tags and no version, author, kind or deployment", () => {
+    const html = card(RICH);
+    const plain = text(html);
+    for (const tag of ["評論", "星等", "商品頁"]) expect(html).toMatch(new RegExp(`<button type="button"[^>]*>${tag}</button>`));
+    expect(plain).not.toContain("SEO");
+    expect(plain).not.toContain("1.1.0");
+    expect(plain).not.toContain("Acme");
+    expect(plain).not.toContain("宣告式");
+    expect(plain).not.toContain("立即可用");
+    expect(plain).toContain("在商品頁收集評論。");
+  });
+
+  it("the detail page leads with the category, then highlights, paragraphs, all tags and the meta", () => {
+    const html = detail(RICH);
+    const plain = text(html);
+    expect(html).toMatch(/<h1[^>]*>評論<\/h1><span[^>]*>營銷<\/span>/);
+    expect(plain).toContain("顧客在商品頁留下星等與評論");
+    // 純文字:像標籤的內容照字面顯示,不會變成 HTML。
+    expect(html).toContain("你審過才會公開 &lt;b&gt;不是標籤&lt;/b&gt;");
+    expect(html).toMatch(/<p[^>]*>第一段說明。<\/p><p[^>]*>第二段說明。<\/p>/);
+    for (const tag of RICH.tags ?? []) expect(html).toMatch(new RegExp(`<button type="button"[^>]*>${tag}</button>`));
+    expect(html).toMatch(/<dt[^>]*>類型<\/dt><dd[^>]*>宣告式 · 立即可用<\/dd>/);
+    expect(plain.indexOf("顧客在商品頁")).toBeLessThan(plain.indexOf("第一段說明"));
+    expect(plain.indexOf("第二段說明")).toBeLessThan(plain.indexOf("SEO"));
+    expect(plain.indexOf("SEO")).toBeLessThan(plain.indexOf("v1.1.0"));
+  });
+
+  it("an unknown category reads Other; no category shows none", () => {
+    expect(detail({ ...RICH, category: "games" })).toMatch(/<h1[^>]*>評論<\/h1><span[^>]*>其他<\/span>/);
+    expect(text(detail({ ...RICH, category: undefined }))).not.toContain("其他");
+    expect(text(featured({ ...RICH, category: "games" }))).toContain("其他");
+  });
+
+  it("without any text there is no About section", () => {
+    const html = detail({ ...FREE, description: undefined });
+    expect(text(html)).not.toContain("關於");
+  });
+});
