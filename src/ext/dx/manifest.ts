@@ -25,6 +25,7 @@ import {
 } from "./scripts";
 import { isSubmissionTypeName } from "./submission";
 import { IDENTITY_MAX, IDENTITY_RE, type PluginRequirement } from "../plugin-ref";
+import { CATEGORIES_SINCE_1_58, STORE_CATEGORIES, type StoreCategory } from "../store-categories";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -90,6 +91,31 @@ const localizedObjectSchema = z
 
 function localized(base: z.ZodString = z.string()) {
   return z.union([base, localizedObjectSchema]);
+}
+
+// 1.58.0:商店詳情頁的純文字(highlights / details)。localized() 只限制字串分支;這裡
+// 字串與 per-locale 物件的每個值套同一組限制,換成物件寫法繞不過字數上限。
+// 商店一律當純文字顯示(React 跳脫);像 HTML 標籤的內容直接拒絕,免得作者以為會排版。
+export const STORE_HIGHLIGHTS_MAX = 6;
+export const STORE_HIGHLIGHT_MAX_CHARS = 80;
+export const STORE_DETAILS_MAX_CHARS = 1200;
+const MARKUP_TAG_RE = /<\/?[a-z!][^>]*>/i;
+
+function storeText(max: number, { singleLine }: { singleLine: boolean }) {
+  const text = z
+    .string()
+    .min(1)
+    .max(max)
+    .refine((s) => s.trim().length > 0, { message: "must not be blank" })
+    .refine((s) => !MARKUP_TAG_RE.test(s), { message: "plain text only (no HTML tags)" })
+    .refine((s) => !singleLine || !/[\r\n]/.test(s), { message: "must be a single line" });
+  const perLocale = z
+    .object({ en: text.optional(), "zh-Hant": text.optional() })
+    .strict()
+    .refine((v) => v.en !== undefined || v["zh-Hant"] !== undefined, {
+      message: "localized string requires at least one locale (en / zh-Hant)",
+    });
+  return z.union([text, perLocale]);
 }
 
 // ---- leaf field types(v1.1 + 08 §1)----
@@ -725,11 +751,20 @@ export const manifestSchema = z
     repository: z.string().regex(/^https:\/\//, "repository must be https").optional(),
     // SPDX id(如 "MIT");純顯示,不做 SPDX 驗證
     license: z.string().min(1).optional(),
-    // 發現性:搜尋比對 + detail 頁 chips
+    // 發現性:搜尋比對 + 卡片(前 3 個)與詳情頁的標籤,點了篩選商店
     tags: z.array(z.string().min(1)).max(8).optional(),
-    category: z
-      .enum(["content", "media", "commerce", "integration", "utility", "theme"])
+    // 商店的分類導覽(清單見 ../store-categories.ts)。1.58.0 新增 auth / marketing /
+    // analytics:用到的 manifest 要宣告 coreApi "^1.58.0"(舊 core 的 enum 不認得,整包驗證失敗)。
+    category: z.enum(STORE_CATEGORIES).optional(),
+    // 1.58.0:商店詳情頁。highlights = 幾句重點(≤6 句、每句 ≤80 字、單行);details = 較長的
+    // 說明(≤1200 字,空一行分段)。都是純文字、可多語。manifestSchema 是 .strict() —— 用到的
+    // manifest 在 <1.58.0 的 core 會整包驗證失敗,故其 coreApi 必須宣告 "^1.58.0"。
+    highlights: z
+      .array(storeText(STORE_HIGHLIGHT_MAX_CHARS, { singleLine: true }))
+      .min(1)
+      .max(STORE_HIGHLIGHTS_MAX)
       .optional(),
+    details: storeText(STORE_DETAILS_MAX_CHARS, { singleLine: false }).optional(),
     support: z
       .object({
         url: z.string().regex(/^https:\/\//, "support url must be https").optional(),
@@ -927,6 +962,19 @@ export const manifestSchema = z
         ctx.addIssue({ code: "custom", message: "extension cannot require itself", path: ["requiresExtensions", idx, "id"] });
       }
     });
+
+    const storeFields = [
+      m.highlights !== undefined ? "highlights" : null,
+      m.details !== undefined ? "details" : null,
+      m.category !== undefined && CATEGORIES_SINCE_1_58.includes(m.category) ? `category "${m.category}"` : null,
+    ].filter((field): field is string => field !== null);
+    if (storeFields.length > 0 && !rangeStartsAtOrAfter(m.coreApi, "1.58.0")) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${storeFields.join(", ")} require${storeFields.length === 1 ? "s" : ""} coreApi "^1.58.0" or newer`,
+        path: ["coreApi"],
+      });
+    }
 
     if (m.appearances) {
       if (!rangeStartsAtOrAfter(m.coreApi, "1.57.0")) {
@@ -1291,9 +1339,14 @@ export interface DeclarativeManifest {
   repository?: string;
   /** SPDX id,如 "MIT"。 */
   license?: string;
-  /** 發現性標籤(≤8;搜尋比對 + detail chips)。 */
+  /** 發現性標籤(≤8;搜尋比對、卡片與詳情頁的標籤)。 */
   tags?: string[];
-  category?: "content" | "media" | "commerce" | "integration" | "utility" | "theme";
+  /** 商店分類(見 ../store-categories.ts;auth / marketing / analytics 為 1.58.0)。 */
+  category?: StoreCategory;
+  /** 1.58.0:商店詳情頁的重點(≤6 句、每句 ≤80 字、單行純文字)。 */
+  highlights?: LocalizedString[];
+  /** 1.58.0:商店詳情頁的說明(≤1200 字純文字,空一行分段)。 */
+  details?: LocalizedString;
   support?: { url?: string; email?: string };
   /** 1.8.0:public 頁面 design tokens(accent/background/muted colors + radius);全部 optional。 */
   theme?: {

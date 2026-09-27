@@ -42,6 +42,10 @@ vi.mock("@/lib/registry-client", () => ({
   }),
 }));
 
+// 後台語系(core.locale)由測試指定;測試 DB 沒有 settings 表。
+const localeState = vi.hoisted(() => ({ locale: "zh-Hant" as "en" | "zh-Hant" }));
+vi.mock("@/lib/i18n/server", () => ({ getLocale: async () => localeState.locale }));
+
 // @/ext/loader 全 mock(workers pool 地雷:loader 的相依鏈含 next/navigation,
 // 靜態 import 會拖垮 test pool——見 ext-jobs.test.ts 同款註解)。rt.all 由每個
 // 測試自行指定,模擬「這次部署編譯進 bundle 的 code extensions」。
@@ -98,6 +102,7 @@ beforeEach(async () => {
   registryState.entries = [];
   registryState.errors = [];
   rtState.all = [];
+  localeState.locale = "zh-Hant";
 });
 
 async function insertExt(
@@ -211,6 +216,43 @@ describe("GET /api/registry/index", () => {
     const body = (await (await GET()).json()) as { entries: { access?: string; offer?: unknown }[]; errors: unknown[] };
     expect(body.entries[0]).toMatchObject({ access: "locked", offer });
     expect(body.errors).toEqual([{ source: "https://other.example.com", error: "http 403", status: 403 }]);
+  });
+
+  // 1.58.0:多語的名稱、簡介、重點、說明依後台語系挑成字串;category 原樣帶。
+  it("picks the admin locale's text, falling back to en and then any value", async () => {
+    authState.user = ADMIN;
+    const entry = {
+      id: "booking",
+      kind: "declarative",
+      version: "1.0.0",
+      coreApi: "^1.58.0",
+      source: "https://example.test",
+      name: { "zh-Hant": "訂位", en: "Booking" },
+      description: { en: "Book a table" },
+      highlights: [{ "zh-Hant": "兩下完成", en: "Two taps" }, "Plain line", { en: "   " }],
+      details: { "zh-Hant": "第一段。\n\n第二段。" },
+      tags: ["tables"],
+      category: "somewhere-new",
+    };
+    registryState.entries = [entry];
+
+    type Body = { entries: Record<string, unknown>[] };
+    const zh = ((await (await GET()).json()) as Body).entries[0];
+    expect(zh).toMatchObject({
+      name: "訂位",
+      description: "Book a table",
+      highlights: ["兩下完成", "Plain line"],
+      details: "第一段。\n\n第二段。",
+      tags: ["tables"],
+      category: "somewhere-new",
+    });
+
+    localeState.locale = "en";
+    const en = ((await (await GET()).json()) as Body).entries[0];
+    expect(en).toMatchObject({ name: "Booking", description: "Book a table", highlights: ["Two taps", "Plain line"] });
+    // 只有 zh-Hant 的說明,英文後台照樣看得到那一句,而不是空白或 [object Object]。
+    expect(en.details).toBe("第一段。\n\n第二段。");
+    expect(JSON.stringify(en)).not.toContain("[object Object]");
   });
 
   // 1.49.0:某個來源還列著 catalog(舊索引、別人的 registry)也不在商店出現。

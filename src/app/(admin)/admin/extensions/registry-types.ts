@@ -26,7 +26,12 @@ export interface RegistryEntry {
   name: string;
   version: string;
   coreApi: string;
+  /** 1.58.0 起 registry 可以寫多語物件;index route 已依後台語系挑成字串。 */
   description?: string;
+  /** 1.58.0:詳情頁的重點(已挑好語系的純文字)。 */
+  highlights?: string[];
+  /** 1.58.0:詳情頁的說明(純文字,段落以空行分隔)。 */
+  details?: string;
   author?: string;
   source: string;
   installed: boolean;
@@ -45,6 +50,7 @@ export interface RegistryEntry {
   screenshots?: string[];
   license?: string;
   tags?: string[];
+  /** 分類 id(見 @/ext/store-categories);不認得的值商店歸在「其他」。 */
   category?: string;
   deployment?: "instant" | "progressive" | "code-only";
   homepage?: string;

@@ -9,6 +9,8 @@ import { byId, listInstalledPlugins, type InstalledPluginInfo } from "@/ext/inst
 import { listingVerdict } from "@/ext/plugin-ref";
 import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 import { rememberNotices } from "@/lib/registry-notice-store";
+import { localizeEntryText } from "@/lib/registry-localize";
+import { getLocale } from "@/lib/i18n/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // core-v2 §3.4:GET /api/registry/index。admin only。
@@ -31,6 +33,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 // 1.56.0:contact —— 申請視窗「附上我的名字和 email」旁邊列出的就是這兩個值(POST
 // /api/registry/request 送出的也是伺服器端同一份,不收瀏覽器送來的)。打開上新通知的來源,
 // 這次讀到的通知順便寫進通知快取(回應之後做)。
+// 1.58.0:name / description / highlights / details 可以是多語物件,這裡依後台語系挑成
+// 字串(見 @/lib/registry-localize);category 原樣帶,不認得的值由商店歸在「其他」。
 export async function GET(): Promise<Response> {
   let user;
   try {
@@ -41,9 +45,10 @@ export async function GET(): Promise<Response> {
     throw e;
   }
 
-  const [{ entries, errors, notices }, installed] = await Promise.all([
+  const [{ entries, errors, notices }, installed, locale] = await Promise.all([
     fetchRegistryIndex(),
     getExtRuntime().then((rt) => listInstalledPlugins(rt.all)),
+    getLocale(),
   ]);
   const installedById = byId(installed);
 
@@ -58,6 +63,7 @@ export async function GET(): Promise<Response> {
       (entry.kind === "code" && match.installed && plugin && plugin.requires.length > 0 ? plugin.requires : undefined);
     return {
       ...entry,
+      ...localizeEntryText(entry, locale),
       requiresExtensions,
       installed: match.installed,
       installedVersion: match.installed ? match.version : null,

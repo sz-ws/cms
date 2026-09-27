@@ -352,6 +352,68 @@ describe("parseManifest — marketplace metadata (1.5.0)", () => {
   });
 });
 
+describe("parseManifest — store categories and detail text (1.58.0)", () => {
+  const v158 = { ...base, coreApi: "^1.58.0" };
+
+  it("accepts the new categories, highlights and details, as strings or per locale", () => {
+    for (const category of ["auth", "marketing", "analytics"]) {
+      expect(parseManifest({ ...v158, category }).ok).toBe(true);
+    }
+    const r = parseManifest({
+      ...v158,
+      category: "commerce",
+      highlights: ["Book a table in two taps", { "zh-Hant": "兩下完成訂位", en: "Book in two taps" }],
+      details: { "zh-Hant": "第一段。\n\n第二段。", en: "First.\n\nSecond." },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.manifest?.highlights).toHaveLength(2);
+    expect(r.manifest?.details).toEqual({ "zh-Hant": "第一段。\n\n第二段。", en: "First.\n\nSecond." });
+  });
+
+  it("the six older categories still work on older coreApi ranges", () => {
+    for (const category of ["content", "media", "commerce", "integration", "utility", "theme"]) {
+      expect(parseManifest({ ...base, category }).ok).toBe(true);
+    }
+  });
+
+  it("requires coreApi ^1.58.0 for highlights, details and the new categories", () => {
+    const cases = [
+      { highlights: ["One"] },
+      { details: "Text" },
+      { category: "auth" },
+      { category: "marketing" },
+      { category: "analytics" },
+    ];
+    for (const extra of cases) {
+      const r = parseManifest({ ...base, coreApi: "^1.57.0", ...extra });
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain('coreApi "^1.58.0"');
+    }
+  });
+
+  it("limits highlights to 6 single lines of 80 characters, in every locale", () => {
+    expect(parseManifest({ ...v158, highlights: ["a", "b", "c", "d", "e", "f", "g"] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: [] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: ["x".repeat(81)] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: [{ "zh-Hant": "字".repeat(81) }] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: ["two\nlines"] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: ["   "] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: [{}] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: [{ fr: "Bonjour" }] }).ok).toBe(false);
+    expect(parseManifest({ ...v158, highlights: ["x".repeat(80)] }).ok).toBe(true);
+  });
+
+  it("limits details to 1200 characters of plain text, in every locale", () => {
+    expect(parseManifest({ ...v158, details: "x".repeat(1200) }).ok).toBe(true);
+    expect(parseManifest({ ...v158, details: "x".repeat(1201) }).ok).toBe(false);
+    expect(parseManifest({ ...v158, details: { en: "ok", "zh-Hant": "字".repeat(1201) } }).ok).toBe(false);
+    expect(parseManifest({ ...v158, details: "Hello <b>world</b>" }).ok).toBe(false);
+    expect(parseManifest({ ...v158, details: '<script src="x"></script>' }).ok).toBe(false);
+    // 比較符號不是標籤。
+    expect(parseManifest({ ...v158, details: "Orders < 5 ship free; 3 > 2." }).ok).toBe(true);
+  });
+});
+
 describe("parseManifest — capabilities (roadmap #17: install-time gate, not zod)", () => {
   it("rejects an empty-string capability", () => {
     const r = parseManifest({ ...base, capabilities: [""] });

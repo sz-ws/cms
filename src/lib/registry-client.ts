@@ -11,7 +11,10 @@ import {
   type RegistryAccess,
   type RegistryOffer,
 } from "./registry-offer";
-import { parseNotices, type RegistryNotice } from "./registry-notices";
+import { parseNotices, type NoticeEntryRef, type RegistryNotice } from "./registry-notices";
+import { localizeEntryText } from "./registry-localize";
+import { getLocale } from "./i18n/server";
+import type { Locale } from "./i18n";
 import { REGISTRY_MESSAGE_MAX, sanitizeRegistryText } from "./registry-text";
 
 // core-v2 §3.4 / §5:registry client — 只信任 core.registrySources 白名單內的來源,
@@ -29,10 +32,15 @@ export interface RegistryIndexEntry {
   /** 1.50.0:跨來源的全域名字(見 @/ext/plugin-ref)。格式不對就當作沒有。 */
   identity?: string;
   kind: "declarative" | "code";
-  name: string;
+  /** 1.58.0:可以是多語物件;index route 依後台語系挑一句(見 ./registry-localize.ts)。 */
+  name: LocalizedString;
   version: string;
   coreApi: string;
-  description?: string;
+  description?: LocalizedString;
+  /** 1.58.0:詳情頁的重點(≤6 句,單行純文字,可多語)。 */
+  highlights?: LocalizedString[];
+  /** 1.58.0:詳情頁的說明(純文字,段落以空行分隔,可多語)。 */
+  details?: LocalizedString;
   /** 顯示用作者名(registry.json 可寫 string 或 { name } 物件,解析時正規化)。 */
   author?: string;
   source: string; // 標記來源（configured registrySources 其中一個）
@@ -407,6 +415,8 @@ interface RawIndexEntry {
   version?: unknown;
   coreApi?: unknown;
   description?: unknown;
+  highlights?: unknown;
+  details?: unknown;
   author?: unknown;
   icon?: unknown;
   iconUrl?: unknown;
@@ -495,6 +505,66 @@ function parseEmail(raw: unknown): string | undefined {
   return typeof raw === "string" && raw.length <= 254 && EMAIL_RE.test(raw) ? raw : undefined;
 }
 
+// 1.58.0:商店顯示的文字。registry 是半信任的來源:去掉控制字元與終端序列、截到上限。
+// 上限對齊 manifest(highlights / details 見 @/ext/dx/manifest.ts);名稱與簡介沒有
+// manifest 上限,這裡給一個卡片放得下的寬鬆值。
+const NAME_MAX = 80;
+const DESCRIPTION_MAX = 500;
+const HIGHLIGHTS_MAX = 6;
+const HIGHLIGHT_MAX = 80;
+const DETAILS_MAX = 1200;
+const TAGS_MAX = 8;
+const TAG_MAX = 40;
+
+/** 純文字段落:空一行分段,段內換行併成空格;總長截到 max 個字元。 */
+function cleanParagraphs(raw: string, max: number): string {
+  const text = raw
+    .split(/\r?\n[ \t]*\r?\n/)
+    .map((paragraph) => sanitizeRegistryText(paragraph))
+    .filter((paragraph) => paragraph.length > 0)
+    .join("\n\n");
+  const chars = Array.from(text);
+  return chars.length > max ? chars.slice(0, max).join("").trimEnd() : text;
+}
+
+/** 字串或 { en, "zh-Hant" } → 清理過的 LocalizedString;清完是空的就當作沒有。 */
+function parseLocalizedText(raw: unknown, clean: (text: string) => string): LocalizedString | undefined {
+  if (typeof raw === "string") return clean(raw) || undefined;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const { en, "zh-Hant": zh } = raw as { en?: unknown; "zh-Hant"?: unknown };
+  const out: { en?: string; "zh-Hant"?: string } = {};
+  const cleanEn = typeof en === "string" ? clean(en) : "";
+  const cleanZh = typeof zh === "string" ? clean(zh) : "";
+  if (cleanEn) out.en = cleanEn;
+  if (cleanZh) out["zh-Hant"] = cleanZh;
+  return out.en !== undefined || out["zh-Hant"] !== undefined ? out : undefined;
+}
+
+function parseHighlights(raw: unknown): LocalizedString[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw
+    .slice(0, HIGHLIGHTS_MAX)
+    .map((line) => parseLocalizedText(line, (text) => sanitizeRegistryText(text, HIGHLIGHT_MAX)))
+    .filter((line): line is LocalizedString => line !== undefined);
+  return out.length > 0 ? out : undefined;
+}
+
+/** 標籤:清理、去重(不分大小寫)、最多 8 個。 */
+function parseTags(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const tag = sanitizeRegistryText(item, TAG_MAX);
+    if (!tag || seen.has(tag.toLowerCase())) continue;
+    seen.add(tag.toLowerCase());
+    out.push(tag);
+    if (out.length === TAGS_MAX) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 function parseStringArray(raw: unknown): string[] | undefined {
   return Array.isArray(raw)
     ? raw.filter((s): s is string => typeof s === "string")
@@ -507,10 +577,11 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
   if (!Array.isArray(list)) return [];
   const out: RegistryIndexEntry[] = [];
   for (const raw of list as RawIndexEntry[]) {
+    const name = parseLocalizedText(raw?.name, (text) => sanitizeRegistryText(text, NAME_MAX));
     if (
       typeof raw?.id === "string" &&
       (raw.kind === "declarative" || raw.kind === "code") &&
-      typeof raw.name === "string" &&
+      name !== undefined &&
       typeof raw.version === "string" &&
       typeof raw.coreApi === "string"
     ) {
@@ -521,11 +592,12 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
         id: raw.id,
         identity: isIdentity(raw.identity) ? raw.identity : undefined,
         kind: raw.kind,
-        name: raw.name,
+        name,
         version: raw.version,
         coreApi: raw.coreApi,
-        description:
-          typeof raw.description === "string" ? raw.description : undefined,
+        description: parseLocalizedText(raw.description, (text) => sanitizeRegistryText(text, DESCRIPTION_MAX)),
+        highlights: parseHighlights(raw.highlights),
+        details: parseLocalizedText(raw.details, (text) => cleanParagraphs(text, DETAILS_MAX)),
         author: parseAuthor(raw.author),
         source,
         icon: typeof raw.icon === "string" ? raw.icon : undefined,
@@ -533,8 +605,8 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
         banner: typeof raw.banner === "string" ? raw.banner : undefined,
         screenshots: parseStringArray(raw.screenshots),
         license: typeof raw.license === "string" ? raw.license : undefined,
-        tags: parseStringArray(raw.tags),
-        category: typeof raw.category === "string" ? raw.category : undefined,
+        tags: parseTags(raw.tags),
+        category: typeof raw.category === "string" ? sanitizeRegistryText(raw.category, TAG_MAX) || undefined : undefined,
         deployment: DEPLOYMENTS.includes(raw.deployment as never)
           ? (raw.deployment as (typeof DEPLOYMENTS)[number])
           : undefined,
@@ -555,6 +627,11 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
     }
   }
   return out;
+}
+
+/** 上新通知裡的插件名稱是一句字串(存進通知快取):依後台語系先挑好。 */
+function noticeRefs(entries: readonly RegistryIndexEntry[], locale: Locale): NoticeEntryRef[] {
+  return entries.map((e) => ({ id: e.id, name: localizeEntryText(e, locale).name, version: e.version, banner: e.banner }));
 }
 
 /**
@@ -587,7 +664,9 @@ export async function fetchRegistryIndex(): Promise<RegistryIndexResult> {
         }
         const parsed = parseIndexEntries(json, source);
         entries.push(...parsed);
-        if (config.notices === true) notices.push({ source, notices: parseNotices(json, parsed) });
+        if (config.notices === true) {
+          notices.push({ source, notices: parseNotices(json, noticeRefs(parsed, await getLocale())) });
+        }
       } catch (e) {
         errors.push({
           source,
@@ -618,7 +697,7 @@ export async function fetchSourceNotices(config: RegistrySourceConfig): Promise<
   } catch {
     throw new Error("invalid JSON in registry.json");
   }
-  return parseNotices(json, parseIndexEntries(json, config.url));
+  return parseNotices(json, noticeRefs(parseIndexEntries(json, config.url), await getLocale()));
 }
 
 export class UnknownRegistrySource extends Error {

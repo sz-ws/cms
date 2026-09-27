@@ -662,7 +662,14 @@ extractLeaf("themeRadius", ["properties", "theme", "properties", "radius"], (v) 
   p.homepage.description = "homepage must be https";
   p.repository.description = "repository must be https";
   p.license.description = "SPDX id (e.g. 'MIT'); display only, not SPDX-validated.";
-  p.tags.description = "Discoverability tags: search matching + detail page chips.";
+  p.tags.description =
+    "Discoverability tags (<=8): search matching; the store shows the first 3 on the card and all of them on the detail page, and choosing one filters the store.";
+  p.category.description =
+    "Store category, the store's primary navigation. 1.58.0 adds auth (sign-in & members), marketing and analytics; a manifest using one of those three must declare coreApi \"^1.58.0\" (zod superRefine). Values a store does not know are listed under a neutral 'Other'.";
+  p.highlights.description =
+    "1.58.0: short points for the store's detail page (1-6 lines, each <=80 characters, single line). Plain text only: the store escapes it and never renders HTML or Markdown; text that looks like an HTML tag is rejected (zod refine, not expressible in JSON Schema). Each line may be a localized object; every locale value has the same limits. A manifest using this field must declare coreApi \"^1.58.0\".";
+  p.details.description =
+    "1.58.0: longer description for the store's detail page (<=1200 characters). Plain text; a blank line starts a new paragraph. The store escapes it and never renders HTML or Markdown; text that looks like an HTML tag is rejected (zod refine). May be a localized object; every locale value has the same limit. A manifest using this field must declare coreApi \"^1.58.0\".";
   p.support.description = "zod does not call .strict() on this object, so additional properties are permitted here.";
   p.stylesheet.description =
     "1.8.0: optional co-located stylesheet. v1 fixes the filename as the literal 'style.css' (no arbitrary paths, to prevent path traversal / fetching arbitrary assets). Installed content is validated by validateStylesheet before being stored.";
@@ -739,7 +746,7 @@ const DEF_ORDER = [
 const PROPERTY_ORDER = [
   "kind", "id", "identity", "name", "version", "coreApi", "description", "icon", "menu", "iconUrl", "banner", "screenshots",
   "deployment", "files", "installPrompts", "customApiRoutes", "capabilities", "requires", "requiresExtensions",
-  "author", "homepage", "repository", "license", "tags", "category", "support",
+  "author", "homepage", "repository", "license", "tags", "category", "highlights", "details", "support",
   "theme", "stylesheet", "contentTypes", "settings", "adminPages", "publicRoutes", "og",
   "migrations", "on", "dashboardCards", "schedule", "loginProvider", "scripts", "appearances",
 ];

@@ -60,3 +60,35 @@ describe("registry index parsing", () => {
     expect(plain.requiresExtensions).toBeUndefined();
   });
 });
+
+// 1.58.0:名稱與簡介可以是多語物件;highlights / details / tags 清理後保留。
+describe("registry index store text", () => {
+  it("keeps localized objects and drops entries whose name is unusable", async () => {
+    serve({
+      extensions: [
+        {
+          ...base,
+          id: "booking",
+          kind: "declarative",
+          name: { "zh-Hant": "訂位", en: "Booking", fr: "Réservation" },
+          description: { en: "Tables and \u001b[31mtimes\u001b[0m" },
+          highlights: ["One\nline", { "zh-Hant": "重點" }, 7, {}, "x".repeat(100), "a", "b", "c", "d"],
+          details: "First paragraph\nstill first.\n\n\n  \nSecond <b>as text</b>.",
+          tags: ["Booking", "booking", " ", "Tables", 3, "t".repeat(50)],
+          category: "auth",
+        },
+        { ...base, id: "nameless", kind: "declarative", name: { fr: "x" } },
+        { ...base, id: "blank", kind: "declarative", name: "   " },
+      ],
+    });
+    const { entries } = await fetchRegistryIndex();
+    expect(entries.map((e) => e.id)).toEqual(["booking"]);
+    const [booking] = entries;
+    expect(booking.name).toEqual({ "zh-Hant": "訂位", en: "Booking" });
+    expect(booking.description).toEqual({ en: "Tables and times" });
+    expect(booking.highlights).toEqual(["One line", { "zh-Hant": "重點" }, "x".repeat(80), "a"]);
+    expect(booking.details).toBe("First paragraph still first.\n\nSecond <b>as text</b>.");
+    expect(booking.tags).toEqual(["Booking", "Tables", "t".repeat(40)]);
+    expect(booking.category).toBe("auth");
+  });
+});
