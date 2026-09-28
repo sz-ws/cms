@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
+import { currencySymbol } from "@/lib/units";
 import type { CheckoutSession } from "../capabilities";
 
 // payment-kit:測試付款表單(client)。POST 到該金流 extension 的 checkout
@@ -44,6 +46,7 @@ export function CheckoutTestForm({
   endpoint: string;
   disabled: boolean;
 }) {
+  const symbol = currencySymbol(useSiteCurrency());
   const [amount, setAmount] = useState("100");
   const [description, setDescription] = useState("測試訂單");
   const [email, setEmail] = useState("");
@@ -94,7 +97,7 @@ export function CheckoutTestForm({
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-[8rem_1fr_1fr]">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] text-black/45">金額（NT$）</span>
+          <span className="text-[12px] text-black/45">金額（{symbol}）</span>
           <input
             type="number"
             min={1}

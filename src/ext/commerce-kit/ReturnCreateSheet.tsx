@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { LoadingState } from "@/components/admin/LoadingState";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { useDateFormatter } from "@/components/DateTimeProvider";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
 import { useT } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n";
 import { RETURN_REASONS, RETURN_STATUS_SET, orderReturnBlock, refundCap, suggestedRefund, type ShopReturn } from "./returns";
@@ -31,6 +32,7 @@ function OrderLines({
   onQty: (productId: string, value: number) => void;
 }) {
   const t = useT();
+  const currency = useSiteCurrency();
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[13px] font-medium text-black/55 admin:text-ink/55">{t("returns.create.items")}</p>
@@ -40,7 +42,7 @@ function OrderLines({
             <span className="min-w-0 text-[13.5px] text-black/85 admin:text-ink/85">
               <span className="block truncate">{line.name}</span>
               <span className="text-[12px] tabular-nums text-black/45 admin:text-ink/45">
-                {money(line.unitPrice)} ·{" "}
+                {money(line.unitPrice, currency)} ·{" "}
                 {line.returnable > 0
                   ? t("returns.create.returnable", { qty: line.returnable })
                   : t("returns.create.allReturned")}
@@ -67,6 +69,7 @@ function OrderLines({
 
 function OrderFacts({ data, statusRef, onOpenReturn }: { data: OrderLookup; statusRef: string; onOpenReturn: (no: string) => void }) {
   const t = useT();
+  const currency = useSiteCurrency();
   const dates = useDateFormatter();
   const o = data.order;
   return (
@@ -77,11 +80,11 @@ function OrderFacts({ data, statusRef, onOpenReturn }: { data: OrderLookup; stat
         {o.customerPhone ? <span className="ml-2 tabular-nums text-black/55 admin:text-ink/55">{o.customerPhone}</span> : null}
       </dd>
       <dt className={cls.dt}>{t("returns.field.orderTotal")}</dt>
-      <dd className={`${cls.dd} tabular-nums`}>{money(o.total)}</dd>
+      <dd className={`${cls.dd} tabular-nums`}>{money(o.total, currency)}</dd>
       {o.discount > 0 ? (
         <>
           <dt className={cls.dt}>{t("returns.field.discount")}</dt>
-          <dd className={`${cls.dd} tabular-nums`}>{money(o.discount)}</dd>
+          <dd className={`${cls.dd} tabular-nums`}>{money(o.discount, currency)}</dd>
         </>
       ) : null}
       <dt className={cls.dt}>{t("returns.field.placedAt")}</dt>
@@ -89,7 +92,7 @@ function OrderFacts({ data, statusRef, onOpenReturn }: { data: OrderLookup; stat
       {o.refunded > 0 ? (
         <>
           <dt className={cls.dt}>{t("returns.field.refunded")}</dt>
-          <dd className={`${cls.dd} tabular-nums`}>{money(o.refunded)}</dd>
+          <dd className={`${cls.dd} tabular-nums`}>{money(o.refunded, currency)}</dd>
         </>
       ) : null}
       {o.returns.length > 0 ? (
@@ -128,6 +131,7 @@ export function ReturnCreateSheet({
   onOpenReturn: (returnNo: string) => void;
 }) {
   const t = useT();
+  const currency = useSiteCurrency();
   const [requested, setRequested] = useState<{ no: string; n: number } | null>(
     initialOrderNo ? { no: initialOrderNo, n: 0 } : null,
   );
@@ -258,7 +262,7 @@ export function ReturnCreateSheet({
                   className={`${cls.field} tabular-nums`}
                 />
                 {picked.some((p) => p.qty > 0) ? (
-                  <span className={`${cls.hint} font-normal tabular-nums`}>{refundMaxHint(t, data.order, picked)}</span>
+                  <span className={`${cls.hint} font-normal tabular-nums`}>{refundMaxHint(t, data.order, picked, currency)}</span>
                 ) : null}
                 {data.order.discount > 0 ? (
                   <span className={`${cls.hint} font-normal`}>{t("returns.create.amountDiscounted")}</span>

@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
 import type { CheckoutSession, ManualInstructionLine } from "@/ext/capabilities";
+import { formatMoney } from "@/ext/commerce-kit/money";
 import {
   computeShippingOptions,
   type ShippingConfig,
@@ -199,6 +201,8 @@ export function CheckoutView({
     getCartSnapshot,
     getCartServerSnapshot,
   );
+  const currency = useSiteCurrency();
+  const money = (amount: number) => formatMoney(amount, currency);
   const [name, setName] = useState(contact.name ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
   const [phone, setPhone] = useState("");
@@ -565,7 +569,7 @@ export function CheckoutView({
                 {i.name} × {i.qty}
               </span>
               <span className="shrink-0 tabular-nums text-black/80">
-                NT$ {(i.unitPrice * i.qty).toLocaleString("zh-TW")}
+                {money(i.unitPrice * i.qty)}
               </span>
             </li>
           ))}
@@ -574,7 +578,7 @@ export function CheckoutView({
           <div className="flex justify-between">
             <span className="text-black/55">小計</span>
             <span className="tabular-nums text-black/80">
-              NT$ {subtotal.toLocaleString("zh-TW")}
+              {money(subtotal)}
             </span>
           </div>
           {promo ? (
@@ -584,7 +588,7 @@ export function CheckoutView({
               </span>
               <span className="shrink-0 tabular-nums text-emerald-700">
                 {promo.discount > 0
-                  ? `− NT$ ${promo.discount.toLocaleString("zh-TW")}`
+                  ? `− ${money(promo.discount)}`
                   : "免運"}
               </span>
             </div>
@@ -593,14 +597,14 @@ export function CheckoutView({
             <div className="flex justify-between">
               <span className="text-black/55">運費（{selectedShip.name}）</span>
               <span className="tabular-nums text-black/80">
-                {shippingFee === 0 ? "免運" : `NT$ ${shippingFee.toLocaleString("zh-TW")}`}
+                {shippingFee === 0 ? "免運" : money(shippingFee)}
               </span>
             </div>
           ) : null}
           <div className="flex justify-between pt-1 text-[14.5px]">
             <span className="text-black/55">合計</span>
             <span className="font-semibold tabular-nums text-black/85">
-              NT$ {total.toLocaleString("zh-TW")}
+              {money(total)}
             </span>
           </div>
         </div>
@@ -717,7 +721,7 @@ export function CheckoutView({
                     ) : null}
                   </span>
                   <span className="shrink-0 tabular-nums">
-                    {o.fee === 0 ? "免運" : `NT$ ${o.fee.toLocaleString("zh-TW")}`}
+                    {o.fee === 0 ? "免運" : money(o.fee)}
                   </span>
                 </label>
               );
@@ -737,7 +741,7 @@ export function CheckoutView({
               <span className="min-w-0">
                 <span className={CODE}>{promo.code}</span> 已套用
                 {promo.discount > 0
-                  ? ` — 折 NT$ ${promo.discount.toLocaleString("zh-TW")}`
+                  ? ` — 折 ${money(promo.discount)}`
                   : " — 免運"}
               </span>
               <button

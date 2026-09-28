@@ -3,6 +3,8 @@ import { createManualPaymentProvider } from "@/ext/payment-kit";
 import type { ManualInstructionsResult } from "@/ext/payment-kit";
 import type { CheckoutRequest } from "@/ext/capabilities";
 import type { CoreServices } from "@/ext/services";
+import { formatMoney } from "@/ext/commerce-kit/money";
+import { getSiteCurrency } from "@/lib/units-server";
 import { BankTransferAdminPage } from "./admin-page";
 
 // 銀行轉帳(匯款)extension —— payment capability 的第一個 **manual** provider
@@ -20,11 +22,12 @@ async function buildInstructions(
   req: CheckoutRequest,
 ): Promise<ManualInstructionsResult> {
   // ScopedSettings 收**完整** key(ext.<extId>.<key>)—— 只給區域名會 throw。
-  const [bankName, bankCode, accountNumber, accountName] = await Promise.all([
+  const [bankName, bankCode, accountNumber, accountName, currency] = await Promise.all([
     services.settings.get<string>("ext.banktransfer.bankName", ""),
     services.settings.get<string>("ext.banktransfer.bankCode", ""),
     services.settings.get<string>("ext.banktransfer.accountNumber", ""),
     services.settings.get<string>("ext.banktransfer.accountName", ""),
+    getSiteCurrency(),
   ]);
   if (!bankName.trim() || !accountNumber.trim() || !accountName.trim()) {
     return { ok: false, error: "not_configured" };
@@ -38,7 +41,7 @@ async function buildInstructions(
       },
       { label: "帳號", value: accountNumber.trim() },
       { label: "戶名", value: accountName.trim() },
-      { label: "金額", value: `NT$ ${req.amount.toLocaleString("zh-TW")}` },
+      { label: "金額", value: formatMoney(req.amount, currency) },
       { label: "訂單編號", value: req.orderNo },
     ],
     // 0.1.2:不寫「末五碼」—— 受管訂單的站台可以改成回報匯款人姓名。

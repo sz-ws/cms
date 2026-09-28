@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
+import { formatMoney } from "./money";
 import {
   computeShippingOptions,
   type ShippingConfig,
@@ -75,6 +77,7 @@ export function ShippingEditor({
    */
   readOnly?: boolean;
 }) {
+  const currency = useSiteCurrency();
   const [methods, setMethods] = useState<ShippingMethod[]>(initial?.methods ?? []);
   const [rules, setRules] = useState<ShippingRule[]>(initial?.rules ?? []);
   const [busy, setBusy] = useState(false);
@@ -469,7 +472,7 @@ export function ShippingEditor({
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-black/70 admin:text-ink/70">{o.name}</span>
                     <span className="font-semibold tabular-nums text-black/85 admin:text-ink/85">
-                      {o.fee === 0 ? "免運" : `NT$ ${o.fee.toLocaleString("zh-TW")}`}
+                      {o.fee === 0 ? "免運" : formatMoney(o.fee, currency)}
                     </span>
                   </div>
                   {o.applied.length > 0 ? (

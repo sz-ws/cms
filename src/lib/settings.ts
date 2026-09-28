@@ -193,12 +193,13 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     // 1.62.0:站台的幣別(lib/units.ts)。儀表板上沒有指定幣別的金額用它寫;只是寫法,不換算金額。
+    // 1.63.0:商店的金額(commerce-kit formatMoney、CurrencyProvider)也照它寫。
     key: "core.currency",
     group: "general",
     label: { en: "Currency", "zh-Hant": "幣別" },
     description: {
-      en: "Amounts on the dashboard and in reports are shown in this currency. Changing it only changes how they are shown; it doesn't convert them.",
-      "zh-Hant": "儀表板與報表上的金額以這個幣別顯示。改了只換顯示方式，不會換算金額。",
+      en: "Amounts in the shop, on the dashboard and in reports are shown in this currency. Changing it only changes how they are shown; it doesn't convert them.",
+      "zh-Hant": "商店、儀表板與報表上的金額以這個幣別顯示。改了只換顯示方式，不會換算金額。",
     },
     type: "select",
     options: CURRENCY_OPTIONS,

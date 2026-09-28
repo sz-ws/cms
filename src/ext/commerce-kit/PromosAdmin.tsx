@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
 import type { Promo, PromoType } from "./promo";
+import { formatMoney } from "./money";
 
 // commerce-kit:優惠碼管理(client)。列表 + 建立/編輯表單。
 // 用量(used)只顯示不可編 —— 要重置就刪掉重建(promo.ts upsert 不動 used)。
@@ -24,9 +26,9 @@ function percentEffect(percentOff: number): string {
   return `打 ${rest % 10 === 0 ? rest / 10 : rest} 折`;
 }
 
-function promoEffect(p: Promo): string {
+function promoEffect(p: Promo, currency: string): string {
   if (p.type === "percent") return percentEffect(p.value);
-  if (p.type === "flat") return `折抵 NT$ ${p.value.toLocaleString("zh-TW")}`;
+  if (p.type === "flat") return `折抵 ${formatMoney(p.value, currency)}`;
   return "免運";
 }
 
@@ -62,6 +64,7 @@ export function PromosAdmin({
   readOnly?: boolean;
 }) {
   const router = useRouter();
+  const currency = useSiteCurrency();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -237,10 +240,10 @@ export function PromosAdmin({
                     ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-black/70 admin:text-ink/70">
-                    {promoEffect(p)}
+                    {promoEffect(p, currency)}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-black/70 admin:text-ink/70">
-                    {p.minSubtotal > 0 ? `NT$ ${p.minSubtotal.toLocaleString("zh-TW")}` : "—"}
+                    {p.minSubtotal > 0 ? formatMoney(p.minSubtotal, currency) : "—"}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-black/70 admin:text-ink/70">
                     {p.used}

@@ -16,6 +16,7 @@ import { StartReturnLink } from "./StartReturnLink";
 import { RETURNABLE_ORDER_STATUSES } from "./returns";
 import { createReturnsEngine, isMissingTableError, type ReturnsConfig } from "./returns-engine";
 import { DateTimeText } from "@/components/DateTimeProvider";
+import { MoneyText } from "@/components/CurrencyProvider";
 
 // commerce-kit:商店 extension adminPage 的共用積木(server 端)。
 // 樣式常數沿用 payment-kit/admin(同一套 Paper & Ink 慣例)—— commerce 本來就
@@ -152,7 +153,7 @@ export function CommerceOrdersTable({
             >
               <td className="py-2.5 pr-4 font-mono text-[12px]">{o.orderNo}</td>
               <td className="py-2.5 pr-4 tabular-nums">
-                NT$ {o.amounts.total.toLocaleString("zh-TW")}
+                <MoneyText amount={o.amounts.total} />
               </td>
               <td className="py-2.5 pr-4">
                 <OrderStatusPill status={o.status} />
@@ -237,7 +238,7 @@ export function TransferVerifyQueue({
                   {o.orderNo}
                 </span>
                 <span className="tabular-nums text-[13px] text-black/70 admin:text-ink/70">
-                  NT$ {o.amounts.total.toLocaleString("zh-TW")}
+                  <MoneyText amount={o.amounts.total} />
                 </span>
                 <span className="text-[12.5px] text-black/55 admin:text-ink/55">
                   末五碼{" "}

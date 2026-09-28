@@ -89,6 +89,16 @@ function formatCurrency(value: number, code: string): string {
   }
 }
 
+/** 1.63.0:幣別的符號(NT$、$、¥),寫法同 formatUnit;表單的「金額（NT$）」這類標籤用。 */
+export function currencySymbol(code: string): string {
+  try {
+    const parts = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).formatToParts(0);
+    return parts.find((part) => part.type === "currency")?.value ?? code;
+  } catch {
+    return code;
+  }
+}
+
 /** 照單位寫出一個數字。siteCurrency:沒指定幣別的金額用它(省略 = DEFAULT_CURRENCY)。 */
 export function formatUnit(value: number, unit: Unit, locale: Locale, siteCurrency: string = DEFAULT_CURRENCY): string {
   const tag = localeTag(locale);

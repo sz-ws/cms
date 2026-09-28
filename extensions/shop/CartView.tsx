@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
+import { MoneyText } from "@/components/CurrencyProvider";
 import {
   cartSubtotal,
   getCartServerSnapshot,
@@ -40,7 +41,7 @@ export function CartView() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-[14.5px] text-black/85">{item.name}</p>
               <p className="mt-0.5 text-[12.5px] tabular-nums text-black/60">
-                NT$ {item.unitPrice.toLocaleString("zh-TW")}
+                <MoneyText amount={item.unitPrice} />
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -65,7 +66,7 @@ export function CartView() {
               </button>
             </div>
             <p className="w-24 text-right text-[14px] tabular-nums text-black/80">
-              NT$ {(item.unitPrice * item.qty).toLocaleString("zh-TW")}
+              <MoneyText amount={item.unitPrice * item.qty} />
             </p>
           </li>
         ))}
@@ -74,7 +75,7 @@ export function CartView() {
       <div className="flex items-center justify-between border-t border-black/10 pt-5">
         <span className="text-[14px] text-black/55">小計</span>
         <span className="text-[18px] font-semibold tabular-nums tracking-[-0.01em] text-black/85">
-          NT$ {cartSubtotal(items).toLocaleString("zh-TW")}
+          <MoneyText amount={cartSubtotal(items)} />
         </span>
       </div>
       <p className="-mt-4 text-right text-[12px] text-black/60">

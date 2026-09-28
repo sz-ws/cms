@@ -32,6 +32,7 @@ export const cls = {
   mono: "font-mono text-[12.5px] text-black/85 admin:text-ink/85",
 } as const;
 
+/** 金額(照幣別寫;client 元件用 useSiteCurrency() 拿站台幣別傳進來)。 */
 export const money = formatMoney;
 
 export type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
@@ -56,11 +57,12 @@ export function refundMaxHint(
   t: Translate,
   order: RefundOrderAmounts,
   items: readonly { unitPrice: number; qty: number }[],
+  currency?: string,
 ): string {
-  const amount = money(refundCap(order, items));
+  const amount = money(refundCap(order, items), currency);
   const shipping = refundCapShipping(order, items);
   return shipping > 0
-    ? t("returns.refund.maxWithShipping", { amount, shipping: money(shipping) })
+    ? t("returns.refund.maxWithShipping", { amount, shipping: money(shipping, currency) })
     : t("returns.refund.max", { amount });
 }
 

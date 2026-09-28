@@ -7,6 +7,7 @@ import { Timeline, type TimelineItem } from "@/components/admin/Timeline";
 import { LoadingState } from "@/components/admin/LoadingState";
 import { StatusBadge, useStatusSet } from "@/components/admin/StatusBadge";
 import { useDateFormatter } from "@/components/DateTimeProvider";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
 import { useT } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n";
 import { REFUND_METHODS, RETURN_STATUS_SET, refundCap, type ReturnEvent, type ShopReturn } from "./returns";
@@ -25,23 +26,23 @@ import {
 // 一筆退貨的明細 sheet:內容、下一步、處理紀錄。下一步的欄位跟著選到的動作換:
 // 收到退貨 → 每項放回庫存幾件;登記退款 → 金額、方式、備註;其餘只有備註。
 
-function eventDetail(t: Translate, e: ReturnEvent): string {
+function eventDetail(t: Translate, e: ReturnEvent, currency: string): string {
   const parts: string[] = [];
   if (e.restockSkipped) parts.push(t("returns.event.restockSkipped"));
   if (e.restocked?.length) {
     parts.push(t("returns.event.restocked", { items: e.restocked.map((r) => `${r.name} × ${r.qty}`).join("、") }));
   }
-  if (e.refund) parts.push(`${money(e.refund.amount)} · ${t(`returns.method.${e.refund.method}` as MessageKey)}`);
+  if (e.refund) parts.push(`${money(e.refund.amount, currency)} · ${t(`returns.method.${e.refund.method}` as MessageKey)}`);
   if (e.note) parts.push(e.note);
   return parts.join(" · ");
 }
 
-function toTimeline(t: Translate, events: ReturnEvent[]): TimelineItem[] {
+function toTimeline(t: Translate, events: ReturnEvent[], currency: string): TimelineItem[] {
   return events.map((e) => ({
     id: e.id,
     at: e.at,
     title: t(`returns.event.${e.action}` as MessageKey),
-    detail: eventDetail(t, e) || undefined,
+    detail: eventDetail(t, e, currency) || undefined,
     actor: e.actorName,
   }));
 }
@@ -49,6 +50,7 @@ function toTimeline(t: Translate, events: ReturnEvent[]): TimelineItem[] {
 /** 明細:品項、客人、訂單、原因、金額、退款。(export 給渲染測試用) */
 export function Summary({ detail, ordersPage }: { detail: ReturnDetail; ordersPage: string }) {
   const t = useT();
+  const currency = useSiteCurrency();
   const dates = useDateFormatter();
   const r = detail.return;
   return (
@@ -66,7 +68,7 @@ export function Summary({ detail, ordersPage }: { detail: ReturnDetail; ordersPa
                   </span>
                 ) : null}
               </span>
-              <span className="shrink-0 tabular-nums">{money(line.unitPrice * line.qty)}</span>
+              <span className="shrink-0 tabular-nums">{money(line.unitPrice * line.qty, currency)}</span>
             </li>
           ))}
         </ul>
@@ -82,7 +84,7 @@ export function Summary({ detail, ordersPage }: { detail: ReturnDetail; ordersPa
           <Link href={`${ordersPage}?q=${encodeURIComponent(r.orderNo)}&open=${encodeURIComponent(r.orderNo)}`} className={`${cls.mono} break-all underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black/60`}>
             {r.orderNo}
           </Link>
-          {detail.order ? <span className="ml-2 tabular-nums text-black/45 admin:text-ink/45">{money(detail.order.total)}</span> : null}
+          {detail.order ? <span className="ml-2 tabular-nums text-black/45 admin:text-ink/45">{money(detail.order.total, currency)}</span> : null}
         </dd>
         <dt className={cls.dt}>{t("returns.field.reason")}</dt>
         <dd className={cls.dd}>{t(`returns.reason.${r.reason}` as MessageKey)}</dd>
@@ -93,12 +95,12 @@ export function Summary({ detail, ordersPage }: { detail: ReturnDetail; ordersPa
           </>
         ) : null}
         <dt className={cls.dt}>{t("returns.field.requested")}</dt>
-        <dd className={`${cls.dd} tabular-nums`}>{money(r.requestedAmount)}</dd>
+        <dd className={`${cls.dd} tabular-nums`}>{money(r.requestedAmount, currency)}</dd>
         {r.refund ? (
           <>
             <dt className={cls.dt}>{t("returns.field.refund")}</dt>
             <dd className={cls.dd}>
-              <span className="tabular-nums">{money(r.refund.amount)}</span>
+              <span className="tabular-nums">{money(r.refund.amount, currency)}</span>
               <span className="text-black/55 admin:text-ink/55"> · {t(`returns.method.${r.refund.method}` as MessageKey)} · {dates.dateTime(r.refund.at)}</span>
               {r.refund.note ? <span className="block text-[12.5px] text-black/55 admin:text-ink/55">{r.refund.note}</span> : null}
             </dd>
@@ -170,6 +172,7 @@ function RestockFields({ detail }: { detail: ReturnDetail }) {
 
 function RefundFields({ detail }: { detail: ReturnDetail }) {
   const t = useT();
+  const currency = useSiteCurrency();
   // 上限:這筆退貨的商品金額加運費,也不超過訂單還沒退的金額(同伺服器的 refundCap)。
   const max = detail.order ? refundCap(detail.order, detail.return.lines) : 0;
   return (
@@ -200,7 +203,7 @@ function RefundFields({ detail }: { detail: ReturnDetail }) {
         </label>
       </div>
       <p className={`${cls.hint} -mt-1 tabular-nums`}>
-        {detail.order ? refundMaxHint(t, detail.order, detail.return.lines) : t("returns.refund.max", { amount: money(0) })}
+        {detail.order ? refundMaxHint(t, detail.order, detail.return.lines, currency) : t("returns.refund.max", { amount: money(0, currency) })}
       </p>
       <label className={cls.label}>
         {t("returns.refund.note")}
@@ -316,6 +319,7 @@ export function ReturnDetailSheet({
   onChanged: (updated: ShopReturn) => void;
 }) {
   const t = useT();
+  const currency = useSiteCurrency();
   const statuses = useStatusSet(statusRef, RETURN_STATUS_SET);
   const [detail, setDetail] = useState<ReturnDetail | null>(null);
   const [reload, setReload] = useState(0);
@@ -389,7 +393,7 @@ export function ReturnDetailSheet({
               {canEdit ? <ActionForm detail={shown} busy={busy} onSubmit={(a, f) => void submit(a, f)} /> : null}
               <div className={cls.section}>
                 <p className={cls.heading}>{t("returns.timeline")}</p>
-                <Timeline items={toTimeline(t, shown.events)} empty={t("returns.timelineEmpty")} />
+                <Timeline items={toTimeline(t, shown.events, currency)} empty={t("returns.timelineEmpty")} />
               </div>
             </>
           ) : error?.no === shownNo ? null : (

@@ -7,6 +7,7 @@ import { CoreTable, type CoreColumn } from "@/components/admin/core-table";
 import { StatusBadge, useStatusSet } from "@/components/admin/StatusBadge";
 import { useAdminPageTitle } from "@/components/admin/admin-titles";
 import { useDateFormatter } from "@/components/DateTimeProvider";
+import { useSiteCurrency } from "@/components/CurrencyProvider";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { RETURN_STATUSES, RETURN_STATUS_SET, type ReturnStatus, type ShopReturn } from "./returns";
 import { cls, linesSummary, money } from "./returns-ui";
@@ -70,6 +71,7 @@ export function ReturnsWorkspace(props: ReturnsWorkspaceProps) {
   const t = useT();
   const router = useRouter();
   const dates = useDateFormatter();
+  const currency = useSiteCurrency();
   const statuses = useStatusSet(statusRef, RETURN_STATUS_SET);
   const title = useAdminPageTitle(t("returns.title"));
   const filterHref = useFilterHref(pageHref, search);
@@ -125,7 +127,7 @@ export function ReturnsWorkspace(props: ReturnsWorkspaceProps) {
       sortValue: (r) => r.requestedAmount,
       thClass: "text-right",
       tdClass: "text-right",
-      render: (r) => <span className="text-[13px] tabular-nums text-black/85 admin:text-ink/85">{money(r.requestedAmount)}</span>,
+      render: (r) => <span className="text-[13px] tabular-nums text-black/85 admin:text-ink/85">{money(r.requestedAmount, currency)}</span>,
     },
     {
       key: "status",

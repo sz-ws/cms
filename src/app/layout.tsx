@@ -25,8 +25,10 @@ import "../../public/fonts/chiron-hei-hk/chiron-hei-hk.css";
 import { Geist, Inter } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DateTimeProvider } from "@/components/DateTimeProvider";
+import { CurrencyProvider } from "@/components/CurrencyProvider";
 import { getSetting } from "@/lib/settings";
 import { getSiteTimeZone } from "@/lib/datetime-server";
+import { getSiteCurrency } from "@/lib/units-server";
 import { getLocale } from "@/lib/i18n/server";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +82,8 @@ export default async function RootLayout({
   // generateMetadata 已經讀過,這裡不會多一趟 D1。
   // 1.48.0:lang 跟著站台語系(core.locale)。原本寫死 "en",中文站的螢幕閱讀器會用
   // 英文念中文;宣告式插件的 script 也只能從這裡知道頁面是什麼語言。
-  const [timeZone, locale] = await Promise.all([getSiteTimeZone(), getLocale()]);
+  // 1.63.0:站台幣別(core.currency)同樣給所有 client component(useSiteCurrency / MoneyText)。
+  const [timeZone, locale, currency] = await Promise.all([getSiteTimeZone(), getLocale(), getSiteCurrency()]);
   return (
     <html
       lang={locale}
@@ -88,7 +91,9 @@ export default async function RootLayout({
     >
       <body>
         <DateTimeProvider timeZone={timeZone}>
-          <TooltipProvider>{children}</TooltipProvider>
+          <CurrencyProvider currency={currency}>
+            <TooltipProvider>{children}</TooltipProvider>
+          </CurrencyProvider>
         </DateTimeProvider>
       </body>
     </html>
