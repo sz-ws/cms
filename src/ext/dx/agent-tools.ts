@@ -258,6 +258,8 @@ export function contentTypeAgentTools(
         `Create a new "${label}" (${def.type}) entry. Defaults to draft status. ` +
         `The slug is derived automatically unless given. Fields: ${fieldsDoc}`,
       kind: "write",
+      // 只新增一筆,不動任何既有資料(外部 AI App 據此少一次警告,見 AgentTool.destructive)。
+      destructive: false,
       schema: z
         .object({
           data: contentDataSchema(ct.fields, "create"),

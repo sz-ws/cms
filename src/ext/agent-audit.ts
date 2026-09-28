@@ -24,8 +24,12 @@ import type { AgentToolKind, AgentToolResult } from "./agent-tools";
 // 因此本檔不做遮罩 —— 遮罩要成立得倚賴每一處都不出錯,而這裡沒有東西需要遮。
 // 截斷仍照做,但那是為了控制表的大小,不是為了保密。
 
-/** 這一列是哪條路徑產生的。spec §4 的兩個端點各對應一個值。 */
-export type AgentAuditSource = "chat" | "execute";
+/**
+ * 這一列是哪條路徑產生的。spec §4 的兩個端點各對應一個值;"mcp" 是外部 AI App 經
+ * /api/mcp 執行(src/ext/mcp-server.ts)—— 那裡的「人工確認」發生在 App 裡,所以要與
+ * "execute" 分得開,事後才答得出「這一筆是誰在哪裡按下去的」。
+ */
+export type AgentAuditSource = "chat" | "execute" | "mcp";
 
 /** args 摘要上限。夠看清「動的是哪一筆」,又不會讓一次大 payload 撐大整張表。 */
 export const AGENT_AUDIT_ARGS_MAX = 2_000;
@@ -33,6 +37,8 @@ export const AGENT_AUDIT_ARGS_MAX = 2_000;
 export const AGENT_AUDIT_RESULT_MAX = 1_000;
 /** 錯誤摘要上限。同 ai:generate 的 200 字慣例。 */
 export const AGENT_AUDIT_ERROR_MAX = 200;
+/** App 名稱上限。名字是 App 登記時自己報的(公開登記),截斷只是為了控制表的大小。 */
+export const AGENT_AUDIT_APP_MAX = 100;
 
 export interface AgentAuditEntry {
   /** who。只取 id 與 email —— 稽核要的是「誰」,不是整個 session 物件。 */
@@ -44,6 +50,8 @@ export interface AgentAuditEntry {
   args: unknown;
   /** invokeAgentTool 的結果,成功與失敗都收。 */
   outcome: AgentToolResult;
+  /** source = "mcp" 時,連線的 App 名稱。其餘來源省略(寫成 NULL)。 */
+  app?: string;
 }
 
 function truncate(raw: string, max: number): string {
@@ -102,6 +110,7 @@ export async function recordAgentToolRun(entry: AgentAuditEntry): Promise<void> 
           ? jsonSummary(outcome.result, AGENT_AUDIT_RESULT_MAX)
           : null,
         error: outcome.ok ? null : errorSummary(outcome),
+        app: entry.app ? truncate(entry.app, AGENT_AUDIT_APP_MAX) : null,
       });
   } catch (e) {
     console.error(`[agent-audit] failed to record "${entry.toolName}"`, e);
@@ -151,6 +160,8 @@ export interface AgentAuditRow {
   ok: boolean;
   result: string | null;
   error: string | null;
+  /** source = "mcp" 的列才有:那個 App 的名字。 */
+  app: string | null;
 }
 
 export interface AgentAuditPage {
@@ -221,6 +232,7 @@ export async function listAgentAudit(
     ok: r.ok === 1,
     result: r.result,
     error: r.error,
+    app: r.app,
   }));
   const last = page[page.length - 1];
   return {

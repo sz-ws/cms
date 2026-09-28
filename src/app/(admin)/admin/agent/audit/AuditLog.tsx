@@ -43,6 +43,14 @@ function absoluteTime(epochMs: number, dates: DateFormatter): string {
   return dates.format(epochMs, { dateStyle: "medium", timeStyle: "medium" });
 }
 
+/** 來源標籤。1.59.0:經 AI 連線執行的列寫出是哪個 App(確認發生在那個 App 裡)。 */
+function sourceLabel(row: AgentAuditRow, t: ReturnType<typeof useT>): string {
+  if (row.source === "mcp") {
+    return t("agent.audit.source.mcp", { app: row.app || t("aiConnect.unnamed") });
+  }
+  return t(row.source === "execute" ? "agent.audit.source.execute" : "agent.audit.source.chat");
+}
+
 export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
   const t = useT();
   const locale = useLocale();
@@ -120,12 +128,12 @@ export function AuditLog({ rows, now, view, tool, empty }: AuditLogProps) {
                   <span
                     className={cn(
                       "rounded-[calc(5px*var(--admin-radius-scale,1))] px-1.5 py-px text-[10.5px]",
-                      row.source === "execute"
-                        ? "bg-(--admin-accent)/[0.08] text-(--admin-accent)"
-                        : "bg-ink/[0.045] text-ink/45",
+                      row.source === "chat"
+                        ? "bg-ink/[0.045] text-ink/45"
+                        : "bg-(--admin-accent)/[0.08] text-(--admin-accent)",
                     )}
                   >
-                    {t(row.source === "execute" ? "agent.audit.source.execute" : "agent.audit.source.chat")}
+                    {sourceLabel(row, t)}
                   </span>
                   <span className="truncate md:hidden">{row.userEmail}</span>
                   <span className="tabular-nums">{absoluteTime(row.at, dates)}</span>

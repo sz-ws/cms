@@ -36,6 +36,15 @@ export interface AgentTool {
   /** 給 LLM 看的:何時該用、參數語意。空字串 = 這個 tool 對 LLM 不存在,故拒收。 */
   description: string;
   kind: AgentToolKind;
+  /**
+   * write tool 會不會蓋掉或刪掉既有資料(1.59.0)。省略 = 會 —— 保守的那一邊。
+   *
+   * 只是給外部 AI App 的提示(MCP 的 annotations.destructiveHint,見 mcp-server.ts):
+   * App 據此決定要不要在呼叫前多警告一次使用者。**不改變任何執行規則** —— write 照舊只在
+   * 面板的確認卡或有寫入權限的連線上執行。只新增資料的 tool(例:content.*.create)寫 false。
+   * read tool 忽略這個欄位。
+   */
+  destructive?: boolean;
   /** args 驗證。Phase B 會轉成 JSON Schema 餵給 LLM。 */
   schema: z.ZodType;
   execute(ctx: AgentToolCtx, args: unknown): Promise<unknown>;
@@ -129,6 +138,8 @@ export function defineAgentTool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   kind: AgentToolKind;
+  /** 見 AgentTool.destructive。 */
+  destructive?: boolean;
   schema: S;
   run: (ctx: AgentToolCtx, args: z.output<S>) => Promise<unknown>;
   /**
@@ -151,6 +162,7 @@ export function defineAgentTool<S extends z.ZodType>(def: {
     // async 是刻意的:parse 失敗要走 rejected promise,而不是同步 throw ——
     // 回傳型別寫著 Promise,呼叫端就有權只用 .catch()/await 攔錯。
     execute: async (ctx, args) => def.run(ctx, def.schema.parse(args)),
+    ...(def.destructive === undefined ? {} : { destructive: def.destructive }),
     ...(def.summarize ? { summarize: def.summarize } : {}),
     ...(def.display ? { display: def.display } : {}),
   };
