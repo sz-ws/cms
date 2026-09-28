@@ -381,18 +381,21 @@ describe("生成的 tools 端到端跑在真的 D1 上", () => {
     expect(res.ok === false && res.error).toContain("not_found");
   });
 
-  it("provider 的欄位驗證仍是最終權威(schema 放行、語意不合照樣擋)", async () => {
-    // media key 形狀由 provider 的 isMediaKey 把關,衍生 schema 只知道它是字串。
+  it("media 欄位收的是 key,不是網址或路徑(1.60.0 起 schema 就用同一支 isMediaKey 擋)", async () => {
     const withMedia = byName(
       contentTypeAgentTools("blog", {
         name: "shot",
         fields: [{ key: "image", type: "media", required: true }],
       }),
     );
-    const res = await invokeAgentTool(withMedia.get("content.blog_shot.create")!, makeCtx(), {
-      data: { image: "../../etc/passwd" },
-    });
-    expect(res.ok).toBe(false);
+    const create = withMedia.get("content.blog_shot.create")!;
+    for (const image of ["../../etc/passwd", "https://cdn.example.com/a.jpg", "/api/files/core/2026/09/a.jpg"]) {
+      const res = await invokeAgentTool(create, makeCtx(), { data: { image } });
+      expect(res).toMatchObject({ ok: false, error: "invalid_args" });
+      expect(res.ok === false && res.issues?.join(" ")).toContain("core.media.upload");
+    }
+    expect(create.description).toContain("core.media.upload");
+    expect(create.description).toContain("image (media key, required)");
   });
 });
 

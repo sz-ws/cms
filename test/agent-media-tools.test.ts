@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { env } from "cloudflare:test";
 
-// 1.60.0:媒體庫的 agent tools(core.media.list / core.media.upload)。
+// 1.60.0:媒體庫的 agent tools(core.media.list / core.media.upload)與「帶著上傳的圖建立
+// 商品」這條完整路徑。
 //
 // R2 不在 vitest.config 的 miniflare bindings 內:getStorage 換成假 bucket(同
-// media-dimensions-storage.test.ts)。D1 是真的 —— registry 經真的 buildAgentToolRegistry 組出來。
+// media-dimensions-storage.test.ts)。D1 是真的 —— 商品經真的 CoreContentProvider 寫進
+// contents 表,registry 經真的 buildAgentToolRegistry 從 declarative_extensions 列組出來。
 // 抓網址的 fetch 以 vi.stubGlobal 換掉:這裡驗的是**我們自己**的規則(轉址逐跳重驗、帳密、
 // 私有位址、大小、看檔頭不看標頭),不是網路。
 
@@ -77,6 +79,7 @@ import { buildAgentToolRegistry } from "../src/ext/agent-tools-runtime";
 import { createServices } from "../src/ext/services";
 import { putFile } from "../src/lib/storage";
 import { isMediaKey } from "../src/ext/dx/media-key";
+import { catalogManifest } from "../src/ext/commerce-kit/catalog";
 import { decodeBase64Image, fetchRemoteImage } from "../src/lib/remote-image";
 import { invalidateSettingsCache } from "../src/lib/settings";
 
@@ -359,5 +362,68 @@ describe("core.media.list", () => {
     );
     expect(second.items).toHaveLength(1);
     expect(second.items[0].key).not.toBe(first.items[0].key);
+  });
+});
+
+// ============================================================ 完整商品
+
+describe("a complete product with an uploaded photo, through the generated tools", () => {
+  beforeEach(async () => {
+    await d1()
+      .prepare("INSERT INTO declarative_extensions (id, version, manifest, enabled) VALUES ('catalog', '1.0.0', ?1, 1)")
+      .bind(JSON.stringify(catalogManifest()))
+      .run();
+    await setSetting("core.content.extraFields", {
+      "catalog.product": [
+        { key: "origin", label: "Origin", type: "text", public: true },
+        { key: "featured", label: "Featured", type: "boolean", public: false },
+      ],
+    });
+  });
+
+  it("upload → category → create with image key and extra fields → read back → update one extra field", async () => {
+    const byName = await tools();
+    const create = byName.get("content.catalog_product.create")!;
+    expect(create.description).toContain("core.media.upload");
+    expect(create.description).toContain("image (media key)");
+    expect(create.description).toContain("extra {origin: text, featured: boolean}");
+
+    const photo = result<Uploaded>(await call("core.media.upload", { base64: base64(png(800, 800)), alt: "Sample product" }));
+    const category = result<{ id: string }>(await call("content.catalog_category.create", { data: { name: "Gifts" } }));
+
+    // 網址塞進圖片欄位:schema 當場退回,指向該用的 tool。
+    const wrong = await call("content.catalog_product.create", { data: { name: "Sample product", image: photo.url } });
+    expect(wrong).toMatchObject({ ok: false, error: "invalid_args" });
+
+    const created = result<{ id: string; status: string; data: Record<string, unknown> }>(
+      await call("content.catalog_product.create", {
+        data: {
+          name: "Sample product",
+          price: 320,
+          summary: "A short line",
+          body: "Longer description.",
+          category: category.id,
+          image: photo.key,
+          extra: { origin: "  Hillside  ", featured: true },
+        },
+        status: "published",
+      }),
+    );
+    expect(created.status).toBe("published");
+
+    const read = result<{ data: Record<string, unknown> }>(await call("content.catalog_product.get", { id: created.id }));
+    expect(read.data).toMatchObject({
+      name: "Sample product",
+      price: 320,
+      category: category.id,
+      image: photo.key,
+      extra: { origin: "Hillside", featured: true },
+    });
+
+    // 只改一個額外欄位:另一個保持原值;null 清掉那一格。
+    result(await call("content.catalog_product.update", { id: created.id, data: { extra: { featured: null } } }));
+    const after = result<{ data: Record<string, unknown> }>(await call("content.catalog_product.get", { id: created.id }));
+    expect(after.data.extra).toEqual({ origin: "Hillside" });
+    expect(after.data.image).toBe(photo.key);
   });
 });

@@ -4,6 +4,16 @@ import type {
   DeclarativeField,
   DeclarativeLeafField,
 } from "./manifest";
+import { isMediaKey } from "./media-key";
+import type { ExtraFieldDef } from "@/lib/extra-fields";
+
+/**
+ * 1.60.0:media 欄位給模型看的一句話(JSON Schema 的 description,也是驗不過時的訊息)。
+ * 模型拿到的第一個念頭通常是「圖片 = 網址」,這句話就是為了擋那一步。
+ */
+export const MEDIA_KEY_HINT =
+  "Media key of an uploaded file, such as core/2026/09/abc123.jpg — the `key` returned by core.media.upload " +
+  "or listed by core.media.list. Not a URL. An empty string removes the image.";
 
 // docs/spec-admin-agent.md §2:declarative contentTypes 自動生成 tools 時,args
 // schema 從 manifest fields 衍生的那一半。
@@ -34,8 +44,16 @@ function leafSchema(field: DeclarativeLeafField): z.ZodType {
       // provider 收 Tiptap JSON 文件物件,並向後相容純字串(寫入時升級為單段文件)。
       return z.union([z.string(), z.record(z.string(), z.unknown())]);
     case "media":
-      // storage key 字串。key 形狀由 provider 的 isMediaKey 把關(不在此複製規則)。
-      return z.string();
+      // storage key 字串。1.60.0 起在這裡就用 provider 的**同一支** isMediaKey 驗(不是複製
+      // 規則,所以不會比 provider 嚴):模型最常犯的錯是把網址塞進圖片欄位,在 schema 層
+      // 退回並說清楚該給什麼,比等 provider 回一句 "invalid media key" 有用。空字串照收 ——
+      // provider 把它當成「清掉這張圖」。
+      return z
+        .string()
+        .refine((v) => v.trim().length === 0 || isMediaKey(v), {
+          message: MEDIA_KEY_HINT,
+        })
+        .describe(MEDIA_KEY_HINT);
     case "number":
       return z.number();
     case "boolean":
@@ -113,6 +131,48 @@ function fieldSchema(field: DeclarativeField): z.ZodType {
   }
 }
 
+// ── 額外欄位(1.60.0)─────────────────────────────────────────────────────────
+// 值住在 data.extra,定義在設定(core.content.extraFields)。寫入前一律再經
+// withCoercedExtra / coerceExtraValues 整理(同 crud.ts),這裡只負責讓模型知道有哪些
+// key、各是什麼型別,打錯 key 當場退回(同上面 .strict() 的理由)。
+
+/** data 底下放額外欄位的那個 key(lib/extra-fields.ts 的約定)。 */
+export const EXTRA_KEY = "extra";
+
+function extraValueSchema(def: ExtraFieldDef): z.ZodType {
+  switch (def.type) {
+    case "boolean":
+      return z.boolean();
+    case "number":
+      return z.number();
+    case "text":
+    case "textarea":
+      return z.string();
+  }
+}
+
+/**
+ * data.extra 的 schema。update 時每個值也收 null(= 清掉這一格):工具會先把既有的
+ * extra 合併進來再整理,所以沒提到的 key 保持原值。
+ */
+function extraDataSchema(
+  defs: readonly ExtraFieldDef[],
+  mode: "create" | "update",
+): z.ZodType {
+  const shape: Record<string, z.ZodType> = {};
+  for (const def of defs) {
+    const base = extraValueSchema(def).describe(def.label);
+    shape[def.key] = (mode === "update" ? base.nullable() : base).optional();
+  }
+  return z.object(shape).strict();
+}
+
+/** 額外欄位的人話摘要,接在 describeFields 後面:`extra {spicy: boolean, origin: text}`。 */
+export function describeExtraFields(defs: readonly ExtraFieldDef[]): string {
+  if (defs.length === 0) return "";
+  return `${EXTRA_KEY} {${defs.map((def) => `${def.key}: ${def.type}`).join(", ")}} (fields the site owner added)`;
+}
+
 /**
  * content type 的 `data` args schema。
  *
@@ -125,12 +185,18 @@ function fieldSchema(field: DeclarativeField): z.ZodType {
 export function contentDataSchema(
   fields: readonly DeclarativeField[],
   mode: "create" | "update",
+  extraFields: readonly ExtraFieldDef[] = [],
 ): z.ZodType<Record<string, unknown>> {
   const shape: Record<string, z.ZodType> = {};
   for (const field of fields) {
     const base = fieldSchema(field);
     shape[field.key] =
       mode === "create" && field.required ? base : base.optional();
+  }
+  // 1.60.0:管理員在設定頁加的額外欄位(data.extra,lib/extra-fields.ts)。宣告欄位剛好也
+  // 叫 extra 的型別就不加 —— 那個 key 已經是插件的,兩者不能共用一格。
+  if (extraFields.length > 0 && !Object.prototype.hasOwnProperty.call(shape, EXTRA_KEY)) {
+    shape[EXTRA_KEY] = extraDataSchema(extraFields, mode).optional();
   }
   // shape 是執行期依 manifest 組出來的,zod 對它只能推出 `{}` —— 宣告回傳型別讓
   // 呼叫端拿到可展開的物件型別。實際形狀由上面的迴圈保證,不是憑空放寬。
@@ -149,6 +215,9 @@ function fieldHint(field: DeclarativeField): string {
     case "relation":
     case "relations":
       return field.to ? ` → ${field.to}` : "";
+    case "media":
+      // 1.60.0:「media key」而不是「media」—— 值是 core.media.upload 回傳的 key,不是網址。
+      return " key";
     case "group":
     case "repeater":
       return `{${(field.fields ?? []).map((f) => f.key).join(", ")}}`;

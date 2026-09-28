@@ -10,9 +10,22 @@ import { toTypeDef } from "./runtime";
 import { parseManifest } from "./manifest";
 import type { DeclarativeContentType, DeclarativeManifest } from "./manifest";
 import { submissionTypeNames } from "./submission";
-import { contentDataSchema, describeFields } from "./agent-field-schema";
+import {
+  EXTRA_KEY,
+  contentDataSchema,
+  describeExtraFields,
+  describeFields,
+} from "./agent-field-schema";
 import { displayValue, pickTitleField } from "./views/field-utils";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
+import {
+  coerceExtraValues,
+  readExtraValues,
+  withCoercedExtra,
+  type ExtraFieldDef,
+  type ExtraFieldsSetting,
+} from "@/lib/extra-fields";
+import { getExtraFieldsSetting } from "@/lib/extra-fields-server";
 
 // docs/spec-admin-agent.md §2 最值錢的一步:每個 declarative content type 自動長出
 // list/get(read)+ create/update/delete(write)tools,schema 從 manifest fields
@@ -156,6 +169,43 @@ function updateTarget(args: unknown, locale: Locale): string {
     : ` (id: ${id}; ${fieldCount} fields)`;
 }
 
+/** 這個型別(含 group / repeater / blocks 裡的子欄位)有沒有 media 欄位。 */
+function hasMediaField(ct: DeclarativeContentType): boolean {
+  return ct.fields.some(
+    (field) =>
+      field.type === "media" ||
+      (field.fields ?? []).some((sub) => sub.type === "media") ||
+      (field.blocks ?? []).some((block) => block.fields.some((sub) => sub.type === "media")),
+  );
+}
+
+/**
+ * 1.60.0:create/update 說明裡關於圖片的那一句。只在型別真的有 media 欄位時出現 ——
+ * 模型拿到網址會直接塞進欄位,這句話告訴它先上傳、再給 key。
+ */
+const MEDIA_NOTE =
+  "Image (media) fields take a media key such as core/2026/09/abc123.jpg, not a URL: " +
+  "upload the picture with core.media.upload (or find an existing one with core.media.list) and pass the `key` it returns. ";
+
+/**
+ * 1.60.0:update 時的 data.extra —— 先把既有的 extra 合併進來,再依定義整理。
+ *
+ * provider 的 update 只做 top-level 淺合併,data.extra 會整包替換;直接照送的話,模型只改
+ * 一個額外欄位,其他額外欄位就被清掉了。這裡讓它跟 description 那句「只有給的欄位會變」
+ * 一致:沒提到的 key 保持原值,null 清掉那一格(coerceExtraValues 會丟掉 null)。
+ */
+async function mergedExtra(
+  provider: ContentProvider,
+  type: string,
+  id: string,
+  defs: readonly ExtraFieldDef[],
+  incoming: unknown,
+): Promise<Record<string, unknown>> {
+  const existing = await provider.get(type, id);
+  const current = readExtraValues(existing?.data[EXTRA_KEY]);
+  return coerceExtraValues(defs, { ...current, ...readExtraValues(incoming) });
+}
+
 /**
  * 為單一 declarative content type 產生 agent tools。
  *
@@ -168,16 +218,25 @@ function updateTarget(args: unknown, locale: Locale): string {
  *     模型一個製造假資料的機會。
  *   - list/get/delete 照舊 —— delete 尤其要留,既有的 schedule[] deleteOlderThan
  *     保留策略就是走同一個 provider.delete。
+ *
+ * `extraFields`(1.60.0):這個型別在設定頁加的額外欄位。create/update 的 data 因此多一個
+ * `extra`,寫入前照 crud.ts 的規則整理(見 mergedExtra)。
  */
 export function contentTypeAgentTools(
   extId: string,
   ct: DeclarativeContentType,
   isSubmission = false,
+  extraFields: readonly ExtraFieldDef[] = [],
 ): AgentTool[] {
   const def = toTypeDef(extId, ct);
   const slug = contentToolSlug(extId, ct.name);
   const label = typeLabel(ct);
-  const fieldsDoc = describeFields(ct.fields);
+  // 宣告欄位剛好叫 extra 的型別不收額外欄位(見 contentDataSchema)。
+  const extras = ct.fields.some((f) => f.key === EXTRA_KEY) ? [] : extraFields;
+  const fieldsDoc = [describeFields(ct.fields), describeExtraFields(extras)]
+    .filter((part) => part.length > 0)
+    .join("; ");
+  const mediaNote = hasMediaField(ct) ? MEDIA_NOTE : "";
   const noun = isSubmission ? "submission" : "entry";
 
   const readTools: AgentTool[] = [
@@ -263,13 +322,13 @@ export function contentTypeAgentTools(
       name: `content.${slug}.create`,
       description:
         `Create a new "${label}" (${def.type}) entry. Defaults to draft status. ` +
-        `The slug is derived automatically unless given. Fields: ${fieldsDoc}`,
+        `The slug is derived automatically unless given. ${mediaNote}Fields: ${fieldsDoc}`,
       kind: "write",
       // 只新增一筆,不動任何既有資料(外部 AI App 據此少一次警告,見 AgentTool.destructive)。
       destructive: false,
       schema: z
         .object({
-          data: contentDataSchema(ct.fields, "create"),
+          data: contentDataSchema(ct.fields, "create", extras),
           status: z.enum(["draft", "published"]).optional(),
           slug: z.string().min(1).optional(),
         })
@@ -283,7 +342,9 @@ export function contentTypeAgentTools(
       run: async (ctx, args) => {
         const provider = await contentProvider(ctx, def);
         return provider.create(def.type, {
-          ...args.data,
+          // 額外欄位照 crud.ts 的規則整理(沒有定義的 key 丟掉、空值丟掉)。沒有額外欄位時
+          // 不碰:宣告欄位剛好叫 extra 的型別,那一格是插件自己的。
+          ...(extras.length > 0 ? withCoercedExtra(extras, args.data) : args.data),
           ...(args.status ? { status: args.status } : {}),
           ...(args.slug ? { slug: args.slug } : {}),
         });
@@ -294,12 +355,15 @@ export function contentTypeAgentTools(
       description:
         `Update one "${label}" (${def.type}) entry by id. Only the fields given in \`data\` change; ` +
         `everything else keeps its current value, so read the entry first only when you need the old values. ` +
-        `Fields: ${fieldsDoc}`,
+        (extras.length > 0
+          ? `Inside data.${EXTRA_KEY}, only the keys given change; null clears one. `
+          : "") +
+        `${mediaNote}Fields: ${fieldsDoc}`,
       kind: "write",
       schema: z
         .object({
           id: z.string().min(1),
-          data: contentDataSchema(ct.fields, "update"),
+          data: contentDataSchema(ct.fields, "update", extras),
           status: z.enum(["draft", "published"]).optional(),
         })
         .strict(),
@@ -312,8 +376,14 @@ export function contentTypeAgentTools(
       },
       run: async (ctx, args) => {
         const provider = await contentProvider(ctx, def);
+        const data = Object.prototype.hasOwnProperty.call(args.data, EXTRA_KEY) && extras.length > 0
+          ? {
+              ...args.data,
+              [EXTRA_KEY]: await mergedExtra(provider, def.type, args.id, extras, args.data[EXTRA_KEY]),
+            }
+          : args.data;
         return provider.update(def.type, args.id, {
-          ...args.data,
+          ...data,
           ...(args.status ? { status: args.status } : {}),
         });
       },
@@ -326,11 +396,17 @@ export function contentTypeAgentTools(
  * 整份 manifest → agent tools。submission 判定在此做一次,往下傳 —— 與 interpret
  * 對 admin/public/API 三個 surface 的處理方式相同(判定一次,不可能分叉)。
  */
-export function manifestAgentTools(manifest: DeclarativeManifest): AgentTool[] {
+export function manifestAgentTools(
+  manifest: DeclarativeManifest,
+  extraFields: ExtraFieldsSetting = {},
+): AgentTool[] {
   const submissions = submissionTypeNames(manifest);
-  return (manifest.contentTypes ?? []).flatMap((ct) =>
-    contentTypeAgentTools(manifest.id, ct, submissions.has(ct.name)),
-  );
+  return (manifest.contentTypes ?? []).flatMap((ct) => {
+    const typeKey = `${manifest.id}.${ct.name}`;
+    // 只認自己的 key(同 getExtraFieldDefs:型別名不能摸到原型鏈上)。
+    const defs = Object.prototype.hasOwnProperty.call(extraFields, typeKey) ? extraFields[typeKey] : [];
+    return contentTypeAgentTools(manifest.id, ct, submissions.has(ct.name), defs);
+  });
 }
 
 /**
@@ -347,10 +423,14 @@ export function manifestAgentTools(manifest: DeclarativeManifest): AgentTool[] {
  * loader 匯出一份「被跳過的 id」清單,而不是在這裡再重算一次撞名判定。
  */
 export async function listDeclarativeAgentTools(): Promise<AgentTool[]> {
-  const rows = await db()
-    .select({ id: dxTable.id, manifest: dxTable.manifest })
-    .from(dxTable)
-    .where(sql`${dxTable.enabled} = 1`);
+  const [rows, extraFields] = await Promise.all([
+    db()
+      .select({ id: dxTable.id, manifest: dxTable.manifest })
+      .from(dxTable)
+      .where(sql`${dxTable.enabled} = 1`),
+    // 1.60.0:額外欄位的定義一次讀齊(壞值當空,見 parseExtraFieldsSetting)。
+    getExtraFieldsSetting(),
+  ]);
 
   const tools: AgentTool[] = [];
   for (const row of rows) {
@@ -362,7 +442,7 @@ export async function listDeclarativeAgentTools(): Promise<AgentTool[]> {
     }
     const parsed = parseManifest(json);
     if (!parsed.ok || !parsed.manifest) continue;
-    tools.push(...manifestAgentTools(parsed.manifest));
+    tools.push(...manifestAgentTools(parsed.manifest, extraFields));
   }
   return tools;
 }

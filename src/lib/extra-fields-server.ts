@@ -10,8 +10,11 @@ import {
 // 設定不是 secret,而且 CRUD / 對外出口每次都讀,不值得為它多跑一次 secret 判定
 // (那會去建整個 extension runtime)。
 
-/** 全部內容類型的額外欄位定義(壞值當空,見 parseExtraFieldsSetting)。 */
-async function getExtraFieldsSetting(): Promise<ExtraFieldsSetting> {
+/**
+ * 全部內容類型的額外欄位定義(壞值當空,見 parseExtraFieldsSetting)。1.60.0 起對外:
+ * agent 的 content tools 與給 AI 的說明一次讀齊全部型別。
+ */
+export async function getExtraFieldsSetting(): Promise<ExtraFieldsSetting> {
   return parseExtraFieldsSetting(await getPlainSetting<unknown>(EXTRA_FIELDS_SETTING));
 }
 
