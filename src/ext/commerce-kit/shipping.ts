@@ -73,6 +73,8 @@ export const shippingConfigSchema: z.ZodType<ShippingConfig> = z
   .object({
     methods: z.array(shippingMethodSchema).max(10),
     rules: z.array(shippingRuleSchema).max(50).default([]),
+    // 1.63.0:收件地區的選項(沒給 = shipping-engine.ts 的 DEFAULT_REGIONS)。
+    regions: z.array(z.string().trim().min(1).max(20)).min(1).max(60).optional(),
   })
   .strict()
   .superRefine((cfg, ctx) => {
@@ -82,6 +84,9 @@ export const shippingConfigSchema: z.ZodType<ShippingConfig> = z
         ctx.addIssue({ code: "custom", message: `duplicate method id "${m.id}"` });
       }
       seen.add(m.id);
+    }
+    if (cfg.regions && new Set(cfg.regions).size !== cfg.regions.length) {
+      ctx.addIssue({ code: "custom", message: "duplicate region" });
     }
   });
 

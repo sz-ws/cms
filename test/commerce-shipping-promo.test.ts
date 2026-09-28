@@ -21,7 +21,9 @@ import { createManualPaymentProvider } from "../src/ext/payment-kit/manual";
 import { createCommerceCheckoutHandler } from "../src/ext/commerce-kit/checkout";
 import {
   computeShippingOptions,
+  DEFAULT_REGIONS,
   parseShippingConfig,
+  shippingRegions,
   type ShippingConfig,
 } from "../src/ext/commerce-kit/shipping";
 import {
@@ -138,6 +140,38 @@ describe("parseShippingConfig(寬容)", () => {
     ).toBeNull();
     const parsed = parseShippingConfig(JSON.stringify(CONFIG));
     expect(parsed?.methods.map((m) => m.id)).toEqual(["home", "cvs", "off"]);
+  });
+});
+
+describe("收件地區(1.63.0 regions)", () => {
+  const methods = [{ id: "m", name: "宅配", base: 100, enabled: true }];
+
+  it("沒設 = 台灣縣市的預設清單;設了就用店家的", () => {
+    expect(shippingRegions(null)).toBe(DEFAULT_REGIONS);
+    expect(shippingRegions(parseShippingConfig({ methods, rules: [] }))).toBe(DEFAULT_REGIONS);
+    expect(DEFAULT_REGIONS).toHaveLength(22);
+    expect(DEFAULT_REGIONS).toContain("臺北市");
+    const custom = parseShippingConfig({ methods, rules: [], regions: ["Hong Kong Island", "Kowloon"] });
+    expect(shippingRegions(custom)).toEqual(["Hong Kong Island", "Kowloon"]);
+  });
+
+  it("最多 60 個、每個 20 字內、不重複;不合就整份設定當作沒有", () => {
+    const many = Array.from({ length: 61 }, (_, i) => `R${i}`);
+    expect(parseShippingConfig({ methods, rules: [], regions: many })).toBeNull();
+    expect(parseShippingConfig({ methods, rules: [], regions: many.slice(0, 60) })?.regions).toHaveLength(60);
+    expect(parseShippingConfig({ methods, rules: [], regions: ["x".repeat(21)] })).toBeNull();
+    expect(parseShippingConfig({ methods, rules: [], regions: ["A", "A"] })).toBeNull();
+    expect(parseShippingConfig({ methods, rules: [], regions: [] })).toBeNull();
+  });
+
+  it("規則的 regions 條件照清單裡的字比對", () => {
+    const cfg: ShippingConfig = {
+      methods,
+      rules: [{ name: "離島加收", enabled: true, when: { regions: ["Kowloon"] }, effect: { type: "add", amount: 50 } }],
+      regions: ["Hong Kong Island", "Kowloon"],
+    };
+    expect(computeShippingOptions({ subtotal: 100, qty: 1, region: "Kowloon" }, cfg)[0].fee).toBe(150);
+    expect(computeShippingOptions({ subtotal: 100, qty: 1, region: "Hong Kong Island" }, cfg)[0].fee).toBe(100);
   });
 });
 

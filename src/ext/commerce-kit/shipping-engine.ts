@@ -41,6 +41,23 @@ export interface ShippingRule {
 export interface ShippingConfig {
   methods: ShippingMethod[];
   rules: ShippingRule[];
+  /**
+   * 1.63.0:結帳頁「收件地區」的選項(最多 60 個)。沒給 = DEFAULT_REGIONS。規則的 regions 條件
+   * 照這裡的字比對。
+   */
+  regions?: string[];
+}
+
+/** 1.63.0:收件地區的預設清單(台灣的縣市)。店家可以在運費頁改。 */
+export const DEFAULT_REGIONS: readonly string[] = Object.freeze([
+  "臺北市", "新北市", "基隆市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
+  "臺中市", "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "臺南市",
+  "高雄市", "屏東縣", "宜蘭縣", "花蓮縣", "臺東縣", "澎湖縣", "金門縣", "連江縣",
+]);
+
+/** 這份運費設定的收件地區選項(沒設就是 DEFAULT_REGIONS)。 */
+export function shippingRegions(config: Pick<ShippingConfig, "regions"> | null | undefined): readonly string[] {
+  return config?.regions?.length ? config.regions : DEFAULT_REGIONS;
 }
 
 /** 試算輸入 —— subtotal/qty 來自購物車,region 來自結帳表單(可空)。 */

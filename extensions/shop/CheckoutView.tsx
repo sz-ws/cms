@@ -7,6 +7,7 @@ import type { CheckoutSession, ManualInstructionLine } from "@/ext/capabilities"
 import { formatMoney } from "@/ext/commerce-kit/money";
 import {
   computeShippingOptions,
+  shippingRegions,
   type ShippingConfig,
 } from "@/ext/commerce-kit/shipping-engine";
 import {
@@ -46,13 +47,6 @@ import type { TransferReportMode } from "./transfer-report";
 //     改成「已經是會員？登入」;匯款訂單的結局頁請客人到 /shop/orders 用訂單編號查詢。
 //     站台的殼可以給 onSignIn(按「登入」時換回自己的會員流程)與 afterOrder(結局頁
 //     下面多放一段,例如請訪客設定密碼)。兩個都是函式,只能從 client 元件傳進來。
-
-/** 收件地區(台灣縣市)。引擎只做字串比對 —— 這份清單是 UI 層的事。 */
-const TW_REGIONS = [
-  "臺北市", "新北市", "基隆市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
-  "臺中市", "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "臺南市",
-  "高雄市", "屏東縣", "宜蘭縣", "花蓮縣", "臺東縣", "澎湖縣", "金門縣", "連江縣",
-];
 
 const ERROR_HINT: Record<string, string> = {
   invalid_input: "資料不完整或格式不對，請檢查後再送出。",
@@ -663,7 +657,7 @@ export function CheckoutView({
             onChange={(e) => setRegion(e.target.value)}
           >
             <option value="">請選擇</option>
-            {TW_REGIONS.map((r) => (
+            {shippingRegions(shippingConfig).map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>

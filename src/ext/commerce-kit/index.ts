@@ -46,6 +46,8 @@ export {
   shippingConfigSchema,
   parseShippingConfig,
   computeShippingOptions,
+  shippingRegions,
+  DEFAULT_REGIONS,
   createShippingConfigHandler,
 } from "./shipping";
 export type {

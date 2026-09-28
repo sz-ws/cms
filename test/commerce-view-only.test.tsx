@@ -166,6 +166,9 @@ describe.each(ROLES)("$role", ({ canEdit, levels }) => {
     expect(hasButton(out, "\\+ 新增方式")).toBe(canEdit);
     expect(hasButton(out, "\\+ 新增規則")).toBe(canEdit);
     expect(/<fieldset disabled=""/.test(out)).toBe(!canEdit);
+    // 1.63.0: the shop's shipping page edits the region list; Taiwan's is the default.
+    expect(out).toContain('aria-label="收件地區"');
+    expect(out).toContain("臺北市\n新北市");
   });
 
   it("優惠碼:能改才有建立表單、編輯與刪除", async () => {

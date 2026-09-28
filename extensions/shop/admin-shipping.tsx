@@ -17,7 +17,7 @@ export async function ShopShippingPage() {
       <p className="max-w-xl text-[13px] leading-relaxed text-black/55">
         配送方式是客人結帳時挑的選項；規則由上往下套用（滿額免運、離島加收…）。右側試算和結帳頁算法相同，這裡看到多少，客人就付多少。
       </p>
-      <ShippingEditor endpoint="/api/ext/shop" initial={parseShippingConfig(raw)} readOnly={!canEdit} />
+      <ShippingEditor endpoint="/api/ext/shop" initial={parseShippingConfig(raw)} readOnly={!canEdit} editRegions />
     </div>
   );
 }

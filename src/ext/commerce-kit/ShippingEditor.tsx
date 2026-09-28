@@ -5,6 +5,8 @@ import { useSiteCurrency } from "@/components/CurrencyProvider";
 import { formatMoney } from "./money";
 import {
   computeShippingOptions,
+  DEFAULT_REGIONS,
+  shippingRegions,
   type ShippingConfig,
   type ShippingMethod,
   type ShippingRule,
@@ -31,6 +33,23 @@ const GHOST_BTN =
   "disabled:opacity-35";
 
 type EffectType = ShippingRule["effect"]["type"];
+
+const MAX_REGIONS = 60;
+const MAX_REGION_LENGTH = 20;
+
+/** 收件地區的輸入(一行一個,也收頓號、逗號)→ 去掉空白與重複的清單。 */
+function readRegions(text: string): string[] {
+  return [...new Set(text.split(/[\n、,，]+/).map((s) => s.trim()).filter(Boolean))];
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, i) => value === b[i]);
+}
+
+/** 要存的 regions:和預設一樣(或清空)就不存,沿用預設。 */
+function storedRegions(regions: readonly string[]): { regions?: string[] } {
+  return regions.length === 0 || sameList(regions, DEFAULT_REGIONS) ? {} : { regions: [...regions] };
+}
 
 function num(value: string): number | undefined {
   if (value.trim() === "") return undefined;
@@ -65,6 +84,7 @@ export function ShippingEditor({
   initial,
   emptyText = "還沒有配送方式。沒有配送方式時，結帳不會出現運費；數位商品或自取的店家可以留空。",
   readOnly = false,
+  editRegions = false,
 }: {
   /** extension API base(如 "/api/ext/shop")。 */
   endpoint: string;
@@ -76,10 +96,16 @@ export function ShippingEditor({
    * 新增、刪除、排序與儲存都不畫;右側試算照常可用(只是算,不寫)。
    */
   readOnly?: boolean;
+  /**
+   * 1.63.0:畫「收件地區」那一張(結帳頁收件地區的選項)。只給用得到它的結帳頁的運費設定;沒畫時
+   * 原本存的地區照樣保留。
+   */
+  editRegions?: boolean;
 }) {
   const currency = useSiteCurrency();
   const [methods, setMethods] = useState<ShippingMethod[]>(initial?.methods ?? []);
   const [rules, setRules] = useState<ShippingRule[]>(initial?.rules ?? []);
+  const [regionsText, setRegionsText] = useState(() => shippingRegions(initial).join("\n"));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   // 試算面板輸入。
@@ -87,9 +113,15 @@ export function ShippingEditor({
   const [tryQty, setTryQty] = useState(1);
   const [tryRegion, setTryRegion] = useState("");
 
+  const regions = useMemo(
+    () => (editRegions ? readRegions(regionsText) : (initial?.regions ?? [])),
+    [editRegions, regionsText, initial],
+  );
+  const regionsProblem =
+    regions.length > MAX_REGIONS || regions.some((r) => r.length > MAX_REGION_LENGTH);
   const config: ShippingConfig = useMemo(
-    () => ({ methods, rules }),
-    [methods, rules],
+    () => ({ methods, rules, ...storedRegions(regions) }),
+    [methods, rules, regions],
   );
   const preview = useMemo(() => {
     const enabled = methods.filter((m) => m.enabled && m.id && m.name);
@@ -410,11 +442,31 @@ export function ShippingEditor({
           )}
         </section>
 
+        {editRegions ? (
+          <section className={CARD_CLS}>
+            <h2 className="text-[14px] font-semibold text-black/85 admin:text-ink/85">收件地區</h2>
+            <p className="mb-3 mt-1 text-[12px] leading-relaxed text-black/45 admin:text-ink/45">
+              結帳頁收件地區的選項，一行一個。規則的「限地區」要寫得和這裡一樣。清空就用預設的台灣縣市。
+            </p>
+            <textarea
+              aria-label="收件地區"
+              className={`${FIELD} h-40 w-full py-2 leading-relaxed`}
+              value={regionsText}
+              onChange={(e) => setRegionsText(e.target.value)}
+            />
+            {regionsProblem ? (
+              <p className="mt-1.5 text-[12.5px] text-red-700">
+                最多 {MAX_REGIONS} 個地區，每個 {MAX_REGION_LENGTH} 字內。
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
         {readOnly ? null : (
           <div className="flex items-center gap-3">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || regionsProblem}
               onClick={() => void save()}
               className="grid h-10 place-items-center rounded-[10px] admin:rounded-[calc(10px*var(--admin-radius-scale,1))] bg-black admin:bg-ink px-6 text-[13.5px] font-medium text-white hover:bg-black/85 admin:hover:bg-ink/85 disabled:opacity-50"
             >

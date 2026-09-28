@@ -110,6 +110,14 @@ describe("CheckoutView switches", () => {
     expect(render({ referralMode: "field" })).not.toContain("shop-referral");
   });
 
+  it("the region select lists the shop's regions, or Taiwan's by default", () => {
+    const methods = [{ id: "home", name: "宅配", base: 100, enabled: true }];
+    const own = render({ shippingConfig: { methods, rules: [], regions: ["Kowloon", "Hong Kong Island"] } });
+    expect(own).toContain('<option value="Kowloon">Kowloon</option>');
+    expect(own).not.toContain("臺北市");
+    expect(render({ shippingConfig: { methods, rules: [] } })).toContain('<option value="臺北市">臺北市</option>');
+  });
+
   it("the promo code example is not a code that looks real", () => {
     const html = render({ promoEnabled: true });
     expect(html).toContain('placeholder="EXAMPLE10"');
