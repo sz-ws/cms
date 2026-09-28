@@ -33,6 +33,7 @@ export type CommerceDb = Pick<CoreServices, "db">;
 //   region TEXT, shipping_method TEXT, promo_code TEXT
 //   transfer_last5 TEXT, transfer_reported_at INTEGER   -- 付款人回報的參考碼(欄名沿用舊的)與時間
 //   transfer_payer TEXT                 -- 1.63.0:匯款人姓名(shop 的 migration 0005)
+//   meta TEXT                           -- 1.63.0:結帳欄位的值,JSON { "<providerId>.<key>": 值 }(0006)
 //   note TEXT
 //   created_at / updated_at INTEGER NOT NULL
 //
@@ -46,6 +47,24 @@ function assertTable(table: string): void {
   if (!TABLE_RE.test(table)) {
     throw new Error(`[commerce-kit] invalid orders table name "${table}"`);
   }
+}
+
+/** 1.63.0 core 會寫的欄位(shop migration 0005–0006)。訂單表都有了之後,這個 isolate 不再問。 */
+const NEWER_COLUMNS = ["transfer_payer", "meta"] as const;
+const knownColumns = new Map<string, ReadonlySet<string>>();
+
+/**
+ * 1.63.0:訂單表有哪些欄位。部署了新版、還沒按「套用更新」的站台,訂單表還沒有 1.63.0 的欄位;寫入前先問,
+ * 沒有的欄位不寫(不能讓付款方式已經建好付款、訂單卻因為寫不進去而沒成立)。
+ */
+export async function orderColumns(deps: CommerceDb, table: string): Promise<ReadonlySet<string>> {
+  assertTable(table);
+  const known = knownColumns.get(table);
+  if (known) return known;
+  const rows = await deps.db.all<{ name: string }>(sql`PRAGMA table_info(${sql.raw(table)})`);
+  const names = new Set(rows.map((row) => row.name));
+  if (NEWER_COLUMNS.every((column) => names.has(column))) knownColumns.set(table, names);
+  return names;
 }
 
 interface OrderRow {
@@ -68,9 +87,27 @@ interface OrderRow {
   transfer_reported_at: number | null;
   /** 1.63.0(migration 0005);還沒套用更新的表沒有這一欄。 */
   transfer_payer?: string | null;
+  /** 1.63.0(migration 0006):結帳欄位的值(JSON)。 */
+  meta?: string | null;
   note: string | null;
   created_at: number;
   updated_at: number;
+}
+
+/** meta 欄 → 物件;沒有、壞掉或不是字串對字串的部分都略過。 */
+export function parseOrderMeta(raw: string | null | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
 }
 
 function rowToOrder(row: OrderRow): CommerceOrder {
@@ -103,6 +140,7 @@ function rowToOrder(row: OrderRow): CommerceOrder {
     transferPayer: row.transfer_payer ?? null,
     transferLast5: row.transfer_last5,
     transferReportedAt: row.transfer_reported_at,
+    meta: parseOrderMeta(row.meta),
     note: row.note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -122,6 +160,11 @@ export interface CreateOrderInput {
   /** 配送方式名稱快照(設定之後改名不影響已成立訂單)。 */
   shippingMethod?: string;
   promoCode?: string;
+  /**
+   * 1.63.0:結帳欄位的值(validateCheckoutFields 的 meta)。空的不寫;表還沒有 meta 欄(還沒套用更新)也不寫,
+   * 記一行,訂單照樣成立。
+   */
+  meta?: Readonly<Record<string, string>>;
 }
 
 /** 建立訂單(status = pending_payment)。orderNo 撞號會 throw(PK)。 */
@@ -132,11 +175,18 @@ export async function createOrder(
 ): Promise<void> {
   assertTable(table);
   const now = Date.now();
+  let meta = input.meta && Object.keys(input.meta).length > 0 ? JSON.stringify(input.meta) : null;
+  if (meta && !(await orderColumns(deps, table)).has("meta")) {
+    console.warn(`[commerce-kit] ${table} has no meta column yet (apply the update); order ${input.orderNo} is saved without its checkout fields`);
+    meta = null;
+  }
+  const metaColumn = meta ? sql.raw(", meta") : sql.raw("");
+  const metaValue = meta ? sql`, ${meta}` : sql.raw("");
   await deps.db.run(sql`
     INSERT INTO ${sql.raw(table)}
       (order_no, status, lines, subtotal, discount, shipping, total,
        payment_provider, customer_name, customer_email, customer_phone,
-       ship_address, region, shipping_method, promo_code, created_at, updated_at)
+       ship_address, region, shipping_method, promo_code, created_at, updated_at${metaColumn})
     VALUES
       (${input.orderNo}, 'pending_payment', ${JSON.stringify(input.lines)},
        ${input.amounts.subtotal}, ${input.amounts.discount},
@@ -144,7 +194,7 @@ export async function createOrder(
        ${input.paymentProvider}, ${input.customerName}, ${input.customerEmail},
        ${input.customerPhone ?? null}, ${input.shipAddress ?? null},
        ${input.region ?? null}, ${input.shippingMethod ?? null},
-       ${input.promoCode ?? null}, ${now}, ${now})
+       ${input.promoCode ?? null}, ${now}, ${now}${metaValue})
   `);
 }
 

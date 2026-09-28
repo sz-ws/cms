@@ -6,7 +6,7 @@ import {
   loadOrders,
 } from "@/ext/commerce-kit/admin";
 import { reportSubject } from "@/ext/payment-kit/report-spec";
-import { loadTransferReportSpec } from "./report-spec";
+import { loadTransferReportSpec } from "./shop-providers";
 
 // 商店 adminPage:對帳佇列 —— 匯款的人工閘口(人工轉帳查不到帳,到帳只有
 // 店家看得到,所以狀態切換是人工一級公民)。兩區:

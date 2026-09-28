@@ -192,6 +192,7 @@ function makeServices(): CoreServices {
             type === "catalog.product" ? (products.get(id) ?? null) : null,
         };
       },
+      list: () => [],
       getById: (cap: string, id: string) =>
         cap === "payment" && id === "manualtest" ? manualProvider : null,
     },

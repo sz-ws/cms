@@ -7,8 +7,6 @@ import { describe, expect, it } from "vitest";
 import {
   CHECKOUT_NOTICE_KEY,
   checkoutContact,
-  REFERRAL_MODES,
-  REFERRAL_MODE_KEY,
   REQUIRE_CONTACT_KEY,
   SHOP_CHECKOUT_SETTINGS,
   resolveCheckoutOptions,
@@ -26,16 +24,12 @@ describe("shop checkout settings", () => {
     const keys = SHOP_CHECKOUT_SETTINGS.map((field) => `ext.shop.${field.key}`);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toEqual(
-      expect.arrayContaining([REFERRAL_MODE_KEY, REQUIRE_CONTACT_KEY, CHECKOUT_NOTICE_KEY]),
+      expect.arrayContaining([REQUIRE_CONTACT_KEY, CHECKOUT_NOTICE_KEY]),
     );
   });
 
-  it("offers exactly the referral modes the resolver understands", () => {
-    const field = SHOP_CHECKOUT_SETTINGS.find((f) => f.key === "referralMode");
-    expect(field?.type).toBe("select");
-    if (field?.type !== "select") return;
-    expect(field.options.map((option) => option.value)).toEqual([...REFERRAL_MODES]);
-    expect(field.default).toBe("field");
+  it("0.9.0: only the two checkout switches (extra fields come from plugins' checkout fields)", () => {
+    expect(SHOP_CHECKOUT_SETTINGS.map((field) => field.key)).toEqual(["requireContact", "checkoutNotice"]);
   });
 });
 
@@ -45,20 +39,13 @@ describe("resolveCheckoutOptions", () => {
       managedOrders: false,
       signedIn: false,
       guestCheckout: false,
-      referralMode: "off",
       requireContact: false,
       notice: "",
     });
   });
 
-  it("ignores referral settings and sign-in outside managed orders", () => {
-    const options = resolveCheckoutOptions({
-      managedOrders: false,
-      signedIn: true,
-      referralMode: "field",
-    });
-    expect(options.referralMode).toBe("off");
-    expect(options.signedIn).toBe(false);
+  it("ignores sign-in outside managed orders", () => {
+    expect(resolveCheckoutOptions({ managedOrders: false, signedIn: true }).signedIn).toBe(false);
   });
 
   it("lets a legacy shop require phone and address", () => {
@@ -67,25 +54,14 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ managedOrders: false, requireContact: "true" }).requireContact).toBe(false);
   });
 
-  it("forces contact fields and defaults the referral field on managed orders", () => {
+  it("forces contact fields on managed orders", () => {
     expect(resolveCheckoutOptions({ managedOrders: true, requireContact: false })).toEqual({
       managedOrders: true,
       signedIn: false,
       guestCheckout: false,
-      referralMode: "field",
       requireContact: true,
       notice: "",
     });
-  });
-
-  it("honours link and off referral modes on managed orders", () => {
-    expect(resolveCheckoutOptions({ managedOrders: true, referralMode: "link" }).referralMode).toBe("link");
-    expect(resolveCheckoutOptions({ managedOrders: true, referralMode: "off" }).referralMode).toBe("off");
-  });
-
-  it("falls back to the referral field when the stored value is unknown", () => {
-    expect(resolveCheckoutOptions({ managedOrders: true, referralMode: "banner" }).referralMode).toBe("field");
-    expect(resolveCheckoutOptions({ managedOrders: true, referralMode: 3 }).referralMode).toBe("field");
   });
 
   it("trims the notice and drops non-string values", () => {
@@ -113,7 +89,6 @@ describe("resolveCheckoutOptions", () => {
       managedOrders: true,
       signedIn: true,
       guestCheckout: true,
-      referralMode: "link",
       requireContact: false,
       checkoutNotice: " 預購商品 ",
     });

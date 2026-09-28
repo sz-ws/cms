@@ -37,7 +37,7 @@ describe("CheckoutView switches", () => {
     expect(html).toContain("電話（選填）");
     expect(html).toContain("收件地址（選填）");
     expect(phoneInput(html)).not.toContain("required");
-    expect(html).not.toContain("shop-referral");
+    expect(html).not.toContain("shop-field-");
     expect(html).not.toContain("結帳前請先");
     expect(html).not.toContain("我的訂單");
   });
@@ -56,14 +56,12 @@ describe("CheckoutView switches", () => {
     expect(html.indexOf("每週三出貨")).toBeLessThan(html.indexOf("小計"));
   });
 
-  it("managed orders: sign-in prompt, required contact and the referral field", () => {
+  it("managed orders: sign-in prompt and required contact", () => {
     const html = render({ managedOrders: true });
     // next/link 在這裡退成純文字:「登入」與「我的訂單」各是一個連結。
     expect(html).toContain("結帳前請先登入會員 · 我的訂單");
     expect(phoneInput(html)).toContain("required");
     expect(addressInput(html)).toContain("required");
-    expect(html).toContain('id="shop-referral"');
-    expect(html).toContain("推薦碼（選填）");
   });
 
   it("managed orders: signed-in members see no login prompt", () => {
@@ -72,14 +70,6 @@ describe("CheckoutView switches", () => {
     expect(html).toContain("已登入會員 · 我的訂單");
     expect(html).not.toContain("已登入會員。");
     expect(html).not.toContain("結帳前請先");
-  });
-
-  it("managed orders: link and off modes hide the referral field", () => {
-    for (const referralMode of ["link", "off"] as const) {
-      const html = render({ managedOrders: true, referralMode });
-      expect(html, referralMode).not.toContain("shop-referral");
-      expect(html, referralMode).toContain("我的訂單");
-    }
   });
 
   it("managed orders with guest checkout: no sign-in gate, a sign-in link instead of 我的訂單", () => {
@@ -106,16 +96,23 @@ describe("CheckoutView switches", () => {
     expect(html).toMatch(/<button type="button"[^>]*>登入<\/button>/);
   });
 
-  it("legacy checkout never shows the referral field even if asked", () => {
-    expect(render({ referralMode: "field" })).not.toContain("shop-referral");
-  });
-
-  it("the region select lists the shop's regions, or Taiwan's by default", () => {
-    const methods = [{ id: "home", name: "宅配", base: 100, enabled: true }];
-    const own = render({ shippingConfig: { methods, rules: [], regions: ["Kowloon", "Hong Kong Island"] } });
-    expect(own).toContain('<option value="Kowloon">Kowloon</option>');
-    expect(own).not.toContain("臺北市");
-    expect(render({ shippingConfig: { methods, rules: [] } })).toContain('<option value="臺北市">臺北市</option>');
+  it("0.9.0: plugins' checkout fields — text and textarea drawn with their label, hidden ones not drawn", () => {
+    const html = render({
+      fields: [
+        { name: "gift.note", label: "賀卡內容", input: "textarea", maxLength: 200, required: false },
+        { name: "vip.code", label: "會員編號", input: "text", maxLength: 20, required: true },
+        { name: "partner.link", label: "合作連結", input: "hidden", maxLength: 30, required: false },
+      ],
+    });
+    const tag = (name: string) => html.match(new RegExp(`<(?:input|textarea)[^>]*name="${name}"[^>]*>`))?.[0] ?? "";
+    expect(html).toContain(">賀卡內容（選填）</label>");
+    expect(tag("gift.note")).toMatch(/^<textarea/);
+    expect(tag("gift.note")).toContain('maxLength="200"');
+    expect(tag("gift.note")).not.toContain("required");
+    expect(html).toContain(">會員編號</label>");
+    expect(tag("vip.code")).toContain('required=""');
+    expect(html).not.toContain("合作連結");
+    expect(html).not.toContain("partner.link");
   });
 
   it("the promo code example is not a code that looks real", () => {

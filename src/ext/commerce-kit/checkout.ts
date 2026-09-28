@@ -18,10 +18,17 @@ import {
 } from "./promo";
 import { computeShippingOptions, type ShippingConfig } from "./shipping";
 import type { OrderAmounts, OrderLine } from "./types";
+import {
+  checkoutFieldsBodySchema,
+  fieldInvalidResponse,
+  listCheckoutFields,
+  validateCheckoutFields,
+  type CheckoutFieldsResult,
+} from "./checkout-fields";
 
 // commerce-kit:公開結帳協調器(POST /api/ext/<extId>/checkout,ApiRoute.public)。
 // 職責鏈:rate limit → 驗 body → 讀 catalog 重新計價(**永不信 client 價格**)→
-// 解析付款方式 → provider.createCheckout → 建訂單列 → 回 { orderNo, session }。
+// 結帳欄位(1.63.0)→ 解析付款方式 → provider.createCheckout → 建訂單列 → 回 { orderNo, session }。
 //
 // 順序刻意是「先 payment session、後 commerce 訂單」:provider.createCheckout
 // 成功時已寫入自己的 pending 付款列,若反過來先建訂單而 provider 失敗,會留下
@@ -55,6 +62,13 @@ const bodySchema = z
     shippingMethodId: z.string().trim().max(40).optional(),
     /** 優惠碼(伺服器 normalize + 原子核銷)。 */
     promoCode: z.string().trim().max(60).optional(),
+    /** 1.63.0:插件宣告的結帳欄位(`<providerId>.<key>` → 值,見 checkout-fields.ts)。 */
+    fields: checkoutFieldsBodySchema.optional(),
+    /**
+     * 1.63.0:結帳頁每次送出帶的請求編號。接手訂單的插件用它讓重送不重複建單;core 的結帳不用它,
+     * 收下是為了結帳頁不管誰接手都送同一種 body。
+     */
+    requestId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -71,6 +85,27 @@ function orderDescription(lines: OrderLine[]): string {
   const first = lines[0].name;
   const label = lines.length === 1 && count === 1 ? first : `${first} 等 ${count} 件`;
   return label.length > 50 ? `${label.slice(0, 47)}…` : label;
+}
+
+/** 結帳欄位:有插件宣告欄位時才問登入的是誰、逐一檢查,得出要存進訂單的 meta。 */
+async function checkFields(
+  ctx: ApiCtx,
+  body: { email: string; fields?: Record<string, string> },
+  lines: readonly OrderLine[],
+  amounts: OrderAmounts,
+): Promise<CheckoutFieldsResult> {
+  const declared = await listCheckoutFields(ctx.services.providers);
+  if (declared.length === 0) return { ok: true, meta: {} };
+  const { getSessionUser } = await import("@/lib/auth");
+  const user = await getSessionUser();
+  // 語言:商店的結帳頁只有繁中(頁面的字與它畫的欄位名稱,shop-providers.ts 的 loadCheckoutFields 用 "zh-Hant"),
+  // 這個 body 也不帶語言,所以錯誤訊息用預設的 zh-Hant。別種語言的結帳頁要把它的 locale 傳進 options。
+  return validateCheckoutFields(
+    ctx.services.providers,
+    body.fields,
+    { lines, amounts, email: body.email, userId: user?.id ?? null },
+    { declared },
+  );
 }
 
 export interface CommerceCheckoutOptions {
@@ -224,6 +259,9 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
       return Response.json({ ok: false, error: "invalid_total" }, { status: 422 });
     }
 
+    const fields = await checkFields(ctx, body, lines, amounts);
+    if (!fields.ok) return fieldInvalidResponse(fields.body);
+
     const providerId = await opts.resolveProvider(ctx, body.method);
     if (!providerId) {
       return Response.json(
@@ -294,6 +332,7 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
       region: body.region,
       shippingMethod: shippingMethodName,
       promoCode: promoCode || undefined,
+      meta: fields.meta,
     });
 
     const res: CheckoutSuccessBody = { ok: true, orderNo, amounts, session };

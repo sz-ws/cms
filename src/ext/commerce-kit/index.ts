@@ -24,10 +24,33 @@ export {
   setOrderNote,
   transitionOrder,
   markOrderPaid,
+  parseOrderMeta,
 } from "./orders";
 export type { CommerceDb, CreateOrderInput, TransitionExtras } from "./orders";
 export { ORDER_SEARCH_FIELDS } from "./orders";
 export { createCommerceCheckoutHandler } from "./checkout";
+// 1.63.0:結帳欄位(capability commerce:checkout-fields)與訂單 meta。瀏覽器端的預先帶入在
+// checkout-prefill.ts(client 直接 import,不進這個 barrel)。
+export {
+  CHECKOUT_FIELDS_CAPABILITY,
+  MAX_CHECKOUT_FIELDS,
+  MAX_FIELD_LENGTH,
+  checkoutFieldsBodySchema,
+  fieldInvalidResponse,
+  listCheckoutFields,
+  publicCheckoutFields,
+  validateCheckoutFields,
+} from "./checkout-fields";
+export type {
+  CheckoutField,
+  CheckoutFieldCheck,
+  CheckoutFieldDraft,
+  CheckoutFieldProvider,
+  CheckoutFieldsResult,
+  DeclaredCheckoutField,
+  FieldInvalidBody,
+  PublicCheckoutField,
+} from "./checkout-fields";
 export type {
   CommerceCheckoutOptions,
   CheckoutSuccessBody,

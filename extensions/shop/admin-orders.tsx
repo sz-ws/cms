@@ -18,6 +18,7 @@ import { isOrderStatus, ORDER_STATUSES } from "@/ext/commerce-kit";
 import { hasRecordSearch, parseRecordSearch, recordSearchParams } from "@/ext/record-search";
 import { AdminPageTitle } from "@/components/admin/admin-titles";
 import { SHOP_RETURNS } from "./returns-config";
+import { loadCheckoutFieldLabels } from "./shop-providers";
 
 // 商店 adminPage:訂單一覽(狀態 filter pills + 動作)。積木全部來自
 // @/ext/commerce-kit/admin,本檔只剩組裝。搜尋框在頂欄(index.ts 的 search 宣告),
@@ -38,12 +39,14 @@ export async function ShopOrdersPage({
   const status = isOrderStatus(raw) ? raw : undefined;
   const search = parseRecordSearch(new URLSearchParams(searchParams));
   const user = await requireAuth("admin");
-  const [orders, counts, transferProvider, canEdit, levels] = await Promise.all([
+  const [orders, counts, transferProvider, canEdit, levels, metaLabels] = await Promise.all([
     loadOrders(ORDERS_TABLE, { status, limit: 100, search }),
     loadStatusCounts(ORDERS_TABLE),
     getSetting<string>("ext.shop.transferProvider", ""),
     canEditCurrentPage(),
     adminPageLevels(user, { verify: "shop/verify", returns: "shop/returns" }),
+    // 0.9.0:結帳欄位的名稱(插件宣告的;訂單上的值在 meta)。
+    loadCheckoutFieldLabels(),
   ]);
   const canCreateReturn = levels.returns === "edit";
   const returned = canCreateReturn ? await loadFullyReturned(SHOP_RETURNS, orders) : [];
@@ -110,6 +113,7 @@ export async function ShopOrdersPage({
           transferProvider={transferProvider.trim() || undefined}
           returnsPage={canCreateReturn ? "/admin/ext/shop/returns" : undefined}
           returned={returned}
+          metaLabels={metaLabels}
         />
       </section>
     </div>

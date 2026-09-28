@@ -38,8 +38,9 @@ vi.mock("@/lib/settings", () => ({
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
 vi.mock("@/lib/cf", () => ({ getDB: () => ({}) }));
 // 1.63.0: the verify page names what customers report (the transfer method's reportSpec).
-vi.mock("../extensions/shop/report-spec", () => ({
+vi.mock("../extensions/shop/shop-providers", () => ({
   loadTransferReportSpec: async () => ({ ask: "reference", reference: { label: "帳號末五碼", digits: 5 } }),
+  loadCheckoutFieldLabels: async () => ({ "gift.note": "賀卡內容" }),
 }));
 vi.mock("@/ext/commerce-kit/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/ext/commerce-kit/admin")>();

@@ -100,6 +100,8 @@ export interface CommerceOrder {
   /** @deprecated 1.63.0 — remove in 2.0. Same value as transferReference. */
   transferLast5: string | null;
   transferReportedAt: number | null;
+  /** 1.63.0:結帳欄位的值({ "<providerId>.<key>": 值 };沒有是 {})。 */
+  meta: Record<string, string>;
   /** 最近一次狀態動作的附註(核帳紀錄等)。 */
   note: string | null;
   createdAt: number;

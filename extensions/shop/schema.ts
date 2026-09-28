@@ -107,4 +107,9 @@ export const shopMigrations = [
       id: "0005_transfer_payer",
       sql: `ALTER TABLE ext_shop_orders ADD COLUMN transfer_payer TEXT`,
     },
+    {
+      // 0.9.0(core 1.63.0):結帳欄位的值(commerce-kit checkout-fields),JSON。
+      id: "0006_order_meta",
+      sql: `ALTER TABLE ext_shop_orders ADD COLUMN meta TEXT`,
+    },
   ];

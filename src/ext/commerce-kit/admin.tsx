@@ -94,6 +94,17 @@ export function OrderStatusPill({ status }: { status: OrderStatus }) {
   );
 }
 
+/** 1.63.0:訂單的結帳欄位(meta),名稱用宣告它的插件給的;插件停用了就寫原本的名字。 */
+function MetaLines({ meta, labels }: { meta: Record<string, string>; labels?: Record<string, string> }) {
+  const entries = Object.entries(meta);
+  if (entries.length === 0) return null;
+  return (
+    <span className="mt-0.5 block truncate text-[11px] text-black/45 admin:text-ink/45">
+      {entries.map(([name, value]) => `${labels?.[name] ?? name}：${value}`).join(" · ")}
+    </span>
+  );
+}
+
 function linesSummary(order: CommerceOrder): string {
   if (order.lines.length === 0) return "—";
   const count = order.lines.reduce((n, l) => n + l.qty, 0);
@@ -112,6 +123,7 @@ export function CommerceOrdersTable({
   transferProvider,
   returnsPage,
   returned,
+  metaLabels,
 }: {
   orders: CommerceOrder[];
   actionsEndpoint?: string;
@@ -125,6 +137,8 @@ export function CommerceOrdersTable({
   returnsPage?: string;
   /** 1.52.0:商品都已經申請退貨的訂單編號(loadFullyReturned):不給連結,改說一句。 */
   returned?: readonly string[];
+  /** 1.63.0:結帳欄位的名稱(meta 的 `<providerId>.<key>` → 名稱)。 */
+  metaLabels?: Record<string, string>;
 }) {
   if (orders.length === 0) {
     return <p className="text-[13px] text-black/45 admin:text-ink/45">尚無訂單。</p>;
@@ -160,6 +174,7 @@ export function CommerceOrdersTable({
               </td>
               <td className="max-w-[14rem] truncate py-2.5 pr-4">
                 {linesSummary(o)}
+                <MetaLines meta={o.meta ?? {}} labels={metaLabels} />
               </td>
               <td className="max-w-[10rem] truncate py-2.5 pr-4">
                 {o.customerName}

@@ -4,10 +4,9 @@ import { db } from "@/lib/db";
 import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
 import { CartView } from "./CartView";
 import { CheckoutView } from "./CheckoutView";
-import { loadTransferReportSpec, shopProviders } from "./report-spec";
+import { loadCheckoutFields, loadTransferReportSpec, shopProviders } from "./shop-providers";
 import {
   CHECKOUT_NOTICE_KEY,
-  REFERRAL_MODE_KEY,
   REQUIRE_CONTACT_KEY,
   checkoutContact,
   resolveCheckoutOptions,
@@ -77,7 +76,6 @@ export async function ShopCheckoutPage() {
     transferProvider,
     shippingRaw,
     promos,
-    referralMode,
     requireContact,
     checkoutNotice,
   ] = await Promise.all([
@@ -87,7 +85,6 @@ export async function ShopCheckoutPage() {
     // 優惠碼欄位只在店家真的建過碼時出現(空店不擺一個永遠沒用的輸入框)。
     listPromos({ db: db() }, "ext_shop_promos"),
     // 結帳頁開關;原始值交給 resolveCheckoutOptions 正規化(壞值退回預設)。
-    getSetting<unknown>(REFERRAL_MODE_KEY, "field"),
     getSetting<unknown>(REQUIRE_CONTACT_KEY, false),
     getSetting<unknown>(CHECKOUT_NOTICE_KEY, ""),
   ]);
@@ -103,15 +100,15 @@ export async function ShopCheckoutPage() {
   const orders = managedOrders
     ? providers.getById<ManagedOrderHooks>("commerce:orders", "ext_shop_orders")
     : null;
-  const [guestCheckout, reportSpec] = await Promise.all([
+  const [guestCheckout, reportSpec, fields] = await Promise.all([
     !user && managedGuestCheckout(orders),
     loadTransferReportSpec(providers),
+    loadCheckoutFields(providers),
   ]);
   const options = resolveCheckoutOptions({
     managedOrders,
     signedIn: managedOrders && !!user,
     guestCheckout: managedOrders && guestCheckout === true,
-    referralMode,
     requireContact,
     checkoutNotice,
   });
@@ -124,6 +121,7 @@ export async function ShopCheckoutPage() {
         shippingConfig={shippingConfig}
         promoEnabled={promos.some((p) => p.enabled)}
         reportSpec={reportSpec}
+        fields={fields}
         contact={checkoutContact(user)}
       />
     </PageShell>

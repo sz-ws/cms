@@ -17,6 +17,9 @@ const rateLimit = vi.hoisted(() => ({ limited: false }));
 vi.mock("@/lib/rate-limit", () => ({
   hitRateLimit: async () => rateLimit.limited,
 }));
+// 1.63.0:有結帳欄位時,core 的結帳會問登入的是誰(給欄位檢查用)。
+const session = vi.hoisted(() => ({ user: null as null | { id: string } }));
+vi.mock("@/lib/auth", () => ({ getSessionUser: async () => session.user }));
 
 import { db } from "../src/lib/db";
 import { HookBus } from "../src/ext/hooks";
@@ -41,6 +44,8 @@ const PAY_TABLE = "ext_manualflow_orders";
 const SPEC_TABLE = "ext_shopspec_orders";
 const SPEC_PAY_TABLE = "ext_manualspec_orders";
 const reportSpec = { ask: "reference" as "reference" | "payerName" | "either" | "both", label: "帳號末五碼", digits: 5 };
+/** 1.63.0:以 commerce:checkout-fields 註冊的 provider(id → provider)。 */
+const fieldProviders: Record<string, unknown> = {};
 
 // ---- fakes ----
 
@@ -87,7 +92,9 @@ function makeServices(): CoreServices {
             type === "catalog.product" ? (products.get(id) ?? null) : null,
         };
       },
+      list: (cap: string) => (cap === "commerce:checkout-fields" ? Object.keys(fieldProviders).map((id) => ({ id })) : []),
       getById: (cap: string, id: string) => {
+        if (cap === "commerce:checkout-fields") return fieldProviders[id] ?? null;
         if (cap !== "payment") return null;
         if (id === "manualtest") return manualProvider;
         if (id === "manualspec") return specProvider;
@@ -170,7 +177,7 @@ beforeAll(async () => {
     `CREATE TABLE IF NOT EXISTS ${PAY_TABLE} (order_no TEXT PRIMARY KEY, amount INTEGER NOT NULL, description TEXT NOT NULL, email TEXT, status TEXT NOT NULL DEFAULT 'pending', trade_no TEXT, payment_type TEXT, pay_time TEXT, raw_result TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
   );
   await d1().exec(
-    `CREATE TABLE IF NOT EXISTS ${SPEC_TABLE} (order_no TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending_payment', lines TEXT NOT NULL, subtotal INTEGER NOT NULL, discount INTEGER NOT NULL DEFAULT 0, shipping INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL, payment_provider TEXT NOT NULL, customer_name TEXT NOT NULL, customer_email TEXT NOT NULL, customer_phone TEXT, ship_address TEXT, region TEXT, shipping_method TEXT, promo_code TEXT, transfer_last5 TEXT, transfer_reported_at INTEGER, transfer_payer TEXT, note TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
+    `CREATE TABLE IF NOT EXISTS ${SPEC_TABLE} (order_no TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending_payment', lines TEXT NOT NULL, subtotal INTEGER NOT NULL, discount INTEGER NOT NULL DEFAULT 0, shipping INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL, payment_provider TEXT NOT NULL, customer_name TEXT NOT NULL, customer_email TEXT NOT NULL, customer_phone TEXT, ship_address TEXT, region TEXT, shipping_method TEXT, promo_code TEXT, transfer_last5 TEXT, transfer_reported_at INTEGER, transfer_payer TEXT, meta TEXT, note TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
   );
   await d1().exec(
     `CREATE TABLE IF NOT EXISTS ${SPEC_PAY_TABLE} (order_no TEXT PRIMARY KEY, amount INTEGER NOT NULL, description TEXT NOT NULL, email TEXT, status TEXT NOT NULL DEFAULT 'pending', trade_no TEXT, payment_type TEXT, pay_time TEXT, raw_result TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
@@ -183,6 +190,8 @@ beforeEach(async () => {
   await d1().exec(`DELETE FROM ${SPEC_TABLE};`);
   await d1().exec(`DELETE FROM ${SPEC_PAY_TABLE};`);
   Object.assign(reportSpec, { ask: "reference", label: "帳號末五碼", digits: 5 });
+  for (const id of Object.keys(fieldProviders)) delete fieldProviders[id];
+  session.user = null;
   products.clear();
   cardCalls.length = 0;
   rateLimit.limited = false;
@@ -549,5 +558,66 @@ describe("匯款回報照收款方式的 reportSpec(1.63.0)", () => {
     reportSpec.ask = "either";
     expect((await specReport(report({ orderNo, reference: "12345" }), {}, ctx())).status).toBe(200);
     expect(await getOrder({ db: db() }, SPEC_TABLE, orderNo)).toMatchObject({ status: "awaiting_verify", transferPayer: null, transferReference: "12345" });
+  });
+});
+
+describe("結帳欄位(1.63.0 commerce:checkout-fields)與訂單 meta", () => {
+  const fieldCheckout = createCommerceCheckoutHandler({ table: SPEC_TABLE, resolveProvider: async () => "manualspec" });
+  const seen: { value: string; userId: string | null; total: number }[] = [];
+  beforeEach(() => {
+    seen.length = 0;
+    fieldProviders.partner = {
+      fields: async () => [
+        {
+          key: "code",
+          label: "合作代碼",
+          input: "text",
+          maxLength: 10,
+          errors: { unknown: "查不到這組合作代碼。" },
+          validate: async (value: string, draft: { userId: string | null; amounts: { total: number } }) => {
+            seen.push({ value, userId: draft.userId, total: draft.amounts.total });
+            return value.toUpperCase() === "OK1" ? { ok: true, value: "OK1" } : { ok: false, code: "unknown" };
+          },
+        },
+      ],
+    };
+  });
+
+  it("a rejected field is a 422 the page can show, before any payment or order exists", async () => {
+    const res = await fieldCheckout(post({ ...VALID_BODY, fields: { "partner.code": "bad" } }), {}, ctx());
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ ok: false, error: "field_invalid", field: "partner.code", code: "unknown", message: "查不到這組合作代碼。" });
+    expect(await d1().prepare(`SELECT COUNT(*) AS n FROM ${SPEC_TABLE}`).first("n")).toBe(0);
+    expect(await d1().prepare(`SELECT COUNT(*) AS n FROM ${SPEC_PAY_TABLE}`).first("n")).toBe(0);
+  });
+
+  it("an accepted field is stored in the order's meta; the check sees the server total and the signed-in user", async () => {
+    session.user = { id: "member-9" };
+    const res = await fieldCheckout(post({ ...VALID_BODY, requestId: crypto.randomUUID(), fields: { "partner.code": " ok1 ", "other.thing": "x" } }), {}, ctx());
+    expect(res.status).toBe(200);
+    const { orderNo } = (await res.json()) as { orderNo: string };
+    expect(seen).toEqual([{ value: "ok1", userId: "member-9", total: 600 }]);
+    expect((await getOrder({ db: db() }, SPEC_TABLE, orderNo))?.meta).toEqual({ "partner.code": "OK1" });
+  });
+
+  it("without providers nothing is asked or stored, and a table without the meta column still takes orders", async () => {
+    for (const id of Object.keys(fieldProviders)) delete fieldProviders[id];
+    const { res, body } = await checkout({ fields: { "partner.code": "ok1" } });
+    expect(res.status).toBe(200);
+    expect((await getOrder({ db: db() }, SHOP_TABLE, body.orderNo as string))?.meta).toEqual({});
+  });
+
+  it("an accepted field on a table without the meta column (update not applied yet) still makes the order the payment was made for", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { res, body } = await checkout({ fields: { "partner.code": "ok1" } });
+      expect(res.status).toBe(200);
+      const orderNo = body.orderNo as string;
+      expect(await getOrder({ db: db() }, SHOP_TABLE, orderNo)).toMatchObject({ status: "pending_payment", meta: {} });
+      expect(await d1().prepare(`SELECT COUNT(*) AS n FROM ${PAY_TABLE} WHERE order_no = ?`).bind(orderNo).first("n")).toBe(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

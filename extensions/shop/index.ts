@@ -117,7 +117,7 @@ export const shop = defineExtension({
       type: "text",
       default: "banktransfer",
     },
-    // 結帳頁開關(推薦碼欄位、電話地址必填、結帳頁說明);定義與說明見
+    // 結帳頁開關(電話地址必填、結帳頁說明);定義與說明見
     // checkout-options.ts,README「設定」一節有整表。
     ...SHOP_CHECKOUT_SETTINGS,
   ],
