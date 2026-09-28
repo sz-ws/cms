@@ -1398,4 +1398,89 @@
 //   `noPrevious*`, which take the card's title. A custom period starts no earlier than `MIN_REPORT_DAY`
 //   (2000-01-01): `customPeriodProblem` says "early" (`reportPeriod.error.early`) and the URL falls back to
 //   the default period, as for other bad ranges.
-export const CORE_API_VERSION = "1.62.0";
+// 1.63.0: General contracts replace every place where open code depended on a private plugin; nothing
+// in src/ (outside the site's own pages), the shop or banktransfer names one any more. A minor: every
+// change adds something, and each deprecation below stays until 2.0 in one small file.
+// - `ProviderRegistry.find(capability, guard?)` returns the one provider that passes the guard, or null
+//   for none or several (several are logged with their ids). Returns restock finds the `inventory`
+//   capability's `RestockProvider` by shape (commerce-kit `isRestockProvider`) instead of a fixed id; the
+//   AI guide sees stock support through what an enabled plugin provides (`AgentGuideExtension.capabilities`).
+// - Order managers (`commerce-kit/order-manager.ts`, capability `commerce:orders`, provider id = orders
+//   table): `OrderManager { checkout, transition, storefront?() → { signIn: "required" | "optional",
+//   requireContact, ordersHref }, reportTransfer?({ orderNo, reference?, payerName?, email? }, req, ctx) }`.
+//   A manager writes its extension id to the orders row's new `managed_by` column (shop migration 0007,
+//   partial index). Core routes by it: transitions and transfer reports go to the enabled manager, the
+//   shop's verify endpoint answers 409 `order_managed`, a disabled manager gives 409 `order_managed` with
+//   「這筆訂單由「{name}」處理，請先啟用它。」 (name from its manifest; the status endpoint too, no more 500),
+//   and a checkout with managed orders but no manager answers 503 `checkout_paused`. The public transfer
+//   report answers customers with `customerOrderManagedResponse()` instead (409 `order_managed`,
+//   「這筆訂單目前無法回報匯款，請聯絡店家。」: no plugin name, nothing to enable). Exported:
+//   `resolveOrderOwner`, `storefrontOf`, `hasManagedOrders`, `orderManagedResponse`,
+//   `customerOrderManagedResponse`, `checkoutPausedResponse`, `OrderManagedError`, `ORDERS_CAPABILITY`.
+//   Lookups use the request's registry; table names are checked before they reach SQL. `storefrontOf` keeps
+//   `ordersHref` only when it is a site path (`lib/sign-in-continue.ts` `sitePath`: one leading "/", no
+//   "//", no backslash, no control characters), as does the shop's `resolveCheckoutOptions`.
+// - Checkout fields (`commerce-kit/checkout-fields.ts`, capability `commerce:checkout-fields`, provider id
+//   = namespace): `fields()` → `CheckoutField { key, label, input: "text" | "textarea" | "hidden",
+//   maxLength ≤ 500, required?, validate?(value, draft), errors? }`. The checkout body takes `fields`
+//   (`"<providerId>.<key>"` → value, ≤ 20; unknown names ignored) and an optional `requestId`;
+//   `validateCheckoutFields(providers, fields, draft)` returns the order meta or a 422 `{ error:
+//   "field_invalid", field, code, message }`. Core's checkout checks before any payment exists; order
+//   managers call it in their own checkout. Orders keep the values in a `meta` JSON column (shop
+//   migration 0006; `CommerceOrder.meta`, `CreateOrderInput.meta`, `parseOrderMeta`), shown in the admin
+//   order list with the providers' labels. Messages are zh-Hant (the default `locale`): the shop's checkout
+//   is zh-Hant only; a storefront in another language passes its locale. `checkout-prefill.ts` (`rememberCheckoutValue`,
+//   `readCheckoutValue`, `forgetCheckoutValue`; localStorage `checkout.prefill.v1`) lets other pages
+//   prefill a field; the shop forgets a rejected value and clears a rejected hidden one.
+// - Transfer reports (`payment-kit/report-spec.ts`): `ManualPaymentProvider.reportSpec?()` → `{ ask:
+//   "reference" | "payerName" | "either" | "both", reference: { label, digits } }` (digits 0 = free text
+//   ≤ 40); without it 帳號末五碼, 5 digits, as before. `transferReportSpec(provider)`,
+//   `checkTransferReport` (one check and set of sentences for page, core and managers), `reportFields`,
+//   `reportSubject`. The transfer-report endpoint takes `{ orderNo, reference?, payerName?, email? }` and
+//   checks it against the transfer provider's spec (`createTransferReportHandler`'s new optional
+//   `resolveTransferProvider`); the payer goes to a new `transfer_payer` column (shop migration 0005).
+//   `CommerceOrder.transferReference` / `transferPayer`; `TransitionExtras.transferReference` /
+//   `transferPayer` (given replaces, null clears). The verify note and queue use the spec's label.
+//   `checkTransferReport` refuses control characters and line separators inside a reference or payer name
+//   (「…有無法使用的字元。」): the report is written into the verify note, one line per entry.
+//   `normalizeReportSpec` takes digits as an integer or a string of digits only, 0–12; anything else
+//   (a cleared setting, null, false) is the default 5, never 0 (= no format check).
+// - Core's own orders (no manager) are reported by whoever placed them: the body's `email` has to match the
+//   order's (trimmed, case-insensitive, constant-time), unless the signed-in user is a full admin or has
+//   that email. Otherwise it is the same 404 `not_found` as an unknown order. The shop's checkout page
+//   sends the order's email for its own orders. Core order numbers are `SO` + base36 time + 8 characters
+//   from `crypto.getRandomValues` (18 characters, within the 30 every gateway takes).
+// - Money: commerce-kit `formatMoney(amount, currency)` on `lib/units.ts`. The root layout provides the site
+//   currency to client components like the time zone (`components/CurrencyProvider.tsx`: `CurrencyProvider`,
+//   `useSiteCurrency`, `MoneyText` for server components); `lib/units.ts` `currencySymbol`. Limits: amounts
+//   stay whole units of the currency; changing `core.currency` relabels past orders and never converts;
+//   cents are a 2.x decision, not a setting. The plugin store's prices stay in TWD.
+// - Shipping config `regions` (≤ 60, unique, ≤ 20 characters) with `DEFAULT_REGIONS` (Taiwan) and
+//   `shippingRegions()`; `ShippingEditor` `editRegions` draws the list.
+// - Orders are read with `SELECT *` and the new columns are written only when a value is given and the
+//   table has them (`orderColumns(deps, table)`, cached once they all exist), so a site that deployed 1.63
+//   but has not pressed 套用更新 keeps checking out, reporting and transitioning: an order made after its
+//   payment session is never lost to a missing `meta`; a payer name without `transfer_payer` is logged.
+// - Returns: when several plugins provide stock, `find()` picks none; the return still moves, the page says
+//   restocking is off until one is left (`ReturnStock.unavailable: "several"`) and the received step
+//   records it (`ReturnEvent.restockSkipped`), instead of only a log line.
+// - Plugin settings declared in the deployed code work before 套用更新: reads (`services.settings.get`) go
+//   to the settings table with the caller's default and look at neither the declared list nor the stored
+//   version, and the settings page and `PUT /api/settings` follow the compiled manifest. 套用更新 on an
+//   update without migrations writes the defaults of new settings (existing values stay) and records the
+//   version. A raw SQL write that skips `setSettings` reaches public pages when the KV copy of the stamps
+//   expires (at most 5 minutes, `lib/stamps.ts`).
+// - Neutral wording in comments, examples and messages; the lifecycle error for `canUninstall: false`
+//   reads 這個插件只能停用，不能移除。
+// - Deprecated, removed in 2.0: `legacy-ownership.ts` (the `<table>_managed` check while `managed_by` is
+//   missing or empty), `legacy-storefront.ts` (`guestCheckout()` for managers without `storefront()`),
+//   `ManagedCommerceProvider` (`managed.ts`, alias of `OrderManager`), the report body's `last5`
+//   (`transfer-legacy.ts`) and `transferLast5` on `CommerceOrder` / `TransitionExtras`,
+//   `RESTOCK_PROVIDER_ID` (`returns-legacy.ts`).
+// - Migration notes: shop 0.9.0 brings 0005_transfer_payer, 0006_order_meta and 0007_managed_by; a plugin
+//   that fills those columns for old orders does it after they exist (not as its own migration), so the
+//   updates can be applied in any order. banktransfer 0.2.0 adds the report settings (defaults = today's
+//   behaviour), usable as soon as it is deployed. A manager written for 1.62 keeps working through the shims; to drop
+//   them, write `managed_by` on insert and backfill old orders, implement `storefront()` and
+//   `reportTransfer()`, and declare extra checkout fields instead of custom body keys.
+export const CORE_API_VERSION = "1.63.0";

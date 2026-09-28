@@ -40,7 +40,7 @@ import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 //   - 刷卡:settings.cardProvider 指向任一 gateway provider(如 "newebpay",
 //     需另行安裝該 extension)。
 //   - 匯款:settings.transferProvider 指向 manual provider(預設 "banktransfer")。
-//     客人回報末五碼 → 訂單進 awaiting_verify → admin 對帳佇列核可 →
+//     客人回報匯款(要填什麼照它的 reportSpec)→ 訂單進 awaiting_verify → admin 對帳佇列核可 →
 //     settleManual → payment:succeeded → 訂單 paid。
 // 兩條路對訂單而言完全同構 —— 都只靠下方那一個 hook。
 //
@@ -77,7 +77,10 @@ export const shop = defineExtension({
   name: "商店",
   // 0.8.0:受管訂單的匯款結局頁直接回報(TransferReportForm、transfer-report.ts),欄位照
   // `commerce:orders` provider 的 transferReport();沒有 core 的新需求。
-  version: "0.8.0",
+  // 0.9.0(core 1.63.0):訂單管理插件看 `commerce:orders` provider 與它的 storefront();結帳欄位
+  // (commerce:checkout-fields)與訂單 meta;回報要填什麼照匯款方式的 reportSpec(),一律送這裡的
+  // transfer-report;收件地區在運費設定;金額照 core.currency。migrations 0005–0007。
+  version: "0.9.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -94,7 +97,10 @@ export const shop = defineExtension({
   //
   // ^1.52.0(0.7.0):commerce-kit 的唯讀模式(運費、優惠碼、對帳佇列)與訂單列表的
   // loadFullyReturned / returned。
-  coreApi: "^1.52.0",
+  //
+  // ^1.63.0(0.9.0):OrderManager / storefrontOf、結帳欄位、reportSpec、運費的 regions 與
+  // CurrencyProvider。
+  coreApi: "^1.63.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",

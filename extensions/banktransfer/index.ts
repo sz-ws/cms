@@ -57,7 +57,7 @@ async function buildInstructions(
       { label: "金額", value: formatMoney(req.amount, currency) },
       { label: "訂單編號", value: req.orderNo },
     ],
-    // 0.1.2:不寫「末五碼」—— 受管訂單的站台可以改成回報匯款人姓名。
+    // 0.1.2:不寫「末五碼」—— 回報要填什麼照 reportSpec(0.2.0 的設定)。
     note: "轉帳完成後請回報匯款，對帳完成就會處理您的訂單。",
   };
 }
@@ -66,8 +66,11 @@ export const banktransfer = defineExtension({
   id: "banktransfer",
   name: "銀行轉帳",
   // 0.1.3:中文標點用全形(銀行代碼的括號、說明文字);後台頁不再寫實作細節。
-  version: "0.1.3",
-  coreApi: "^1.28.0",
+  // 0.2.0(core 1.63.0):客人回報匯款要填什麼是這裡的設定(reportSpec):參考碼(名稱、位數)、
+  // 匯款人姓名、擇一或兩個都要,預設是以前的帳號末五碼、5 位數字;付款指示的金額照站台幣別寫。部署後就能改
+  // (讀設定不看資料庫記的版本);「套用更新」只寫入這三個設定的預設值、記下版本。
+  version: "0.2.0",
+  coreApi: "^1.63.0",
   description:
     "匯款收款（不經金流）：結帳時出示收款帳號，款項由後台人工對帳後入帳。",
   icon: "landmark",

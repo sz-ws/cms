@@ -52,6 +52,28 @@
     widget on commerce-kit's `REVENUE`). Removed in 2.0.
   - `commerce-kit/metrics.ts` (1.62.0): `REVENUE` (`commerce.revenue`), the metric every plugin that
     takes money declares for its series on the dashboard.
+  - `providers.ts` `ProviderRegistry.find(capability, guard?)` (1.63.0): the one provider of a capability
+    that passes the guard, or null when none or several qualify (several are logged). Used where core
+    needs "whoever provides X" instead of a fixed id (returns restock: `inventory` + `isRestockProvider`).
+  - `commerce-kit/order-manager.ts` (1.63.0): the order-management contract on `commerce:orders`
+    (provider id = orders table): `checkout`, `transition`, optional `storefront()` and
+    `reportTransfer()`. Ownership is the orders row's `managed_by`; `resolveOrderOwner` routes
+    transitions and reports, a disabled manager is 409 `order_managed` (customers get
+    `customerOrderManagedResponse()`, without the plugin's name), a checkout with managed orders and no
+    manager is 503 `checkout_paused`. Core's own orders are reported with the order's email (or by the
+    signed-in owner or an admin). `legacy-ownership.ts` (old `<table>_managed` check),
+    `legacy-storefront.ts` (`guestCheckout()` fallback) and `managed.ts` (`ManagedCommerceProvider`
+    alias) are removed in 2.0.
+  - `commerce-kit/checkout-fields.ts` (1.63.0): plugin checkout fields on `commerce:checkout-fields`
+    (`<providerId>.<key>`), `validateCheckoutFields` → order `meta` or 422 `field_invalid`;
+    `checkout-prefill.ts` is the browser store (`checkout.prefill.v1`) other pages fill.
+  - `payment-kit/report-spec.ts` (1.63.0): what a transfer report asks for (reference with label and
+    digits, payer name, either, both) — `ManualPaymentProvider.reportSpec()`, default 帳號末五碼 / 5.
+    `commerce-kit/transfer-legacy.ts` keeps the old `last5` body field until 2.0.
+  - `commerce-kit/money.ts`: `formatMoney(amount, currency)` on `lib/units.ts`; client components read the
+    site currency from `components/CurrencyProvider.tsx` (root layout), server tables render `MoneyText`.
+  - `commerce-kit/shipping-engine.ts`: `regions` in the shipping config (≤ 60) with `DEFAULT_REGIONS`
+    (Taiwan) and `shippingRegions(config)`; the shop's shipping page edits them (`editRegions`).
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.
