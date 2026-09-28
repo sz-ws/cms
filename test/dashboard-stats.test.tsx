@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 const state = vi.hoisted(() => ({
   exts: [] as unknown[],
   access: null as Record<string, "view" | "edit"> | null,
+  types: [] as unknown[],
 }));
 
 vi.mock("@/lib/cf", () => ({
@@ -25,7 +26,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/admin",
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock("@/ext/dx/type-directory", () => ({ listDeclarativeTypes: async () => [] }));
+vi.mock("@/ext/dx/type-directory", () => ({ listDeclarativeTypes: async () => state.types }));
 vi.mock("@/ext/loader", () => ({ getExtRuntime: async () => ({ enabled: state.exts }) }));
 vi.mock("@/lib/i18n/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/i18n/server")>();
@@ -37,6 +38,12 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
 }));
 vi.mock("@/lib/access-guards", () => ({ guardDashboard: async () => {} }));
 vi.mock("@/lib/settings", () => ({ getSetting: async (_key: string, fallback: unknown) => fallback }));
+// 有內容類型時頁面會查儲存空間與資料庫用量(R2 / D1 大小不在這裡測)。
+vi.mock("@/components/admin/dashboard/widget-data", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/components/admin/dashboard/widget-data")>()),
+  getStorageStats: async () => ({ fileCount: 0, totalBytes: 0, truncated: false }),
+  getDatabaseStats: async () => ({ bytes: 0 }),
+}));
 // 站台時區不是預設的台北:證明頁面把 getSiteTimeZone 的值交給插件。
 vi.mock("@/lib/datetime-server", () => ({ getSiteTimeZone: async () => "America/New_York" }));
 // NumberFlow 在伺服器上畫不出數字(client 元件);換成照 locales 用 Intl 格式化的 span,
@@ -93,6 +100,7 @@ beforeEach(() => {
   errors = vi.spyOn(console, "error").mockImplementation(() => {});
   state.exts = [];
   state.access = null;
+  state.types = [];
 });
 afterEach(() => {
   errors.mockRestore();
@@ -360,5 +368,35 @@ describe("the dashboard page", () => {
     const limited = await renderPage();
     expect(limited).toContain("3 筆");
     expect(limited).not.toContain("NT$ 51");
+  });
+
+  // 1.60.0:店家每天看的是插件的數字,內容統計(內容總數、各類型、近期活動)排在後面。
+  const noteInfo = {
+    typeKey: "numbers.note",
+    typeLabel: "筆記",
+    extId: "numbers",
+    extName: "數字插件",
+    contentType: noteType,
+    collectionHref: "/admin/ext/numbers",
+    newHref: "/admin/ext/numbers/edit",
+  };
+
+  it("puts the plugin section above the content stats when a plugin has cards", { timeout: 30_000 }, async () => {
+    state.types = [noteInfo];
+    state.exts = [ext("numbers", async () => [stat("orders", { title: "今日一般訂單", href: "/admin/ext/numbers", value: 3 })])];
+    const html = await renderPage();
+    const plugin = html.indexOf("來自擴充功能");
+    expect(plugin).toBeGreaterThan(-1);
+    expect(html.indexOf("今日一般訂單")).toBeGreaterThan(plugin);
+    expect(html.indexOf("內容總數")).toBeGreaterThan(html.indexOf("今日一般訂單"));
+    expect(html.indexOf("近期活動")).toBeGreaterThan(html.indexOf("今日一般訂單"));
+  });
+
+  it("keeps the content stats first and draws no plugin section without plugin cards", { timeout: 30_000 }, async () => {
+    state.types = [noteInfo];
+    const html = await renderPage();
+    expect(html).toContain("內容總數");
+    expect(html).not.toContain("來自擴充功能");
+    expect(html.indexOf("內容總數")).toBeLessThan(html.indexOf("近期活動"));
   });
 });

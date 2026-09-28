@@ -229,6 +229,65 @@ export default async function DashboardPage() {
       href: t.newHref,
     }));
 
+  // roadmap #16: extension-contributed cards (dashboardCards / dashboardStats).
+  // Only rendered when at least one enabled extension contributes a card. Stat
+  // tiles sit in the same container-responsive auto-fit grid as the core per-type
+  // cards; recent feeds get a wider min column so their rows breathe.
+  // 1.60.0:有插件的卡片時,這一區排在內容統計前面 —— 店家每天看的是營運數字(訂單、
+  // 收款),商品、文章、分類的數量往下放。沒有插件卡片時版面跟以前一樣。
+  const extSection = extCards.length > 0 && (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-ink/90">
+          {labels.fromExtensions}
+        </h2>
+        <p className="text-[13px] text-ink/40">
+          {labels.fromExtensionsDesc}
+        </p>
+      </div>
+
+      {extStatCards.length > 0 && (
+        <div
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 15rem), 1fr))",
+          }}
+        >
+          {extStatCards.map((c, i) => (
+            <ExtStatCard
+              key={`${c.extId}:${c.statId ?? c.contentType}-${i}`}
+              card={c}
+              locale={locale}
+              labels={labels.extStat}
+            />
+          ))}
+        </div>
+      )}
+
+      {extRecentCards.length > 0 && (
+        <div
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))",
+          }}
+        >
+          {extRecentCards.map((c, i) => (
+            <ExtRecentCard
+              key={`${c.contentType}-${i}`}
+              card={c}
+              now={data.now}
+              locale={locale}
+              timeZone={timeZone}
+              labels={labels.extRecent}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
   return (
     <div className="flex flex-col gap-5">
       {/* Page header — 21px title voice, not text-2xl bold. */}
@@ -244,6 +303,8 @@ export default async function DashboardPage() {
         {/* Create menu only when there's more than one type to choose from. */}
         {quickOptions.length > 1 && <QuickCreate options={quickOptions} />}
       </div>
+
+      {extSection}
 
       {data.hasTypes ? (
         // Overview + recent span the full width; the per-type cards sit in a
@@ -316,63 +377,6 @@ export default async function DashboardPage() {
         )
       ) : (
         <DashboardEmpty labels={labels.dashboardEmpty} />
-      )}
-
-      {/* roadmap #16: extension-contributed cards. Only rendered when at least one
-          enabled extension declares dashboardCards. Stat tiles sit in the same
-          container-responsive auto-fit grid as the core per-type cards; recent
-          feeds get a wider min column so their rows breathe. */}
-      {extCards.length > 0 && (
-        <section className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-ink/90">
-              {labels.fromExtensions}
-            </h2>
-            <p className="text-[13px] text-ink/40">
-              {labels.fromExtensionsDesc}
-            </p>
-          </div>
-
-          {extStatCards.length > 0 && (
-            <div
-              className="grid gap-4"
-              style={{
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(min(100%, 15rem), 1fr))",
-              }}
-            >
-              {extStatCards.map((c, i) => (
-                <ExtStatCard
-                  key={`${c.extId}:${c.statId ?? c.contentType}-${i}`}
-                  card={c}
-                  locale={locale}
-                  labels={labels.extStat}
-                />
-              ))}
-            </div>
-          )}
-
-          {extRecentCards.length > 0 && (
-            <div
-              className="grid gap-4"
-              style={{
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))",
-              }}
-            >
-              {extRecentCards.map((c, i) => (
-                <ExtRecentCard
-                  key={`${c.contentType}-${i}`}
-                  card={c}
-                  now={data.now}
-                  locale={locale}
-                  timeZone={timeZone}
-                  labels={labels.extRecent}
-                />
-              ))}
-            </div>
-          )}
-        </section>
       )}
 
       {distributionData && (
