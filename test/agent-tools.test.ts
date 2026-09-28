@@ -241,20 +241,25 @@ describe("invokeAgentTool(schema 驗證與錯誤收斂)", () => {
 // -------------------------------------------------------------- core tools
 
 describe("core 內建 tools(spec §2 表格第一列)", () => {
-  it("七個 tool 齊備,而且全部是 read", () => {
+  it("九個 tool 齊備;只有媒體上傳是 write,而且標成不會蓋掉資料", () => {
     const tools = coreAgentTools();
-    // 1.33.0 加入三個統計 tool(core.stats.*)。清單寫死是刻意的:core tool 是
-    // 每個站台都存在的表面,多一個少一個都該在這裡被看見,而不是等到面板上發現。
+    // 1.33.0 加入三個統計 tool(core.stats.*),1.60.0 加入媒體庫兩個(core.media.*)。
+    // 清單寫死是刻意的:core tool 是每個站台都存在的表面,多一個少一個都該在這裡被看見,
+    // 而不是等到面板上發現。
     expect(tools.map((t) => t.name).sort()).toEqual([
       "core.content.get",
       "core.content.search",
       "core.extensions.list",
+      "core.media.list",
+      "core.media.upload",
       "core.settings.get",
       "core.stats.activity",
       "core.stats.overview",
       "core.stats.storage",
     ]);
-    expect(tools.every((t) => t.kind === "read")).toBe(true);
+    const writes = tools.filter((t) => t.kind === "write");
+    expect(writes.map((t) => t.name)).toEqual(["core.media.upload"]);
+    expect(writes[0].destructive).toBe(false);
   });
 
   it("core.content.search 找得到內容,並回傳可餵給 get 的 id/typeKey", async () => {

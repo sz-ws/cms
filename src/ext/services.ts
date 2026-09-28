@@ -20,6 +20,8 @@ export interface ScopedStorage {
     filename: string,
     body: ReadableStream | ArrayBuffer | Blob,
     contentType: string,
+    /** 1.60.0:替代文字,跟檔案一起寫進 metadata(省略 = 沒有)。 */
+    alt?: string,
   ): Promise<StoredFile>;
   delete(key: string): Promise<void>;
   list(cursor?: string): Promise<{ files: StoredFile[]; cursor?: string }>;
@@ -56,8 +58,8 @@ export interface CoreServices {
 
 function makeScopedStorage(extId: string): ScopedStorage {
   return {
-    put: (filename, body, contentType) =>
-      putFile(extId, filename, body, contentType),
+    put: (filename, body, contentType, alt) =>
+      putFile(extId, filename, body, contentType, alt),
     // Phase E §7: delete must be scoped like put/list — without this check an
     // extension's ScopedStorage.delete could remove ANY key in R2 (other
     // extensions' files, core's files), not just its own.

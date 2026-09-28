@@ -28,8 +28,12 @@ import type { AgentToolCtx, AgentToolRegistry } from "@/ext/agent-tools";
 // → next/navigation,一律 handler 內 dynamic import。
 
 const METHODS = "POST, OPTIONS";
-/** 單一請求的 body 上限。tool 的參數很小;一批最多 50 則也遠低於此。 */
-const MAX_BODY_BYTES = 256_000;
+/**
+ * 單一請求的 body 上限。一般 tool 的參數很小;1.60.0 起 core.media.upload 可以用 base64 帶
+ * 圖片進來,所以放寬到 8 MB(約 6 MB 的圖)。更大的圖請走 url(由站台自己去抓,上限同
+ * 媒體庫)。權杖驗過才讀 body,所以這不是未登入者能用的放大器。
+ */
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 /** 每條連線每分鐘的請求數。一次對話會連呼叫好幾個 tool,額度比面板的 /execute 寬。 */
 const RATE_LIMIT = { namespace: "mcp", limit: 120, windowMs: 60_000 };
 

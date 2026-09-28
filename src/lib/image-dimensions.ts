@@ -168,3 +168,45 @@ export function sniffImageSize(bytes: Uint8Array): ImageSize | null {
   if (size.width <= 0 || size.height <= 0) return null;
   return size;
 }
+
+// ── 格式(1.60.0)────────────────────────────────────────────────────────────
+// AI 上傳圖片(src/ext/agent-tools-media.ts)不能相信來源說的 Content-Type:任何網址都
+// 可以把一份 HTML 標成 image/png。所以格式由檔頭的 magic bytes 決定,只認 /api/files
+// 會原樣內嵌送出的那五種(見 files route 的白名單)。SVG 刻意不在內:它是可以帶腳本的
+// 文件,不是點陣圖;HEIC 也不在內:瀏覽器大多畫不出來。
+
+export interface ImageFormat {
+  contentType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/avif";
+  /** 存檔用的副檔名(storage key 以它結尾,變體與媒體庫依副檔名辨認圖片)。 */
+  ext: "jpg" | "png" | "gif" | "webp" | "avif";
+}
+
+/** ISO BMFF 的 major / compatible brand 裡有沒有 AVIF。 */
+function isAvif(b: Uint8Array): boolean {
+  if (b.length < 16 || !ascii(b, 4, "ftyp")) return false;
+  const boxEnd = Math.min(u32be(b, 0), b.length);
+  // major brand 在 8..12;12..16 是 minor version;compatible brands 從 16 起每 4 byte 一個。
+  if (ascii(b, 8, "avif") || ascii(b, 8, "avis")) return true;
+  for (let o = 16; o + 4 <= boxEnd; o += 4) {
+    if (ascii(b, o, "avif") || ascii(b, o, "avis")) return true;
+  }
+  return false;
+}
+
+/** 從檔頭認出格式;不是上面五種之一 → null。 */
+export function sniffImageFormat(b: Uint8Array): ImageFormat | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return { contentType: "image/jpeg", ext: "jpg" };
+  }
+  if (b.length >= PNG_SIG.length && PNG_SIG.every((v, i) => b[i] === v)) {
+    return { contentType: "image/png", ext: "png" };
+  }
+  if (ascii(b, 0, "GIF87a") || ascii(b, 0, "GIF89a")) {
+    return { contentType: "image/gif", ext: "gif" };
+  }
+  if (ascii(b, 0, "RIFF") && ascii(b, 8, "WEBP")) {
+    return { contentType: "image/webp", ext: "webp" };
+  }
+  if (isAvif(b)) return { contentType: "image/avif", ext: "avif" };
+  return null;
+}

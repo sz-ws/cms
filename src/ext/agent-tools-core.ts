@@ -20,12 +20,15 @@ import { AGENT_DISPLAY_MAX_SEGMENTS } from "./agent-display";
 import type { AgentDisplay } from "./agent-display";
 import { defineAgentTool } from "./agent-tools";
 import type { AgentTool } from "./agent-tools";
+import { mediaAgentTools } from "./agent-tools-media";
 import type { ContentProvider } from "./capabilities";
 import type { ExtRuntime } from "./loader";
 
 // docs/spec-admin-agent.md §2 表格第一列:core 內建的 read tools ——
 // 內容搜尋 / 讀取、settings 讀取(secret 欄位過濾)、extensions 列表,以及 1.33.0
-// 起的三個統計 tool(總覽 / 活躍度 / 資料庫用量)。全部 kind:"read"。
+// 起的三個統計 tool(總覽 / 活躍度 / 資料庫用量)。以上全部 kind:"read"。
+// 1.60.0 起另有媒體庫兩個(agent-tools-media.ts):core.media.list(read)與
+// core.media.upload(write,core 的第一個 write tool)。
 //
 // 前四個是 agent 的「定向能力」:先看得到站上有什麼(extensions)、設定成什麼樣
 // (settings)、內容在哪裡(search),才談得上動手。後三個是「站的現況」——
@@ -325,7 +328,7 @@ function storageDisplay(
 // ---- tools ----
 
 /**
- * core 內建 read tools。每次呼叫回傳新陣列(registry 負責去重與擁有權)。
+ * core 內建 tools(媒體庫的 upload 之外都是 read)。每次呼叫回傳新陣列(registry 負責去重與擁有權)。
  */
 export function coreAgentTools(): AgentTool[] {
   return [
@@ -512,5 +515,8 @@ export function coreAgentTools(): AgentTool[] {
       },
       display: storageDisplay,
     }),
+
+    // 1.60.0:媒體庫(core.media.list / core.media.upload)。規則與理由見 agent-tools-media.ts。
+    ...mediaAgentTools(),
   ];
 }

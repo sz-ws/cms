@@ -460,10 +460,12 @@ describe("listDeclarativeAgentTools", () => {
     expect(names).toContain("content.gallery_item.list");
     expect(new Set(names).size).toBe(names.length);
     // kind 標注一路帶到 registry —— Phase C 的 loop 只會取 read 那一半。
+    // 1.60.0:core 的第一個 write tool(媒體上傳)也在同一份裡。
     expect(registry.list("write").map((t) => t.name).sort()).toEqual([
       "content.gallery_item.create",
       "content.gallery_item.delete",
       "content.gallery_item.update",
+      "core.media.upload",
     ]);
   });
 });

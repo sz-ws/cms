@@ -2,16 +2,17 @@ import { authErrorResponse } from "@/lib/auth";
 import { requireMediaAccess } from "@/lib/access-api";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
+import { MEDIA_UPLOAD_MAX_BYTES, saveMediaUpload } from "@/lib/media-upload";
 import { createServices } from "@/ext/services";
-import type { UploadProvider } from "@/ext/capabilities";
 
 // C.5b §2: admin media upload. POST multipart/form-data { file } → stores via
-// the active UploadProvider (scope "core") and returns { key, size,
-// contentType, url }. Mirrors extensions/posts/api.ts upload handler: 25MB cap,
-// pass the File (a Blob with known length) straight to R2. Origin-checked +
+// services.storage (scope "core") and returns { key, size, contentType, url }.
+// Mirrors extensions/posts/api.ts upload handler: 25MB cap, pass the File (a
+// Blob with known length) straight to R2. Origin-checked +
 // requireAuth("admin") per src/app/api/users/route.ts convention.
-
-const MAX_BYTES = 25 * 1024 * 1024; // 25MB, same as posts upload handler.
+//
+// 1.60.0: the store step is lib/media-upload.ts#saveMediaUpload, shared with
+// the AI upload tool (core.media.upload) so both write identical files.
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -53,19 +54,16 @@ export async function POST(req: Request): Promise<Response> {
   if (!(file instanceof File)) {
     return Response.json({ error: "no_file" }, { status: 400 });
   }
-  if (file.size > MAX_BYTES) {
+  if (file.size > MEDIA_UPLOAD_MAX_BYTES) {
     return Response.json({ error: "too_large" }, { status: 413 });
   }
 
-  // Reuse the UploadProvider abstraction (services scope = "core"): storage.put
-  // delegates to the active provider's put(), url() to its url().
   const services = await createServices("core");
-  const stored = await services.storage.put(
-    file.name,
-    file,
-    file.type || "application/octet-stream",
-  );
-  const url = services.providers.get<UploadProvider>("upload").url(stored.key);
+  const saved = await saveMediaUpload(services, {
+    filename: file.name,
+    body: file,
+    contentType: file.type || "application/octet-stream",
+  });
 
-  return Response.json({ ...stored, url }, { status: 201 });
+  return Response.json(saved, { status: 201 });
 }

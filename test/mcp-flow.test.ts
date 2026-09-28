@@ -597,6 +597,23 @@ describe("MCP over a view-only connection", () => {
     const res = await rpc(tokens.access_token, "tools/call", { name: "nope", arguments: {} });
     expect(((await res.json()) as { error: { code: number } }).error.code).toBe(-32602);
   });
+
+  // 1.60.0:媒體庫。找圖是 read、上傳是 write —— 只能查看的連線看不到上傳,硬叫也不執行。
+  it("can look up media but is not offered the upload tool, and calling it anyway does nothing", async () => {
+    const { tokens } = await connect("read");
+    const { tools } = await rpcResult<{ tools: ToolDef[] }>(tokens.access_token, "tools/list");
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("core-media-list");
+    expect(names).not.toContain("core-media-upload");
+
+    const result = await rpcResult<CallResult>(tokens.access_token, "tools/call", {
+      name: "core-media-upload",
+      arguments: { url: "https://cdn.example.com/a.png" },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("only look things up");
+    expect(await auditRows()).toHaveLength(0);
+  });
 });
 
 describe("MCP over a connection that may make changes", () => {
@@ -632,6 +649,14 @@ describe("MCP over a connection that may make changes", () => {
       { tool: "content.gallery_item.create", kind: "write", source: "mcp", app: "Writer App", ok: 1, user_id: "u-admin" },
       { tool: "content.gallery_item.create", kind: "write", source: "mcp", app: "Writer App", ok: 0, user_id: "u-admin" },
     ]);
+  });
+
+  it("offers the upload tool as a non-destructive write", async () => {
+    const { tokens } = await connect("write");
+    const { tools } = await rpcResult<{ tools: ToolDef[] }>(tokens.access_token, "tools/list");
+    const upload = tools.find((t) => t.name === "core-media-upload");
+    expect(upload?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, openWorldHint: false });
+    expect(upload?.inputSchema.type).toBe("object");
   });
 
   it("reconnecting the same app updates its access instead of adding a connection", async () => {

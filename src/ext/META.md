@@ -29,6 +29,8 @@
     facet in parallel with all user ids; a facet that throws, times out (3 s) or returns something
     that is not an object is logged and left out, and invalid values or links are dropped one by
     one. Only people who can open the member list see facets. Requires coreApi `^1.60.0`.
+  - `agent-tools-media.ts` (1.60.0): `core.media.list` (read) and `core.media.upload` (write,
+    from a public URL or base64) — stores through `lib/media-upload.ts`, same as the admin uploader.
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.

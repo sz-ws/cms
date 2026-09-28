@@ -42,6 +42,10 @@
   `clients.ts` (dynamic registration, redirect URI rules), `grants.ts` (connections, codes,
   tokens, who may connect), `consent.ts` (authorize request checks, session-bound consent
   ticket), `crypto.ts` (PKCE, hashing, ticket signing). Only full admins can connect.
+- `media-upload.ts` (1.60.0): `saveMediaUpload` + the 25 MB cap, shared by `/api/media/upload`
+  and the AI upload tool. `remote-image.ts`: turns a URL (server-side fetch; http/https only,
+  no credentials, no private hosts, redirects re-checked per hop, timeout, size cap) or base64
+  into bytes whose image format is sniffed (`image-dimensions.ts#sniffImageFormat`).
 - `extra-fields.ts`: additional fields an admin adds per content type
   (`core.content.extraFields`; values in `data.extra`). Pure (zod only) so the settings
   manager and editors share it; `extra-fields-server.ts` reads the setting. Anything that
