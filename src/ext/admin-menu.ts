@@ -216,7 +216,7 @@ export function replacedAdminPages(exts: readonly MenuExtension[]): Map<string, 
  * - 單頁、沒有別人掛進來:一個連結,標題是那一頁的標題。
  * - 多頁,或有別的 extension 掛進來:一個資料夾,標題是 extension 名稱,子項依序是
  *   自己的頁面、再來是掛進來的頁面。子項標題與資料夾同名時改叫 `overviewTitle`,
- *   免得出現「商城營運 › 商城營運」。
+ *   免得出現「訂單 › 訂單」。
  */
 export function buildExtensionMenu(
   exts: readonly MenuExtension[],

@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 
 // 1.40.0:側欄標題 → 頁面標題。
 //
-// 站台可以用 filter:adminMenu 把「商城營運」改叫「訂單管理」,側欄與麵包屑跟著變,
+// 站台可以用 filter:adminMenu 把「商店」改叫「訂單」,側欄與麵包屑跟著變,
 // 但 extension 頁面自己的 <h1> 是寫死的,於是同一頁出現兩個名字。extension 頁面改用
-// useAdminPageTitle("商城營運"):側欄有這個網址就用側欄的標題,沒有就用預設。
+// useAdminPageTitle("商店"):側欄有這個網址就用側欄的標題,沒有就用預設。
 
 const AdminTitlesContext = createContext<Record<string, string>>({});
 

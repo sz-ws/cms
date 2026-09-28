@@ -10,7 +10,7 @@ import { BankTransferAdminPage } from "./admin-page";
 // 回收款帳號等付款指示,結算入口是 admin 人工核帳(settleManual),走與刷卡
 // 回呼同一段冪等結算 + payment:succeeded —— 消費端(shop)完全不需分辨。
 //
-// 對帳動線住在 shop extension 的「對帳佇列」(訂單末五碼在那裡);本 extension
+// 對帳動線住在 shop extension 的「對帳佇列」(客人回報的匯款資料在那裡);本 extension
 // 的 admin 頁只有設定狀態與付款列一覽。
 
 const ORDERS_TABLE = "ext_banktransfer_orders";

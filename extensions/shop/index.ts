@@ -44,15 +44,14 @@ import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 //     settleManual → payment:succeeded → 訂單 paid。
 // 兩條路對訂單而言完全同構 —— 都只靠下方那一個 hook。
 //
-// 受管訂單(0.2.0):裝了 shop-operations(私有插件)並啟用,commerce-kit 的結帳
-// handler 會把整筆結帳交給它的 `commerce:orders` provider(原子庫存、會員查單、
-// 對帳、推薦佣金)。shop 這邊不做判斷、沒有開關 —— 結帳頁只依插件啟用狀態切換
-// 表單(需登入、電話與地址必填、推薦碼欄位)。三個結帳頁開關在 checkout-options.ts。
+// 受管訂單(0.2.0):有插件以 `commerce:orders`(provider id = 訂單表名)接手訂單時,
+// commerce-kit 的結帳 handler 把整筆結帳交給它(訂單管理插件)。shop 這邊不做判斷、
+// 沒有開關 —— 結帳頁照那個插件的要求切換表單。結帳頁開關在 checkout-options.ts。
 //
 // 退貨(0.6.0):已出貨、已完成的訂單可以建立退貨(店家代客人建立)→ 同意/拒絕 →
 // 收到退貨(裝了庫存插件時可放回庫存,和狀態同一個 batch)→ 登記退款 → 結案。引擎在
 // commerce-kit/returns-engine.ts;退款只記錄,錢要店家自己在金流或銀行退。退貨是訂單旁的
-// 獨立紀錄,不改訂單狀態,所以受管訂單(shop-operations)也適用。
+// 獨立紀錄,不改訂單狀態,所以受管訂單也適用。
 //
 // 不預裝(newebpay 前例):要用的站自行加進 extensions/registry.ts。
 

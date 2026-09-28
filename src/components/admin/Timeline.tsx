@@ -2,9 +2,9 @@
 
 import { useDateFormatter } from "@/components/DateTimeProvider";
 
-// 1.40.0:後台的紀錄時間軸(一筆訂單、出貨單、佣金經過了哪些動作)。
+// 1.40.0:後台的紀錄時間軸(一筆訂單、退貨經過了哪些動作)。
 //
-// 插件各自有事件表(ext_shop_events、ext_fulfillment_events…),形狀不同;這裡只管
+// 插件各自有事件表(例如 ext_shop_return_events),形狀不同;這裡只管
 // 畫,插件把自己的事件轉成 TimelineItem 傳進來。舊的在上、新的在下 —— 讀起來是
 // 「這筆訂單怎麼走到現在」。純展示,server / client 元件都能用(1.41.0 起時間用
 // 站台時區,所以是 client 元件;items 只有字串與數字,server 直接傳得進來)。

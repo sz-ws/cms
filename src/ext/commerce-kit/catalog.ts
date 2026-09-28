@@ -4,7 +4,7 @@ import { CORE_API_VERSION } from "../version";
 // 1.49.0:商品目錄是 commerce-kit 的一部分,不再是 registry 上的插件。
 //
 // 之前它是獨立的宣告式插件(sz-ws/registry 的 catalog 0.2.0),但底座的結帳
-// (checkout.ts 預設讀 catalog.product)、商店、商城營運都讀它的型別 —— 底座依賴
+// (checkout.ts 預設讀 catalog.product)、商店、接管訂單的插件都讀它的型別 —— 底座依賴
 // 一個各自發版的外部插件,改一個欄位就要各站跟著修,而且可以只裝商店不裝它
 // (商品頁整個空白)。現在 manifest 跟底座一起發版,版本就是 CORE_API_VERSION。
 //

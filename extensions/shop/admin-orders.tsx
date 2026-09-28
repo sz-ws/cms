@@ -23,7 +23,7 @@ import { SHOP_RETURNS } from "./returns-config";
 // @/ext/commerce-kit/admin,本檔只剩組裝。搜尋框在頂欄(index.ts 的 search 宣告),
 // 這裡只讀網址上的條件。
 // 角色與權限(core 1.50.0):只能看這一頁的角色沒有訂單動作;打不開對帳佇列的角色
-// 看不到「待對帳」那顆連過去的 pill。「申請退貨」照商城營運訂單明細的兩條規則:只給能在
+// 看不到「待對帳」那顆連過去的 pill。「申請退貨」有兩條規則:只給能在
 // 退貨管理建立退貨(那一頁的編輯)的人;商品都已經申請退貨的訂單改說一句,不給連結。
 
 const ORDERS_TABLE = "ext_shop_orders";

@@ -99,7 +99,7 @@ export interface AdminPage {
    * 1.46.0:這一頁取代別的 extension 的哪幾頁:"<extId>" 是對方的主頁,
    * "<extId>/<slug>" 是對方的子頁。本 extension 啟用時,被取代的頁從側欄拿掉,
    * 直接開那個網址會轉到這一頁(ext/admin-menu.ts 的 replacedAdminPages)。
-   * 例:商城營運的訂單管理取代商店的訂單頁(replaces: ["shop"])。
+   * 例:訂單管理插件取代商店的訂單頁(replaces: ["shop"])。
    */
   replaces?: string[];
   /**
@@ -191,7 +191,7 @@ export type { DashboardRevenueContext, RevenueSeries } from "./dx/dashboard-reve
 
 /**
  * 1.60.0:插件在成員頁(/admin/users)上說明「這個人對我是什麼」(Extension.memberFacets)。
- * 例:經銷插件的 facet「經銷商」,badge "D001",側欄寫「可用點數 120」,連到經銷頁。
+ * 例:會員等級插件的 facet「會員等級」,badge "VIP",側欄寫「到期日 2026-12-31」,連到會員等級頁。
  *
  * 每個 facet 在成員表多一欄(badge,可在「顯示」選單關掉)、篩選列多一組「有／沒有」
  * (網址參數 `<extId>.<id>=has|missing`,匯出 CSV 照同一組條件)、匯出多一欄(badge)、
@@ -201,7 +201,7 @@ export type { DashboardRevenueContext, RevenueSeries } from "./dx/dashboard-reve
 export interface MemberFacet {
   /** 同一個插件內唯一:^[a-z][a-z0-9-]{0,30}$。全站的 key 是 `<extId>.<id>`。 */
   id: string;
-  /** 欄位、篩選與側欄段落的名稱,例:{ "zh-Hant": "經銷商", en: "Dealer" }。 */
+  /** 欄位、篩選與側欄段落的名稱,例:{ "zh-Hant": "會員等級", en: "Member tier" }。 */
   label: LocalizedString;
   /**
    * 一次讀成員頁上的所有人(可能上千個 id)。只回這個 facet 適用的人:userId → 值;
@@ -216,9 +216,9 @@ export interface MemberFacet {
 
 /** 1.60.0:MemberFacet.read 回來的一個人的值。 */
 export interface MemberFacetValue {
-  /** 表格與匯出用的短字(1–32 字),例:"D001"。 */
+  /** 表格與匯出用的短字(1–32 字),例:"VIP"。 */
   badge: string;
-  /** 側欄的欄位與值(最多 8 行;label ≤ 40 字、value ≤ 200 字),例:{ label: "可用點數", value: "120" }。
+  /** 側欄的欄位與值(最多 8 行;label ≤ 40 字、value ≤ 200 字),例:{ label: "到期日", value: "2026-12-31" }。
    * 沒給 lines 時側欄寫 badge。 */
   lines?: { label: string; value: string }[];
 }

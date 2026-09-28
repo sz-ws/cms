@@ -270,7 +270,7 @@ export async function disableExtension(extId: string): Promise<void> {
 
 export async function uninstallExtension(extId: string): Promise<void> {
   const ext = findManifest(extId);
-  if (ext.canUninstall === false) throw new ExtensionLifecycleConflict("此插件保留帳務與訂單歷史，請使用停用功能");
+  if (ext.canUninstall === false) throw new ExtensionLifecycleConflict("這個插件只能停用，不能移除。");
 
   // 先 disable
   await disableExtension(extId);

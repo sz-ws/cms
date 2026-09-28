@@ -322,7 +322,7 @@ function UserSheetForm({
             )}
           </div>
 
-          {/* 1.60.0:插件的 facet(這個人對各插件是什麼:經銷、推廣、訂單…)緊接在身分後面 ——
+          {/* 1.60.0:插件的 facet(這個人對各插件是什麼:會員等級、訂單…)緊接在身分後面 ——
               打開一位會員,最先想知道的是他在店裡是誰、能對他做什麼;權限與安全比較少動。 */}
           {editing && <UserFacetSections facets={facets} values={editing.facets} />}
 

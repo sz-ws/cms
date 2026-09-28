@@ -1,10 +1,10 @@
 // 1.41.0:插件工作區「上次看到的資料」,換頁回來先顯示,背景再重抓。
 //
-// 後台的插件頁(訂單、經銷、推薦…)都是 client 元件自己 fetch。換頁時元件被卸下,
+// 後台的插件頁(訂單、退貨…)都是 client 元件自己 fetch。換頁時元件被卸下,
 // 資料跟著丟,切回來又從「載入中」開始。這裡用記憶體留住最後一次成功的回應:
 //
 //   const [fresh, setFresh] = useState<Snapshot | null>(null);
-//   const key = `shop-operations:${page}:${status}`;
+//   const key = `shop:${page}:${status}`;
 //   const data = fresh ?? readCached<Snapshot>(key) ?? null;   // render 時讀,沒有副作用
 //   …fetch 成功後:setFresh(result); writeCached(key, result);
 //

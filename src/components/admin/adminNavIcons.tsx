@@ -117,8 +117,7 @@ export const SUPPORTED_ADMIN_ICON_TOKENS = [
   "sliders",
   "store",
   "users",
-  // 1.38.0:商務與營運類 extension 用的 token(wallet / inventory / fulfillment /
-  // shop / 金流 / 錯誤追蹤 …)。名稱維持 library-neutral。
+  // 1.38.0:商務類 icon token(商店、金流、庫存、配送、錯誤追蹤 …)。名稱維持 library-neutral。
   "archive",
   "banknotes",
   "bug",

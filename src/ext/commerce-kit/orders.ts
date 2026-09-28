@@ -161,7 +161,7 @@ export async function getOrder(
 
 /**
  * 1.40.0:訂單表的可搜欄位(core 的 record-search 組 SQL)。客人報得出來的線索:
- * 名字、Email、電話、訂單編號,加上下單期間。插件接管同一張表時(shop-operations)
+ * 名字、Email、電話、訂單編號,加上下單期間。接管訂單的插件讀同一張表時
  * 用同一份,搜尋規則不會分岔。
  */
 export const ORDER_SEARCH_FIELDS: RecordSearchFields = {

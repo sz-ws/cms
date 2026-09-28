@@ -748,8 +748,8 @@
 // - ext/admin-menu.ts: adminPageHref() and replacedAdminPages() (chains followed,
 //   cycles, self-references and malformed refs ignored). The page route
 //   /admin/ext/[extId]/[[...page]] does the redirect.
-// - Use case: shop-operations replaces shop's order list and payment queue, which
-//   only a site plugin used to hide. Code extensions only; declarative manifests
+// - Use case: an order-management plugin replaces shop's order list and payment queue,
+//   which only a site plugin used to hide. Code extensions only; declarative manifests
 //   cannot declare it yet.
 // 1.46.1: SettingsWorkspace keeps its memoization again (CI was red on lint).
 // - 1.44.0 called isSettingVisible(field, keyPrefix, state) from the render to
@@ -1185,7 +1185,7 @@
 //   new user.
 // - Migration 0022: users.email_verified_at (ms, NULL = never proven; existing rows NULL).
 //   Third-party sign-ups with a verified email set it; markEmailVerified(userId) sets it for
-//   other proofs (the members plugin calls it after its email-code flows).
+//   other proofs (a sign-in plugin calls it after its email-code flows).
 // - The OAuth start route takes `back` (a site path): a failed sign-in returns there with
 //   ?login_error=<code>; without it errors still go to /login?error=<code>. An IdP ?error=
 //   now consumes the state, so it also returns to `back`; in link mode it returns to the
