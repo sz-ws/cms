@@ -1,135 +1,76 @@
-import type { DashboardRevenueContext, Extension } from "../types";
-import { isDayKey } from "@/lib/report-period";
-import { callDashboardHook, INVALID, isAdminHref, readText } from "./dashboard-hook";
+import type { Extension } from "../types";
+import type { LocalizedString } from "@/lib/i18n/localized";
+import type { DashboardWidgetDecl, MetricDecl, WidgetTimeseriesData } from "../dashboard-widgets";
+import { REVENUE } from "../commerce-kit/metrics";
+import type { DashboardStatsContext } from "./dashboard-stats";
+import type { WidgetSource } from "./dashboard-widgets";
+import { describe } from "./dashboard-hook";
 
-// 1.61.0:插件交給儀表板「營業額」圖的每日金額(Extension.dashboardRevenue → RevenueSeries)。
-// 儀表板每次畫營業額卡呼叫(這一段與前一段各一次),各插件的線疊在同一張長條圖上。
+// @deprecated 1.62.0 —— 舊介面的轉接,2.0 整個檔案拿掉。
 //
-// 跟 dashboardStats 一樣,插件回來的東西一律當作不可信的輸入,儀表板絕不因為一個插件出錯:
-//   - 每個插件的呼叫各自隔離(dashboard-hook.ts):丟例外、回傳不是陣列、超過 timeoutMs
-//     → 這個插件的線都不畫,console.error 一行,別的插件照常。
-//   - 每一條各自驗(normalizeRevenueSeries):id、label(最多 40 字,可在地化)、href(後台頁)、
-//     days。不合規則的那一條丟掉並記一行,其餘照常。
-//   - days 是物件:key 是 ctx.from..ctx.to 之間真的日期 YYYY-MM-DD,值是有限、≥ 0 的數字;
-//     沒列的日子當 0。**有任何一天不合規則,整條丟掉** —— 只丟那一天會讓總額少算,而畫面上
-//     看不出來;整條不見,圖例上就少了它,看得出來有問題。
-//   - 同一個插件重複的 id 留第一條;一個插件最多 MAX_REVENUE_SERIES_PER_EXTENSION 條。
-//   - 看的人打不開 href(ctx.canOpen)的那一條不畫、不記 log —— 那不是插件的錯。
-//
-// 每個插件拿到自己的一份 ctx(淺拷貝),改了也不影響別的插件。
+// 1.61.0 的 Extension.dashboardRevenue(插件交給儀表板的每日金額)。1.62.0 起插件改成宣告 commerce-kit 的
+// REVENUE(`metrics: [REVENUE]`)加一個 `kind: "timeseries"`、`metric: REVENUE.key`、`period: true` 的
+// dashboardWidgets。這裡把舊的 hook 包成同樣的一個 widget:宣告了 dashboardRevenue 的插件等於宣告了
+// REVENUE 與這個 widget,之後的驗證、權限、合併、比前一段都走 dx/dashboard-widgets.ts 同一條路,畫出來
+// 跟 1.61.0 一樣(同一張卡、同樣的規則:一天不對整條丟掉、金額 ≥ 0、每個插件最多 4 條、href 必填)。
 
-/** 營業額要掃整段期間(最多 366 天),比 dashboardStats 的 2 秒寬一點。 */
-export const DASHBOARD_REVENUE_TIMEOUT_MS = 3000;
-export const MAX_REVENUE_SERIES_PER_EXTENSION = 4;
-
-const SERIES_ID_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
-const LABEL_MAX = 40;
-const TAG = "[dashboard-revenue]";
-
-/** 驗過、解析成當前語言的一條每日金額。 */
-export interface NormalizedRevenueSeries {
+/**
+ * 1.61.0:插件交給儀表板的一條每日金額(Extension.dashboardRevenue)。
+ * @deprecated 1.62.0:改用 dashboardWidgets 的 timeseries widget(metric 是 commerce-kit 的 REVENUE)。2.0 拿掉。
+ */
+export interface RevenueSeries {
+  /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
   id: string;
-  label: string;
+  /** 圖例上的名稱(最多 40 字)。 */
+  label: LocalizedString;
+  /** 看這筆錢明細的後台頁:`/admin` 開頭的站內路徑,可帶 query。看的人打不開就不顯示。 */
   href: string;
-  /** 只有 from..to 之間的日子;沒列的是 0。 */
+  /** 每天收到的金額:key 是站台時區的日期 YYYY-MM-DD(ctx.from..ctx.to),值 ≥ 0;沒列的日子當 0。 */
   days: Record<string, number>;
 }
 
-/** 儀表板用的一條:加上來自哪個插件,key = "<extId>/<id>"(跨插件唯一)。 */
-export interface ResolvedRevenueSeries extends NormalizedRevenueSeries {
-  extId: string;
-  key: string;
+/**
+ * 1.61.0:dashboardRevenue 收到的內容;期間照站台時區切成整天。
+ * @deprecated 1.62.0:`period: true` 的 widget 收到 WidgetContext.period。2.0 拿掉。
+ */
+export interface DashboardRevenueContext extends DashboardStatsContext {
+  /** 第一天(含),YYYY-MM-DD。 */
+  from: string;
+  /** 最後一天(含),YYYY-MM-DD。 */
+  to: string;
+  /** from 當天 00:00(ms)。 */
+  start: number;
+  /** to 隔天 00:00(ms),不含。 */
+  end: number;
 }
 
-type RevenueRules = Pick<DashboardRevenueContext, "locale" | "from" | "to">;
-
-/** days 不合規則回原因;合規則回一份乾淨的拷貝。 */
-function readDays(value: unknown, from: string, to: string): Record<string, number> | string {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return "days must be an object";
-  const days: Record<string, number> = {};
-  for (const [day, amount] of Object.entries(value as Record<string, unknown>)) {
-    if (!isDayKey(day) || day < from || day > to) return `day "${day.slice(0, 20)}" is not a date from ${from} to ${to}`;
-    if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
-      return `day "${day}" must be a finite amount of at least 0`;
-    }
-    days[day] = amount;
-  }
-  return days;
+/** 宣告了 dashboardRevenue 的插件等於宣告了 REVENUE。 */
+export function legacyRevenueMetrics(ext: Extension): MetricDecl[] {
+  return typeof ext.dashboardRevenue === "function" ? [REVENUE] : [];
 }
 
-/** 驗一條;不合規則回傳原因(記 log 用)。 */
-export function normalizeRevenueSeries(entry: unknown, rules: RevenueRules): NormalizedRevenueSeries | string {
-  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return "is not an object";
-  const e = entry as Record<string, unknown>;
-  if (typeof e.id !== "string" || !SERIES_ID_RE.test(e.id)) return "has an invalid id";
-  const id = e.id;
-  const label = readText(e.label, rules.locale, LABEL_MAX, true);
-  if (label === undefined || label === INVALID) return `"${id}" needs a label of at most ${LABEL_MAX} characters`;
-  if (!isAdminHref(e.href)) return `"${id}" href must be an admin path (/admin/...)`;
-  const days = readDays(e.days, rules.from, rules.to);
-  if (typeof days === "string") return `"${id}" ${days}`;
-  return { id, label, href: e.href, days };
-}
-
-/** 驗一個插件回來的整份清單:丟掉壞的、重複的、超過上限的、看的人打不開的。 */
-export function normalizeDashboardRevenue(
-  extId: string,
-  entries: readonly unknown[],
-  ctx: RevenueRules & Pick<DashboardRevenueContext, "canOpen">,
-): NormalizedRevenueSeries[] {
-  const seen = new Set<string>();
-  const valid: NormalizedRevenueSeries[] = [];
-  entries.forEach((entry, index) => {
-    const series = normalizeRevenueSeries(entry, ctx);
-    if (typeof series === "string") {
-      console.error(`${TAG} ext="${extId}" series[${index}] ${series}; dropped`);
-      return;
-    }
-    if (seen.has(series.id)) {
-      console.error(`${TAG} ext="${extId}" series[${index}] repeats id "${series.id}"; dropped`);
-      return;
-    }
-    seen.add(series.id);
-    valid.push(series);
-  });
-  if (valid.length > MAX_REVENUE_SERIES_PER_EXTENSION) {
-    console.error(
-      `${TAG} ext="${extId}" returned ${valid.length} series; only the first ${MAX_REVENUE_SERIES_PER_EXTENSION} are shown`,
-    );
-  }
-  return valid.slice(0, MAX_REVENUE_SERIES_PER_EXTENSION).filter((series) => ctx.canOpen(series.href));
-}
-
-/** 呼叫一個插件的 dashboardRevenue,隔離它的失敗與逾時;沒宣告回 []。永遠不 throw。 */
-export async function collectDashboardRevenue(
-  ext: Extension,
-  ctx: DashboardRevenueContext,
-  timeoutMs: number = DASHBOARD_REVENUE_TIMEOUT_MS,
-): Promise<NormalizedRevenueSeries[]> {
-  const load = ext.dashboardRevenue;
-  if (typeof load !== "function") return [];
-  const raw = await callDashboardHook({
-    tag: TAG,
-    extId: ext.id,
-    hook: "dashboardRevenue",
-    timeoutMs,
-    call: () => load({ ...ctx }),
-  });
-  return raw ? normalizeDashboardRevenue(ext.id, raw, ctx) : [];
-}
-
-/** 所有啟用插件的營業額線,照插件順序(同時呼叫)。 */
-export async function resolveDashboardRevenue(
-  exts: readonly Extension[],
-  ctx: DashboardRevenueContext,
-  timeoutMs?: number,
-): Promise<ResolvedRevenueSeries[]> {
-  const providers = exts.filter((ext) => typeof ext.dashboardRevenue === "function");
-  const results = await Promise.all(providers.map((ext) => collectDashboardRevenue(ext, ctx, timeoutMs)));
-  return providers.flatMap((ext, i) => results[i].map((series) => ({ ...series, extId: ext.id, key: `${ext.id}/${series.id}` })));
-}
-
-/** 一條線在這段期間的合計。 */
-export function seriesTotal(series: Pick<NormalizedRevenueSeries, "days">): number {
-  return Object.values(series.days).reduce((sum, amount) => sum + amount, 0);
+/** dashboardRevenue → 一個 REVENUE 上的 timeseries widget。 */
+export function legacyRevenueWidgets(ext: Extension): WidgetSource[] {
+  const hook = ext.dashboardRevenue;
+  if (typeof hook !== "function") return [];
+  const decl: DashboardWidgetDecl = {
+    id: "dashboard-revenue",
+    kind: "timeseries",
+    metric: REVENUE.key,
+    period: true,
+    async load(ctx) {
+      const period = ctx.period!;
+      const raw: unknown = await hook({ now: ctx.now, timeZone: ctx.timeZone, locale: ctx.locale, canOpen: ctx.canOpen, ...period });
+      if (!Array.isArray(raw)) throw new Error(`returned ${describe(raw)}, not an array`);
+      // 舊介面的 href 是必填:沒給的那一條照新規則驗不過(null 不是後台頁),整條丟掉。
+      const series = raw.map((entry) => {
+        if (entry === null || typeof entry !== "object") return entry;
+        const { id, label, href, days } = entry as Record<string, unknown>;
+        return { id, label, href: href ?? null, points: days };
+      });
+      // 形狀不對的那一條留給 dashboard-widget-data.ts 驗(記一行、整條丟掉),跟新介面一樣。
+      return { kind: "timeseries", bucket: "day", series } as unknown as WidgetTimeseriesData;
+    },
+  };
+  return [{ decl, hook: "dashboardRevenue" }];
 }

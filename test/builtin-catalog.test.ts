@@ -118,7 +118,7 @@ describe("reconcileBuiltinDeclaratives", () => {
     const row = await catalogRow();
     expect(row).toMatchObject({ version: CORE_API_VERSION, enabled: 1 });
     expect(JSON.parse(row!.manifest)).toEqual(catalogManifest());
-    expect(await setting("ext.catalog.currency")).toBe('"TWD"');
+    expect(await setting("ext.catalog.perPage")).toBe("12");
 
     expect(await reconcileBuiltinDeclaratives(new Map([["catalog", true]]), 2_000)).toBe(false);
     expect((await catalogRow())?.updated_at).toBe(1_000);
@@ -129,14 +129,14 @@ describe("reconcileBuiltinDeclaratives", () => {
       .prepare("INSERT INTO declarative_extensions (id, manifest, version, enabled, source, installed_at, updated_at) VALUES ('catalog', ?, '0.2.0', 1, 'https://registry.example.test', 500, 5000)")
       .bind(JSON.stringify({ ...catalogManifest(), version: "0.2.0" }))
       .run();
-    await putSetting("ext.catalog.currency", "USD", 500);
+    await putSetting("ext.catalog.perPage", 24, 500);
 
     expect(await reconcileBuiltinDeclaratives(new Map([["catalog", true]]), 1_000)).toBe(true);
     const row = await catalogRow();
     expect(row).toMatchObject({ version: CORE_API_VERSION, enabled: 1, source: "builtin" });
     // updated_at 往前走(不會比原本小),runtime stamp 才會變。
     expect(row!.updated_at).toBe(5_001);
-    expect(await setting("ext.catalog.currency")).toBe('"USD"');
+    expect(await setting("ext.catalog.perPage")).toBe("24");
   });
 
   it("disables the row when it is not wanted and brings it back later", async () => {

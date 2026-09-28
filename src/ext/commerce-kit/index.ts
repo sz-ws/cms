@@ -116,3 +116,5 @@ export type {
   TransitionReturnInput,
 } from "./returns-engine";
 export { createReturnsApiRoutes, RETURNS_ROLE } from "./returns-api";
+// 1.62.0:儀表板的共用數字(營業額)。
+export { REVENUE } from "./metrics";

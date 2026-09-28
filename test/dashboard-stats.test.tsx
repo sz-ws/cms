@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 // 1.52.0:code extension 自己的儀表板數字(Extension.dashboardStats)。core 收集、驗證、隔離
 // 失敗與逾時、照 viewer 的 canOpen 過濾,再用內容類型數字卡的樣子畫出來;連結文字走 i18n。
+// 1.62.0 起 dashboardStats deprecated,走轉接(dx/dashboard-stats.ts)變成 number 卡,跟 dashboardWidgets
+// 同一條路(dx/dashboard-widgets.ts);這裡驗的是畫出來跟以前一樣。
 
 const state = vi.hoisted(() => ({
   exts: [] as unknown[],
@@ -53,7 +55,7 @@ vi.mock("@/components/admin/StatNumber", () => ({
     createElement("span", null, new Intl.NumberFormat(locales).format(value)),
 }));
 
-import { resolveDashboardCards } from "../src/ext/dx/dashboard-cards";
+import { loadDashboardWidgets, type WidgetCard } from "../src/ext/dx/dashboard-widgets";
 import { DASHBOARD_STATS_TIMEOUT_MS, normalizeStat } from "../src/ext/dx/dashboard-stats";
 import { dashboardViewer } from "../src/components/admin/dashboard/viewer";
 import { ExtStatCard } from "../src/components/admin/dashboard/ExtStatCard";
@@ -82,7 +84,24 @@ const ext = (id: string, load: Extension["dashboardStats"], more: Partial<Extens
   dashboardStats: load,
   ...more,
 });
-const ids = (cards: { statId?: string }[]) => cards.map((c) => c.statId);
+/** 插件的數字卡(1.61.0 時是 resolveDashboardCards,1.62.0 起是儀表板卡片的同一條路)。 */
+const resolveCards = async (
+  exts: Extension[],
+  locale: Locale = "en",
+  o: { now?: number; timeZone?: string; canOpen?: (href: string) => boolean; statsTimeoutMs?: number } = {},
+) =>
+  (
+    await loadDashboardWidgets(exts, {
+      params: new URLSearchParams(),
+      now: o.now ?? NOW,
+      timeZone: o.timeZone ?? "Asia/Taipei",
+      locale,
+      canOpen: o.canOpen,
+      statsTimeoutMs: o.statsTimeoutMs,
+    })
+  ).cards;
+const ids = (cards: WidgetCard[]) => cards.map((c) => c.key.split(":").pop());
+const valueOf = (card: WidgetCard) => (card.data.kind === "number" ? card.data.value : undefined);
 
 let errors: MockInstance<typeof console.error>;
 beforeAll(async () => {
@@ -116,22 +135,20 @@ describe("collecting a plugin's numbers", () => {
         stat("money", { value: 1200, display: "NT$ 1,200", hint: { en: "Since midnight", "zh-Hant": "今天 00:00 起" } }),
       ];
     });
-    const cards = await resolveDashboardCards([numbers], "zh-Hant", { now: NOW, timeZone: "Europe/London" });
+    const cards = await resolveCards([numbers], "zh-Hant", { now: NOW, timeZone: "Europe/London" });
     expect(seen).toMatchObject({ now: NOW, timeZone: "Europe/London", locale: "zh-Hant" });
     expect(seen?.canOpen("/admin/ext/anything")).toBe(true);
-    expect(cards).toEqual([
-      { extId: "numbers", extName: "numbers 插件", kind: "stat", title: "今日訂單", statId: "orders", adminHref: "/admin/ext/numbers?from=1&to=2", count: 12 },
-      { extId: "numbers", extName: "numbers 插件", kind: "stat", title: "Title money", statId: "money", adminHref: "/admin/ext/numbers/money", count: 1200, display: "NT$ 1,200", hint: "今天 00:00 起" },
+    expect(cards.map((c) => ({ key: c.key, extNames: c.extNames, kind: c.kind, title: c.title, href: c.href, unit: c.unit, value: valueOf(c), display: c.display, hint: c.hint }))).toEqual([
+      { key: "numbers:stat:orders", extNames: ["numbers 插件"], kind: "number", title: "今日訂單", href: "/admin/ext/numbers?from=1&to=2", unit: { kind: "count" }, value: 12 },
+      { key: "numbers:stat:money", extNames: ["numbers 插件"], kind: "number", title: "Title money", href: "/admin/ext/numbers/money", unit: { kind: "count" }, value: 1200, display: "NT$ 1,200", hint: "今天 00:00 起" },
     ]);
     expect(errors).not.toHaveBeenCalled();
   });
 
-  it("falls back to Taipei and the current time when the caller gives neither", async () => {
+  it("falls back to Taipei when the time zone is not one", async () => {
     let seen: DashboardStatsContext | undefined;
-    const before = Date.now();
-    await resolveDashboardCards([ext("numbers", async (ctx) => ((seen = ctx), []))], "en", { timeZone: "Not/AZone" });
+    await resolveCards([ext("numbers", async (ctx) => ((seen = ctx), []))], "en", { timeZone: "Not/AZone" });
     expect(seen?.timeZone).toBe("Asia/Taipei");
-    expect(seen?.now).toBeGreaterThanOrEqual(before);
   });
 
   it("puts a plugin's numbers after its content cards, in extension order", async () => {
@@ -140,9 +157,9 @@ describe("collecting a plugin's numbers", () => {
       dashboardCards: [{ kind: "stat", contentType: "note" }],
     });
     const b = ext("other", async () => [stat("b1", { href: "/admin/ext/other" })]);
-    const cards = await resolveDashboardCards([a, b], "en");
-    expect(cards.map((c) => c.contentType ?? c.statId)).toEqual(["numbers.note", "a1", "b1"]);
-    expect(cards[0].count).toBe(1);
+    const cards = await resolveCards([a, b], "en");
+    expect(cards.map((c) => c.key)).toEqual(["numbers:card:0", "numbers:stat:a1", "other:stat:b1"]);
+    expect(cards[0]).toMatchObject({ title: "Notes", href: "/admin/ext/numbers", data: { kind: "number", value: 1 } });
   });
 
   it("gives each plugin its own ctx", async () => {
@@ -152,7 +169,7 @@ describe("collecting a plugin's numbers", () => {
     });
     let seen: string | undefined;
     const reader = ext("reader", async (ctx) => ((seen = ctx.timeZone), []));
-    await resolveDashboardCards([meddler, reader], "en", { timeZone: "Asia/Tokyo" });
+    await resolveCards([meddler, reader], "en", { timeZone: "Asia/Tokyo" });
     expect(seen).toBe("Asia/Tokyo");
   });
 
@@ -189,12 +206,12 @@ describe("entries that break the rules", () => {
       stat("good"),
       stat("negative", { value: -2.5, display: "  ", hint: "" }),
     ];
-    const cards = await resolveDashboardCards([ext("numbers", async () => entries as DashboardStat[])], "en");
+    const cards = await resolveCards([ext("numbers", async () => entries as DashboardStat[])], "en");
     expect(ids(cards)).toEqual(["good", "negative"]);
     // 空白的 display / hint 當作沒給:數字照語系格式化,小字是插件名稱。
     expect(cards[1]).not.toHaveProperty("display");
     expect(cards[1]).not.toHaveProperty("hint");
-    expect(cards[1].count).toBe(-2.5);
+    expect(valueOf(cards[1])).toBe(-2.5);
     expect(errors).toHaveBeenCalledTimes(entries.length - 2);
     expect(errors.mock.calls.map((c) => String(c[0]))).toEqual(
       expect.arrayContaining([
@@ -221,7 +238,7 @@ describe("entries that break the rules", () => {
 
   it("shows at most twelve numbers per plugin", async () => {
     const many = Array.from({ length: 14 }, (_, i) => stat(`n${i}`));
-    const cards = await resolveDashboardCards([ext("numbers", async () => many)], "en");
+    const cards = await resolveCards([ext("numbers", async () => many)], "en");
     expect(ids(cards)).toEqual(many.slice(0, 12).map((s) => s.id));
     expect(errors).toHaveBeenCalledTimes(1);
   });
@@ -236,7 +253,7 @@ describe("one plugin failing does not take the others down", () => {
     ["answers with something that is not a list", async () => ({ id: "x" })],
     ["answers with nothing", async () => undefined],
   ])("a plugin that %s shows nothing, with one log line", async (_label, load) => {
-    const cards = await resolveDashboardCards([ext("broken", load as unknown as Extension["dashboardStats"]), healthy()], "en");
+    const cards = await resolveCards([ext("broken", load as unknown as Extension["dashboardStats"]), healthy()], "en");
     expect(ids(cards)).toEqual(["ok"]);
     expect(errors).toHaveBeenCalledTimes(1);
     expect(String(errors.mock.calls[0][0])).toContain('ext="broken"');
@@ -246,7 +263,7 @@ describe("one plugin failing does not take the others down", () => {
     const started = Date.now();
     let late = false;
     const slow = ext("slow", () => new Promise((resolve) => setTimeout(() => ((late = true), resolve([stat("late")])), 400)));
-    const cards = await resolveDashboardCards([slow, healthy()], "en", { statsTimeoutMs: 50 });
+    const cards = await resolveCards([slow, healthy()], "en", { statsTimeoutMs: 50 });
     expect(ids(cards)).toEqual(["ok"]);
     expect(Date.now() - started).toBeLessThan(350);
     expect(late).toBe(false);
@@ -256,7 +273,7 @@ describe("one plugin failing does not take the others down", () => {
   it("a plugin that never answers is skipped too, and a late rejection is harmless", async () => {
     const never = ext("never", () => new Promise(() => {}));
     const lateReject = ext("late-reject", () => new Promise((_, reject) => setTimeout(() => reject(new Error("late")), 80)));
-    const cards = await resolveDashboardCards([never, lateReject, healthy()], "en", { statsTimeoutMs: 30 });
+    const cards = await resolveCards([never, lateReject, healthy()], "en", { statsTimeoutMs: 30 });
     expect(ids(cards)).toEqual(["ok"]);
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(errors).toHaveBeenCalledTimes(2);
@@ -283,18 +300,18 @@ describe("who sees which number", () => {
       pluginCanOpen = ctx.canOpen;
       return (await numbers().dashboardStats!(ctx));
     });
-    const cards = await resolveDashboardCards([withSpy], "zh-Hant", { canOpen: viewer.canOpen });
+    const cards = await resolveCards([withSpy], "zh-Hant", { canOpen: viewer.canOpen });
     expect(ids(cards)).toEqual(["own", "media"]);
     expect(pluginCanOpen?.("/admin/ext/other")).toBe(false);
     // 打不開不是插件的錯,不記 log。
     expect(errors).not.toHaveBeenCalled();
     const none = dashboardViewer({ "/admin/ext/unrelated": "edit" })!;
-    expect(await resolveDashboardCards([numbers()], "zh-Hant", { canOpen: none.canOpen })).toEqual([]);
+    expect(await resolveCards([numbers()], "zh-Hant", { canOpen: none.canOpen })).toEqual([]);
   });
 
   it("presets (no access map) still see every number", async () => {
     expect(dashboardViewer(null)).toBeNull();
-    const cards = await resolveDashboardCards([numbers()], "zh-Hant", { canOpen: undefined });
+    const cards = await resolveCards([numbers()], "zh-Hant", { canOpen: undefined });
     expect(ids(cards)).toEqual(["own", "sub", "elsewhere", "media"]);
   });
 });
@@ -304,10 +321,10 @@ describe("the stat tile", () => {
     renderToStaticMarkup(
       createElement(ExtStatCard, { card, locale, labels: { view: getMessages(locale)["dashboard.extStat.view"] } }),
     );
-  const base = { extId: "numbers", extName: "數字插件", kind: "stat" as const, title: "點數使用量", adminHref: "/admin/ext/numbers" };
+  const base = { key: "numbers:stat:x", title: "點數使用量", hint: "數字插件", href: "/admin/ext/numbers", value: 1, comparison: null };
 
   it("shows the plugin's display string instead of the number, and its hint instead of the extension name", () => {
-    const html = render({ ...base, statId: "points", count: 35000, display: "3.5 點", hint: "今天確認扣掉的" }, "zh-Hant");
+    const html = render({ ...base, value: 35000, text: "3.5 點", hint: "今天確認扣掉的" }, "zh-Hant");
     expect(html).toContain("3.5 點");
     expect(html).not.toContain("35,000");
     expect(html).toContain("今天確認扣掉的");
@@ -316,18 +333,18 @@ describe("the stat tile", () => {
   });
 
   it("formats the number for the admin locale when there is no display", () => {
-    const html = render({ ...base, statId: "count", count: 12345.5 }, "en");
+    const html = render({ ...base, value: 12345.5 }, "en");
     expect(html).toContain("12,345.5");
     expect(html).toContain("數字插件");
     const de = renderToStaticMarkup(
-      createElement(ExtStatCard, { card: { ...base, count: 12345.5 }, locale: "de-DE" as Locale, labels: { view: "x" } }),
+      createElement(ExtStatCard, { card: { ...base, value: 12345.5 }, locale: "de-DE" as Locale, labels: { view: "x" } }),
     );
     expect(de).toContain("12.345,5");
   });
 
   it("the link reads 查看 in Chinese and View in English, never the old hard-coded text", () => {
-    const zh = render({ ...base, contentType: "numbers.note", count: 1 }, "zh-Hant");
-    const en = render({ ...base, contentType: "numbers.note", count: 1 }, "en");
+    const zh = render(base, "zh-Hant");
+    const en = render(base, "en");
     expect(getMessages("zh-Hant")["dashboard.extStat.view"]).toBe("查看");
     expect(getMessages("en")["dashboard.extStat.view"]).toBe("View");
     expect(zh).toContain("查看");

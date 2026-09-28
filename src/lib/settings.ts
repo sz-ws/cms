@@ -11,6 +11,7 @@ import type { LocalizedString } from "./i18n/localized";
 import type { BatchItem } from "drizzle-orm/batch";
 import { ADMIN_ACCENT_SWATCHES, DEFAULT_ADMIN_ACCENT } from "./admin-accent";
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from "./datetime";
+import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from "./units";
 import { SITE_NOTICE_KEYS, SITE_NOTICE_MAX_LENGTH } from "./site-notice";
 import { AI_NOTES_MAX_LENGTH, AI_NOTES_SETTING } from "./ai-notes";
 
@@ -189,6 +190,19 @@ export const CORE_SETTINGS: SettingField[] = [
     type: "select",
     options: TIME_ZONE_OPTIONS,
     default: DEFAULT_TIME_ZONE,
+  },
+  {
+    // 1.62.0:站台的幣別(lib/units.ts)。儀表板上沒有指定幣別的金額用它寫;只是寫法,不換算金額。
+    key: "core.currency",
+    group: "general",
+    label: { en: "Currency", "zh-Hant": "幣別" },
+    description: {
+      en: "Amounts on the dashboard and in reports are shown in this currency. Changing it only changes how they are shown; it doesn't convert them.",
+      "zh-Hant": "儀表板與報表上的金額以這個幣別顯示。改了只換顯示方式，不會換算金額。",
+    },
+    type: "select",
+    options: CURRENCY_OPTIONS,
+    default: DEFAULT_CURRENCY,
   },
   {
     key: "core.brandLogo",

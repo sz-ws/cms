@@ -1,11 +1,13 @@
 import { createDateFormatter } from "@/lib/datetime";
+import type { Locale } from "@/lib/i18n";
+import { localeTag } from "@/lib/units";
 
-// 1.61.0:報表的期間(儀表板的營業額卡、插件的報表頁共用)。純函式,server 與 client 都能 import。
+// 1.61.0:報表的期間(儀表板上跟著期間的卡片、插件的報表頁共用)。純函式,server 與 client 都能 import。
 //
 // 期間放在網址,三個參數(避開 record-search 的 q / from / to —— 那兩個是 epoch ms,
 // 而且插件列表頁的頂欄搜尋會讀):
 //   ?range=7|30|90                 到今天為止的 7 / 30 / 90 天(含今天)。沒給或不認得 = 30。
-//   ?since=YYYY-MM-DD&until=...    自訂:兩天都含。since ≤ until ≤ 今天,最多 366 天。
+//   ?since=YYYY-MM-DD&until=...    自訂:兩天都含。2000-01-01 ≤ since ≤ until ≤ 今天,最多 366 天。
 // 自訂的兩個參數都在且合法時用自訂(range 不看);任何一個不合法 → 退回 range,再不行就 30 天。
 //
 // 一天是站台時區的 00:00 到隔天 00:00(createDateFormatter 的 dayKey / dayStart),所以
@@ -17,6 +19,8 @@ export type ReportPreset = (typeof REPORT_PRESETS)[number];
 export const DEFAULT_REPORT_PRESET: ReportPreset = 30;
 /** 自訂期間最多幾天(一年,閏年也放得下)。 */
 export const MAX_REPORT_DAYS = 366;
+/** 自訂期間最早從這天開始(前一段、日期的加減都還在四位數的年份裡)。 */
+export const MIN_REPORT_DAY = "2000-01-01";
 /** 網址參數的名字。 */
 export const REPORT_PARAMS = { range: "range", since: "since", until: "until" } as const;
 
@@ -64,7 +68,7 @@ function dayNumber(day: string): number | null {
 
 function dayOf(ms: number): string {
   const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  return `${String(d.getUTCFullYear()).padStart(4, "0")}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
 /** YYYY-MM-DD 加減幾天。 */
@@ -111,8 +115,9 @@ export function customPeriodProblem(
   since: string,
   until: string,
   today: string,
-): "missing" | "order" | "future" | "length" | null {
+): "missing" | "early" | "order" | "future" | "length" | null {
   if (!isDayKey(since) || !isDayKey(until)) return "missing";
+  if (since < MIN_REPORT_DAY) return "early";
   if (since > until) return "order";
   if (until > today) return "future";
   if (daySpan(since, until) > MAX_REPORT_DAYS) return "length";
@@ -161,11 +166,49 @@ export function withReportPeriod(base: string, period: Pick<ReportPeriod, "prese
 
 /**
  * 一段 from..to 回推成網址上的期間:到今天為止剛好 7 / 30 / 90 天是那個 preset,否則是自訂。
- * 插件的 dashboardRevenue 拿到的是 from / to / now / timeZone,用它把儀表板的期間帶進 href。
+ * 插件的儀表板卡拿到的是 ctx.period(from / to)與 now / timeZone,用它把儀表板的期間帶進 href。
  */
 export function periodFromRange(range: { from: string; to: string; now: number; timeZone: string }): Pick<ReportPeriod, "preset" | "from" | "to"> {
   const today = createDateFormatter("en", range.timeZone).dayKey(range.now);
   const length = daySpan(range.from, range.to);
   const preset = range.to === today ? REPORT_PRESETS.find((p) => p === length) : undefined;
   return { preset: preset ?? "custom", from: range.from, to: range.to };
+}
+
+// ── 1.62.0:寫期間、比前一段(儀表板的卡片與插件的報表頁共用;1.61.0 在 report/revenue-summary.ts)──
+
+export interface PeriodChange {
+  /** 百分比的絕對值,四捨五入到整數。 */
+  percent: number;
+  direction: "up" | "down" | "flat";
+}
+
+/** 一條每日線(YYYY-MM-DD → 值)的合計。 */
+export function pointsTotal(points: Readonly<Record<string, number>>): number {
+  return Object.values(points).reduce((sum, value) => sum + value, 0);
+}
+
+/** 跟前一段比;前一段是 0 時比不出百分比,回 null。 */
+export function periodChange(current: number, previous: number): PeriodChange | null {
+  if (!(previous > 0)) return null;
+  const percent = Math.round(((current - previous) / previous) * 100);
+  return { percent: Math.abs(percent), direction: percent > 0 ? "up" : percent < 0 ? "down" : "flat" };
+}
+
+/** YYYY-MM-DD 當作日曆日(不牽涉時區)照後台語言寫;不是日期就原樣。 */
+export function formatDayKey(day: string, locale: Locale, options: Intl.DateTimeFormatOptions): string {
+  const ms = dayNumber(day);
+  if (ms === null) return day;
+  // 那天 UTC 正午:換成任何寫法都還是同一天。
+  return new Intl.DateTimeFormat(localeTag(locale), { ...options, timeZone: "UTC" }).format(new Date(ms + DAY_MS / 2));
+}
+
+/** 期間的寫法:9/1 – 9/30;不是今年或跨年時帶年份。 */
+export function periodLabel(from: string, to: string, today: string, locale: Locale): string {
+  const withYear = from.slice(0, 4) !== to.slice(0, 4) || to.slice(0, 4) !== today.slice(0, 4);
+  const options: Intl.DateTimeFormatOptions = withYear
+    ? { year: "numeric", month: "numeric", day: "numeric" }
+    : { month: "numeric", day: "numeric" };
+  const a = formatDayKey(from, locale, options);
+  return from === to ? a : `${a} – ${formatDayKey(to, locale, options)}`;
 }

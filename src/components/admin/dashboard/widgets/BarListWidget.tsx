@@ -21,7 +21,7 @@ export function BarListWidget({ data }: { data: ProportionWidgetData }) {
                 {s.label}
               </span>
               <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink/80">
-                <StatNumber value={s.value} />
+                {s.display ?? <StatNumber value={s.value} />}
               </span>
             </div>
             <div className="h-[6px] w-full overflow-hidden rounded-full bg-ink/[0.05]">

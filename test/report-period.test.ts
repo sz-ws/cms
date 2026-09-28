@@ -4,21 +4,20 @@ import {
   customPeriodProblem,
   daySpan,
   listDays,
+  MIN_REPORT_DAY,
   parseReportPeriod,
+  periodChange,
   periodFromRange,
+  periodLabel,
   previousPeriod,
   reportPeriodParams,
   withReportPeriod,
 } from "../src/lib/report-period";
-import {
-  axisTickDays,
-  dailyRows,
-  periodLabel,
-  revenueChange,
-  shortDay,
-} from "../src/components/admin/report/revenue-summary";
+import { axisTickDays, dailyRows, longDay, shortDay } from "../src/components/admin/dashboard/widgets/timeseries";
+import * as legacySummary from "../src/components/admin/report/revenue-summary";
 
-// 1.61.0:報表的期間(儀表板的營業額卡與插件的報表共用)與圖的純函式。
+// 1.61.0:報表的期間(儀表板上跟著期間的卡與插件的報表共用)與圖的純函式。1.62.0 起圖的純函式在
+// dashboard/widgets/timeseries.ts,比前一段與期間的寫法在 lib/report-period.ts;revenue-summary.ts 留著轉接。
 
 const TPE = "Asia/Taipei";
 // 2026-09-23 12:00 台北。
@@ -74,6 +73,9 @@ describe("custom ranges", () => {
     ["a date that does not exist", "since=2026-02-30&until=2026-03-01"],
     ["not a date", "since=yesterday&until=2026-09-01"],
     ["only one end", "since=2026-09-01"],
+    ["a start in the year 1000", "since=1000-01-01&until=1000-01-10"],
+    ["a start before 2000", "since=1999-12-31&until=2000-01-10"],
+    ["more than 366 days from far back", "since=2000-01-01&until=2026-09-23"],
   ])("falls back when %s", (_label, query) => {
     expect(parseReportPeriod(params(query), NOW, TPE).preset).toBe(30);
     // range 還在的話用 range。
@@ -85,7 +87,9 @@ describe("custom ranges", () => {
     expect(customPeriodProblem("2026-09-10", "2026-09-01", "2026-09-23")).toBe("order");
     expect(customPeriodProblem("2026-09-10", "2026-09-24", "2026-09-23")).toBe("future");
     expect(customPeriodProblem("2025-01-01", "2026-09-01", "2026-09-23")).toBe("length");
+    expect(customPeriodProblem("1000-01-01", "1000-01-10", "2026-09-23")).toBe("early");
     expect(customPeriodProblem("2026-09-01", "2026-09-23", "2026-09-23")).toBeNull();
+    expect(customPeriodProblem(MIN_REPORT_DAY, MIN_REPORT_DAY, "2026-09-23")).toBeNull();
   });
 });
 
@@ -127,6 +131,15 @@ describe("the previous period", () => {
     const leap = parseReportPeriod(params("since=2024-03-01&until=2024-03-01"), NOW, TPE);
     expect(previousPeriod(leap)).toMatchObject({ from: "2024-02-29", to: "2024-02-29" });
   });
+
+  it("works for the earliest allowed range, going back before 2000", () => {
+    const year = parseReportPeriod(params("since=2000-01-01&until=2000-12-31"), NOW, TPE);
+    expect(year).toMatchObject({ preset: "custom", from: "2000-01-01", to: "2000-12-31" });
+    const previous = previousPeriod(year);
+    expect(previous).toMatchObject({ from: "1998-12-31", to: "1999-12-31" });
+    expect(previous.days).toHaveLength(366);
+    expect(previous.end).toBe(year.start);
+  });
 });
 
 describe("carrying the period in links", () => {
@@ -134,8 +147,8 @@ describe("carrying the period in links", () => {
     expect(reportPeriodParams({ preset: 30, from: "x", to: "y" })).toEqual({ range: "30" });
     expect(reportPeriodParams({ preset: "custom", from: "2026-09-01", to: "2026-09-10" })).toEqual({ since: "2026-09-01", until: "2026-09-10" });
     expect(withReportPeriod("/admin/ext/shop/report", { preset: 7, from: "", to: "" })).toBe("/admin/ext/shop/report?range=7");
-    expect(withReportPeriod("/admin/ext/dealer?tab=purchases", { preset: "custom", from: "2026-09-01", to: "2026-09-02" })).toBe(
-      "/admin/ext/dealer?tab=purchases&since=2026-09-01&until=2026-09-02",
+    expect(withReportPeriod("/admin/ext/orders?tab=paid", { preset: "custom", from: "2026-09-01", to: "2026-09-02" })).toBe(
+      "/admin/ext/orders?tab=paid&since=2026-09-01&until=2026-09-02",
     );
   });
 
@@ -156,6 +169,9 @@ describe("carrying the period in links", () => {
     expect(daySpan("2026-09-01", "2026-09-30")).toBe(30);
     expect(listDays("2026-09-29", "2026-10-01")).toEqual(["2026-09-29", "2026-09-30", "2026-10-01"]);
     expect(listDays("2026-10-01", "2026-09-29")).toEqual([]);
+    // 年份一律四位數,加減到 1000 年以前也還是一個日期。
+    expect(addDays("1000-01-01", -1)).toBe("0999-12-31");
+    expect(addDays("0999-12-31", 1)).toBe("1000-01-01");
   });
 });
 
@@ -185,12 +201,24 @@ describe("chart helpers", () => {
   });
 
   it("compares with the previous period in whole percent, and not at all against zero", () => {
-    expect(revenueChange(1200, 1000)).toEqual({ percent: 20, direction: "up" });
-    expect(revenueChange(500, 1000)).toEqual({ percent: 50, direction: "down" });
-    expect(revenueChange(1000, 1000)).toEqual({ percent: 0, direction: "flat" });
-    expect(revenueChange(1001, 1000)).toEqual({ percent: 0, direction: "flat" });
-    expect(revenueChange(0, 1000)).toEqual({ percent: 100, direction: "down" });
-    expect(revenueChange(1000, 0)).toBeNull();
+    expect(periodChange(1200, 1000)).toEqual({ percent: 20, direction: "up" });
+    expect(periodChange(500, 1000)).toEqual({ percent: 50, direction: "down" });
+    expect(periodChange(1000, 1000)).toEqual({ percent: 0, direction: "flat" });
+    expect(periodChange(1001, 1000)).toEqual({ percent: 0, direction: "flat" });
+    expect(periodChange(0, 1000)).toEqual({ percent: 100, direction: "down" });
+    expect(periodChange(1000, 0)).toBeNull();
+  });
+
+  it("writes a day for the tooltip in the admin language", () => {
+    expect(longDay("2026-09-23", "en")).toBe("Wed, 9/23/2026");
+    expect(longDay("2026-09-23", "zh-Hant")).toBe("2026/9/23（週三）");
+  });
+
+  it("the 1.61.0 names still work until 2.0", () => {
+    expect(legacySummary.revenueChange).toBe(periodChange);
+    expect(legacySummary.periodLabel).toBe(periodLabel);
+    expect(legacySummary.dailyRows).toBe(dailyRows);
+    expect(legacySummary.compactAmount(12000, "en")).toBe("12K");
   });
 
   it("writes the period short this year and with years otherwise", () => {

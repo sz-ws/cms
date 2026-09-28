@@ -43,12 +43,12 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
               cursor={false}
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
-                const p = payload[0].payload as { label: string; value: number };
+                const p = payload[0].payload as { label: string; value: number; display?: string };
                 return (
                   <div className="rounded-[calc(10px*var(--admin-radius-scale,1))] bg-surface px-3 py-2 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_8px_20px_-8px_rgba(30,20,50,0.18))]">
                     <div className="text-[11px] text-ink/40">{p.label}</div>
                     <div className="text-[13px] font-semibold tabular-nums text-ink/85">
-                      {p.value.toLocaleString()}
+                      {p.display ?? p.value.toLocaleString()}
                     </div>
                   </div>
                 );
@@ -57,7 +57,7 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
           </PieChart>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-[15px] font-semibold tabular-nums text-ink/85">
-              <StatNumber value={total} />
+              {data.totalDisplay ?? <StatNumber value={total} />}
             </span>
           </div>
         </div>
@@ -74,7 +74,7 @@ export function DonutWidget({ data }: { data: ProportionWidgetData }) {
                 </span>
               </div>
               <span className="shrink-0 text-[12.5px] font-medium tabular-nums text-ink/75">
-                {s.value.toLocaleString()}
+                {s.display ?? s.value.toLocaleString()}
               </span>
             </div>
           ))}

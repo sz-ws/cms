@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/I18nProvider";
 import {
   customPeriodProblem,
   MAX_REPORT_DAYS,
+  MIN_REPORT_DAY,
   REPORT_PARAMS,
   REPORT_PRESETS,
   reportPeriodParams,
@@ -135,6 +136,7 @@ export function ReportPeriodControl({ period, today, className }: ReportPeriodCo
                 ref={sinceRef}
                 type="date"
                 value={since}
+                min={MIN_REPORT_DAY}
                 max={until || today}
                 onChange={(event) => setSince(event.target.value)}
                 aria-invalid={problem !== null || undefined}
@@ -146,7 +148,7 @@ export function ReportPeriodControl({ period, today, className }: ReportPeriodCo
               <input
                 type="date"
                 value={until}
-                min={since || undefined}
+                min={since || MIN_REPORT_DAY}
                 max={today}
                 onChange={(event) => setUntil(event.target.value)}
                 aria-invalid={problem !== null || undefined}

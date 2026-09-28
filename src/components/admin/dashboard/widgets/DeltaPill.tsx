@@ -9,7 +9,7 @@ const TONE = {
 
 // 趨勢家族共用的漲跌 pill——琢瑯綠/紅沿用 registry requires chips 的既有色階
 // (RegistryBrowser 的 serviceProvided/serviceMissing),不是這裡新發明的顏色。
-// 1.61.0:unit 接在數字後面(營業額卡的「+12%」)。
+// 1.61.0:unit 接在數字後面(比前一段的「+12%」)。
 export function DeltaPill({ delta, unit = "" }: { delta: NonNullable<TrendWidgetData["delta"]>; unit?: string }) {
   const { bg, fg, Icon } = TONE[delta.direction];
   const sign = delta.direction === "up" ? "+" : delta.direction === "down" ? "" : "";

@@ -40,3 +40,14 @@ export function resolveLocalizedString(
   }
   return undefined;
 }
+
+// 每一種後台語言各一格:Locale 多一種時這裡編譯不過,比對不會漏掉那一種。
+const EVERY_LOCALE: Record<Locale, true> = { en: true, "zh-Hant": true };
+
+/**
+ * 1.62.0:兩個 LocalizedString 在每一種後台語言解析出來都一樣嗎。照 resolveLocalizedString 比,所以物件的
+ * key 順序、純字串與每種語言同一句的物件都不影響。
+ */
+export function sameLocalizedString(a: LocalizedString | undefined, b: LocalizedString | undefined): boolean {
+  return (Object.keys(EVERY_LOCALE) as Locale[]).every((locale) => resolveLocalizedString(a, locale) === resolveLocalizedString(b, locale));
+}

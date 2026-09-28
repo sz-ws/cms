@@ -4,8 +4,6 @@ import { ContentTypeCard } from "@/components/admin/dashboard/ContentTypeCard";
 import { RecentEntries } from "@/components/admin/dashboard/RecentEntries";
 import { DashboardEmpty } from "@/components/admin/dashboard/DashboardEmpty";
 import { QuickCreate } from "@/components/admin/dashboard/QuickCreate";
-import { ExtStatCard } from "@/components/admin/dashboard/ExtStatCard";
-import { ExtRecentCard } from "@/components/admin/dashboard/ExtRecentCard";
 import {
   getWeeklyActivity,
   getStorageStats,
@@ -18,15 +16,16 @@ import type { ProportionWidgetData } from "@/components/admin/dashboard/widgets"
 import { DashboardInsights } from "@/components/admin/dashboard/DashboardInsights";
 import { normalizeInsightConfig } from "@/lib/dashboard-insights-config";
 import { getExtRuntime } from "@/ext/loader";
-import { resolveDashboardCards } from "@/ext/dx/dashboard-cards";
+import { loadDashboardWidgets } from "@/ext/dx/dashboard-widgets";
 import { getLocale, getMessages } from "@/lib/i18n/server";
 import { getSiteTimeZone } from "@/lib/datetime-server";
 import { getSetting } from "@/lib/settings";
 import { getSessionAccess, isFullAdmin } from "@/lib/auth";
 import { guardDashboard } from "@/lib/access-guards";
 import { dashboardViewerFor } from "@/components/admin/dashboard/viewer";
-import { RevenueCard } from "@/components/admin/dashboard/RevenueCard";
-import { loadDashboardRevenue } from "@/components/admin/dashboard/revenue-data";
+import { hasPluginCards, PluginSection } from "@/components/admin/dashboard/PluginSection";
+import { buildPluginCards } from "@/components/admin/dashboard/widget-cards";
+import { getSiteCurrency } from "@/lib/units-server";
 import { createDateFormatter } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +55,7 @@ export default async function DashboardPage({
   const session = await getSessionAccess();
   const viewer = dashboardViewerFor(session);
   const data = await getDashboardData(viewer);
-  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
+  const [locale, timeZone, currency] = await Promise.all([getLocale(), getSiteTimeZone(), getSiteCurrency()]);
   const m = getMessages(locale);
 
   // Server components 吃不到 context,dashboard 卡片是 server-rendered,
@@ -153,43 +152,34 @@ export default async function DashboardPage({
     },
   };
 
-  // roadmap #16: composable dashboard. Resolve any dashboard cards contributed by
-  // enabled extensions (getExtRuntime is React-cached per request — getDashboardData
-  // already warmed it). Split by kind so stat tiles and recent feeds each get a
-  // fitting responsive grid. Rendered only when non-empty.
-  // 1.52.0:卡片連到列出那個類型的頁(hrefs),自訂角色打不開那一頁就不顯示。code extension
-  // 自己的數字(dashboardStats)也在這裡,「今天」照站台時區算。
-  // 1.61.0:營業額卡(插件的 dashboardRevenue)跟卡片同時問。期間照網址(?range= /
-  // ?since=&until=,lib/report-period.ts);沒有插件提供、或這個人一條線都打不開時是 null,
-  // 整張卡不畫。
+  // roadmap #16: composable dashboard. Plugin cards — declarative dashboardCards and code
+  // extensions' dashboardWidgets (1.62.0; the older hooks go through adapters) — come from
+  // one pipeline (ext/dx/dashboard-widgets.ts): isolated calls, validation, the viewer's
+  // canOpen, one period from the URL (?range= / ?since=&until=, lib/report-period.ts) with
+  // the previous period for comparisons, and widgets sharing a metric merged into one card.
+  // getExtRuntime is React-cached per request (getDashboardData already warmed it).
   const [rt, params] = await Promise.all([getExtRuntime(), searchParams]);
-  const [extCards, revenue] = await Promise.all([
-    resolveDashboardCards(rt.enabled, locale, {
-      hrefs: data.collectionHrefs,
-      canOpen: viewer?.canOpen,
-      now: data.now,
-      timeZone,
-    }),
-    loadDashboardRevenue(rt.enabled, {
-      params,
-      now: data.now,
-      timeZone,
-      locale,
-      canOpen: viewer?.canOpen,
-    }),
-  ]);
-  const extStatCards = extCards.filter((c) => c.kind === "stat");
-  const extRecentCards = extCards.filter((c) => c.kind === "recent");
-  const revenueLabels = {
-    title: m["revenue.title"],
-    vsPrevious: m["revenue.vsPrevious"],
-    vsPreviousDay: m["revenue.vsPreviousDay"],
-    noPrevious: m["revenue.noPrevious"],
-    noPreviousDay: m["revenue.noPreviousDay"],
-  };
+  const widgets = await loadDashboardWidgets(rt.enabled, {
+    params,
+    now: data.now,
+    timeZone,
+    locale,
+    canOpen: viewer?.canOpen,
+    hrefs: data.collectionHrefs,
+  });
+  const pluginCards = buildPluginCards(widgets, {
+    locale,
+    currency,
+    labels: {
+      vsPrevious: m["reportPeriod.vsPrevious"],
+      vsPreviousDay: m["reportPeriod.vsPreviousDay"],
+      noPrevious: m["reportPeriod.noPrevious"],
+      noPreviousDay: m["reportPeriod.noPreviousDay"],
+    },
+  });
 
   // Widget preset 家族的真實資料接線(取代舊的 SystemView 開發殘留 —— 那段是
-  // FluidTabs 的展示殘留,Usage/Revenue/Activity 三個假 tab 沒有接任何資料,
+  // FluidTabs 的展示殘留,三個假 tab 沒有接任何資料,
   // 已整段刪除)。內容分佈跟上面 per-type 卡片的數字確實重疊,但 Suko 回饋
   // 要留著(視覺上是這頁做得最好的一塊,別為了除重複反而拿掉好看的東西)——
   // 用真數字圖表取代 per-type 卡片裡原本純裝飾的 motif band 那塊重複感才是
@@ -255,73 +245,27 @@ export default async function DashboardPage({
       href: t.newHref,
     }));
 
-  // roadmap #16: extension-contributed cards (dashboardCards / dashboardStats).
-  // Only rendered when at least one enabled extension contributes a card. Stat
-  // tiles sit in the same container-responsive auto-fit grid as the core per-type
-  // cards; recent feeds get a wider min column so their rows breathe.
-  // 1.60.0:有插件的卡片時,這一區排在內容統計前面 —— 店家每天看的是營運數字(訂單、
-  // 收款),商品、文章、分類的數量往下放。沒有插件卡片時版面跟以前一樣。
-  // 1.61.0:營業額卡在數字卡後面、近期列表前面,整張寬。
-  const extSection = (extCards.length > 0 || revenue !== null) && (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-ink/90">
-          {labels.fromExtensions}
-        </h2>
-        <p className="text-[13px] text-ink/40">
-          {labels.fromExtensionsDesc}
-        </p>
-      </div>
-
-      {extStatCards.length > 0 && (
-        <div
-          className="grid gap-4"
-          style={{
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(min(100%, 15rem), 1fr))",
-          }}
-        >
-          {extStatCards.map((c, i) => (
-            <ExtStatCard
-              key={`${c.extId}:${c.statId ?? c.contentType}-${i}`}
-              card={c}
-              locale={locale}
-              labels={labels.extStat}
-            />
-          ))}
-        </div>
-      )}
-
-      {revenue && (
-        <RevenueCard
-          data={revenue}
-          today={createDateFormatter(locale, timeZone).dayKey(data.now)}
-          locale={locale}
-          labels={revenueLabels}
-        />
-      )}
-
-      {extRecentCards.length > 0 && (
-        <div
-          className="grid gap-4"
-          style={{
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))",
-          }}
-        >
-          {extRecentCards.map((c, i) => (
-            <ExtRecentCard
-              key={`${c.contentType}-${i}`}
-              card={c}
-              now={data.now}
-              locale={locale}
-              timeZone={timeZone}
-              labels={labels.extRecent}
-            />
-          ))}
-        </div>
-      )}
-    </section>
+  // 1.60.0:有插件的卡片時,這一區排在內容統計前面 —— 店家每天看的是營運數字(訂單、收款),
+  // 商品、文章、分類的數量往下放。沒有插件卡片時版面跟以前一樣。
+  const extSection = hasPluginCards(pluginCards, widgets.recent) && (
+    <PluginSection
+      cards={pluginCards}
+      recent={widgets.recent}
+      period={widgets.period}
+      periodCards={widgets.cards.filter((card) => card.period).length}
+      today={createDateFormatter(locale, timeZone).dayKey(data.now)}
+      now={data.now}
+      locale={locale}
+      timeZone={timeZone}
+      labels={{
+        title: labels.fromExtensions,
+        description: labels.fromExtensionsDesc,
+        view: labels.extStat.view,
+        viewAll: m["contentType.viewAll"],
+        listEmpty: m["dashboard.list.empty"],
+        recent: labels.extRecent,
+      }}
+    />
   );
 
   return (

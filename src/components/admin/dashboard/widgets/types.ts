@@ -13,14 +13,35 @@
 // 拉進 worker bundle,而那條相依鏈在 workers pool 的測試環境根本載不起來。
 // 需要元件的東西放 index.tsx,不要放這裡。
 
+import type { Unit } from "@/lib/units";
+
 /** 佔比家族(donut / bar-list / progress-ring / progress-segments)共用契約。 */
 export interface ProportionWidgetData {
   label: string;
-  segments: { id: string; label: string; value: number }[];
+  /** 1.62.0:display = 照單位寫好的值(插件卡片用);沒給照語系寫數字。 */
+  segments: { id: string; label: string; value: number; display?: string }[];
   /** 顯式總量;缺省 = segments 加總。progress-* 只用 segments[0] 對 total 的比例。 */
   total?: number;
   /** progress-* 系列的中心大字/副標;donut/bar-list 不需要(各段自己有標籤)。 */
   valueLabel?: string;
+  /** 1.62.0:donut 中間的總量,照單位寫好的;沒給照語系寫數字。 */
+  totalDisplay?: string;
+}
+
+/**
+ * 1.62.0 每日趨勢家族(TimeseriesChart):一天一格、幾條線。儀表板上插件的 timeseries 卡與插件的報表頁
+ * 共用。數字照 unit 寫(金額要帶幣別 code),所以 client 元件拿到的是資料,不是格式化函式。
+ */
+export interface TimeseriesChartData {
+  /** 圖的名字:無障礙標題「每日{label}」、整段都是 0 時的那一句。 */
+  label: string;
+  /** 期間的每一天,舊到新(YYYY-MM-DD)。 */
+  days: string[];
+  /** key 跨插件唯一;href 給了,圖例上的名字就連過去。days:YYYY-MM-DD → 值,沒列的日子是 0。 */
+  series: { key: string; label: string; href?: string; days: Readonly<Record<string, number>> }[];
+  unit: Unit;
+  /** stacked:疊起來,提示框有當天合計、圖例有期間合計;overlay:每條一條線,不加總。 */
+  mode: "stacked" | "overlay";
 }
 
 /** 趨勢家族(trend-bars / trend-sparkline / stat-simple)共用契約。 */

@@ -34,6 +34,9 @@ import {
   extensionMenuSchema,
   type ExtensionMenu,
 } from "./admin-menu";
+import { dashboardWidgetsSchema, metricsSchema, type DashboardWidgetDecl, type MetricDecl } from "./dashboard-widgets";
+import type { DashboardStat, DashboardStatsContext } from "./dx/dashboard-stats";
+import type { DashboardRevenueContext, RevenueSeries } from "./dx/dashboard-revenue";
 import {
   MAX_MEMBER_FACETS,
   MAX_MEMBER_FACET_ACTIONS,
@@ -167,67 +170,24 @@ export interface ExtJobRegistration {
   run: (services: CoreServices, payload: unknown, now: number) => Promise<void>;
 }
 
-/**
- * 1.52.0:插件放在儀表板上的一個數字(Extension.dashboardStats)。卡片跟 dashboardCards 的
- * 數字卡同一個樣子:標題、一行小字、數字,整張連到 href。規則見 dx/dashboard-stats.ts,
- * 不合規則的那一筆不顯示(伺服器記一行)。
- */
-export interface DashboardStat {
-  /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
-  id: string;
-  title: LocalizedString;
-  /** 處理這件事的後台頁:`/admin` 開頭的站內路徑,可帶 query。看的人打不開就不顯示。 */
-  href: string;
-  /** 有限數字;沒給 display 時照後台語言格式化顯示。 */
-  value: number;
-  /** 插件自己格式化好的顯示字串(例如金額、帶小數的單位),最多 24 字。 */
-  display?: string;
-  /** 標題下的一行小字(最多 80 字);沒給是插件名稱。 */
-  hint?: LocalizedString;
-}
-
-/** 1.52.0:dashboardStats 收到的內容。 */
-export interface DashboardStatsContext {
-  /** 這次儀表板的時間(ms)。 */
-  now: number;
-  /** 站台時區(settings 的 core.timeZone,預設台北),「今天」照這個算。 */
-  timeZone: string;
-  /** 後台語言。 */
-  locale: Locale;
-  /** 看的人打不打得開這個後台連結;打不開的數字 core 會丟掉,插件可以先不查。 */
-  canOpen: (href: string) => boolean;
-}
-
-/**
- * 1.61.0:插件交給儀表板「營業額」圖的一條每日金額(Extension.dashboardRevenue)。各插件的線
- * 疊在同一張長條圖上(例如商城訂單加經銷點數購買),加起來就是這段期間的營業額。規則見
- * dx/dashboard-revenue.ts,不合規則的那一條不顯示(伺服器記一行)。
- */
-export interface RevenueSeries {
-  /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
-  id: string;
-  /** 圖例上的名稱(最多 40 字),例:{ "zh-Hant": "商城訂單", en: "Shop orders" }。 */
-  label: LocalizedString;
-  /** 看這筆錢明細的後台頁:`/admin` 開頭的站內路徑,可帶 query。看的人打不開就不顯示。 */
-  href: string;
-  /**
-   * 每天收到的金額:key 是站台時區的日期 YYYY-MM-DD,只算 ctx.from 到 ctx.to 之間的日子,
-   * 沒列的日子當 0。值是非負的有限數字,單位是商店的幣別(基礎商店是新台幣元)。
-   */
-  days: Record<string, number>;
-}
-
-/** 1.61.0:dashboardRevenue 收到的內容;期間照站台時區切成整天。 */
-export interface DashboardRevenueContext extends DashboardStatsContext {
-  /** 第一天(含),YYYY-MM-DD。 */
-  from: string;
-  /** 最後一天(含),YYYY-MM-DD。 */
-  to: string;
-  /** from 當天 00:00(ms)。 */
-  start: number;
-  /** to 隔天 00:00(ms),不含。查詢用 created_at >= start AND created_at < end。 */
-  end: number;
-}
+// 1.62.0:儀表板的卡片(dashboardWidgets、metrics)的形狀在 ./dashboard-widgets.ts;1.52.0 的
+// dashboardStats 與 1.61.0 的 dashboardRevenue 的型別跟著它們的轉接放在 dx/(2.0 拿掉)。
+export type {
+  DashboardWidgetDecl,
+  MetricCombine,
+  MetricDecl,
+  Unit,
+  WidgetContext,
+  WidgetData,
+  WidgetKind,
+  WidgetListData,
+  WidgetNumberData,
+  WidgetPeriod,
+  WidgetProportionData,
+  WidgetTimeseriesData,
+} from "./dashboard-widgets";
+export type { DashboardStat, DashboardStatsContext } from "./dx/dashboard-stats";
+export type { DashboardRevenueContext, RevenueSeries } from "./dx/dashboard-revenue";
 
 /**
  * 1.60.0:插件在成員頁(/admin/users)上說明「這個人對我是什麼」(Extension.memberFacets)。
@@ -341,13 +301,27 @@ export interface Extension {
   // 從 manifest.dashboardCards 直接帶入;code extension 之後也可自行設定同欄位。
   dashboardCards?: DeclarativeDashboardCard[];
   /**
+   * 1.62.0:插件放在儀表板上的卡片(DashboardWidgetDecl,最多 12 張):number / timeseries /
+   * proportion / list。core 呼叫 load()、驗資料、管期間與比前一段、合併同一個 metric 的卡、照 unit
+   * 寫數字(./dashboard-widgets.ts、dx/dashboard-widgets.ts)。需要 coreApi "^1.62.0"。
+   */
+  dashboardWidgets?: DashboardWidgetDecl[];
+  /**
+   * 1.62.0:這個插件用到的共用數字(MetricDecl,最多 8 個)。這個插件的 widget 只能用這裡宣告的 metric;
+   * 用同一個 metric 的 widget(可以來自不同插件)合成一張卡。幾個插件宣告同一個 key 時要一模一樣,
+   * 不一樣的以先載入的插件為準,後面那個插件在它上面的 widget 不畫。需要 coreApi "^1.62.0"。
+   */
+  metrics?: MetricDecl[];
+  /**
    * 1.52.0:插件自己的儀表板數字(DashboardStat)。每次打開儀表板呼叫一次;丟例外、
    * 回傳不是陣列、或 2 秒內沒回來,這個插件的數字就不顯示,其他照常。
+   * @deprecated 1.62.0:改用 dashboardWidgets 的 `kind: "number"`(dx/dashboard-stats.ts 轉接)。2.0 拿掉。
    */
   dashboardStats?: (ctx: DashboardStatsContext) => Promise<DashboardStat[]>;
   /**
-   * 1.61.0:儀表板「營業額」圖的每日金額(RevenueSeries)。儀表板換期間時呼叫;丟例外、
-   * 回傳不是陣列、或逾時,這個插件的線就不畫,其他照常。需要 coreApi "^1.61.0"。
+   * 1.61.0:儀表板的每日金額(RevenueSeries)。需要 coreApi "^1.61.0"。
+   * @deprecated 1.62.0:改成宣告 commerce-kit 的 REVENUE(metrics)加一個 metric 是它的 timeseries
+   * widget(dx/dashboard-revenue.ts 轉接)。2.0 拿掉。
    */
   dashboardRevenue?: (ctx: DashboardRevenueContext) => Promise<RevenueSeries[]>;
   /**
@@ -747,8 +721,10 @@ const manifestSchema = z
     publicFeeds: z
       .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
       .optional(),
-    dashboardStats: fn.optional(),
-    dashboardRevenue: fn.optional(), // 1.61.0
+    dashboardStats: fn.optional(), // deprecated 1.62.0
+    dashboardRevenue: fn.optional(), // 1.61.0; deprecated 1.62.0
+    dashboardWidgets: dashboardWidgetsSchema.optional(), // 1.62.0
+    metrics: metricsSchema.optional(), // 1.62.0
     // 1.60.0:成員頁的 facet(MemberFacet;讀取與驗證在 ./member-facets.ts)。
     memberFacets: z
       .array(
@@ -878,6 +854,19 @@ const manifestSchema = z
     if (ext.agentGuide !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.60.0")) {
       ctx.addIssue({ code: "custom", message: 'agentGuide requires coreApi "^1.60.0" or newer', path: ["coreApi"] });
     }
+    // 1.62.0:儀表板的卡片 —— 舊 core 會安靜地忽略(卡片不出現,沒有錯誤),所以標版號。
+    for (const field of ["dashboardWidgets", "metrics"] as const) {
+      if (ext[field] !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.62.0")) {
+        ctx.addIssue({ code: "custom", message: `${field} requires coreApi "^1.62.0" or newer`, path: ["coreApi"] });
+      }
+    }
+    // 1.62.0:widget 用的 metric 要在同一個插件的 metrics 裡(每個插件自己帶齊,不靠別的插件宣告)。
+    const declaredMetrics = new Set((ext.metrics ?? []).map((metric) => metric.key));
+    (ext.dashboardWidgets ?? []).forEach((widget, index) => {
+      if (widget.metric !== undefined && !declaredMetrics.has(widget.metric)) {
+        ctx.addIssue({ code: "custom", message: `widget "${widget.id}" uses metric "${widget.metric}", which this plugin does not declare in metrics`, path: ["dashboardWidgets", index, "metric"] });
+      }
+    });
   });
 
 export function defineExtension(ext: Extension): Extension {

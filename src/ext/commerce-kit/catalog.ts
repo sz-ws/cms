@@ -98,20 +98,8 @@ export function catalogManifest(): Record<string, unknown> {
         ],
       },
     ],
-    settings: [
-      {
-        key: "currency",
-        label: text("Currency", "幣別"),
-        type: "select",
-        options: [
-          { value: "TWD", label: "TWD" },
-          { value: "USD", label: "USD" },
-          { value: "JPY", label: "JPY" },
-        ],
-        default: "TWD",
-      },
-      { key: "perPage", label: text("Products per page", "每頁商品數"), type: "number", default: 12 },
-    ],
+    // 1.62.0:幣別是站台的設定(core.currency);這裡原本的「幣別」沒有人讀,拿掉。
+    settings: [{ key: "perPage", label: text("Products per page", "每頁商品數"), type: "number", default: 12 }],
     adminPages: [
       { slug: "", title: text("Products", "商品"), view: "collection", contentType: "product", layout: "table" },
       { slug: "categories", title: text("Categories", "分類"), view: "collection", contentType: "category", layout: "table" },
