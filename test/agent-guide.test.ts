@@ -144,8 +144,10 @@ describe("buildAgentGuide", () => {
   it("points stock at a tool when one exists, at the admin when only the plugin does", () => {
     const withTool = buildAgentGuide(input({ toolNames: [...ALL_TOOLS, "inventory.stock.set"] }));
     expect(withTool).toContain("Stock: set it with inventory.stock.set.");
-    const pluginOnly = buildAgentGuide(input({ extensions: [{ id: "inventory", name: "Inventory" }] }));
+    // 1.63.0: the plugin is recognised by the capability it provides, whatever its id.
+    const pluginOnly = buildAgentGuide(input({ extensions: [{ id: "warehouse", name: "Warehouse", capabilities: ["inventory"] }] }));
     expect(pluginOnly).toContain("Stock: there is no tool for it here");
+    expect(buildAgentGuide(input({ extensions: [{ id: "inventory", name: "Inventory", capabilities: ["payment"] }] }))).not.toContain("Stock:");
     expect(buildAgentGuide(input())).not.toContain("Stock:");
   });
 
@@ -264,6 +266,11 @@ describe("the admin assistant's system prompt", () => {
       expect(prompt).toContain("core.media.upload");
       expect(prompt).toContain("## Notes from the site owner");
       expect(prompt.trimEnd().endsWith("Keep product names under 20 characters.")).toBe(true);
+    });
+
+    it("reads the stock capability from an enabled plugin's provides", async () => {
+      runtimeState.enabled = [{ id: "warehouse", name: "Warehouse", version: "1.0.0", coreApi: "^1.63.0", provides: [{ capability: "inventory", id: "warehouse", create: () => ({}) }] }];
+      expect(await loadAgentSystemPrompt("en")).toContain("Stock: there is no tool for it here");
     });
 
     it("includes enabled plugins' own notes", async () => {

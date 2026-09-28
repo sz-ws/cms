@@ -27,6 +27,7 @@ import {
 
 function eventDetail(t: Translate, e: ReturnEvent): string {
   const parts: string[] = [];
+  if (e.restockSkipped) parts.push(t("returns.event.restockSkipped"));
   if (e.restocked?.length) {
     parts.push(t("returns.event.restocked", { items: e.restocked.map((r) => `${r.name} × ${r.qty}`).join("、") }));
   }
@@ -118,7 +119,10 @@ const restockable = (detail: ReturnDetail, productId: string) =>
 function RestockFields({ detail }: { detail: ReturnDetail }) {
   const t = useT();
   const [on, setOn] = useState(false);
-  if (!detail.stock.enabled) return null;
+  // 1.63.0:不只一個插件提供庫存時不能放回,說一句(不是什麼都不畫)。
+  if (!detail.stock.enabled) {
+    return detail.stock.unavailable === "several" ? <p className={cls.hint}>{t("returns.restockSeveral")}</p> : null;
+  }
   if (!detail.return.lines.some((line) => restockable(detail, line.productId))) {
     return <p className={cls.hint}>{t("returns.restockNone")}</p>;
   }

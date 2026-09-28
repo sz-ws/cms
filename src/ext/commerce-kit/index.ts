@@ -80,9 +80,9 @@ export {
   RETURN_SEARCH_FIELDS,
   RETURN_STATUS_SET,
   RESTOCK_CAPABILITY,
-  RESTOCK_PROVIDER_ID,
   ReturnError,
   canTransitionReturn,
+  isRestockProvider,
   isReturnStatus,
   orderReturnBlock,
   orderShipping,
@@ -105,6 +105,8 @@ export type {
   ShopReturn,
 } from "./returns";
 export { createReturnsEngine, isMissingTableError } from "./returns-engine";
+/** @deprecated 1.63.0 — remove in 2.0. The restock provider is found by capability (isRestockProvider). */
+export { RESTOCK_PROVIDER_ID } from "./returns-legacy";
 export type {
   ReturnsConfig,
   ReturnsEngine,

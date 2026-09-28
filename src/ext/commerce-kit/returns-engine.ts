@@ -100,6 +100,8 @@ export interface TransitionReturnInput {
 export interface ReturnStock {
   /** 有庫存 provider(可以放回庫存)。 */
   enabled: boolean;
+  /** 1.63.0:enabled 是 false 的原因是兩個以上的插件提供庫存(不是沒有)。 */
+  unavailable?: "several";
   /** 商品 id → 有沒有庫存帳。 */
   tracked: Record<string, boolean>;
   /** 商品 id → 這張訂單有沒有從庫存扣走這項(預留已扣下)。只有扣過的能放回。 */
@@ -211,8 +213,10 @@ function rowToReturn(row: ReturnRow): ShopReturn {
   };
 }
 
+type EventData = Pick<ReturnEvent, "restocked" | "restockSkipped" | "refund">;
+
 function rowToEvent(row: EventRow): ReturnEvent {
-  const data = parseJson(row.data) as Pick<ReturnEvent, "restocked" | "refund"> | null;
+  const data = parseJson(row.data) as EventData | null;
   return {
     id: row.id,
     action: row.action as ReturnEventAction,
@@ -220,6 +224,7 @@ function rowToEvent(row: EventRow): ReturnEvent {
     actorName: row.actor_name,
     note: row.note,
     ...(data?.restocked ? { restocked: data.restocked } : {}),
+    ...(data?.restockSkipped === "several" ? { restockSkipped: "several" as const } : {}),
     ...(data?.refund ? { refund: data.refund } : {}),
     at: row.created_at,
   };
@@ -256,6 +261,8 @@ export function createReturnsEngine(
   db: D1Database,
   config: ReturnsConfig,
   stock: RestockProvider | null = null,
+  /** 1.63.0:stock 是 null 的原因。several = 兩個以上的插件提供庫存:收到退貨時在處理紀錄上寫明沒有放回庫存。 */
+  options: { stockUnavailable?: "several" } = {},
 ) {
   if (!TABLE_RE.test(config.ordersTable)) {
     throw new Error(`[commerce-kit] invalid orders table name "${config.ordersTable}"`);
@@ -437,7 +444,7 @@ export function createReturnsEngine(
     action: ReturnEventAction,
     actor: ReturnActor,
     note: string | null,
-    data: Pick<ReturnEvent, "restocked" | "refund"> | null,
+    data: EventData | null,
     at: number,
   ): TransactionMutation {
     return {
@@ -470,7 +477,7 @@ export function createReturnsEngine(
       guard(`EXISTS (SELECT 1 FROM ${t.returns} WHERE return_no = ? AND status = ?)`, returnNo, current.status),
     ];
     const ops: LedgerOperation[] = [];
-    let data: Pick<ReturnEvent, "restocked" | "refund"> | null = null;
+    let data: EventData | null = null;
 
     if (input.to === "received") {
       const restock = mergeQty(input.restock ?? []);
@@ -496,6 +503,8 @@ export function createReturnsEngine(
       values.lines = JSON.stringify(
         current.lines.map((line) => ({ ...line, restocked: restock.get(line.productId) ?? 0 })),
       );
+      // 不只一個庫存 provider:沒有放回庫存(上面 back 有東西就已經擋下),處理紀錄上寫明,不是只記 log。
+      if (!stock && options.stockUnavailable === "several") data = { restockSkipped: "several" };
     }
 
     if (input.to === "refunded") {
@@ -589,7 +598,9 @@ export function createReturnsEngine(
 
   /** 這張訂單的這些商品能不能放回庫存:有沒有庫存帳、這張訂單有沒有扣走。 */
   async function stockFor(orderNo: string, productIds: readonly string[]): Promise<ReturnStock> {
-    if (!stock) return { enabled: false, tracked: {}, taken: {} };
+    if (!stock) {
+      return { enabled: false, ...(options.stockUnavailable ? { unavailable: options.stockUnavailable } : {}), tracked: {}, taken: {} };
+    }
     const [balances, reservations] = await Promise.all([
       Promise.all(productIds.map((id) => stock.getBalance(id))),
       Promise.all(

@@ -126,6 +126,15 @@ describe("退貨明細", () => {
     expect(html).toContain("這張訂單沒有從庫存扣過這些商品，收到退貨不會改動庫存。");
   });
 
+  it("兩個以上的插件提供庫存:不給勾放回庫存,說一句為什麼、怎麼辦;沒有庫存插件時照舊什麼都不畫", () => {
+    const several = { enabled: false, unavailable: "several" as const, tracked: {}, taken: {} };
+    const html = zh(createElement(ActionForm, { detail: detail("approved", { stock: several }), busy: false, onSubmit: () => {} }));
+    expect(html).not.toContain('name="restock"');
+    expect(html).toContain("有兩個以上的插件提供庫存，收到退貨不會放回庫存。只留一個啟用就能放回。");
+    const none = zh(createElement(ActionForm, { detail: detail("approved", { stock: { enabled: false, tracked: {}, taken: {} } }), busy: false, onSubmit: () => {} }));
+    expect(none).not.toContain("插件提供庫存");
+  });
+
   it("已收到退貨:登記退款說清楚系統不會自動退款,金額預設申請金額", () => {
     const html = zh(createElement(ActionForm, { detail: detail("received"), busy: false, onSubmit: () => {} }));
     expect(html).toContain("系統不會自動退款。請先在金流後台或網路銀行把錢退給客人，再到這裡登記。");

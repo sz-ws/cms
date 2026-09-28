@@ -94,3 +94,43 @@ describe("registerExtensionProviders (provides 接線)", () => {
     expect(reg.capabilities()).toEqual(expect.arrayContaining(["cap-a", "cap-b"]));
   });
 });
+
+describe("ProviderRegistry.find (1.63.0)", () => {
+  type Widget = { spin(): string };
+  const isWidget = (impl: unknown): impl is Widget =>
+    typeof impl === "object" && impl !== null && typeof (impl as Partial<Widget>).spin === "function";
+  const widget = (name: string): Widget => ({ spin: () => name });
+
+  it("0 providers: null", () => {
+    const reg = createRegistry(new HookBus());
+    expect(reg.find("widget", isWidget)).toBeNull();
+    expect(reg.find("widget")).toBeNull();
+  });
+
+  it("1 provider: that one, whatever its id; one that fails the guard does not count", () => {
+    const reg = createRegistry(new HookBus());
+    reg.register("widget", "acme", widget("acme"));
+    reg.register("widget", "broken", { spin: "not a function" });
+    expect(reg.find("widget", isWidget)?.spin()).toBe("acme");
+  });
+
+  it("2 providers: null (no guessing) and one log line naming the capability and ids", () => {
+    const reg = createRegistry(new HookBus());
+    reg.register("widget", "acme", widget("acme"));
+    reg.register("widget", "zenith", widget("zenith"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(reg.find("widget", isWidget)).toBeNull();
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(String(log.mock.calls[0][0])).toMatch(/"widget" \(acme, zenith\)/);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("without a guard every provider of the capability counts", () => {
+    const reg = createRegistry(new HookBus());
+    reg.register("widget", "only", { anything: true });
+    expect(reg.find<{ anything: boolean }>("widget")).toEqual({ anything: true });
+  });
+});

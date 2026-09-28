@@ -32,6 +32,12 @@ export interface ProviderRegistry {
   // 未必是 active provider。找不到 → null(呼叫端據此回 404,不揭露原因)。
   getById<T>(capability: Capability, id: string): T | null;
   list(capability: Capability): { id: string }[];
+  /**
+   * 1.63.0:「誰提供這個能力」—— 不看 id。回傳唯一一個通過 guard 的 provider(沒給 guard =
+   * 這個 capability 的每一個都算)。沒有、或兩個以上都通過時回 null,不猜;兩個以上時記一行,
+   * 列出 capability 與那幾個 id。呼叫端照它原本「沒有 provider」的處理走。
+   */
+  find<T>(capability: Capability, guard?: (impl: unknown) => impl is T): T | null;
 }
 
 export class ProviderRegistryImpl implements ProviderRegistry {
@@ -91,6 +97,18 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   list(capability: Capability): { id: string }[] {
     return (this.byCapability.get(capability) ?? []).map((e) => ({ id: e.id }));
+  }
+
+  find<T>(capability: Capability, guard?: (impl: unknown) => impl is T): T | null {
+    const matches = (this.byCapability.get(capability) ?? []).filter(
+      (e) => !guard || guard(e.impl),
+    );
+    if (matches.length > 1) {
+      console.error(
+        `[providers] ${matches.length} providers qualify for "${capability}" (${matches.map((e) => e.id).join(", ")}); none chosen`,
+      );
+    }
+    return matches.length === 1 ? (matches[0].impl as T) : null;
   }
 
   /** 已有註冊者的 capability 全集(manifest requires[] 的滿足判定用)。 */

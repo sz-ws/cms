@@ -1353,6 +1353,7 @@ export const en = {
   "returns.untracked": "No stock record",
   "returns.notTaken": "Not taken from stock by this order",
   "returns.restockNone": "This order didn't take these items out of stock, so receiving them won't change stock.",
+  "returns.restockSeveral": "More than one plugin provides stock, so receiving this return won't restock anything. Keep one enabled to restock.",
   "returns.refund.notice":
     "This does not send money back. Refund the customer in your payment provider or bank first, then record it here.",
   "returns.refund.amount": "Refund amount",
@@ -1374,6 +1375,7 @@ export const en = {
   "returns.event.completed": "Closed",
   "returns.event.cancelled": "Cancelled",
   "returns.event.restocked": "Back in stock: {items}",
+  "returns.event.restockSkipped": "Not restocked (more than one plugin provides stock)",
   "returns.create.orderNo": "Order number",
   "returns.create.lookup": "Look up",
   "returns.create.looking": "Looking up…",

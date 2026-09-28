@@ -4,9 +4,9 @@ import type { ApiCtx, ApiRoute } from "../types";
 import {
   REFUND_METHODS,
   RESTOCK_CAPABILITY,
-  RESTOCK_PROVIDER_ID,
   RETURN_REASONS,
   ReturnError,
+  isRestockProvider,
   type RestockProvider,
 } from "./returns";
 import {
@@ -69,18 +69,16 @@ function fail(status: number, error: string): Response {
   return Response.json({ ok: false, error }, { status });
 }
 
-/** 庫存 provider:有啟用、而且長得像 RestockProvider 才用。 */
-function restockProvider(ctx: ApiCtx): RestockProvider | null {
-  const provider = ctx.services.providers.getById<Partial<RestockProvider>>(
-    RESTOCK_CAPABILITY,
-    RESTOCK_PROVIDER_ID,
-  );
-  return provider &&
-    typeof provider.prepareRestock === "function" &&
-    typeof provider.getBalance === "function" &&
-    typeof provider.getReservation === "function"
-    ? (provider as RestockProvider)
-    : null;
+/**
+ * 庫存 provider:capability "inventory" 裡唯一一個長得像 RestockProvider 的(1.63.0 起不看 id)。找不到時分得出
+ * 「沒有」與「不只一個」:不只一個時退貨照樣處理,但畫面與處理紀錄說沒有放回庫存(returns-engine.ts)。
+ */
+function restockProvider(ctx: ApiCtx): { stock: RestockProvider | null; several: boolean } {
+  const { providers } = ctx.services;
+  const stock = providers.find(RESTOCK_CAPABILITY, isRestockProvider);
+  if (stock) return { stock, several: false };
+  const candidates = providers.list(RESTOCK_CAPABILITY).filter(({ id }) => isRestockProvider(providers.getById(RESTOCK_CAPABILITY, id)));
+  return { stock: null, several: candidates.length > 1 };
 }
 
 function actorOf(ctx: ApiCtx): ReturnActor {
@@ -112,7 +110,10 @@ async function readJson(req: Request): Promise<unknown> {
 }
 
 export function createReturnsApiRoutes(config: ReturnsConfig): ApiRoute[] {
-  const engine = (ctx: ApiCtx) => createReturnsEngine(getDB(), config, restockProvider(ctx));
+  const engine = (ctx: ApiCtx) => {
+    const { stock, several } = restockProvider(ctx);
+    return createReturnsEngine(getDB(), config, stock, several ? { stockUnavailable: "several" } : {});
+  };
   return [
     {
       method: "GET",

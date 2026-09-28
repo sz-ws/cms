@@ -8,6 +8,7 @@ import { contentToolSlug } from "./dx/agent-tools";
 import { listDeclarativeTypes } from "./dx/type-directory";
 import type { DeclarativeField } from "./dx/manifest";
 import { CATALOG_EXT_ID } from "./commerce-kit/catalog";
+import { RESTOCK_CAPABILITY } from "./commerce-kit/returns";
 import { AGENT_GUIDE_MAX_CHARS } from "./types";
 import type { ExtRuntime } from "./loader";
 
@@ -42,6 +43,8 @@ export interface AgentGuideExtension {
   id: string;
   name: string;
   guide?: LocalizedString;
+  /** 1.63.0:這個插件提供的 capability(manifest 的 provides),例如庫存那一步看 "inventory"。 */
+  capabilities?: readonly string[];
 }
 
 export interface AgentGuideInput {
@@ -183,7 +186,7 @@ function stockStep(ctx: GuideContext, toolNames: readonly string[], extensions: 
   const parts: string[] = [];
   if (stockTools.length > 0) {
     parts.push(pick(locale, `Stock: set it with ${stockTools.map(tool).join(", ")}.`, `庫存:用 ${stockTools.map(tool).join("、")} 設定。`));
-  } else if (extensions.some((ext) => ext.id === "inventory")) {
+  } else if (extensions.some((ext) => ext.capabilities?.includes(RESTOCK_CAPABILITY))) {
     parts.push(
       pick(
         locale,
@@ -431,6 +434,7 @@ function guideExtensions(runtime: Pick<ExtRuntime, "enabled">, locale: Locale): 
     id: ext.id,
     name: resolveLocalizedString(ext.name, locale) ?? ext.id,
     ...(ext.agentGuide !== undefined ? { guide: ext.agentGuide } : {}),
+    capabilities: (ext.provides ?? []).map((p) => p.capability),
   }));
 }
 

@@ -21,8 +21,8 @@ import type { OrderStatus } from "./types";
 // 閘道退款 API 刻意不做(spec-payment-capability.md §6),後台畫面照實說。
 //
 // 庫存:收到退貨時可以把數量放回庫存,和狀態變更同一個 D1 batch(ledger-kit)。
-// 庫存插件不是 core 的一部分,這裡只認下面的 RestockProvider 形狀(capability
-// "inventory"、provider id "inventory",SKU = 商品 id)。沒有這個 provider 時只記錄。
+// 庫存不是 core 的一部分,這裡只認下面的 RestockProvider 形狀(capability "inventory",
+// SKU = 商品 id),用 find() 找唯一一個長得像它的 provider。沒有(或不只一個)時只記錄。
 // 只放回這張訂單真的從庫存扣走的(預留 orderStockReservationId 已扣下):沒扣過庫存
 // 的訂單(舊結帳、啟用庫存前的訂單)放回去會憑空多出庫存、之後超賣。
 
@@ -183,14 +183,19 @@ export interface ReturnEvent {
   note: string | null;
   /** 這一步放回庫存的項目(只有 received)。 */
   restocked?: { name: string; qty: number }[];
+  /**
+   * 1.63.0:這一步沒有放回庫存,因為找不到唯一的庫存 provider(several = 兩個以上的插件提供庫存,
+   * ProviderRegistry.find() 不猜)。記在處理紀錄上,店家看得到。
+   */
+  restockSkipped?: "several";
   /** 這一步登記的退款(只有 refunded)。 */
   refund?: { amount: number; method: RefundMethod };
   at: number;
 }
 
 /**
- * 退貨引擎要的庫存能力。私有庫存插件的 provider(capability "inventory",id
- * "inventory")結構上就是這個形狀;core 不 import 它。
+ * 退貨引擎要的庫存能力(capability "inventory")。提供庫存的插件照這個形狀實作;core 不
+ * import 它,只用 isRestockProvider 認形狀,由 ProviderRegistry.find() 找唯一的那一個。
  *
  * - prepareRestock:把件數加回可用庫存(ledger-kit 的 credit),和退貨的狀態變更
  *   一起 commit。
@@ -213,7 +218,17 @@ export function orderStockReservationId(orderNo: string, productId: string): str
 }
 
 export const RESTOCK_CAPABILITY = "inventory";
-export const RESTOCK_PROVIDER_ID = "inventory";
+
+/** 1.63.0:這個 provider 是不是 RestockProvider(三個函式都在)。給 ProviderRegistry.find() 用。 */
+export function isRestockProvider(impl: unknown): impl is RestockProvider {
+  if (impl === null || typeof impl !== "object") return false;
+  const candidate = impl as Partial<RestockProvider>;
+  return (
+    typeof candidate.prepareRestock === "function" &&
+    typeof candidate.getBalance === "function" &&
+    typeof candidate.getReservation === "function"
+  );
+}
 
 /** 後台搜尋:退貨編號、訂單編號、客人姓名、電話,加上建立期間。 */
 export const RETURN_SEARCH_FIELDS: RecordSearchFields = {

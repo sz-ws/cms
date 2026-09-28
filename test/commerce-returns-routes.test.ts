@@ -32,7 +32,7 @@ vi.mock("@/lib/auth", async (importActual) => {
   };
 });
 
-const setup = vi.hoisted(() => ({ ordersTable: "ext_rtroute_orders", stockPrefix: "ext_rtroute_stock" }));
+const setup = vi.hoisted(() => ({ ordersTable: "ext_rtroute_orders", stockPrefix: "ext_rtroute_stock", twoStocks: false }));
 vi.mock("@/ext/loader", async () => {
   const { HookBus } = await import("../src/ext/hooks");
   const { defineExtension } = await import("../src/ext/types");
@@ -47,7 +47,7 @@ vi.mock("@/ext/loader", async () => {
     coreApi: "^1.50.0",
     apiRoutes: createReturnsApiRoutes({ ordersTable: setup.ordersTable, prefix: "ext_shop_return" }),
   });
-  // 和庫存插件同一個 capability / id,形狀是 RestockProvider。
+  // capability "inventory",形狀是 RestockProvider;id 刻意不是 "inventory"(1.63.0 起用 find() 認形狀,不看 id)。
   const stock = defineExtension({
     id: "rtstock",
     name: "rtstock",
@@ -56,7 +56,7 @@ vi.mock("@/ext/loader", async () => {
     provides: [
       {
         capability: "inventory",
-        id: "inventory",
+        id: "rtstock",
         create: () => {
           const ledger = createLedgerProvider(db, setup.stockPrefix);
           return {
@@ -69,15 +69,29 @@ vi.mock("@/ext/loader", async () => {
       },
     ],
   });
-  const rt = {
-    enabled: [shop, stock],
-    all: [shop, stock],
+  // 1.63.0:第二個也提供庫存的插件(setup.twoStocks 時啟用)—— find() 不猜是哪一個。
+  const stock2 = defineExtension({
+    id: "rtstock2",
+    name: "rtstock2",
+    version: "0.0.1",
+    coreApi: "^1.50.0",
+    provides: [
+      {
+        capability: "inventory",
+        id: "rtstock2",
+        create: () => ({ prepareRestock: () => { throw new Error("not this one"); }, getBalance: async () => null, getReservation: async () => null }),
+      },
+    ],
+  });
+  const runtime = (enabled: ReturnType<typeof defineExtension>[]) => ({
+    enabled,
+    all: [shop, stock, stock2],
     hooks: new HookBus(),
-    byId: (id: string) => [shop, stock].find((e) => e.id === id),
+    byId: (id: string) => enabled.find((e) => e.id === id),
     isCompatible: () => true,
     unavailableById: new Map(),
-  };
-  return { getExtRuntime: async () => rt };
+  });
+  return { getExtRuntime: async () => runtime(setup.twoStocks ? [shop, stock, stock2] : [shop, stock]) };
 });
 
 import { GET, POST } from "../src/app/api/ext/[extId]/[[...path]]/route";
@@ -219,6 +233,38 @@ describe("退貨 API(admin)", () => {
     const illegal = await call("POST", `returns/${no}/status`, { to: "approved" });
     expect(illegal.status).toBe(409);
     expect(await illegal.json()).toEqual({ ok: false, error: "illegal_transition" });
+  });
+
+  it("兩個插件都提供庫存:不猜是哪一個 —— 明細說不能放回,收到退貨照樣成立,處理紀錄寫明沒有放回庫存", async () => {
+    auth.user = user("admin");
+    const now = Date.now();
+    await d1()
+      .prepare(
+        `INSERT INTO ${setup.ordersTable} (order_no, status, lines, subtotal, total, payment_provider, customer_name, customer_email, customer_phone, created_at, updated_at)
+         VALUES ('SOR3', 'completed', ?, 300, 300, 'banktransfer', '陳小華', 'hua@example.com', '0922000111', ?, ?)`,
+      )
+      .bind(JSON.stringify([{ productId: "p1", name: "商品一", unitPrice: 300, qty: 1 }]), now, now)
+      .run();
+    setup.twoStocks = true;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const lookup = await (await call("GET", "returns/order/SOR3")).json() as { stock: unknown };
+      expect(lookup.stock).toEqual({ enabled: false, unavailable: "several", tracked: {}, taken: {} });
+      const created = await (await call("POST", "returns", { orderNo: "SOR3", lines: [{ productId: "p1", qty: 1 }], reason: "other", requestedAmount: 300 })).json() as { return: { returnNo: string } };
+      const no = created.return.returnNo;
+      expect((await call("POST", `returns/${no}/status`, { to: "approved" })).status).toBe(200);
+      const restock = await call("POST", `returns/${no}/status`, { to: "received", restock: [{ productId: "p1", qty: 1 }] });
+      expect(restock.status).toBe(409);
+      expect((await call("POST", `returns/${no}/status`, { to: "received" })).status).toBe(200);
+      const detail = await (await call("GET", `returns/${no}`)).json() as { stock: unknown; events: { action: string; restockSkipped?: string }[] };
+      expect(detail.stock).toMatchObject({ enabled: false, unavailable: "several" });
+      expect(detail.events.at(-1)).toMatchObject({ action: "received", restockSkipped: "several" });
+      expect(detail.events.slice(0, -1).every((e) => e.restockSkipped === undefined)).toBe(true);
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('2 providers qualify for "inventory" (rtstock, rtstock2)'));
+    } finally {
+      setup.twoStocks = false;
+      logged.mockRestore();
+    }
   });
 
   it("退一件 150 元的商品:申請與退款最多 150,不是整張訂單的 450", async () => {
