@@ -19,6 +19,16 @@
   - `mcp-server.ts` (1.59.0): the MCP JSON-RPC handler for AI connections — the agent tool
     registry over `/api/mcp`; writes only on connections allowed to change things, audited as
     source "mcp" with the app's name.
+  - `member-facets.ts` (1.60.0): `Extension.memberFacets` — what each person on the member list
+    (`/admin/users`) is to a plugin. A facet (`id`, `label`, `read(userIds, ctx)`, optional
+    `actions`) gets a table column and a CSV column (its `badge`), a 有 / 沒有 filter
+    (`?<extId>.<facetId>=has|missing`, shared by the page and the export), and a section in the
+    member sheet (`lines` as a label/value list, `actions` as links to admin pages, shown for
+    people with a value, without one, or always). `ctx` is `{ services, locale, timeZone }`, with
+    `services` scoped to the plugin (`services.db` is the database). `users-data.ts` reads every
+    facet in parallel with all user ids; a facet that throws, times out (3 s) or returns something
+    that is not an object is logged and left out, and invalid values or links are dropped one by
+    one. Only people who can open the member list see facets. Requires coreApi `^1.60.0`.
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.

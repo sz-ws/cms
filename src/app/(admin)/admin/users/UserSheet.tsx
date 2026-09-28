@@ -21,6 +21,8 @@ import {
   type RoleOption,
   type UserRecord,
 } from "./UsersTable";
+import { SheetSectionLabel as SectionLabel, UserFacetSections } from "./UserFacetSections";
+import type { MemberFacetColumn } from "@/ext/member-facets";
 import { useT } from "@/lib/i18n/I18nProvider";
 
 export type SheetMode =
@@ -56,6 +58,7 @@ const INPUT_CLS =
 export function UserSheet({
   mode,
   roles,
+  facets = [],
   selfId,
   onClose,
   onSaved,
@@ -64,6 +67,8 @@ export function UserSheet({
   mode: SheetMode | null;
   /** 1.50.0:自訂角色。 */
   roles: RoleOption[];
+  /** 1.60.0:插件的 facet,編輯時各一段(UserFacetSections)。 */
+  facets?: MemberFacetColumn[];
   selfId: string;
   onClose: () => void;
   onSaved: (u: UserRecord) => void;
@@ -89,6 +94,7 @@ export function UserSheet({
             key={session}
             mode={held}
             roles={roles}
+            facets={facets}
             selfId={selfId}
             onClose={onClose}
             onSaved={onSaved}
@@ -105,6 +111,7 @@ export function UserSheet({
 function UserSheetForm({
   mode,
   roles,
+  facets,
   selfId,
   onClose,
   onSaved,
@@ -112,6 +119,7 @@ function UserSheetForm({
 }: {
   mode: SheetMode;
   roles: RoleOption[];
+  facets: MemberFacetColumn[];
   selfId: string;
   onClose: () => void;
   onSaved: (u: UserRecord) => void;
@@ -372,6 +380,9 @@ function UserSheetForm({
             </AdminLink>
           </div>
 
+          {/* 1.60.0:插件的 facet(這個人對各插件是什麼) */}
+          {editing && <UserFacetSections facets={facets} values={editing.facets} />}
+
           {/* Security */}
           <div className="flex flex-col gap-3.5">
             <SectionLabel>{t("userSheet.security")}</SectionLabel>
@@ -503,25 +514,6 @@ function UserSheetForm({
         </span>
       )}
     </>
-  );
-}
-
-function SectionLabel({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone?: "danger";
-}) {
-  return (
-    <h3
-      className={cn(
-        "text-[11px] font-semibold tracking-[0.06em] uppercase",
-        tone === "danger" ? "text-red-600/70" : "text-ink/35",
-      )}
-    >
-      {children}
-    </h3>
   );
 }
 

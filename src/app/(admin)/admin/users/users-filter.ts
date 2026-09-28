@@ -2,6 +2,7 @@ import type { MessageKey } from "@/lib/i18n";
 import { normalizeTimeZone, zonedTimeToMs } from "@/lib/datetime";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import { formatStatusList, parseStatusList } from "@/lib/status-filter";
+import { MEMBER_FACET_KEY_RE, hasFacetValue } from "@/ext/member-facets";
 import type { RoleOption, UserRecord } from "./UsersTable";
 import { USERS_VIEW_PARAM, parseUsersView, usersInView, type UsersView } from "./users-view";
 
@@ -14,6 +15,8 @@ import { USERS_VIEW_PARAM, parseUsersView, usersInView, type UsersView } from ".
 //   ?role=admin,role:<id>          角色(只有後台人員這組);寫法同 lib/status-filter.ts
 //   ?joinedFrom=2026-09-01&joinedTo=2026-09-28     加入日期(含頭含尾)
 //   ?activeFrom=…&activeTo=…                        最近上線(從未登入的人不會符合)
+//   ?<extId>.<facetId>=has|missing                  1.60.0:插件的 facet(ext/member-facets.ts)
+//                                                   有值 / 沒有值;其他值 = 不限
 //
 // 日期是站台時區(core.timeZone)的一整天:伺服器與瀏覽器用同一個時區換算,網址上是
 // 人看得懂的 YYYY-MM-DD,不是 epoch。認不得的值直接略過,不報錯(篩選不該讓整頁失敗)。
@@ -75,6 +78,9 @@ export interface DayRange {
   to: string | null;
 }
 
+/** 1.60.0:插件 facet 的篩選 —— 有值的人 / 沒有值的人。 */
+export type FacetChoice = "has" | "missing";
+
 export interface UsersFilter {
   view: UsersView;
   /** 搜尋框的字(可能帶前後空白,比對與寫網址前才 normalizeUsersQuery);空 = 不搜尋。 */
@@ -83,12 +89,14 @@ export interface UsersFilter {
   roles: RoleChoice[];
   joined: DayRange;
   active: DayRange;
+  /** 1.60.0:facet key(`<extId>.<facetId>`)→ 有 / 沒有;沒列的 facet 不限。 */
+  facets: Readonly<Record<string, FacetChoice>>;
 }
 
 const ANY_DAY: DayRange = { from: null, to: null };
 
 export function emptyUsersFilter(view: UsersView = "staff"): UsersFilter {
-  return { view, q: "", roles: [], joined: ANY_DAY, active: ANY_DAY };
+  return { view, q: "", roles: [], joined: ANY_DAY, active: ANY_DAY, facets: {} };
 }
 
 export function hasDayRange(range: DayRange): boolean {
@@ -100,9 +108,20 @@ export function isUsersFiltered(filter: UsersFilter): boolean {
   return normalizeUsersQuery(filter.q) !== "" || hasUsersNarrowing(filter);
 }
 
-/** 搜尋以外的篩選(角色、日期)。 */
+/** 搜尋以外的篩選(角色、日期、facet)。 */
 export function hasUsersNarrowing(filter: UsersFilter): boolean {
-  return filter.roles.length > 0 || hasDayRange(filter.joined) || hasDayRange(filter.active);
+  return (
+    filter.roles.length > 0 ||
+    hasDayRange(filter.joined) ||
+    hasDayRange(filter.active) ||
+    Object.keys(filter.facets).length > 0
+  );
+}
+
+/** 設定(或清掉:null)一個 facet 的篩選,回傳新的條件。 */
+export function withFacetChoice(filter: UsersFilter, key: string, choice: FacetChoice | null): UsersFilter {
+  const facets = Object.fromEntries(Object.entries(filter.facets).filter(([k]) => k !== key));
+  return { ...filter, facets: choice ? { ...facets, [key]: choice } : facets };
 }
 
 /** 清掉搜尋與篩選,留在同一組。 */
@@ -154,15 +173,34 @@ export function normalizeUsersQuery(raw: string): string {
   return raw.trim().slice(0, MAX_QUERY);
 }
 
-/** 網址參數 → 條件。roleIds 是現有的自訂角色(認不得的角色值略過)。 */
-export function parseUsersFilter(source: UsersParamSource, roleIds: readonly string[]): UsersFilter {
+/** facet 的網址參數:has / missing 才收,其他(含兩者都有)= 不限。 */
+function parseFacetChoice(value: ParamValue): FacetChoice | null {
+  const raw = first(value).trim();
+  return raw === "has" || raw === "missing" ? raw : null;
+}
+
+/**
+ * 網址參數 → 條件。roleIds 是現有的自訂角色(認不得的角色值略過);facetKeys 是這次讀到的
+ * 插件 facet(沒讀到的 facet 參數略過 —— 插件停用或讀壞時,篩選變成不限,不會整頁空掉)。
+ */
+export function parseUsersFilter(
+  source: UsersParamSource,
+  roleIds: readonly string[],
+  facetKeys: readonly string[] = [],
+): UsersFilter {
   const view = parseUsersView(first(read(source, USERS_VIEW_PARAM)));
+  const facets: Record<string, FacetChoice> = {};
+  for (const key of facetKeys) {
+    const choice = parseFacetChoice(read(source, key));
+    if (choice) facets[key] = choice;
+  }
   return {
     view,
     q: normalizeUsersQuery(first(read(source, USERS_QUERY_PARAM))),
     roles: view === "staff" ? parseStatusList(read(source, USERS_ROLE_PARAM), staffRoleChoices(roleIds)) : [],
     joined: dayRange(parseDay(read(source, JOINED_FROM_PARAM)), parseDay(read(source, JOINED_TO_PARAM))),
     active: dayRange(parseDay(read(source, ACTIVE_FROM_PARAM)), parseDay(read(source, ACTIVE_TO_PARAM))),
+    facets,
   };
 }
 
@@ -181,13 +219,18 @@ export function usersFilterParams(filter: UsersFilter): URLSearchParams {
     [ACTIVE_TO_PARAM, filter.active.to],
   ];
   for (const [name, day] of days) if (day) params.set(name, day);
+  // facet 照 key 排,同一組條件永遠只有一種網址。
+  for (const key of Object.keys(filter.facets).sort()) {
+    if (MEMBER_FACET_KEY_RE.test(key)) params.set(key, filter.facets[key]);
+  }
   return params;
 }
 
-/** 目前網址換成這組條件:其他參數與 hash 保留。 */
+/** 目前網址換成這組條件:其他參數與 hash 保留(facet 形狀的參數算這一頁的)。 */
 export function hrefForUsersFilter(current: string, filter: UsersFilter): string {
   const url = new URL(current);
-  for (const name of OWN_PARAMS) url.searchParams.delete(name);
+  const facetParams = [...url.searchParams.keys()].filter((name) => MEMBER_FACET_KEY_RE.test(name));
+  for (const name of [...OWN_PARAMS, ...facetParams]) url.searchParams.delete(name);
   for (const [name, value] of usersFilterParams(filter)) url.searchParams.set(name, value);
   return `${url.pathname}${url.search}${url.hash}`;
 }
@@ -245,11 +288,13 @@ export function filterUsers(
   const roles = filter.view === "staff" && filter.roles.length > 0 ? new Set<string>(filter.roles) : null;
   const joined = msRange(filter.joined, tz);
   const active = msRange(filter.active, tz);
+  const facets = Object.entries(filter.facets);
   return usersInView(users, filter.view).filter(
     (user) =>
       (needle === "" || matchesQuery(user, needle)) &&
       (roles === null || roles.has(choiceOf(user))) &&
       inRange(user.createdAt, joined) &&
-      inRange(user.lastActiveAt, active),
+      inRange(user.lastActiveAt, active) &&
+      facets.every(([key, choice]) => hasFacetValue(user.facets, key) === (choice === "has")),
   );
 }

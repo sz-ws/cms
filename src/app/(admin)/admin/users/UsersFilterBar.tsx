@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { CalendarDays, Download, Search, X } from "lucide-react";
+import { CalendarDays, Check, Download, Search, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusMultiFilter } from "@/components/admin/StatusMultiFilter";
 import { isImeKeyEvent } from "@/lib/ime";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { DateFormatter } from "@/lib/datetime";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { hasFacetValue, type MemberFacetColumn } from "@/ext/member-facets";
 import type { RoleOption, UserRecord } from "./UsersTable";
 import {
   choiceOf,
@@ -18,7 +19,9 @@ import {
   normalizeUsersQuery,
   staffRoleChoices,
   usersFilterParams,
+  withFacetChoice,
   type DayRange,
+  type FacetChoice,
   type RoleChoice,
   type UsersFilter,
 } from "./users-filter";
@@ -249,20 +252,98 @@ function RoleFilter({
   );
 }
 
+// ---- 插件的 facet(1.60.0):有 / 沒有 ----
+
+const FACET_OPTIONS: { value: FacetChoice | null; label: MessageKey }[] = [
+  { value: null, label: "usersTable.facetAny" },
+  { value: "has", label: "usersTable.facetHas" },
+  { value: "missing", label: "usersTable.facetMissing" },
+];
+
+function FacetFilter({
+  facet,
+  users,
+  filter,
+  timeZone,
+  onChange,
+}: {
+  facet: MemberFacetColumn;
+  users: readonly UserRecord[];
+  filter: UsersFilter;
+  timeZone: string;
+  onChange: (choice: FacetChoice | null) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const choice = filter.facets[facet.key] ?? null;
+  // 數量照其他條件算(這個 facet 本身不算),選之前就知道會剩幾位。
+  const pool = filterUsers(users, withFacetChoice(filter, facet.key, null), timeZone);
+  const has = pool.filter((user) => hasFacetValue(user.facets, facet.key)).length;
+  const counts: Record<"any" | FacetChoice, number> = { any: pool.length, has, missing: pool.length - has };
+  const current = choice ? FACET_OPTIONS.find((option) => option.value === choice) : undefined;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        type="button"
+        className={cn(
+          "flex h-8 items-center gap-1.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-2.5 text-[12.5px] font-medium whitespace-nowrap",
+          FIELD_RING,
+          FOCUS_RING,
+          "hover:bg-ink/[0.03] active:scale-[0.98]",
+          current ? "bg-ink/[0.025] text-ink/80" : "text-ink/50 hover:text-ink/70",
+        )}
+      >
+        {facet.label}
+        {current ? <span className="font-normal text-ink/55">{t(current.label)}</span> : null}
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-48 p-1.5">
+        <p className="px-2 pt-1 pb-1.5 text-[12px] font-medium text-ink/50">{facet.label}</p>
+        <div role="radiogroup" aria-label={facet.label} className="flex flex-col">
+          {FACET_OPTIONS.map((option) => {
+            const selected = option.value === choice;
+            return (
+              <button
+                key={option.value ?? "any"}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-[calc(7px*var(--admin-radius-scale,1))] px-2 py-1.5 text-[13px] text-ink/70 transition-colors hover:bg-ink/[0.04] focus-visible:bg-ink/[0.05] focus-visible:outline-none"
+              >
+                {t(option.label)}
+                <span className="flex items-center gap-2">
+                  <span className="text-[12px] text-ink/35 tabular-nums">{counts[option.value ?? "any"]}</span>
+                  <Check aria-hidden className={cn("size-3.5 text-ink/55", selected ? "opacity-100" : "opacity-0")} />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ---- 整列 ----
 
 export function UsersFilterBar({
   users,
   filter,
   roles,
+  facets = [],
   dates,
   now,
   onChange,
 }: {
-  /** 完整列表(角色數量要從這裡算)。 */
+  /** 完整列表(角色與 facet 的數量要從這裡算)。 */
   users: readonly UserRecord[];
   filter: UsersFilter;
   roles: readonly RoleOption[];
+  /** 1.60.0:插件的 facet,各一組「有／沒有」。 */
+  facets?: readonly MemberFacetColumn[];
   dates: DateFormatter;
   now: number;
   onChange: (filter: UsersFilter) => void;
@@ -297,6 +378,16 @@ export function UsersFilterBar({
           onChange={(next) => onChange({ ...filter, roles: next })}
         />
       ) : null}
+      {facets.map((facet) => (
+        <FacetFilter
+          key={facet.key}
+          facet={facet}
+          users={users}
+          filter={filter}
+          timeZone={dates.timeZone}
+          onChange={(choice) => onChange(withFacetChoice(filter, facet.key, choice))}
+        />
+      ))}
     </div>
   );
 }

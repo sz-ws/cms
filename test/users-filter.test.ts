@@ -10,6 +10,7 @@ import {
   roleLabel,
   switchUsersView,
   usersFilterParams,
+  withFacetChoice,
   type UsersFilter,
 } from "../src/app/(admin)/admin/users/users-filter";
 
@@ -142,6 +143,7 @@ describe("parseUsersFilter", () => {
       roles: [],
       joined: { from: "2026-09-01", to: "2026-09-30" },
       active: { from: "2026-09-10", to: null },
+      facets: {},
     });
   });
 
@@ -155,6 +157,7 @@ describe("parseUsersFilter", () => {
       roles: ["admin", "role:r-clerk"],
       joined: { from: "2026-09-01", to: "2026-09-30" },
       active: { from: null, to: null },
+      facets: {},
     });
   });
 
@@ -181,12 +184,19 @@ describe("usersFilterParams / hrefForUsersFilter", () => {
     roles: ["admin", "role:r-clerk"],
     joined: { from: "2026-01-01", to: "2026-06-30" },
     active: { from: null, to: "2026-09-28" },
+    facets: { "loyalty.tier": "has", "points.wallet": "missing" },
   };
+  const FACET_KEYS = ["loyalty.tier", "points.wallet"];
 
   it("round-trips through parseUsersFilter", () => {
-    expect(parseUsersFilter(usersFilterParams(full), ["r-clerk"])).toEqual(full);
+    expect(parseUsersFilter(usersFilterParams(full), ["r-clerk"], FACET_KEYS)).toEqual(full);
     const members = switchUsersView(full, "members");
-    expect(parseUsersFilter(usersFilterParams(members), ["r-clerk"])).toEqual(members);
+    expect(parseUsersFilter(usersFilterParams(members), ["r-clerk"], FACET_KEYS)).toEqual(members);
+  });
+
+  it("writes facets by key in a stable order", () => {
+    const a = usersFilterParams(filter({ facets: { "points.wallet": "missing", "loyalty.tier": "has" } }));
+    expect(a.toString()).toBe("loyalty.tier=has&points.wallet=missing");
   });
 
   it("writes nothing for the default staff group with no conditions", () => {
@@ -206,6 +216,56 @@ describe("usersFilterParams / hrefForUsersFilter", () => {
     expect(url.searchParams.get("view")).toBeNull();
     expect(url.searchParams.get("q")).toBe("new");
     expect(url.searchParams.get("role")).toBe("editor");
+  });
+
+  it("replaces facet params too, including ones from a plugin that is gone", () => {
+    const href = hrefForUsersFilter(
+      "https://cms.test/admin/users?old.facet=has&loyalty.tier=missing&keep=1",
+      filter({ facets: { "loyalty.tier": "has" } }),
+    );
+    const url = new URL(href, "https://cms.test");
+    expect(url.searchParams.get("old.facet")).toBeNull();
+    expect(url.searchParams.get("loyalty.tier")).toBe("has");
+    expect(url.searchParams.get("keep")).toBe("1");
+  });
+});
+
+describe("facets (1.60.0)", () => {
+  // loyalty.tier:有值的人是 ming 與 admin;clerk 只有連結(沒有值),不算「有」。
+  const WITH_FACETS = USERS.map((u) =>
+    u.id === "ming" || u.id === "admin"
+      ? { ...u, facets: { "loyalty.tier": { value: { badge: "Gold", lines: [] }, actions: [] } } }
+      : u.id === "clerk"
+        ? { ...u, facets: { "loyalty.tier": { actions: [{ label: "Enrol", href: "/admin/ext/loyalty/new" }] } } }
+        : u,
+  );
+  const runFacets = (extra: Partial<UsersFilter>) => ids(filterUsers(WITH_FACETS, filter(extra), TZ));
+
+  it("filters people with or without a value", () => {
+    expect(runFacets({ facets: { "loyalty.tier": "has" } })).toEqual(["admin"]);
+    expect(runFacets({ facets: { "loyalty.tier": "missing" } })).toEqual(["editor", "clerk"]);
+    expect(runFacets({ view: "members", facets: { "loyalty.tier": "has" } })).toEqual(["ming"]);
+    expect(runFacets({ view: "members", facets: { "loyalty.tier": "missing" } })).toEqual(["dana", "line"]);
+  });
+
+  it("combines with the other conditions", () => {
+    expect(runFacets({ view: "members", q: "example", facets: { "loyalty.tier": "missing" } })).toEqual(["dana"]);
+  });
+
+  it("reads only facets the page knows, and only has / missing", () => {
+    const params = new URLSearchParams("loyalty.tier=has&gone.facet=has&points.wallet=maybe");
+    expect(parseUsersFilter(params, [], ["loyalty.tier", "points.wallet"]).facets).toEqual({ "loyalty.tier": "has" });
+    expect(parseUsersFilter(params, []).facets).toEqual({});
+  });
+
+  it("counts as a filter, clears with the others, and follows the person across groups", () => {
+    const f = filter({ facets: { "loyalty.tier": "has" } });
+    expect(isUsersFiltered(f)).toBe(true);
+    expect(switchUsersView(f, "members").facets).toEqual({ "loyalty.tier": "has" });
+    expect(withFacetChoice(f, "loyalty.tier", null).facets).toEqual({});
+    expect(withFacetChoice(f, "points.wallet", "missing").facets).toEqual({ "loyalty.tier": "has", "points.wallet": "missing" });
+    // 不改原本的條件。
+    expect(f.facets).toEqual({ "loyalty.tier": "has" });
   });
 });
 

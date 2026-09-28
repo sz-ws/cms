@@ -49,7 +49,19 @@ vi.mock("@/lib/datetime-server", async () => {
   };
 });
 
+// 1.60.0:啟用中的插件(預設沒有)與它們的 services;facet 的測試放一個假插件進來。
+const runtime = vi.hoisted(() => ({ exts: [] as unknown[], services: [] as string[] }));
+vi.mock("@/ext/loader", () => ({ getExtRuntime: async () => ({ enabled: runtime.exts }) }));
+vi.mock("@/ext/services", () => ({
+  createServices: async (extId: string) => {
+    runtime.services.push(extId);
+    return { scope: extId };
+  },
+}));
+
 import { GET } from "../src/app/api/users/export/route";
+import { loadUsers } from "../src/app/(admin)/admin/users/users-data";
+import type { Extension, MemberFacetContext } from "../src/ext/types";
 
 type TestEnv = { DB: D1Database };
 const d1 = () => (env as TestEnv).DB;
@@ -138,6 +150,8 @@ beforeEach(async () => {
   await signIn("m-ming", taipei(2026, 9, 28, 14, 5));
   await signIn(CLERK.id, taipei(2026, 9, 1, 0, 30));
   authState.user = ADMIN;
+  runtime.exts = [];
+  runtime.services = [];
 });
 
 describe("GET /api/users/export — access", () => {
@@ -232,5 +246,102 @@ describe("GET /api/users/export — the same conditions as the page", () => {
     expect(bulk).toHaveLength(1 + 150);
     expect(bulk[1]?.[0]).toBe("Bulk 0");
     expect(bulk[150]?.[0]).toBe("Bulk 149");
+  });
+});
+
+// 1.60.0:一個假插件宣告一個 facet(會員等級)。成員頁與匯出讀同一份(users-data.ts):
+// 每個人的 facet、欄位、篩選的網址參數、CSV 的欄。
+describe("member facets from a plugin", () => {
+  const seen: { ids: string[]; ctx: MemberFacetContext }[] = [];
+  const loyalty = (): Extension => ({
+    id: "loyalty",
+    name: "Loyalty",
+    version: "1.0.0",
+    coreApi: "^1.60.0",
+    memberFacets: [
+      {
+        id: "tier",
+        label: { "zh-Hant": "會員等級", en: "Tier" },
+        read: async (ids, ctx) => {
+          seen.push({ ids, ctx });
+          return {
+            "m-ming": { badge: "Gold", lines: [{ label: "點數", value: "120" }] },
+            [ADMIN.id]: { badge: "Staff" },
+          };
+        },
+        actions: [
+          { label: { "zh-Hant": "加入會員等級", en: "Enrol" }, when: "missing", href: (id) => `/admin/ext/loyalty/new?member=${id}` },
+        ],
+      },
+    ],
+  });
+
+  beforeEach(() => {
+    seen.length = 0;
+    runtime.exts = [loyalty()];
+  });
+
+  it("lists each person's facet for the page, read once with every id and the plugin's services", async () => {
+    const data = await loadUsers({ locale: "zh-Hant", timeZone: "Asia/Taipei" });
+    expect(data.facets).toEqual([{ key: "loyalty.tier", label: "會員等級" }]);
+    expect(seen).toHaveLength(1);
+    expect([...seen[0].ids].sort()).toEqual(data.users.map((u) => u.id).sort());
+    expect(seen[0].ctx).toEqual({ services: { scope: "loyalty" }, locale: "zh-Hant", timeZone: "Asia/Taipei" });
+    const byId = new Map(data.users.map((u) => [u.id, u]));
+    expect(byId.get("m-ming")?.facets).toEqual({
+      "loyalty.tier": { value: { badge: "Gold", lines: [{ label: "點數", value: "120" }] }, actions: [] },
+    });
+    expect(byId.get("m-line")?.facets).toEqual({
+      "loyalty.tier": { actions: [{ label: "加入會員等級", href: "/admin/ext/loyalty/new?member=m-line" }] },
+    });
+  });
+
+  it("adds the facet column to the CSV and filters by it the same way as the page", async () => {
+    const members = await csv("?view=members");
+    expect(members[0]).toEqual(["姓名", "Email", "角色", "加入時間", "最近上線", "會員等級"]);
+    expect(members.slice(1).map((row) => [row[0], row[5]])).toEqual([
+      ['\'=HYPERLINK("x") "Q", Ltd', ""],
+      ["王小明", "Gold"],
+      ["Line User", ""],
+    ]);
+    const names = async (query: string) => (await csv(query)).slice(1).map((row) => row[0]);
+    expect(await names("?view=members&loyalty.tier=has")).toEqual(["王小明"]);
+    expect(await names("?view=members&loyalty.tier=missing")).toEqual(['\'=HYPERLINK("x") "Q", Ltd', "Line User"]);
+    expect(await names("?loyalty.tier=has")).toEqual(["Admin"]);
+  });
+
+  it("drops a broken facet and keeps the export working", async () => {
+    runtime.exts = [
+      {
+        ...loyalty(),
+        memberFacets: [
+          {
+            id: "tier",
+            label: "會員等級",
+            read: async () => {
+              throw new Error("boom");
+            },
+          },
+        ],
+      },
+    ];
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const members = await csv("?view=members&loyalty.tier=has");
+      // 讀壞的 facet 沒有欄,篩選也不算數。
+      expect(members[0]).toEqual(["姓名", "Email", "角色", "加入時間", "最近上線"]);
+      expect(members).toHaveLength(4);
+      expect(String(errors.mock.calls[0]?.[0])).toContain('ext="loyalty" facet="tier" read failed');
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("does not ask for services when no plugin has facets", async () => {
+    runtime.exts = [{ id: "plain", name: "Plain", version: "1.0.0", coreApi: "^1.60.0" }];
+    const data = await loadUsers({ locale: "zh-Hant", timeZone: "Asia/Taipei" });
+    expect(data.facets).toEqual([]);
+    expect(data.users.every((u) => u.facets === undefined)).toBe(true);
+    expect(runtime.services).toEqual([]);
   });
 });

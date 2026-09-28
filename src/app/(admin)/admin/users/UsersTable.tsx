@@ -63,6 +63,7 @@ import {
 import { ExportCsvLink, NoMatch, UsersFilterBar } from "./UsersFilterBar";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import type { MessageKey, Locale } from "@/lib/i18n";
+import type { MemberFacetColumn, UserFacets } from "@/ext/member-facets";
 
 // ---- row 資料形狀(page.tsx 專用查詢,不動共用 SessionUser)----
 
@@ -77,6 +78,8 @@ export interface UserRecord {
   passkeys: number;
   /** 最近一次登入(sessions MAX(created_at));從未登入 = null。 */
   lastActiveAt: number | null;
+  /** 1.60.0:插件的 facet(users-data.ts 讀好的);沒有任何 facet 的人沒有這個欄位。 */
+  facets?: UserFacets;
 }
 
 /** 1.50.0:角色與權限頁建的自訂角色(成員的角色選單用)。 */
@@ -99,9 +102,8 @@ export function roleChoiceBody(choice: RoleChoice): { role: UserRecord["role"] }
 }
 
 // ---- 欄位定義(資料驅動;這是 core-native surface 的延伸點)----
-// 之後 extension 要往 users 表格塞欄位(例如「最後登入」「內容數」),形狀就是
-// 這個 ColumnDef:加一筆定義、possible optional,不用改 render 迴圈。
-// (目前尚未開放 manifest 貢獻;先把形狀立好,對齊 dashboardCards 的先例。)
+// 1.60.0:插件的 facet(Extension.memberFacets)各多一欄(facetColumns),排在角色後面,
+// 是 optional 欄位,預設顯示,可在「顯示」選單關掉。
 
 interface ColumnCtx {
   selfId: string;
@@ -122,8 +124,8 @@ interface ColumnCtx {
 
 interface ColumnDef {
   key: string;
-  /** i18n key —— 表頭與 Display 選單都經 t() 渲染。 */
-  label: MessageKey;
+  /** i18n key(表頭與 Display 選單都經 t() 渲染),或插件 facet 已解析好的名稱。 */
+  label: MessageKey | { text: string };
   /** optional 欄位進「Display」選單,可被使用者關掉。 */
   optional?: boolean;
   defaultVisible: boolean;
@@ -325,6 +327,37 @@ const COLUMNS: ColumnDef[] = [
   },
 ];
 
+function columnLabel(column: ColumnDef, t: ReturnType<typeof useT>): string {
+  return typeof column.label === "string" ? t(column.label) : column.label.text;
+}
+
+/** 1.60.0:每個 facet 一欄,寫 badge;這個人不適用就是「—」。 */
+function facetColumns(facets: readonly MemberFacetColumn[]): ColumnDef[] {
+  return facets.map((facet) => ({
+    key: `facet:${facet.key}`,
+    label: { text: facet.label },
+    optional: true,
+    defaultVisible: true,
+    sortable: true,
+    // 沒有值的人排在最後(升冪時)。
+    sortValue: (u) => u.facets?.[facet.key]?.value?.badge ?? "￿",
+    render: (u) => {
+      const badge = u.facets?.[facet.key]?.value?.badge;
+      return badge ? (
+        <span className="text-[12.5px] whitespace-nowrap text-ink/70 tabular-nums">{badge}</span>
+      ) : (
+        <span className="text-[12.5px] text-ink/25">—</span>
+      );
+    },
+  }));
+}
+
+/** 核心欄位 + facet 欄(接在角色後面)。 */
+function allColumns(facets: readonly MemberFacetColumn[]): ColumnDef[] {
+  const at = COLUMNS.findIndex((c) => c.key === "role") + 1;
+  return [...COLUMNS.slice(0, at), ...facetColumns(facets), ...COLUMNS.slice(at)];
+}
+
 // ---- 欄位可見度:localStorage 為準的小 store(useSyncExternalStore 讀,避免
 // effect+setState;同分頁寫入自行通知,跨分頁靠 storage 事件)----
 
@@ -489,6 +522,7 @@ export function UsersTable({
   selfId,
   now,
   initialFilter,
+  facets = [],
 }: {
   initialUsers: UserRecord[];
   /** 1.50.0:自訂角色。 */
@@ -500,6 +534,8 @@ export function UsersTable({
    * page.tsx 用 parseUsersFilter 讀好傳進來(見 ./users-filter.ts)。
    */
   initialFilter?: UsersFilter;
+  /** 1.60.0:插件的 facet(users-data.ts):各一欄、一組篩選、側欄一段。 */
+  facets?: MemberFacetColumn[];
 }) {
   const t = useT();
   const locale = useLocale();
@@ -543,7 +579,8 @@ export function UsersTable({
 
   const colPref = useSyncExternalStore(subscribeCols, readColPref, () => null);
   const hidden = hiddenColumns(colPref);
-  const visibleCols = COLUMNS.filter((c) => !c.optional || !hidden.has(c.key));
+  const tableCols = useMemo(() => allColumns(facets), [facets]);
+  const visibleCols = tableCols.filter((c) => !c.optional || !hidden.has(c.key));
   const ctx: ColumnCtx = {
     selfId,
     now,
@@ -558,7 +595,7 @@ export function UsersTable({
   // label 過 t()、render 綁上 ctx。排序由 CoreTable 自己管。
   const columns: CoreColumn<UserRecord>[] = visibleCols.map((c) => ({
     key: c.key,
-    label: t(c.label),
+    label: columnLabel(c, t),
     sortable: c.sortable,
     sortValue: c.sortValue,
     thClass: c.thClass,
@@ -602,7 +639,7 @@ export function UsersTable({
           </div>
           <div className="flex items-center gap-2">
             <ExportCsvLink filter={applied} disabled={shown.length === 0} />
-            <ColumnPicker hidden={hidden} />
+            <ColumnPicker columns={tableCols} hidden={hidden} />
             <button
               type="button"
               onClick={() => setSheet({ mode: "create" })}
@@ -620,6 +657,7 @@ export function UsersTable({
           users={users}
           filter={filter}
           roles={roles}
+          facets={facets}
           dates={dates}
           now={now}
           onChange={changeFilter}
@@ -698,6 +736,7 @@ export function UsersTable({
       <UserSheet
         mode={sheet}
         roles={roles}
+        facets={facets}
         selfId={selfId}
         onClose={() => setSheet(null)}
         // sheet 已經自己打完 API;這裡只負責讓列表在 refresh 回來之前就是新的樣子。
@@ -756,9 +795,9 @@ function ViewSwitch({ view, onChange }: { view: UsersView; onChange: (view: User
   );
 }
 
-function ColumnPicker({ hidden }: { hidden: Set<string> }) {
+function ColumnPicker({ columns, hidden }: { columns: readonly ColumnDef[]; hidden: Set<string> }) {
   const t = useT();
-  const optional = COLUMNS.filter((c) => c.optional);
+  const optional = columns.filter((c) => c.optional);
   return (
     <Popover>
       <PopoverTrigger
@@ -786,7 +825,7 @@ function ColumnPicker({ hidden }: { hidden: Set<string> }) {
               }}
               className="flex w-full items-center justify-between rounded-[calc(7px*var(--admin-radius-scale,1))] px-2 py-1.5 text-[13px] text-ink/70 transition-colors hover:bg-ink/[0.04]"
             >
-              {t(col.label)}
+              {columnLabel(col, t)}
               {on && <Check className="size-3.5 text-ink/55" />}
             </button>
           );

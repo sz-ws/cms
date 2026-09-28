@@ -268,6 +268,10 @@ export const en = {
   "usersTable.exportCsv": "Export CSV",
   "usersTable.csvName": "Name",
   "usersTable.csvEmail": "Email",
+  // 1.60.0: a plugin's member facet filter (Extension.memberFacets).
+  "usersTable.facetAny": "Any",
+  "usersTable.facetHas": "Yes",
+  "usersTable.facetMissing": "No",
 
   // roles (1.50.0 — /admin/roles)
   "roles.title": "Roles and access",

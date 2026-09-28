@@ -6,8 +6,8 @@ import { loadUsers } from "@/app/(admin)/admin/users/users-data";
 import { filterUsers, parseUsersFilter } from "@/app/(admin)/admin/users/users-filter";
 import { usersCsvFilename, usersCsvRows } from "./users-csv";
 
-// GET /api/users/export?view=&q=&role=&joinedFrom=&joinedTo=&activeFrom=&activeTo=
-// → 成員頁目前那組條件下的**所有**人(CSV,不分頁)。
+// GET /api/users/export?view=&q=&role=&joinedFrom=&joinedTo=&activeFrom=&activeTo=&<extId>.<facetId>=
+// → 成員頁目前那組條件下的**所有**人(CSV,不分頁)。1.60.0:插件的 facet 各一欄。
 //
 // 條件的網址寫法、篩選本身都跟畫面共用 users-filter.ts(同一份 parse 與 filterUsers),
 // 資料跟頁面共用 users-data.ts,所以匯出的人就是表格上顯示的人。
@@ -29,15 +29,17 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const locale = await getLocale();
-  const [{ users, roles }, dates] = await Promise.all([loadUsers(), getDateFormatter(locale)]);
+  const dates = await getDateFormatter(locale);
+  const { users, roles, facets } = await loadUsers({ locale, timeZone: dates.timeZone });
   const m = getMessages(locale);
   const filter = parseUsersFilter(
     new URL(req.url).searchParams,
     roles.map((role) => role.id),
+    facets.map((facet) => facet.key),
   );
   const rows = filterUsers(users, filter, dates.timeZone);
   return csvResponse(
     usersCsvFilename(filter.view, dates, Date.now()),
-    usersCsvRows(rows, roles, (key) => m[key], dates),
+    usersCsvRows(rows, roles, (key) => m[key], dates, facets),
   );
 }

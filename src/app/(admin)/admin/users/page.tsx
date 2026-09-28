@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { UsersTable } from "./UsersTable";
 import { getLocale, getMessages } from "@/lib/i18n/server";
+import { getSiteTimeZone } from "@/lib/datetime-server";
 import { loadUsers } from "./users-data";
 import { parseUsersFilter } from "./users-filter";
 
@@ -21,14 +22,22 @@ export default async function UsersPage({
 }) {
   const self = await requireAuth("admin");
   const now = requestTimestamp();
-  const locale = await getLocale();
+  const [locale, timeZone] = await Promise.all([getLocale(), getSiteTimeZone()]);
   const m = getMessages(locale);
   const title = m["users.title"];
   const subtitle = m["users.subtitle"];
 
-  const [params, { users, roles }] = await Promise.all([searchParams, loadUsers()]);
-  // 1.56.0:後台人員(預設)/ 會員;1.59.0:搜尋與篩選也在網址上(./users-filter.ts)。
-  const initialFilter = parseUsersFilter(params, roles.map((role) => role.id));
+  const [params, { users, roles, facets }] = await Promise.all([
+    searchParams,
+    loadUsers({ locale, timeZone }),
+  ]);
+  // 1.56.0:後台人員(預設)/ 會員;1.59.0:搜尋與篩選也在網址上(./users-filter.ts);
+  // 1.60.0:插件的 facet 也是(`?<extId>.<facetId>=has|missing`)。
+  const initialFilter = parseUsersFilter(
+    params,
+    roles.map((role) => role.id),
+    facets.map((facet) => facet.key),
+  );
 
   return (
     <div className="relative flex flex-col gap-6 pb-6">
@@ -42,7 +51,14 @@ export default async function UsersPage({
       </div>
 
       {/* 表格不包卡 —— 直接坐在畫布上,列 hover 時自己浮起(見 UsersTable)。 */}
-      <UsersTable initialUsers={users} roles={roles} selfId={self.id} now={now} initialFilter={initialFilter} />
+      <UsersTable
+        initialUsers={users}
+        roles={roles}
+        facets={facets}
+        selfId={self.id}
+        now={now}
+        initialFilter={initialFilter}
+      />
     </div>
   );
 }

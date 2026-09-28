@@ -34,6 +34,11 @@ import {
   extensionMenuSchema,
   type ExtensionMenu,
 } from "./admin-menu";
+import {
+  MAX_MEMBER_FACETS,
+  MAX_MEMBER_FACET_ACTIONS,
+  MEMBER_FACET_ID_RE,
+} from "./member-facets";
 
 // 03 §1:Extension 型別(完整內容,欄位一字不差照 spec)。
 // core-v2 §2.1 / §2.2 / §3.1:ApiCtx.services、manifest coreApi/provides、zod 驗證。
@@ -193,6 +198,60 @@ export interface DashboardStatsContext {
   canOpen: (href: string) => boolean;
 }
 
+/**
+ * 1.60.0:插件在成員頁(/admin/users)上說明「這個人對我是什麼」(Extension.memberFacets)。
+ * 例:經銷插件的 facet「經銷商」,badge "D001",側欄寫「可用點數 120」,連到經銷頁。
+ *
+ * 每個 facet 在成員表多一欄(badge,可在「顯示」選單關掉)、篩選列多一組「有／沒有」
+ * (網址參數 `<extId>.<id>=has|missing`,匯出 CSV 照同一組條件)、匯出多一欄(badge)、
+ * 成員側欄多一段(lines 與 actions)。只有打得開成員頁的人看得到(今天是管理員)。
+ * 讀取與驗證規則見 ./member-facets.ts。
+ */
+export interface MemberFacet {
+  /** 同一個插件內唯一:^[a-z][a-z0-9-]{0,30}$。全站的 key 是 `<extId>.<id>`。 */
+  id: string;
+  /** 欄位、篩選與側欄段落的名稱,例:{ "zh-Hant": "經銷商", en: "Dealer" }。 */
+  label: LocalizedString;
+  /**
+   * 一次讀成員頁上的所有人(可能上千個 id)。只回這個 facet 適用的人:userId → 值;
+   * 不適用的人不要放。每次打開成員頁或匯出 CSV 呼叫一次,所有插件同時讀。
+   * 丟例外、回傳不是物件、或 3 秒內沒回來,這個 facet 整個不出現(伺服器記一行),頁面照常。
+   * userIds 可能很長:D1 一個查詢最多綁 100 個參數,讀自己的表再用 userIds 挑,或自己分批。
+   */
+  read(userIds: string[], ctx: MemberFacetContext): Promise<Record<string, MemberFacetValue>>;
+  /** 成員側欄的連結(最多 4 個)。 */
+  actions?: MemberFacetAction[];
+}
+
+/** 1.60.0:MemberFacet.read 回來的一個人的值。 */
+export interface MemberFacetValue {
+  /** 表格與匯出用的短字(1–32 字),例:"D001"。 */
+  badge: string;
+  /** 側欄的欄位與值(最多 8 行;label ≤ 40 字、value ≤ 200 字),例:{ label: "可用點數", value: "120" }。
+   * 沒給 lines 時側欄寫 badge。 */
+  lines?: { label: string; value: string }[];
+}
+
+/** 1.60.0:成員側欄的一個連結。 */
+export interface MemberFacetAction {
+  label: LocalizedString;
+  /** has = 有值的人才出現、missing = 沒值的人才出現、always = 都出現。 */
+  when: "has" | "missing" | "always";
+  /** 後台頁(/admin 開頭、小寫路徑段,可帶 query)。value 是 read 回來的這個人的值(原樣;沒有值是
+   * undefined)。丟例外或不是後台頁,這個連結不出現。 */
+  href(userId: string, value?: MemberFacetValue): string;
+}
+
+/** 1.60.0:MemberFacet.read 收到的內容。 */
+export interface MemberFacetContext {
+  /** 這個插件的 services(scope 綁在自己的 extId;資料庫是 services.db,設定是 services.settings)。 */
+  services: CoreServices;
+  /** 後台語言(lines 的字照它寫)。 */
+  locale: Locale;
+  /** 站台時區(settings 的 core.timeZone),寫日期用。 */
+  timeZone: string;
+}
+
 export interface Extension {
   id: string; // ^[a-z][a-z0-9-]{1,30}$
   /** 1.50.0:跨來源的全域名字 `<publisher>/<name>`(見 ./plugin-ref.ts)。商店用它分辨
@@ -255,6 +314,11 @@ export interface Extension {
    * 回傳不是陣列、或 2 秒內沒回來,這個插件的數字就不顯示,其他照常。
    */
   dashboardStats?: (ctx: DashboardStatsContext) => Promise<DashboardStat[]>;
+  /**
+   * 1.60.0:成員頁上這個插件的欄位、篩選、匯出欄與側欄段落(MemberFacet,最多 4 個)。
+   * 需要 coreApi "^1.60.0"。
+   */
+  memberFacets?: MemberFacet[];
   hooks?: Partial<Record<HookName, HookHandler>>;
   provides?: ProviderRegistration[]; // core-v2 §2.2:選填
   jobs?: ExtJobRegistration[]; // spec-extension-jobs.md:週期性 / 一次性任務宣告
@@ -624,6 +688,32 @@ const manifestSchema = z
       .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
       .optional(),
     dashboardStats: fn.optional(),
+    // 1.60.0:成員頁的 facet(MemberFacet;讀取與驗證在 ./member-facets.ts)。
+    memberFacets: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(MEMBER_FACET_ID_RE, "invalid member facet id"),
+            label: nonEmptyLocalizedString,
+            read: fn,
+            actions: z
+              .array(
+                z
+                  .object({
+                    label: nonEmptyLocalizedString,
+                    when: z.enum(["has", "missing", "always"]),
+                    href: fn,
+                  })
+                  .strict(),
+              )
+              .max(MAX_MEMBER_FACET_ACTIONS)
+              .optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_MEMBER_FACETS)
+      .optional(),
     appearances: z
       .array(
         z
@@ -702,6 +792,9 @@ const manifestSchema = z
     duplicate((ext.appearances ?? []).map((item) => item.id), "appearances", "appearance id");
     // passthrough 的舊 core 會安靜忽略這個欄位(選項不出現、沒有錯誤),同 agentTools 的理由標版號。
     if (ext.appearances !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.57.0")) ctx.addIssue({ code: "custom", message: 'appearances requires coreApi "^1.57.0" or newer', path: ["coreApi"] });
+    duplicate((ext.memberFacets ?? []).map((facet) => facet.id), "memberFacets", "member facet id");
+    // 舊 core 會安靜忽略這個欄位(成員頁少了欄位,沒有錯誤),同 appearances 的理由標版號。
+    if (ext.memberFacets !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.60.0")) ctx.addIssue({ code: "custom", message: 'memberFacets requires coreApi "^1.60.0" or newer', path: ["coreApi"] });
     // 1.30.0:agentTools 的命名空間 / 重複名(規則見 agentToolIssues)。
     for (const message of agentToolIssues(ext.id, ext.agentTools ?? [])) {
       ctx.addIssue({ code: "custom", message, path: ["agentTools"] });

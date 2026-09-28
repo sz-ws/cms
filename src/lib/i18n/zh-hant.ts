@@ -260,6 +260,9 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "usersTable.exportCsv": "匯出 CSV",
   "usersTable.csvName": "姓名",
   "usersTable.csvEmail": "Email",
+  "usersTable.facetAny": "不限",
+  "usersTable.facetHas": "有",
+  "usersTable.facetMissing": "沒有",
 
   // roles
   "roles.title": "角色與權限",
