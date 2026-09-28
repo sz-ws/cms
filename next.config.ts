@@ -205,4 +205,8 @@ export default withSentryConfig(nextConfig, {
 });
 
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-initOpenNextCloudflareForDev();
+// 遠端 binding 預設關:站台在 wrangler.jsonc 加了 Workers AI(`ai`)之類一定連遠端的 binding 時,
+// 本機開發與 CI 的 next build 會去開遠端代理、要求登入 Cloudflare,沒登入(CI)就整個建置失敗。
+// 關掉之後這類 binding 在本機只是空殼(呼叫會失敗,後台 AI 顯示連線錯誤),其餘 binding 照舊在本機。
+// 要在本機用真的 Workers AI:登入 wrangler,並設 CMS_REMOTE_BINDINGS=1。部署不受影響。
+initOpenNextCloudflareForDev({ remoteBindings: process.env.CMS_REMOTE_BINDINGS === "1" });
