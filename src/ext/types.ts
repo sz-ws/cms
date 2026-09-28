@@ -199,6 +199,37 @@ export interface DashboardStatsContext {
 }
 
 /**
+ * 1.61.0:插件交給儀表板「營業額」圖的一條每日金額(Extension.dashboardRevenue)。各插件的線
+ * 疊在同一張長條圖上(例如商城訂單加經銷點數購買),加起來就是這段期間的營業額。規則見
+ * dx/dashboard-revenue.ts,不合規則的那一條不顯示(伺服器記一行)。
+ */
+export interface RevenueSeries {
+  /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
+  id: string;
+  /** 圖例上的名稱(最多 40 字),例:{ "zh-Hant": "商城訂單", en: "Shop orders" }。 */
+  label: LocalizedString;
+  /** 看這筆錢明細的後台頁:`/admin` 開頭的站內路徑,可帶 query。看的人打不開就不顯示。 */
+  href: string;
+  /**
+   * 每天收到的金額:key 是站台時區的日期 YYYY-MM-DD,只算 ctx.from 到 ctx.to 之間的日子,
+   * 沒列的日子當 0。值是非負的有限數字,單位是商店的幣別(基礎商店是新台幣元)。
+   */
+  days: Record<string, number>;
+}
+
+/** 1.61.0:dashboardRevenue 收到的內容;期間照站台時區切成整天。 */
+export interface DashboardRevenueContext extends DashboardStatsContext {
+  /** 第一天(含),YYYY-MM-DD。 */
+  from: string;
+  /** 最後一天(含),YYYY-MM-DD。 */
+  to: string;
+  /** from 當天 00:00(ms)。 */
+  start: number;
+  /** to 隔天 00:00(ms),不含。查詢用 created_at >= start AND created_at < end。 */
+  end: number;
+}
+
+/**
  * 1.60.0:插件在成員頁(/admin/users)上說明「這個人對我是什麼」(Extension.memberFacets)。
  * 例:經銷插件的 facet「經銷商」,badge "D001",側欄寫「可用點數 120」,連到經銷頁。
  *
@@ -314,6 +345,11 @@ export interface Extension {
    * 回傳不是陣列、或 2 秒內沒回來,這個插件的數字就不顯示,其他照常。
    */
   dashboardStats?: (ctx: DashboardStatsContext) => Promise<DashboardStat[]>;
+  /**
+   * 1.61.0:儀表板「營業額」圖的每日金額(RevenueSeries)。儀表板換期間時呼叫;丟例外、
+   * 回傳不是陣列、或逾時,這個插件的線就不畫,其他照常。需要 coreApi "^1.61.0"。
+   */
+  dashboardRevenue?: (ctx: DashboardRevenueContext) => Promise<RevenueSeries[]>;
   /**
    * 1.60.0:成員頁上這個插件的欄位、篩選、匯出欄與側欄段落(MemberFacet,最多 4 個)。
    * 需要 coreApi "^1.60.0"。
@@ -712,6 +748,7 @@ const manifestSchema = z
       .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
       .optional(),
     dashboardStats: fn.optional(),
+    dashboardRevenue: fn.optional(), // 1.61.0
     // 1.60.0:成員頁的 facet(MemberFacet;讀取與驗證在 ./member-facets.ts)。
     memberFacets: z
       .array(
