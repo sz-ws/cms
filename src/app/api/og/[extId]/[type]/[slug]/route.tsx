@@ -1,3 +1,4 @@
+import { getSetting } from "@/lib/settings";
 import * as React from "react";
 import {
   OG_FONT_FAMILY,
@@ -114,7 +115,8 @@ export async function GET(_req: Request, { params }: RouteParams) {
     return new Response("Unknown OG template", { status: 404 });
   }
 
-  const brand = og.brand ?? "";
+  // manifest 沒指定品牌字時用網站名稱(設定 → 網站名稱),分享圖不會掛著別人的名字。
+  const brand = og.brand ?? (await getSetting<string>("core.siteTitle", ""));
   const timeZone = await getSiteTimeZone();
   const fallbackTitle = slug.replace(/[-_]/g, " ");
 
