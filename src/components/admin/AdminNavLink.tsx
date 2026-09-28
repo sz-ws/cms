@@ -44,10 +44,28 @@ export function AdminNavLink({
     router.prefetch(href);
   }
 
+  // 離開後台的連結(插件放進側欄的前台頁,例如會員中心)在新分頁打開:後台留在原地,
+  // 看完前台關掉分頁就回來。這種連結也不預抓、不標成選中。
+  const leavesAdmin = !(href === "/admin" || href.startsWith("/admin/"));
+
   // 收合成圖示列時只剩圖示,標題靠瀏覽器原生提示交代。Intent 的 SidebarItem 是用
   // react-aria 的 Tooltip,但它要 trigger 也是 react-aria 元件才掛得上 hover ——
   // 這裡的 <a> 來自 next/link,掛不上,所以用 title。圖示列本來就是熟手模式。
   const docked = state === "collapsed" && !isMobile;
+
+  const classes = cn(
+    "group/nav relative flex items-center rounded-[calc(8px*var(--admin-radius-scale,1))] outline-hidden",
+    "focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
+    className,
+  );
+
+  if (leavesAdmin) {
+    return (
+      <a href={href} target="_blank" rel="noopener" title={docked ? tooltip : undefined} className={classes}>
+        {children}
+      </a>
+    );
+  }
 
   return (
     <Link
@@ -63,11 +81,7 @@ export function AdminNavLink({
         // 沒人關它,會蓋在剛開的頁面上。
         if (isMobile) setIsOpenOnMobile(false);
       }}
-      className={cn(
-        "group/nav relative flex items-center rounded-[calc(8px*var(--admin-radius-scale,1))] outline-hidden",
-        "focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
-        className,
-      )}
+      className={classes}
     >
       {children}
     </Link>
