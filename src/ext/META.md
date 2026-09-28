@@ -34,6 +34,10 @@
   - `agent-guide.ts` (1.60.0): the guide for AI — orientation plus recipes built from what is
     enabled, each extension's `agentGuide`, then the owner's `core.ai.notes`. Appended to the
     assistant's system prompt and sent as MCP `initialize` instructions.
+  - `dx/dashboard-revenue.ts` (1.61.0): `Extension.dashboardRevenue` — daily amounts per series for
+    the dashboard's revenue chart. Each plugin call is isolated (3 s); a series with a bad id,
+    label, href or day is dropped whole; at most 4 per plugin; series the viewer can't open are
+    not drawn. Shares `dx/dashboard-hook.ts` with `dashboardStats`. Requires coreApi `^1.61.0`.
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.

@@ -338,7 +338,7 @@ describe("the stat tile", () => {
 
 describe("the dashboard page", () => {
   const renderPage = async () => {
-    const element = (await DashboardPage()) as ReactElement;
+    const element = (await DashboardPage({ searchParams: Promise.resolve({}) })) as ReactElement;
     return renderToStaticMarkup(createElement(I18nProvider, { locale: "zh-Hant", messages: getMessages("zh-Hant") }, element));
   };
 

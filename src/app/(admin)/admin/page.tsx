@@ -25,6 +25,9 @@ import { getSetting } from "@/lib/settings";
 import { getSessionAccess, isFullAdmin } from "@/lib/auth";
 import { guardDashboard } from "@/lib/access-guards";
 import { dashboardViewerFor } from "@/components/admin/dashboard/viewer";
+import { RevenueCard } from "@/components/admin/dashboard/RevenueCard";
+import { loadDashboardRevenue } from "@/components/admin/dashboard/revenue-data";
+import { createDateFormatter } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +43,11 @@ export const dynamic = "force-dynamic";
 // 760px it collapses to a single column. This is the STATIC rendered result of
 // the composable-dashboard direction; drag / resize / edit-mode / the card
 // palette are a later phase and deliberately not built here.
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // 1.50.0:沒有儀表板權限的自訂角色,送到它打得開的第一頁。
   await guardDashboard();
   // 1.52.0:自訂角色與工作人員只看得到它打得開的頁的卡片與數字(dashboard/viewer.ts);
@@ -152,15 +159,34 @@ export default async function DashboardPage() {
   // fitting responsive grid. Rendered only when non-empty.
   // 1.52.0:卡片連到列出那個類型的頁(hrefs),自訂角色打不開那一頁就不顯示。code extension
   // 自己的數字(dashboardStats)也在這裡,「今天」照站台時區算。
-  const rt = await getExtRuntime();
-  const extCards = await resolveDashboardCards(rt.enabled, locale, {
-    hrefs: data.collectionHrefs,
-    canOpen: viewer?.canOpen,
-    now: data.now,
-    timeZone,
-  });
+  // 1.61.0:營業額卡(插件的 dashboardRevenue)跟卡片同時問。期間照網址(?range= /
+  // ?since=&until=,lib/report-period.ts);沒有插件提供、或這個人一條線都打不開時是 null,
+  // 整張卡不畫。
+  const [rt, params] = await Promise.all([getExtRuntime(), searchParams]);
+  const [extCards, revenue] = await Promise.all([
+    resolveDashboardCards(rt.enabled, locale, {
+      hrefs: data.collectionHrefs,
+      canOpen: viewer?.canOpen,
+      now: data.now,
+      timeZone,
+    }),
+    loadDashboardRevenue(rt.enabled, {
+      params,
+      now: data.now,
+      timeZone,
+      locale,
+      canOpen: viewer?.canOpen,
+    }),
+  ]);
   const extStatCards = extCards.filter((c) => c.kind === "stat");
   const extRecentCards = extCards.filter((c) => c.kind === "recent");
+  const revenueLabels = {
+    title: m["revenue.title"],
+    vsPrevious: m["revenue.vsPrevious"],
+    vsPreviousDay: m["revenue.vsPreviousDay"],
+    noPrevious: m["revenue.noPrevious"],
+    noPreviousDay: m["revenue.noPreviousDay"],
+  };
 
   // Widget preset 家族的真實資料接線(取代舊的 SystemView 開發殘留 —— 那段是
   // FluidTabs 的展示殘留,Usage/Revenue/Activity 三個假 tab 沒有接任何資料,
@@ -235,7 +261,8 @@ export default async function DashboardPage() {
   // cards; recent feeds get a wider min column so their rows breathe.
   // 1.60.0:有插件的卡片時,這一區排在內容統計前面 —— 店家每天看的是營運數字(訂單、
   // 收款),商品、文章、分類的數量往下放。沒有插件卡片時版面跟以前一樣。
-  const extSection = extCards.length > 0 && (
+  // 1.61.0:營業額卡在數字卡後面、近期列表前面,整張寬。
+  const extSection = (extCards.length > 0 || revenue !== null) && (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-ink/90">
@@ -263,6 +290,15 @@ export default async function DashboardPage() {
             />
           ))}
         </div>
+      )}
+
+      {revenue && (
+        <RevenueCard
+          data={revenue}
+          today={createDateFormatter(locale, timeZone).dayKey(data.now)}
+          locale={locale}
+          labels={revenueLabels}
+        />
       )}
 
       {extRecentCards.length > 0 && (
@@ -372,7 +408,7 @@ export default async function DashboardPage() {
         </div>
       ) : viewer ? (
         // 自訂角色看不到任何內容類型:不是「還沒安裝」,不給擴充功能的入口。
-        extCards.length === 0 && (
+        !extSection && (
           <p className="text-[13.5px] text-ink/45">{labels.noAccess}</p>
         )
       ) : (

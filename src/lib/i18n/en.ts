@@ -90,6 +90,26 @@ export const en = {
   "dashboard.fromExtensions": "From your extensions",
   "dashboard.fromExtensionsDesc": "Cards contributed by your installed extensions.",
   "dashboard.extStat.view": "View",
+  // 1.61.0: the revenue card (dashboard) and the daily revenue chart (also on plugin reports)
+  "revenue.title": "Revenue",
+  "revenue.chart": "Daily revenue",
+  "revenue.dayTotal": "Total",
+  "revenue.empty": "No revenue in this period.",
+  "revenue.vsPrevious": "vs previous {days} days",
+  "revenue.vsPreviousDay": "vs the day before",
+  "revenue.noPrevious": "No revenue in the previous {days} days",
+  "revenue.noPreviousDay": "No revenue the day before",
+  // 1.61.0: the report period control
+  "reportPeriod.label": "Period",
+  "reportPeriod.days": "{days} days",
+  "reportPeriod.custom": "Custom",
+  "reportPeriod.from": "From",
+  "reportPeriod.to": "To",
+  "reportPeriod.apply": "Apply",
+  "reportPeriod.error.missing": "Pick a start and an end date.",
+  "reportPeriod.error.order": "The start date can't be after the end date.",
+  "reportPeriod.error.future": "The end date can't be after today.",
+  "reportPeriod.error.length": "Pick at most {days} days.",
 
   // OverviewBand
   "overview.totalContent": "Total content",

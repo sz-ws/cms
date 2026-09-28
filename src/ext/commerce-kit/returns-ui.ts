@@ -2,6 +2,7 @@ import type { MessageKey } from "@/lib/i18n";
 import { refundCap, refundCapShipping, type RefundOrderAmounts, type ReturnEvent, type ReturnStatus, type ShopReturn } from "./returns";
 import type { ReturnableOrder, ReturnStock } from "./returns-engine";
 import type { OrderStatus } from "./types";
+import { formatMoney } from "./money";
 
 // 退貨後台(ReturnsWorkspace 與兩個 sheet)共用的樣式、型別與小工具。client 與 server
 // 都能 import(沒有 D1 / server 相依)。樣式照 Paper & Ink(docs/admin-design-language.md),
@@ -31,7 +32,7 @@ export const cls = {
   mono: "font-mono text-[12.5px] text-black/85 admin:text-ink/85",
 } as const;
 
-export const money = (n: number) => `NT$ ${n.toLocaleString("zh-TW")}`;
+export const money = formatMoney;
 
 export type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
 

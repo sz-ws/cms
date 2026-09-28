@@ -242,7 +242,7 @@ describe("儀表板頁", () => {
   const render = async (access: Record<string, "view" | "edit"> | null) => {
     state.access = access;
     state.calls = { activity: [], storage: 0, database: 0, cards: [] };
-    const element = (await DashboardPage()) as ReactElement;
+    const element = (await DashboardPage({ searchParams: Promise.resolve({}) })) as ReactElement;
     return renderToStaticMarkup(createElement(I18nProvider, { locale: "zh-Hant", messages: getMessages("zh-Hant") }, element));
   };
 

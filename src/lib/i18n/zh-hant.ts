@@ -85,6 +85,26 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "dashboard.fromExtensions": "來自擴充功能",
   "dashboard.fromExtensionsDesc": "已安裝擴充功能所提供的卡片。",
   "dashboard.extStat.view": "查看",
+  // 1.61.0:儀表板的營業額卡與每日營業額圖(插件的報表也用)
+  "revenue.title": "營業額",
+  "revenue.chart": "每日營業額",
+  "revenue.dayTotal": "合計",
+  "revenue.empty": "這段期間沒有營業額。",
+  "revenue.vsPrevious": "比前 {days} 天",
+  "revenue.vsPreviousDay": "比前一天",
+  "revenue.noPrevious": "前 {days} 天沒有營業額",
+  "revenue.noPreviousDay": "前一天沒有營業額",
+  // 1.61.0:報表的期間
+  "reportPeriod.label": "期間",
+  "reportPeriod.days": "{days} 天",
+  "reportPeriod.custom": "自訂",
+  "reportPeriod.from": "開始",
+  "reportPeriod.to": "結束",
+  "reportPeriod.apply": "套用",
+  "reportPeriod.error.missing": "請選開始和結束日期。",
+  "reportPeriod.error.order": "開始日期不能晚於結束日期。",
+  "reportPeriod.error.future": "結束日期不能晚於今天。",
+  "reportPeriod.error.length": "最多只能選 {days} 天。",
 
   // OverviewBand
   "overview.totalContent": "內容總數",
