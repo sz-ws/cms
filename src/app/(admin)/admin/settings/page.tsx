@@ -25,10 +25,19 @@ import {
 import { listApiTokens } from "@/lib/api-token";
 import { EXTRA_FIELDS_SETTING, parseExtraFieldsSetting } from "@/lib/extra-fields";
 import { ExtraFieldsManager } from "@/components/admin/ExtraFieldsManager";
+import { AiConnectCard } from "@/components/admin/AiConnectCard";
+import { MCP_ENABLED_SETTING, mcpResourceUrl } from "@/lib/mcp/site";
+import { pageMcpOrigin } from "@/lib/mcp/page-origin";
+import { listConnections } from "@/lib/mcp/grants";
 // named import 讓打包只留 version 欄位(同 AdminSidebar 曾用的手法)。
 import { version } from "../../../../../package.json";
 
 export const dynamic = "force-dynamic";
+
+// Date.now() 抽成函式呼叫:直接寫在元件 body 會被 react-hooks/purity 擋(同 /admin/users)。
+function requestTimestamp(): number {
+  return Date.now();
+}
 
 // 05 §4:Core settings 表單 + 每個 enabled extension 一個 section。
 // 這頁不是 declarative dx/views surface；它是平台自己的 settings shell，
@@ -64,7 +73,9 @@ export default async function SettingsPage({
       field.key !== "core.adminTheme" &&
       field.key !== "core.adminAccent" &&
       field.key !== "core.dashboard.insights" &&
-      field.key !== EXTRA_FIELDS_SETTING,
+      field.key !== EXTRA_FIELDS_SETTING &&
+      // 1.59.0:AI 連線的開關畫在自己的卡上(即時生效,不進整頁的儲存)。
+      field.key !== MCP_ENABLED_SETTING,
   );
 
   // Core 卡片完全由 SettingField.group 推導(見 settings-ui.ts):有欄位的 group
@@ -151,6 +162,18 @@ export default async function SettingsPage({
   // 停用中的插件留下的定義照樣原封存回去(管理元件只改得到選單裡的類型)。
   const extraFields = parseExtraFieldsSetting(raw[EXTRA_FIELDS_SETTING]);
 
+  // 1.59.0:AI 連線。網址與 App 看到的探索文件出自同一個 origin(lib/mcp/site.ts)。
+  const now = requestTimestamp();
+  const [mcpOrigin, aiConnections] = await Promise.all([
+    pageMcpOrigin(),
+    // migration 0025 還沒套用(先部署了 Worker、後跑 db:migrate:remote)時表不存在:
+    // 清單當作空的,整張設定頁不該因此打不開。
+    listConnections(now).catch((e: unknown) => {
+      console.error("[settings] AI connections could not be listed", e);
+      return [];
+    }),
+  ]);
+
   return (
     <div className="relative flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-1.5">
@@ -175,6 +198,14 @@ export default async function SettingsPage({
         }
         extraFieldsSection={
           <ExtraFieldsManager types={exportTypes} initialSetting={extraFields} />
+        }
+        aiConnectSection={
+          <AiConnectCard
+            enabled={raw[MCP_ENABLED_SETTING] === true}
+            mcpUrl={mcpResourceUrl(mcpOrigin)}
+            connections={aiConnections}
+            now={now}
+          />
         }
         coreAddon={
           <div className="flex flex-col gap-6">

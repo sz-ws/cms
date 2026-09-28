@@ -37,6 +37,11 @@ interface SettingsWorkspaceProps {
   coreAddon?: React.ReactNode;
   /** 額外欄位管理(核心分頁,自己一張卡、自己一個導覽錨點)。有自己的儲存鈕,不進這裡的表單。 */
   extraFieldsSection?: React.ReactNode;
+  /**
+   * 1.59.0:AI 連線(核心分頁,排在 AI 那張卡後面,自己一個導覽錨點)。開關與中斷連線
+   * 各自即時生效,不進這裡的表單。
+   */
+  aiConnectSection?: React.ReactNode;
   /** 「風格」分頁的內容(AdminThemeEditor)。有自己的儲存鈕,不進這裡的表單。 */
   styleTab?: React.ReactNode;
   /** 網址的 ?tab=,不認得的值回到核心。 */
@@ -125,6 +130,9 @@ function labelClass(): string {
 function descriptionClass(): string {
   return "text-[12px] leading-relaxed text-ink/40";
 }
+
+/** AI 設定那張分組卡的 id(AI 連線的卡跟在它後面)。 */
+const AI_SECTION_ID = "core-ai";
 
 /** core 分組卡的 id 慣例:`core-<group>`(見 settings/page.tsx)。 */
 function isCoreSection(section: SettingsSection): boolean {
@@ -227,6 +235,7 @@ export function SettingsWorkspace({
   values,
   coreAddon,
   extraFieldsSection,
+  aiConnectSection,
   styleTab,
   initialTab,
 }: SettingsWorkspaceProps) {
@@ -236,6 +245,7 @@ export function SettingsWorkspace({
   const locale = useLocale();
   const coreAddonNode = coreAddon ?? null;
   const extraFieldsNode = extraFieldsSection ?? null;
+  const aiConnectNode = aiConnectSection ?? null;
   // fullKey → 伺服器回的錯誤碼;改動該欄位就清掉那一格的錯誤。
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -264,6 +274,21 @@ export function SettingsWorkspace({
         className={cn("scroll-mt-20", SECTION_CARD)}
       >
         {extraFieldsNode}
+      </section>
+    );
+  }
+
+  // AI 連線:緊跟在 AI 設定卡後面 —— 兩者是同一件事的兩面(這個站自己的 AI、外面的 AI
+  // App 連進來)。沒有 AI 卡時(理論上不會)排在分組卡之後。
+  function renderAiConnectSection() {
+    if (!aiConnectNode) return null;
+    return (
+      <section
+        key="ai-connect"
+        id={sectionAnchorId("ai-connect")}
+        className={cn("scroll-mt-20", SECTION_CARD)}
+      >
+        {aiConnectNode}
       </section>
     );
   }
@@ -463,7 +488,14 @@ export function SettingsWorkspace({
   function renderSections(sectionsToRender: SettingsSection[]) {
     return (
       <>
-        {sectionsToRender.map(renderSection)}
+        {sectionsToRender.flatMap((section) =>
+          activeTab === "core" && section.id === AI_SECTION_ID
+            ? [renderSection(section), renderAiConnectSection()]
+            : [renderSection(section)],
+        )}
+        {activeTab === "core" &&
+          !sectionsToRender.some((section) => section.id === AI_SECTION_ID) &&
+          renderAiConnectSection()}
         {activeTab === "core" && renderExtraFieldsSection()}
         {activeTab === "core" && renderCoreAddonSection()}
       </>
@@ -517,6 +549,13 @@ export function SettingsWorkspace({
   // anchor-nav 讓人不用捲軸慢慢找。declarative 只有單一 placeholder 卡,不需要。
   const navTargets = useMemo(() => {
     const list = shownSections.map((s) => ({ id: s.id, label: s.title }));
+    if (activeTab === "core" && aiConnectNode) {
+      const ai = list.findIndex((target) => target.id === AI_SECTION_ID);
+      list.splice(ai === -1 ? list.length : ai + 1, 0, {
+        id: "ai-connect",
+        label: t("aiConnect.title"),
+      });
+    }
     if (activeTab === "core" && extraFieldsNode) {
       list.push({ id: "extra-fields", label: t("extraFields.title") });
     }
@@ -527,7 +566,7 @@ export function SettingsWorkspace({
       });
     }
     return list;
-  }, [shownSections, activeTab, extraFieldsNode, coreAddonNode, t]);
+  }, [shownSections, activeTab, aiConnectNode, extraFieldsNode, coreAddonNode, t]);
 
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   // activeSectionId 若不屬於這輪 navTargets(剛切分頁、章節增減)就退回第一個
