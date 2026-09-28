@@ -1326,4 +1326,27 @@
 //   language; coreApi "^1.60.0") and the setting `core.ai.notes` (Settings → AI, ≤ 2000 chars).
 //   Appended to the admin assistant's system prompt and sent as MCP `initialize` instructions.
 //   Textarea settings may declare `maxLength`. The MCP request body limit goes to 8 MB.
-export const CORE_API_VERSION = "1.60.0";
+// 1.61.0: Revenue on the dashboard — `Extension.dashboardRevenue(ctx)` (coreApi ^1.61.0) returns
+// daily amounts as `RevenueSeries[]`: `{ id, label, href, days: { "YYYY-MM-DD": amount } }` for
+// ctx.from..ctx.to, whole days in the site time zone (ctx.start / ctx.end are the ms bounds, end
+// exclusive; the rest of ctx is DashboardStatsContext). Rules (dx/dashboard-revenue.ts): id as for
+// dashboardStats, label ≤ 40 characters (string or LocalizedString), href an admin path — a series
+// the viewer can't open is not drawn — and day keys that are real dates inside the period with
+// finite amounts ≥ 0; unlisted days are 0, and one bad day drops the whole series (a partial one
+// would understate revenue without showing it). At most 4 series per plugin; a repeated id keeps
+// the first. A plugin that throws, returns something other than an array or takes longer than 3 s
+// is logged and left out. Series from all plugins stack in one chart, so their amounts must be in
+// the shop's currency.
+// - Dashboard: a 營業額 / Revenue card after the plugin stat cards, drawn only when at least one
+//   series is visible. Period control: 7 / 30 / 90 days ending today (default 30) or a custom range
+//   of up to 366 days, kept in the URL (`?range=7|30|90`, `?since=YYYY-MM-DD&until=YYYY-MM-DD`;
+//   invalid values fall back to 30 days). The card shows the period total, the change against the
+//   previous period of the same length (each plugin is asked for both periods; no comparison when a
+//   series is missing from either) and a stacked daily bar chart whose legend links each series to
+//   its href. A period with no revenue keeps the axis and says so in one line.
+// - For plugin report pages: `lib/report-period.ts` (parse the URL, previous period, carry the
+//   params in links; `periodFromRange` turns ctx.from / ctx.to back into the same period for a
+//   series href), `components/admin/report/ReportPeriodControl` and `RevenueChart` (client), and
+//   `formatMoney` in `ext/commerce-kit/money.ts`. dashboardStats and dashboardRevenue share
+//   `dx/dashboard-hook.ts` (isolation, admin href and text checks). `DeltaPill` takes a `unit`.
+export const CORE_API_VERSION = "1.61.0";
