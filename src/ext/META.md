@@ -31,6 +31,9 @@
     one. Only people who can open the member list see facets. Requires coreApi `^1.60.0`.
   - `agent-tools-media.ts` (1.60.0): `core.media.list` (read) and `core.media.upload` (write,
     from a public URL or base64) — stores through `lib/media-upload.ts`, same as the admin uploader.
+  - `agent-guide.ts` (1.60.0): the guide for AI — orientation plus recipes built from what is
+    enabled, each extension's `agentGuide`, then the owner's `core.ai.notes`. Appended to the
+    assistant's system prompt and sent as MCP `initialize` instructions.
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.

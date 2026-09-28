@@ -86,6 +86,8 @@ describe("setting group derivation", () => {
       "core.ai.baseUrl",
       "core.ai.apiKey",
       "core.ai.model",
+      // 1.60.0:給 AI 的說明。AI 卡的最後一格,緊鄰「AI 連線」卡。
+      "core.ai.notes",
       // 1.59.0:AI 連線的開關。同一組,但設定頁由「AI 連線」卡自己畫(不進通用表單)。
       "core.mcp.enabled",
     ]);

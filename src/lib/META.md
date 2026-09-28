@@ -46,6 +46,7 @@
   and the AI upload tool. `remote-image.ts`: turns a URL (server-side fetch; http/https only,
   no credentials, no private hosts, redirects re-checked per hop, timeout, size cap) or base64
   into bytes whose image format is sniffed (`image-dimensions.ts#sniffImageFormat`).
+- `ai-notes.ts` (1.60.0): `core.ai.notes` key, 2000-character cap and normalisation.
 - `extra-fields.ts`: additional fields an admin adds per content type
   (`core.content.extraFields`; values in `data.extra`). Pure (zod only) so the settings
   manager and editors share it; `extra-fields-server.ts` reads the setting. Anything that

@@ -60,7 +60,7 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
     id: "ai",
     order: 40,
     title: "AI",
-    description: "Provider, model and key for AI features.",
+    description: "Provider, model and key for AI features, and notes for AI.",
   },
   {
     id: "advanced",

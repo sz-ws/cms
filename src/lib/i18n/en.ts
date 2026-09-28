@@ -386,7 +386,7 @@ export const en = {
   "settings.group.email": "Email",
   "settings.group.emailDesc": "Sender address, mail provider and notifications.",
   "settings.group.ai": "AI",
-  "settings.group.aiDesc": "Provider, model and key for AI features.",
+  "settings.group.aiDesc": "Provider, model and key for AI features, and notes for AI.",
   "settings.group.advanced": "Advanced",
   "settings.group.advancedDesc": "Secrets and platform internals.",
   "settings.group.notice": "Announcement",

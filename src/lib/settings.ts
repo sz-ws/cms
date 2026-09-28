@@ -12,6 +12,7 @@ import type { BatchItem } from "drizzle-orm/batch";
 import { ADMIN_ACCENT_SWATCHES, DEFAULT_ADMIN_ACCENT } from "./admin-accent";
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from "./datetime";
 import { SITE_NOTICE_KEYS, SITE_NOTICE_MAX_LENGTH } from "./site-notice";
+import { AI_NOTES_MAX_LENGTH, AI_NOTES_SETTING } from "./ai-notes";
 
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
@@ -70,7 +71,8 @@ export type SettingField = SettingFieldBase &
   (
     // 1.56.0:maxLength 以字數(code point)算,伺服器擋、輸入框也限制。
     | { type: "text"; format?: SettingTextFormat; maxLength?: number }
-    | { type: "textarea" }
+    // 1.60.0:textarea 也可以有字數上限(同 text,只給 core 設定用)。
+    | { type: "textarea"; maxLength?: number }
     | { type: "number"; unit?: SettingNumberUnit }
     | { type: "boolean" }
     // 1.44.0:presentation: "tabs" 畫成一排分頁(佔整列),適合二選一、三選一的「用哪個服務」。
@@ -424,6 +426,20 @@ export const CORE_SETTINGS: SettingField[] = [
       "zh-Hant": "例如 gpt-4o-mini、claude-haiku-4-5-20251001 或 @cf/meta/llama-3.1-8b-instruct。",
     },
     type: "text",
+    default: "",
+  },
+  {
+    // 1.60.0:給 AI 的說明。接在內建說明後面,後台助理與 AI 連線都讀(src/ext/agent-guide.ts)。
+    // 排在 AI 卡的最後一格,緊鄰下面的「AI 連線」卡。
+    key: AI_NOTES_SETTING,
+    group: "ai",
+    label: { en: "Notes for AI", "zh-Hant": "給 AI 的說明" },
+    description: {
+      en: "Your AI assistant and connected AI apps follow these, for example tone, naming, or which categories to use.",
+      "zh-Hant": "後台 AI 助理和連線的 AI App 都會照著做，例如語氣、命名方式、該用哪些分類。",
+    },
+    type: "textarea",
+    maxLength: AI_NOTES_MAX_LENGTH,
     default: "",
   },
   {

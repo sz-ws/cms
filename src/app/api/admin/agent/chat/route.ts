@@ -184,12 +184,14 @@ export async function POST(req: Request): Promise<Response> {
   // 解析一次,兩個消費者共用:system prompt 的「Reply in …」與確認卡摘要的語言
   // (AgentTool.summarize,1.31.0)。分別解析等於留一條它們會分岔的縫。
   const locale = await resolveLocale();
+  // 兩個端點共用同一個接線點 —— /chat 看得到的 tool 與 /execute 認得的 tool
+  // 因此不可能分叉(agent-tools-runtime.ts 檔頭)。system prompt 裡的說明(1.60.0)
+  // 也讀同一份,只寫得出這次真的交給模型的 tool。
+  const registryPromise = buildAgentToolRegistry();
   const [registry, services, system] = await Promise.all([
-    // 兩個端點共用同一個接線點 —— /chat 看得到的 tool 與 /execute 認得的 tool
-    // 因此不可能分叉(agent-tools-runtime.ts 檔頭)。
-    buildAgentToolRegistry(),
+    registryPromise,
     createServices("core"),
-    loadAgentSystemPrompt(locale),
+    registryPromise.then((built) => loadAgentSystemPrompt(locale, built)),
   ]);
 
   const params = {

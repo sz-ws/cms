@@ -376,7 +376,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settings.group.email": "電子郵件",
   "settings.group.emailDesc": "寄件地址、寄信服務與通知信。",
   "settings.group.ai": "AI",
-  "settings.group.aiDesc": "AI 功能用的服務、模型與金鑰。",
+  "settings.group.aiDesc": "AI 功能用的服務、模型與金鑰，以及給 AI 的說明。",
   "settings.group.advanced": "進階",
   "settings.group.advancedDesc": "密鑰與平台內部設定。",
   "settings.group.notice": "網站公告",

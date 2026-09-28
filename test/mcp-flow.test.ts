@@ -614,6 +614,19 @@ describe("MCP over a view-only connection", () => {
     expect(result.content[0].text).toContain("only look things up");
     expect(await auditRows()).toHaveLength(0);
   });
+
+  it("initialize carries the guide for what this connection can do, and the owner's notes", async () => {
+    await setSetting("core.ai.notes", "Reply in a warm tone. Never publish without asking.");
+    const { tokens } = await connect("read");
+    const init = await rpcResult<{ instructions: string }>(tokens.access_token, "initialize", { protocolVersion: "2025-06-18" });
+    expect(init.instructions).toContain("## How this back office works");
+    expect(init.instructions).toContain("content-<type>-list");
+    // 只能查看:不教它上傳或建立。
+    expect(init.instructions).not.toContain("core-media-upload");
+    expect(init.instructions).not.toContain("create / update / delete");
+    expect(init.instructions).toContain("## Notes from the site owner");
+    expect(init.instructions.endsWith("Reply in a warm tone. Never publish without asking.")).toBe(true);
+  });
 });
 
 describe("MCP over a connection that may make changes", () => {
@@ -651,12 +664,20 @@ describe("MCP over a connection that may make changes", () => {
     ]);
   });
 
-  it("offers the upload tool as a non-destructive write", async () => {
+  it("offers the upload tool as a non-destructive write and explains it in initialize", async () => {
+    await setSetting("core.ai.notes", "Use short names.");
     const { tokens } = await connect("write");
     const { tools } = await rpcResult<{ tools: ToolDef[] }>(tokens.access_token, "tools/list");
     const upload = tools.find((t) => t.name === "core-media-upload");
     expect(upload?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, openWorldHint: false });
     expect(upload?.inputSchema.type).toBe("object");
+
+    const init = await rpcResult<{ instructions: string }>(tokens.access_token, "initialize", {});
+    // 說明裡的 tool 名是 App 看得到的 wire 名。
+    expect(init.instructions).toContain("core-media-upload");
+    expect(init.instructions).toContain("create / update / delete");
+    expect(init.instructions).not.toContain("core.media.upload");
+    expect(init.instructions.endsWith("Use short names.")).toBe(true);
   });
 
   it("reconnecting the same app updates its access instead of adding a connection", async () => {

@@ -124,16 +124,30 @@ export async function POST(req: Request): Promise<Response> {
   let registry: Promise<AgentToolRegistry> | null = null;
   let toolCtx: Promise<AgentToolCtx> | null = null;
   const siteTitle = await getPlainSetting<unknown>("core.siteTitle", "");
+  const canWrite = caller.scope === "write";
+  const locale = await getLocale();
+  const loadRegistry = () => (registry ??= buildAgentToolRegistry());
 
   const outcome = await handleMcpBody(body, parsed, {
-    canWrite: caller.scope === "write",
+    canWrite,
     app: caller.app,
-    locale: await getLocale(),
+    locale,
     siteTitle: typeof siteTitle === "string" ? siteTitle.trim() : "",
     serverVersion: CORE_API_VERSION,
-    registry: () => (registry ??= buildAgentToolRegistry()),
+    registry: loadRegistry,
     toolCtx: () =>
       (toolCtx ??= createServices("core").then((services) => ({ user: caller.user, services }))),
+    // 1.60.0:給 AI 的說明。只寫這條連線看得到的 tool(只能查看 → 沒有建立商品那一段),
+    // tool 名換成 App 那邊看到的 wire 名。
+    guide: async () => {
+      const [{ loadAgentGuide }, { toWireToolName }, built] = await Promise.all([
+        import("@/ext/agent-guide"),
+        import("@/ext/providers/ai-chat"),
+        loadRegistry(),
+      ]);
+      const visible = canWrite ? built.list() : built.list("read");
+      return loadAgentGuide({ locale, toolNames: visible.map((tool) => tool.name), toolName: toWireToolName });
+    },
   });
 
   if (outcome.status === 202) return new Response(null, { status: 202, headers: corsHeaders(METHODS) });

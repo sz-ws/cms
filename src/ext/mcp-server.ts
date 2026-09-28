@@ -69,6 +69,11 @@ export interface McpSession {
   /** registry 與執行脈絡都是用到才建(initialize、ping 不需要)。 */
   registry: () => Promise<AgentToolRegistry>;
   toolCtx: () => Promise<AgentToolCtx>;
+  /**
+   * 1.60.0:給 AI 的說明(agent-guide.ts,tool 名已換成 wire 名),接在 initialize 的
+   * instructions 後面。只有 initialize 會叫它。省略或失敗 = 只有基本那一段。
+   */
+  guide?: () => Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,16 +225,36 @@ function respond(id: JsonRpcId, outcome: unknown): JsonRpcResponse {
     : { jsonrpc: "2.0", id, result: outcome };
 }
 
-function instructions(siteTitle: string): string {
+/** instructions 的總上限(字元)。說明本身已有各段限額,這是最後一道保險絲。 */
+const MCP_INSTRUCTIONS_MAX_CHARS = 16_000;
+
+function baseInstructions(siteTitle: string): string {
   const site = siteTitle ? `"${siteTitle}"` : "this website";
   return (
-    `These tools work on the back office of ${site}: its content, settings and, when installed, its shop orders. ` +
+    `These tools work on the back office of ${site}: its content, media library, settings and, when installed, its shop orders. ` +
     "Tools marked read-only only look things up. The other tools change the live site as soon as they run, " +
-    "so tell the user exactly what you are about to change and wait for their go-ahead before calling one."
+    "so tell the user exactly what you are about to change and wait for their go-ahead before calling one. " +
+    // tool 的 description 是與後台助理共用的,裡面的 tool 名是點分正名(見檔頭「tool 名」)。
+    "Tool descriptions sometimes name other tools with dots (core.content.search); " +
+    "call them by the names in your tool list, where the dots are dashes (core-content-search)."
   );
 }
 
-function initializeResult(params: Record<string, unknown>, session: McpSession): unknown {
+/** 基本那一段 + 給 AI 的說明(1.60.0)。說明組不出來不影響連線:只少那一段。 */
+async function instructions(session: McpSession): Promise<string> {
+  const base = baseInstructions(session.siteTitle);
+  if (!session.guide) return base;
+  let guide = "";
+  try {
+    guide = (await session.guide()).trim();
+  } catch (e) {
+    console.error("[mcp] guide could not be built", e);
+  }
+  const full = guide ? `${base}\n\n${guide}` : base;
+  return full.length > MCP_INSTRUCTIONS_MAX_CHARS ? `${full.slice(0, MCP_INSTRUCTIONS_MAX_CHARS)}\n…[truncated]` : full;
+}
+
+async function initializeResult(params: Record<string, unknown>, session: McpSession): Promise<unknown> {
   const requested = params.protocolVersion;
   const protocolVersion =
     typeof requested === "string" && (MCP_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
@@ -243,7 +268,7 @@ function initializeResult(params: Record<string, unknown>, session: McpSession):
       ...(session.siteTitle ? { title: session.siteTitle } : {}),
       version: session.serverVersion,
     },
-    instructions: instructions(session.siteTitle),
+    instructions: await instructions(session),
   };
 }
 

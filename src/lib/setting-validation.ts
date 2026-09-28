@@ -9,7 +9,7 @@ export type SettingValueField = {
   required?: boolean;
   secret?: boolean;
   options?: readonly { value: string }[];
-  /** 1.56.0:text 的格式與字數上限(只有 core 設定會帶)。 */
+  /** 1.56.0:text 的格式與字數上限(只有 core 設定會帶);1.60.0 起 textarea 也可以有字數上限。 */
   format?: "line" | "link" | "date";
   maxLength?: number;
 };
@@ -93,9 +93,13 @@ export function validateSettingValue(
     case "text":
       return typeof value === "string" ? textFieldError(field, value) : "expected_string";
     case "textarea":
-      return typeof value === "string" || isJsonSerializable(value)
-        ? null
-        : "not_serializable";
+      // 1.60.0:有 maxLength 的 textarea(給 AI 的說明)同 text 以字數算。
+      if (typeof value === "string") {
+        return field.maxLength !== undefined && textLength(value.trim()) > field.maxLength
+          ? "too_long"
+          : null;
+      }
+      return isJsonSerializable(value) ? null : "not_serializable";
     case "number":
       return typeof value === "number" && Number.isFinite(value)
         ? null

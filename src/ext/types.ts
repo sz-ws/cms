@@ -336,6 +336,17 @@ export interface Extension {
    * 必須標 write,否則它會在 agent loop 內被直接執行而不經人工確認。
    */
   agentTools?: AgentTool[];
+  // ── 1.60.0:agentGuide ──────────────────────────────────────────────────────
+  /**
+   * 1.60.0:給 AI 的說明(src/ext/agent-guide.ts)。這個插件在後台管什麼、常見的事怎麼
+   * 一步步做(用哪幾個 tool、照什麼順序)。插件啟用時接在 core 內建的說明後面,送進後台
+   * 助理的 system prompt 與 AI 連線(MCP initialize 的 instructions)。
+   *
+   * 寫給模型看的:可以提 tool 名(點分寫法,MCP 那邊會自動換成破折號的名字)。每種語言
+   * 最多 AGENT_GUIDE_MAX_CHARS 字。宣告了要標 coreApi "^1.60.0"(舊 core 會安靜地忽略)。
+   */
+  agentGuide?: LocalizedString;
+  // ── end agentGuide ─────────────────────────────────────────────────────────
   /**
    * 1.40.0:紀錄的狀態組(名稱與色調),全站識別 `<extId>:<id>`。後台用 <StatusBadge>
    * 畫;站台用 filter:statusSets 改名或補描述;每一筆可另掛描述(record-status.ts)。
@@ -493,6 +504,18 @@ const nonEmptyLocalizedString = localizedStringSchema.refine(
     Object.values(value).some((v) => typeof v === "string" && v.length > 0),
   { message: "localized string requires at least one non-empty locale" },
 );
+
+// ── 1.60.0:agentGuide ──────────────────────────────────────────────────────
+/** Extension.agentGuide 每種語言的字數上限。給 AI 的說明是有總量的,一個插件不該吃掉一大塊。 */
+export const AGENT_GUIDE_MAX_CHARS = 1_200;
+const agentGuideSchema = nonEmptyLocalizedString.refine(
+  (value) =>
+    (typeof value === "string" ? [value] : Object.values(value)).every(
+      (text) => typeof text !== "string" || text.length <= AGENT_GUIDE_MAX_CHARS,
+    ),
+  { message: `agentGuide is limited to ${AGENT_GUIDE_MAX_CHARS} characters per language` },
+);
+// ── end agentGuide ─────────────────────────────────────────────────────────
 
 const settingSchema = z
   .object({
@@ -683,6 +706,7 @@ const manifestSchema = z
       .optional(),
     jobs: jobsSchema,
     agentTools: z.array(agentToolSchema).optional(),
+    agentGuide: agentGuideSchema.optional(), // 1.60.0
     statusSets: z.array(statusSetSchema).max(10).optional(),
     publicFeeds: z
       .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
@@ -812,6 +836,10 @@ const manifestSchema = z
         message: 'agentTools requires coreApi "^1.30.0" or newer',
         path: ["coreApi"],
       });
+    }
+    // 1.60.0:agentGuide —— 同 agentTools 的理由,舊 core 會安靜地忽略,所以標版號。
+    if (ext.agentGuide !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.60.0")) {
+      ctx.addIssue({ code: "custom", message: 'agentGuide requires coreApi "^1.60.0" or newer', path: ["coreApi"] });
     }
   });
 

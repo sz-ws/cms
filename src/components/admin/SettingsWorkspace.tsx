@@ -337,6 +337,7 @@ export function SettingsWorkspace({
                   aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
                   className="min-h-[120px] rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
+                  maxLength={field.maxLength}
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
                   onChange={(e) => update(fullKey, e.target.value)}
