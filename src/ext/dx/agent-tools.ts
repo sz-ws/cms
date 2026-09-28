@@ -47,12 +47,19 @@ const DEFAULT_PER_PAGE = 20;
  *
  * `.` 換成 `_`(gallery.item → gallery_item),照 spec §2 的例子
  * `content.gallery_item.list`:tool name 本身以 `.` 分段,type key 內層的 `.` 若
- * 原樣保留就會讓 name 從三段變成四段,解析與展示都得多一套規則。extension id
- * (`^[a-z][a-z0-9-]{1,30}$`)與 content type name(`^[a-z][a-z0-9-]{0,30}$`)兩者
- * 的字元集都不含底線,所以壓縮之後仍然一一對應,不會有兩個 type 撞名。
+ * 原樣保留就會讓 name 從三段變成四段,解析與展示都得多一套規則。
+ *
+ * 連字號換成兩個底線(social-proof.sample → social__proof_sample):extension id
+ * (`^[a-z][a-z0-9-]{1,30}$`)與 content type name(`^[a-z][a-z0-9-]{0,30}$`)都可以有
+ * 連字號,但 tool name 不行(AGENT_TOOL_NAME_RE)—— 以前原樣放進去,裝了 id 帶連字號、
+ * 又宣告了 content type 的插件,整份 registry 就組不起來,後台 AI 助理與 MCP 一起壞。
+ * 兩者的字元集都沒有底線,而且 type name 一定以字母開頭,所以一段連續的底線裡,單數個
+ * 的那一段恰好含一個分隔的 `_`、其餘都是連字號 —— 換完仍然一一對應,不會有兩個 type 撞名。
+ * 沒有連字號的名字跟以前一模一樣。
  */
 export function contentToolSlug(extId: string, typeName: string): string {
-  return `${extId}_${typeName}`;
+  const safe = (part: string) => part.replaceAll("-", "__");
+  return `${safe(extId)}_${safe(typeName)}`;
 }
 
 /** tool 執行時取得 content provider,並註冊 type def 供 provider 驗證(同 crud.ts)。 */

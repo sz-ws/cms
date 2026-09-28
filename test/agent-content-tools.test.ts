@@ -147,6 +147,15 @@ describe("contentTypeAgentTools(spec §2:每個 content type 自動長出 CRUD t
     expect(contentToolSlug("gallery", "item")).toBe("gallery_item");
   });
 
+  it("id 或 type name 帶連字號時照樣生得出合法、不撞名的 tool", () => {
+    expect(contentToolSlug("social-proof", "sample")).toBe("social__proof_sample");
+    const pairs: [string, string][] = [["a-b", "c"], ["a", "b-c"], ["a-", "b"], ["a", "b"], ["ab", "c"], ["a-b-c", "d-e"]];
+    const slugs = pairs.map(([ext, type]) => contentToolSlug(ext, type));
+    expect(new Set(slugs).size).toBe(pairs.length);
+    const names = [...byName(contentTypeAgentTools("social-proof", { ...ITEM, name: "sample-item" })).keys()];
+    expect(names).toContain("content.social__proof_sample__item.list");
+  });
+
   it("description 帶著欄位清單 —— Phase B 之前那是模型認識欄位的唯一管道", () => {
     const tools = byName(contentTypeAgentTools("gallery", ITEM));
     const create = tools.get("content.gallery_item.create")!;

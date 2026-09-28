@@ -98,9 +98,8 @@ export function readStringArg(args: unknown, key: string): string {
 
 /**
  * 點分小寫識別字,至少兩段。段內允許底線,因為 content type key 的 `.`(如
- * gallery.item)在 tool name 裡會被壓成 `_`(gallery_item)—— 見 dx/agent-tools.ts
- * 的 contentToolSlug。extension id 與 content type name 兩者的字元集都不含底線,
- * 所以這個壓法不會造成兩個不同的 (extId, typeName) 撞出同一個名字。
+ * gallery.item)在 tool name 裡會被壓成 `_`(gallery_item)、連字號壓成 `__` ——
+ * 見 dx/agent-tools.ts 的 contentToolSlug,那裡說明了為什麼不會撞名。
  */
 export const AGENT_TOOL_NAME_RE = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
 // 生成出來的最長 name 是 `content.<extId>_<typeName>.update`,在 id/type name 各自
