@@ -13,6 +13,7 @@ import {
 import { getMessages } from "@/lib/i18n/index";
 import { readExtraValues } from "@/lib/extra-fields";
 import { ExtraFieldsPanel } from "@/ext/dx/fields/ExtraFieldsPanel";
+import { useExtT } from "@/ext/dx/ext-locale";
 import { StatusToggle, type EntryStatus } from "@/ext/dx/views/StatusToggle";
 import { PublishScheduleControl } from "@/ext/dx/views/PublishScheduleControl";
 import { sameFieldValues } from "@/ext/dx/views/form-dirty";
@@ -22,15 +23,27 @@ import { buildBlogPayload } from "./payload";
 // language. Cover hero at top (with generate presets), then a concentric-card
 // editor (login-page recipe) holding title, properties, excerpt, and a real
 // Tiptap richtext body.
+//
+// i18n:每一句都走 core 字典(blogEditor.*,存檔列沿用 extForm.admin.*),照後台語言顯示。
+// 版面收到的 locale prop 由 FormViewPage 在伺服器解析,同泛用 FormView 用 getMessages 查;
+// 欄位名稱也在字典裡,不讀 manifest 的 label(版面本來就是寫死這幾個欄位)。
+
+function EditorLoading() {
+  // next/dynamic 的 loading 拿不到版面的 props;useExtT 退到後台的 I18nProvider。
+  const t = useExtT();
+  return (
+    <div className="flex min-h-52 items-center justify-center rounded-[10px] bg-white text-[13px] text-black/45 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+      {t("admin.loading")}
+    </div>
+  );
+}
 
 const RichtextEditor = dynamic(() => import("@/ext/dx/fields/RichtextEditor"), {
   ssr: false,
-  loading: () => (
-    <div className="flex min-h-52 items-center justify-center rounded-[10px] bg-white text-[13px] text-black/45 shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
-      Loading editor…
-    </div>
-  ),
+  loading: () => <EditorLoading />,
 });
+
+type Messages = ReturnType<typeof getMessages>;
 
 const COVER_PRESETS = [
   "linear-gradient(135deg, oklch(0.92 0.05 250), oklch(0.88 0.08 290))",
@@ -159,7 +172,7 @@ export function BlogLayout(props: LayoutComponentProps) {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        setError(`Save failed (${res.status})`);
+        setError(m["extForm.error.saveFailed"]);
         return;
       }
       setSaved(true);
@@ -167,7 +180,7 @@ export function BlogLayout(props: LayoutComponentProps) {
       router.push(props.backHref);
       router.refresh();
     } catch {
-      setError("Network error.");
+      setError(m["extForm.error.network"]);
     } finally {
       setPending(false);
     }
@@ -203,7 +216,7 @@ export function BlogLayout(props: LayoutComponentProps) {
         {/* cover controls — Paper & Ink pill buttons */}
         <div className="absolute inset-x-0 bottom-6 flex justify-center gap-2">
           <CoverButton onClick={() => setPickerOpen(true)}>
-            {hasCover ? "Change cover" : "Add cover"}
+            {hasCover ? m["blogEditor.changeCover"] : m["blogEditor.addCover"]}
           </CoverButton>
           {!hasCover && (
             <CoverButton
@@ -211,11 +224,11 @@ export function BlogLayout(props: LayoutComponentProps) {
                 if (isEdit && str.slug) {
                   setOgPreviewOpen(true);
                 } else {
-                  alert("Please save this post and set a slug first to generate its OG image.");
+                  alert(m["blogEditor.shareImageNeedsSlug"]);
                 }
               }}
             >
-              ↻ Generate from OG
+              {m["blogEditor.previewShareImage"]}
             </CoverButton>
           )}
         </div>
@@ -232,21 +245,21 @@ export function BlogLayout(props: LayoutComponentProps) {
               update("title", e.target.value);
               autoGrow(e.target);
             }}
-            placeholder="Untitled"
+            placeholder={m["blogEditor.titlePlaceholder"]}
             rows={1}
             className="w-full resize-none bg-transparent text-[28px] font-bold leading-tight tracking-[-0.01em] text-black/90 outline-none placeholder:text-black/25 sm:text-[32px]"
           />
 
           {/* properties */}
           <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2.5 border-t border-black/[0.06] pt-4">
-            <PropRow label="Author">
+            <PropRow label={m["blogEditor.author"]}>
               <PropInput
                 value={str.author}
                 onChange={(v) => update("author", v)}
-                placeholder="Jane Doe"
+                placeholder={m["blogEditor.authorPlaceholder"]}
               />
             </PropRow>
-            <PropRow label="Published">
+            <PropRow label={m["blogEditor.publishDate"]}>
               <input
                 type="date"
                 value={str.publishedAt}
@@ -254,7 +267,7 @@ export function BlogLayout(props: LayoutComponentProps) {
                 className="bg-transparent text-[13px] text-black/85 outline-none focus:bg-black/[0.03] focus:rounded-[4px] focus:px-1 focus:py-0.5"
               />
             </PropRow>
-            <PropRow label="Slug">
+            <PropRow label={m["blogEditor.slug"]}>
               <PropInput
                 value={str.slug}
                 onChange={(v) => update("slug", v)}
@@ -266,11 +279,11 @@ export function BlogLayout(props: LayoutComponentProps) {
 
           {/* excerpt */}
           <div className="mt-5">
-            <Label>Excerpt</Label>
+            <Label>{m["blogEditor.excerpt"]}</Label>
             <textarea
               value={str.excerpt}
               onChange={(e) => update("excerpt", e.target.value)}
-              placeholder="A short hook for listings…"
+              placeholder={m["blogEditor.excerptPlaceholder"]}
               rows={2}
               className="mt-1.5 min-h-[56px] w-full resize-none rounded-[8px] border border-black/10 bg-white px-3 py-2 text-[14px] leading-relaxed text-black/65 outline-none transition-[border-color,box-shadow] duration-150 focus:border-black/30 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] placeholder:text-black/25"
             />
@@ -278,7 +291,7 @@ export function BlogLayout(props: LayoutComponentProps) {
 
           {/* body — real Tiptap richtext */}
           <div className="mt-5">
-            <Label>Body</Label>
+            <Label>{m["blogEditor.body"]}</Label>
             <div className="mt-1.5">
               <RichtextEditor
                 value={body}
@@ -337,10 +350,21 @@ export function BlogLayout(props: LayoutComponentProps) {
           <div className={`flex items-center justify-between gap-4 rounded-[14px] bg-white px-4 py-3 ${CARD}`}>
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="text-[12px] font-medium text-black/45">
-                {pending ? "Saving…" : saved ? "Saved" : dirty ? "Ready to save" : "Up to date"}
+                {pending
+                  ? m["extForm.admin.saving"]
+                  : saved
+                    ? m["extForm.admin.saved"]
+                    : dirty
+                      ? m["extForm.admin.readyToSave"]
+                      : m["extForm.admin.upToDate"]}
               </span>
               <span className="text-[11px] text-black/35">
-                {error ?? (saved ? "Saved." : dirty ? "Unsaved changes." : "Notion-style editor")}
+                {error ??
+                  (saved
+                    ? m["extForm.admin.changesApplied"]
+                    : dirty
+                      ? m["extForm.admin.unsavedChanges"]
+                      : m["extForm.admin.noChanges"])}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -357,7 +381,7 @@ export function BlogLayout(props: LayoutComponentProps) {
                 disabled={!dirty}
                 className="inline-flex h-9 items-center rounded-[8px] px-3 text-[13px] font-medium text-black/55 transition-colors hover:bg-black/[0.03] hover:text-black/85 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Discard
+                {m["extForm.admin.discard"]}
               </button>
               <button
                 type="submit"
@@ -365,7 +389,7 @@ export function BlogLayout(props: LayoutComponentProps) {
                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[8px] bg-black pr-3 pl-3.5 text-[14px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-black/85 active:scale-[0.96] focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.15)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {/* 以前新文章寫「Publish」,送出的卻是草稿;發不發佈看上面的狀態。 */}
-                <span>{pending ? "Saving…" : "Save"}</span>
+                <span>{pending ? m["extForm.admin.saving"] : m["extForm.admin.save"]}</span>
                 {!pending && <span aria-hidden className="text-white/70">→</span>}
               </button>
             </div>
@@ -375,6 +399,7 @@ export function BlogLayout(props: LayoutComponentProps) {
 
       {pickerOpen && (
         <MediaCoverPicker
+          m={m}
           current={coverKey}
           onPick={(key) => {
             update("cover", key);
@@ -399,26 +424,26 @@ export function BlogLayout(props: LayoutComponentProps) {
           >
             <div className="flex items-center justify-between">
               <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
-                OG Image Preview
+                {m["blogEditor.shareImage"]}
               </h3>
               <button
                 type="button"
                 onClick={() => setOgPreviewOpen(false)}
                 className="text-[12px] text-black/45 hover:text-black/85"
               >
-                Close
+                {m["blogEditor.close"]}
               </button>
             </div>
             <div className="relative aspect-[1200/630] w-full overflow-hidden rounded-[10px] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] bg-black/5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`/api/og/${props.extId}/${props.typeName}/${encodeURIComponent(str.slug)}`}
-                alt="OG Preview"
+                alt={m["blogEditor.shareImage"]}
                 className="size-full object-contain"
               />
             </div>
             <p className="text-[12px] text-black/45 text-center">
-              This is generated from the OGImageCN Blog template using your post data.
+              {m["blogEditor.shareImageHint"]}
             </p>
           </div>
         </div>
@@ -476,11 +501,13 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 
 function MediaCoverPicker({
+  m,
   current,
   onPick,
   onClear,
   onClose,
 }: {
+  m: Messages;
   current: string;
   onPick: (key: string) => void;
   onClear: () => void;
@@ -524,21 +551,21 @@ function MediaCoverPicker({
       >
         <div className="flex items-center justify-between">
           <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-black/90">
-            Cover image
+            {m["blogEditor.cover"]}
           </h3>
           <button
             type="button"
             onClick={onClose}
             className="text-[12px] text-black/45 hover:text-black/85"
           >
-            Close
+            {m["blogEditor.close"]}
           </button>
         </div>
         {loading ? (
-          <p className="py-10 text-center text-[13px] text-black/45">Loading…</p>
+          <p className="py-10 text-center text-[13px] text-black/45">{m["admin.loading"]}</p>
         ) : images.length === 0 ? (
           <p className="py-10 text-center text-[13px] text-black/45">
-            No images yet. Upload one in Media first.
+            {m["blogEditor.noImages"]}
           </p>
         ) : (
           <ul className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
@@ -571,7 +598,7 @@ function MediaCoverPicker({
             onClick={onClear}
             className="self-start text-[12px] text-black/45 underline-offset-2 hover:text-black/85 hover:underline"
           >
-            Remove cover
+            {m["blogEditor.removeCover"]}
           </button>
         )}
       </div>

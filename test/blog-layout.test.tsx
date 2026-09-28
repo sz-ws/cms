@@ -76,17 +76,18 @@ describe("buildBlogPayload", () => {
 });
 
 function renderBlog(props: Partial<LayoutComponentProps>) {
+  const locale = props.locale ?? "zh-Hant";
   return renderToStaticMarkup(
     createElement(
       I18nProvider,
-      { locale: "zh-Hant", messages: getMessages("zh-Hant") },
+      { locale, messages: getMessages(locale) },
       createElement(BlogLayout, {
         extId: "blog",
         typeName: "post",
         fields: [],
         backHref: "/admin/ext/blog",
-        locale: "zh-Hant",
         ...props,
+        locale,
       }),
     ),
   );
@@ -122,5 +123,43 @@ describe("BlogLayout", () => {
   it("has no additional fields section when none are defined", () => {
     const html = renderBlog({ initialData: {}, extraFields: [] });
     expect(html).not.toContain("額外欄位");
+  });
+
+  // 以前版面上的字全寫死英文;現在照後台語言(core 字典 blogEditor.* 與 extForm.admin.*)。
+  const ENGLISH = [
+    "Add cover",
+    "Change cover",
+    "Generate from OG",
+    "Untitled",
+    "Author",
+    "Jane Doe",
+    "Published",
+    "Slug",
+    "Excerpt",
+    "A short hook",
+    "Body",
+    "Ready to save",
+    "Up to date",
+    "Unsaved changes",
+    "Notion-style",
+    "Discard",
+    ">Save<",
+  ];
+
+  it("reads in Chinese when the admin is in Chinese", () => {
+    const html = renderBlog({ initialData: { title: "Hello" } });
+    for (const text of ["加上封面", "預覽分享圖", 'placeholder="未命名"', "作者", 'placeholder="王小明"', "發布日期", "網址代稱", "摘要", "內文", "已是最新", "尚無變更", "捨棄", "儲存"]) {
+      expect(html).toContain(text);
+    }
+    for (const text of ENGLISH) expect(html).not.toContain(text);
+  });
+
+  it("reads in English when the admin is in English", () => {
+    const html = renderBlog({ locale: "en", initialId: "p1", initialData: { title: "Hello", cover: "blog/a.png" } });
+    for (const text of ["Change cover", 'placeholder="Untitled"', "Author", "Publish date", "Slug", "Excerpt", "Body", "Up to date", "No changes yet.", "Discard", ">Save<"]) {
+      expect(html).toContain(text);
+    }
+    expect(html).not.toContain("加上封面");
+    expect(html).not.toContain("Notion-style");
   });
 });
