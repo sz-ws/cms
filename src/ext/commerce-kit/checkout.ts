@@ -1,5 +1,3 @@
-import { sql } from "drizzle-orm";
-import type { ManagedCommerceProvider } from "./managed";
 import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
 import type { ApiCtx } from "../types";
@@ -25,6 +23,12 @@ import {
   validateCheckoutFields,
   type CheckoutFieldsResult,
 } from "./checkout-fields";
+import {
+  ORDERS_CAPABILITY,
+  checkoutPausedResponse,
+  hasManagedOrders,
+  type OrderManager,
+} from "./order-manager";
 
 // commerce-kit:公開結帳協調器(POST /api/ext/<extId>/checkout,ApiRoute.public)。
 // 職責鏈:rate limit → 驗 body → 讀 catalog 重新計價(**永不信 client 價格**)→
@@ -72,11 +76,26 @@ const bodySchema = z
   })
   .strict();
 
-/** 預設訂單編號:SO + base36 時戳 + 亂數(≤30 字元,各家 gateway 交集字元集)。 */
+const BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/** length 個 base36 大寫字元,crypto.getRandomValues(252 以上的 byte 丟掉重抽,每個字元機率一樣)。 */
+function randomBase36(length: number): string {
+  let out = "";
+  while (out.length < length) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(length * 2))) {
+      if (byte < 252 && out.length < length) out += BASE36[byte % 36];
+    }
+  }
+  return out;
+}
+
+/**
+ * 預設訂單編號:SO + base36 時戳 + 8 個亂數字元(共 18 字,≤30 字元,各家 gateway 交集字元集)。亂數用
+ * crypto:訂單編號是回報匯款的線索之一,不能讓人照下單時間猜出來。
+ */
 function defaultOrderNo(): string {
   const time = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `SO${time}${rand}`;
+  return `SO${time}${randomBase36(8)}`;
 }
 
 /** gateway 商品描述:首件品名 + 件數,截到 50 字(newebpay 上限)。 */
@@ -148,10 +167,11 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
     _params: Record<string, string>,
     ctx: ApiCtx,
   ): Promise<Response> {
-    const managed = ctx.services.providers.getById<ManagedCommerceProvider>("commerce:orders", opts.table);
-    if (managed) return managed.checkout(req, ctx);
-    const managedSchema = await ctx.services.db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${`${opts.table}_managed`}`);
-    if (managedSchema) return Response.json({ ok: false, error: "商城營運插件未啟用，暫停結帳" }, { status: 503 });
+    // 1.63.0:有訂單管理插件接手這張表 → 整筆結帳交給它。沒有,但有它管過的訂單 → 暫停結帳
+    // (fail closed:不讓一半的訂單走 core、一半等插件回來)。
+    const manager = ctx.services.providers.getById<OrderManager>(ORDERS_CAPABILITY, opts.table);
+    if (manager) return manager.checkout(req, ctx);
+    if (await hasManagedOrders(ctx.services, opts.table)) return checkoutPausedResponse();
 
     // 公開端點,session 不存在 → 以 IP 為 rate-limit key(callback route 前例)。
     const ip = req.headers.get("cf-connecting-ip") ?? "local";

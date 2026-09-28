@@ -27,6 +27,24 @@ export {
   parseOrderMeta,
 } from "./orders";
 export type { CommerceDb, CreateOrderInput, TransitionExtras } from "./orders";
+// 1.63.0:訂單管理插件的合約(commerce:orders)。ManagedCommerceProvider 是它的舊名(./managed,2.0 拿掉)。
+export {
+  ORDERS_CAPABILITY,
+  OrderManagedError,
+  checkoutPausedResponse,
+  customerOrderManagedResponse,
+  hasManagedOrders,
+  orderManagedResponse,
+  resolveOrderOwner,
+  storefrontOf,
+} from "./order-manager";
+export type {
+  OrderManager,
+  OrderOwner,
+  OrderStorefront,
+  TransferReportInput,
+} from "./order-manager";
+export type { ManagedCommerceProvider } from "./managed";
 export { ORDER_SEARCH_FIELDS } from "./orders";
 export { createCommerceCheckoutHandler } from "./checkout";
 // 1.63.0:結帳欄位(capability commerce:checkout-fields)與訂單 meta。瀏覽器端的預先帶入在

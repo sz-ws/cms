@@ -17,9 +17,12 @@ const rateLimit = vi.hoisted(() => ({ limited: false }));
 vi.mock("@/lib/rate-limit", () => ({
   hitRateLimit: async () => rateLimit.limited,
 }));
-// 1.63.0:有結帳欄位時,core 的結帳會問登入的是誰(給欄位檢查用)。
-const session = vi.hoisted(() => ({ user: null as null | { id: string } }));
-vi.mock("@/lib/auth", () => ({ getSessionUser: async () => session.user }));
+// 1.63.0:有結帳欄位時,core 的結帳會問登入的是誰(給欄位檢查用);回報匯款沒帶下單 Email 時也問。
+const session = vi.hoisted(() => ({ user: null as null | { id: string; email?: string; role?: string; staffRole?: null } }));
+vi.mock("@/lib/auth", () => ({
+  getSessionUser: async () => session.user,
+  isFullAdmin: (user: { role?: string; staffRole?: unknown } | null) => user?.role === "admin" && !user.staffRole,
+}));
 
 import { db } from "../src/lib/db";
 import { HookBus } from "../src/ext/hooks";
@@ -297,11 +300,12 @@ describe("checkout(伺服器計價)", () => {
 });
 
 describe("匯款全流程:回報 → 核帳 → hook 翻單", () => {
-  function reportReq(orderNo: string, last5 = "12345"): Request {
+  // 客人回報時帶下單的 Email(1.63.0 起 core 的訂單要它證明是下單的人)。
+  function reportReq(orderNo: string, last5 = "12345", email: string | null = VALID_BODY.email): Request {
     return new Request("https://cms.test/api/ext/shop/transfer-report", {
       method: "POST",
       headers: { "Content-Type": "application/json", "cf-connecting-ip": "1.2.3.4" },
-      body: JSON.stringify({ orderNo, last5 }),
+      body: JSON.stringify({ orderNo, last5, ...(email === null ? {} : { email }) }),
     });
   }
   function verifyReq(approve: boolean): Request {
@@ -441,6 +445,47 @@ describe("匯款全流程:回報 → 核帳 → hook 翻單", () => {
     expect(ghost.status).toBe(404);
   });
 
+  it("只有下單的人能回報:下單 Email(大小寫、前後空白不計)、登入的同一個 Email、或管理員;其餘和查無單同一句 404", async () => {
+    const { body } = await checkout({ email: "Ming@Example.com" });
+    const orderNo = body.orderNo as string;
+    const refused = async (req: Request) => {
+      const res = await reportHandler(req, {}, ctx());
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ ok: false, error: "not_found" });
+    };
+    await refused(reportReq(orderNo, "11111", null));
+    await refused(reportReq(orderNo, "11111", "someone@example.com"));
+    await refused(reportReq(orderNo, "11111", ""));
+    session.user = { id: "u1", email: "other@example.com", role: "guest" };
+    await refused(reportReq(orderNo, "11111", null));
+    session.user = { id: "u2", email: "editor@example.com", role: "editor" };
+    await refused(reportReq(orderNo, "11111", null));
+    expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.status).toBe("pending_payment");
+
+    session.user = null;
+    expect((await reportHandler(reportReq(orderNo, "22222", "  ming@EXAMPLE.com "), {}, ctx())).status).toBe(200);
+    expect(await getOrder({ db: db() }, SHOP_TABLE, orderNo)).toMatchObject({ status: "awaiting_verify", transferReference: "22222" });
+    session.user = { id: "u3", email: "ming@example.com", role: "guest" };
+    expect((await reportHandler(reportReq(orderNo, "33333", null), {}, ctx())).status).toBe(200);
+    session.user = { id: "u4", email: "boss@example.com", role: "admin" };
+    expect((await reportHandler(reportReq(orderNo, "44444", "wrong@example.com"), {}, ctx())).status).toBe(200);
+    expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.transferReference).toBe("44444");
+  });
+
+  it("訂單編號用 crypto 亂數:SO + 時戳 + 8 個英數,不超過 30 字", async () => {
+    const numbers = new Set<string>();
+    for (let i = 0; i < 5; i++) numbers.add((await checkout()).body.orderNo as string);
+    expect(numbers.size).toBe(5);
+    for (const orderNo of numbers) expect(orderNo).toMatch(/^SO[0-9A-Z]{8,9}[0-9A-Z]{8}$/);
+    const spy = vi.spyOn(Math, "random");
+    try {
+      await checkout();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("出貨動線:paid → shipped → completed;pending 可取消、paid 不可", async () => {
     const { body } = await checkout();
     const orderNo = body.orderNo as string;
@@ -513,7 +558,7 @@ describe("匯款回報照收款方式的 reportSpec(1.63.0)", () => {
     new Request("https://cms.test/api/ext/shop/transfer-report", {
       method: "POST",
       headers: { "Content-Type": "application/json", "cf-connecting-ip": "1.2.3.4" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ email: VALID_BODY.email, ...body }),
     });
   async function place(): Promise<string> {
     const res = await specCheckout(post(VALID_BODY), {}, ctx());
@@ -558,6 +603,20 @@ describe("匯款回報照收款方式的 reportSpec(1.63.0)", () => {
     reportSpec.ask = "either";
     expect((await specReport(report({ orderNo, reference: "12345" }), {}, ctx())).status).toBe(200);
     expect(await getOrder({ db: db() }, SPEC_TABLE, orderNo)).toMatchObject({ status: "awaiting_verify", transferPayer: null, transferReference: "12345" });
+  });
+
+  it("a payer name on a table without the transfer_payer column (update not applied yet) is still a report", async () => {
+    reportSpec.ask = "payerName";
+    const onOldTable = createTransferReportHandler({ table: SHOP_TABLE, resolveTransferProvider: async () => "manualspec" });
+    const { body } = await checkout();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect((await onOldTable(report({ orderNo: body.orderNo, payerName: "王小明" }), {}, ctx())).status).toBe(200);
+      expect(await getOrder({ db: db() }, SHOP_TABLE, body.orderNo as string)).toMatchObject({ status: "awaiting_verify", transferPayer: null });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

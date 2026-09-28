@@ -112,4 +112,14 @@ export const shopMigrations = [
       id: "0006_order_meta",
       sql: `ALTER TABLE ext_shop_orders ADD COLUMN meta TEXT`,
     },
+    {
+      // 0.9.0(core 1.63.0):接手這筆訂單的插件(commerce-kit order-manager.ts)。只為有值的列建索引:
+      // 結帳前「有沒有接手過的訂單」查一筆就知道。
+      id: "0007_managed_by",
+      sql: `
+        ALTER TABLE ext_shop_orders ADD COLUMN managed_by TEXT;
+        CREATE INDEX IF NOT EXISTS idx_ext_shop_orders_managed_by
+          ON ext_shop_orders (managed_by) WHERE managed_by IS NOT NULL
+      `,
+    },
   ];

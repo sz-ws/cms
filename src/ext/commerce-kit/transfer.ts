@@ -1,12 +1,14 @@
-import { resolveManagedOrder } from "./managed";
 import { z } from "zod";
+import { OrderManagedError, customerOrderManagedResponse, orderManagedResponse, resolveOrderOwner } from "./order-manager";
 import { hitRateLimit } from "@/lib/rate-limit";
+import { timingSafeEqualString } from "@/lib/security";
 import { isManualPaymentProvider, transferReportSpec } from "../payment-kit/manual";
 import { checkTransferReport, type TransferReportSpec } from "../payment-kit/report-spec";
 import { reportedReference } from "./transfer-legacy";
 import type { ApiCtx } from "../types";
 import {
   getOrder,
+  orderColumns,
   rewriteTransferReport,
   setOrderNote,
   transitionOrder,
@@ -29,7 +31,10 @@ const reportSchema = z
     reference: z.string().max(60).optional(),
     /** 匯款人姓名。 */
     payerName: z.string().max(100).optional(),
-    /** 下單的 Email(接管訂單的插件拿它認訪客;core 自己的訂單不看)。 */
+    /**
+     * 下單的 Email:證明回報的人是下單的人。core 自己的訂單,沒登入(或登入的不是這筆訂單的 Email、也不是
+     * 管理員)就要帶;接管訂單的插件拿它認訪客。
+     */
     email: z.string().max(200).optional(),
     /** @deprecated 1.63.0 — remove in 2.0. The old name of `reference`. */
     last5: z.string().max(60).optional(),
@@ -46,6 +51,22 @@ async function reportSpecFor(
   const providerId = resolve ? await resolve(ctx) : "";
   const provider = providerId ? ctx.services.providers.getById<unknown>("payment", providerId) : null;
   return transferReportSpec(provider);
+}
+
+const sameEmail = (stored: string, given: string) =>
+  // 固定時間比對;存的是空的也比一次(stored 換成一個不可能是 Email 的字),每種失敗走同一條路。
+  timingSafeEqualString(stored.trim().toLowerCase() || "\u0000", given.trim().toLowerCase());
+
+/**
+ * core 自己的訂單:回報的人是不是下單的人。帶了下單的 Email(忽略大小寫與前後空白)就是;沒帶或不對時,
+ * 登入的是管理員、或登入帳號的 Email 就是這筆訂單的,也算。和接管訂單的插件認訪客的方式一樣(訂單編號 + Email)。
+ */
+async function reporterOwns(customerEmail: string, email: string | undefined): Promise<boolean> {
+  if (email !== undefined && sameEmail(customerEmail, email)) return true;
+  const { getSessionUser, isFullAdmin } = await import("@/lib/auth");
+  const user = await getSessionUser();
+  if (!user) return false;
+  return isFullAdmin(user) || sameEmail(customerEmail, user.email ?? "");
 }
 
 /** 公開匯款回報 handler(POST transfer-report,ApiRoute.public)。 */
@@ -77,6 +98,18 @@ export function createTransferReportHandler(opts: {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
 
+    // 1.63.0:訂單管理插件的訂單交給它(它看登入的人或訪客的 Email、照它的規則檢查)。
+    const owner = await resolveOrderOwner(_ctx.services, opts.table, body.orderNo);
+    if (owner.kind === "managed" && owner.manager.reportTransfer) {
+      return owner.manager.reportTransfer(
+        { orderNo: body.orderNo, reference: reportedReference(body), payerName: body.payerName, email: body.email },
+        req,
+        _ctx,
+      );
+    }
+    // 給客人看的回應:不寫接手的插件是誰、要誰去啟用它(那是後台的事)。
+    if (owner.kind !== "core") return customerOrderManagedResponse();
+
     const spec = await reportSpecFor(_ctx, opts.resolveTransferProvider);
     const checked = checkTransferReport(spec, {
       reference: reportedReference(body),
@@ -89,11 +122,21 @@ export function createTransferReportHandler(opts: {
       );
     }
 
-    if (await resolveManagedOrder(_ctx.services, opts.table, body.orderNo)) return Response.json({ ok: false, error: "請登入會員訂單中心回報匯款" }, { status: 409 });
-    // 一次回報取代上一次;這個付款方式不問匯款人姓名時,不碰那一欄。
+    // 訂單不存在、或不是這個人的:同一句 not_found(不讓人拿訂單編號試出誰下了單)。
+    const order = await getOrder(_ctx.services, opts.table, body.orderNo);
+    if (!order || !(await reporterOwns(order.customerEmail, body.email))) {
+      return Response.json({ ok: false, error: "not_found" }, { status: 404 });
+    }
+
+    // 一次回報取代上一次;這個付款方式不問匯款人姓名時,不碰那一欄。表還沒有 transfer_payer 欄(還沒套用
+    // 更新)時也不寫,記一行 —— 回報照樣成立。
+    const payerColumn = spec.ask !== "reference" && (await orderColumns(_ctx.services, opts.table)).has("transfer_payer");
+    if (spec.ask !== "reference" && !payerColumn) {
+      console.warn(`[commerce-kit] ${opts.table} has no transfer_payer column yet (apply the update); the payer name of ${body.orderNo} is not saved`);
+    }
     const extras = {
       transferReference: checked.value.reference ?? null,
-      ...(spec.ask === "reference" ? {} : { transferPayer: checked.value.payerName ?? null }),
+      ...(payerColumn ? { transferPayer: checked.value.payerName ?? null } : {}),
       transferReportedAt: Date.now(),
     };
     const moved = await transitionOrder(
@@ -150,7 +193,8 @@ export function createTransferVerifyHandler(opts: {
     }
 
     const orderNo = params.orderNo ?? "";
-    if (await resolveManagedOrder(ctx.services, opts.table, orderNo)) return Response.json({ ok: false, error: "請至商城營運處理此訂單" }, { status: 409 });
+    const owner = await resolveOrderOwner(ctx.services, opts.table, orderNo);
+    if (owner.kind !== "core") return orderManagedResponse(owner);
     const order = await getOrder(ctx.services, opts.table, orderNo);
     if (!order) {
       return Response.json({ ok: false, error: "not_found" }, { status: 404 });
@@ -248,13 +292,16 @@ export function createOrderStatusHandler(opts: { table: string }) {
     const note = body.note
       ? `${body.note} — by ${ctx.user.email}`
       : `${to} by ${ctx.user.email}`;
-    const moved = await transitionOrder(
-      ctx.services,
-      opts.table,
-      params.orderNo ?? "",
-      to,
-      { note },
-    );
+    let moved: boolean;
+    try {
+      // 訂單管理插件的訂單照舊交給它的 transition();插件停用時回 409 order_managed。
+      moved = await transitionOrder(ctx.services, opts.table, params.orderNo ?? "", to, { note });
+    } catch (error) {
+      if (error instanceof OrderManagedError) {
+        return orderManagedResponse({ kind: "unavailable", name: error.managerName });
+      }
+      throw error;
+    }
     if (!moved) {
       return Response.json(
         { ok: false, error: "illegal_transition" },

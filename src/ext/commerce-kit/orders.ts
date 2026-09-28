@@ -1,5 +1,5 @@
-import { resolveManagedOrder } from "./managed";
 import { sql, type SQL } from "drizzle-orm";
+import { OrderManagedError, resolveOrderOwner } from "./order-manager";
 import type { CoreServices } from "../services";
 import { recordSearchClauses, type RecordSearch, type RecordSearchFields } from "../record-search";
 import {
@@ -34,6 +34,8 @@ export type CommerceDb = Pick<CoreServices, "db">;
 //   transfer_last5 TEXT, transfer_reported_at INTEGER   -- 付款人回報的參考碼(欄名沿用舊的)與時間
 //   transfer_payer TEXT                 -- 1.63.0:匯款人姓名(shop 的 migration 0005)
 //   meta TEXT                           -- 1.63.0:結帳欄位的值,JSON { "<providerId>.<key>": 值 }(0006)
+//   managed_by TEXT                     -- 1.63.0:接手這筆訂單的插件 id,NULL = core 自己的(0007,
+//                                          partial index WHERE managed_by IS NOT NULL;見 order-manager.ts)
 //   note TEXT
 //   created_at / updated_at INTEGER NOT NULL
 //
@@ -308,6 +310,9 @@ function reportAssignments(extras: TransitionExtras): SQL[] {
  * 狀態機轉移:單一條件式 UPDATE `WHERE status IN (合法來源)` 爭取轉移權 ——
  * race-safe(兩個並發動作只有一個成立)且冪等(已在目標狀態 / 非法來源 → false)。
  * 合法來源由 types.ts 的 ORDER_TRANSITIONS 反查,這裡不長第二份規則。
+ *
+ * 1.63.0:訂單管理插件接手的訂單交給它(OrderManager.transition);插件停用時丟 OrderManagedError
+ * (core 不碰別人的訂單)。
  */
 export async function transitionOrder(
   deps: CommerceDb,
@@ -317,8 +322,9 @@ export async function transitionOrder(
   extras: TransitionExtras = {},
 ): Promise<boolean> {
   assertTable(table);
-  const managed = await resolveManagedOrder(deps, table, orderNo);
-  if (managed) return managed.transition(orderNo, to, extras);
+  const owner = await resolveOrderOwner(deps, table, orderNo);
+  if (owner.kind === "managed") return owner.manager.transition(orderNo, to, extras);
+  if (owner.kind === "unavailable") throw new OrderManagedError(owner.name);
   const sources = transitionSources(to);
   if (sources.length === 0) return false; // 防禦:目前每個狀態都有至少一個來源
   const sourceList = sql.join(
