@@ -5,6 +5,7 @@ import type { ManualInstructionLine } from "@/ext/capabilities";
 import type { TransferReportSpec } from "@/ext/payment-kit/report-spec";
 import { CODE } from "./checkout-styles";
 import { TransferReportForm } from "./TransferReportForm";
+import { reportEmailFor } from "./transfer-report";
 
 // 結帳的結局頁(匯款):付款指示 + 回報匯款(0.9.0 從 CheckoutView 拆出來)。
 
@@ -26,7 +27,7 @@ export interface ManualOrder {
   orderNo: string;
   instructions: ManualInstructionLine[];
   note?: string;
-  /** 下單時填的 Email(訪客回報的憑證、給 afterOrder)。 */
+  /** 下單時填的 Email(回報匯款的憑證、給 afterOrder)。 */
   email: string;
 }
 
@@ -54,6 +55,8 @@ export function ManualResult({
   ordersHref: string | null;
   afterOrder?: (order: { orderNo: string; email: string }) => ReactNode;
 }) {
+  // 回報帶下單 Email:商店自己的訂單(core 用它確認是下單的人)與訪客的受管訂單;已登入會員的受管訂單看登入的人。
+  const reportEmail = reportEmailFor({ email: order.email, managed, asGuest });
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-[14px] bg-white px-6 py-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
@@ -66,9 +69,9 @@ export function ManualResult({
       <TransferReportForm
         spec={spec}
         orderNo={order.orderNo}
-        guestEmail={asGuest ? order.email : undefined}
+        email={reportEmail}
+        guest={asGuest}
         ordersHref={ordersHref}
-        managed={managed}
       />
       {afterOrder ? afterOrder({ orderNo: order.orderNo, email: order.email }) : null}
     </div>

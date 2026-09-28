@@ -39,6 +39,7 @@ describe("resolveCheckoutOptions", () => {
       managedOrders: false,
       signedIn: false,
       guestCheckout: false,
+      ordersHref: null,
       requireContact: false,
       notice: "",
     });
@@ -54,14 +55,25 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ managedOrders: false, requireContact: "true" }).requireContact).toBe(false);
   });
 
-  it("forces contact fields on managed orders", () => {
-    expect(resolveCheckoutOptions({ managedOrders: true, requireContact: false })).toEqual({
+  it("managed orders: contact fields as the order manager says, required unless it says otherwise", () => {
+    expect(resolveCheckoutOptions({ managedOrders: true })).toEqual({
       managedOrders: true,
       signedIn: false,
       guestCheckout: false,
+      ordersHref: null,
       requireContact: true,
       notice: "",
     });
+    expect(resolveCheckoutOptions({ managedOrders: true, requireContact: false }).requireContact).toBe(false);
+    expect(resolveCheckoutOptions({ managedOrders: true, requireContact: "false" }).requireContact).toBe(true);
+  });
+
+  it("0.9.0: the orders page only on managed orders, and only a site path", () => {
+    expect(resolveCheckoutOptions({ managedOrders: true, ordersHref: "/orders" }).ordersHref).toBe("/orders");
+    expect(resolveCheckoutOptions({ managedOrders: false, ordersHref: "/orders" }).ordersHref).toBeNull();
+    for (const href of ["https://evil.example/", "//evil.example", "/\\evil.example", "/orders\\x", "/\n/evil.example", "orders", 5, null]) {
+      expect(resolveCheckoutOptions({ managedOrders: true, ordersHref: href }).ordersHref, String(href)).toBeNull();
+    }
   });
 
   it("trims the notice and drops non-string values", () => {
@@ -90,6 +102,7 @@ describe("resolveCheckoutOptions", () => {
       signedIn: true,
       guestCheckout: true,
       requireContact: false,
+      ordersHref: "/orders",
       checkoutNotice: " 預購商品 ",
     });
     expect(resolveCheckoutOptions({ ...first, checkoutNotice: first.notice })).toEqual(first);

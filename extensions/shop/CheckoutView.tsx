@@ -43,9 +43,9 @@ export { InstructionLines } from "./CheckoutResult";
 // (checkout-prefill)先帶入;hidden 的不畫、只送記下的值。伺服器回 field_invalid 時忘掉那個值,
 // hidden 的一併清掉,請客人再送一次。送出的 body 只有一種(checkout-request.ts)。
 //
-// 受管訂單(訂單管理插件接手結帳時):
+// 受管訂單(訂單管理插件接手結帳時,public-pages.tsx 照它的 storefront() 給 props):
 //   - 伺服器可能要求登入(guest 以上)、電話與地址必填;開放訪客結帳(guestCheckout)時,沒登入也能
-//     填表下單,頂端改成「已經是會員？登入」。
+//     填表下單,頂端改成「已經是會員？登入」。它給了訂單頁(ordersHref)才放「我的訂單」的連結。
 //   - 站台的殼可以給 onSignIn(按「登入」時換回自己的會員流程)與 afterOrder(結局頁下面多放一段,
 //     例如請訪客設定密碼)。兩個都是函式,只能從 client 元件傳進來。
 //   - 電話地址必填、結帳頁說明由 checkout-options.ts 正規化;這裡對 props 再跑一次
@@ -97,11 +97,12 @@ export function CheckoutView({
   managedOrders = false,
   signedIn = false,
   guestCheckout = false,
+  ordersHref = null,
   reportSpec = DEFAULT_TRANSFER_REPORT_SPEC,
   fields = [],
   onSignIn,
   afterOrder,
-  requireContact = false,
+  requireContact,
   notice = "",
   contact = {},
 }: {
@@ -117,6 +118,8 @@ export function CheckoutView({
   signedIn?: boolean;
   /** 0.7.0:受管模式下開放訪客結帳(不擋登入,見 checkout-options.ts)。 */
   guestCheckout?: boolean;
+  /** 0.9.0:客人看自己訂單的站內頁面(訂單管理插件的 storefront());沒有就不放「我的訂單」。 */
+  ordersHref?: string | null;
   /** 0.9.0:匯款方式要客人回報什麼(收款的 manual provider 的 reportSpec);沒給 = 帳號末五碼。 */
   reportSpec?: TransferReportSpec;
   /** 0.9.0:插件宣告的結帳欄位(commerce-kit checkout-fields)。 */
@@ -125,7 +128,7 @@ export function CheckoutView({
   onSignIn?: () => void;
   /** 0.7.0:匯款訂單成立後,結局頁下面多放的東西。只能從 client 元件傳。 */
   afterOrder?: (order: { orderNo: string; email: string }) => ReactNode;
-  /** 電話與收件地址必填(設定 ext.shop.requireContact);受管模式一律必填。 */
+  /** 電話與收件地址必填(設定 ext.shop.requireContact);受管模式照插件的 storefront(),沒給 = 必填。 */
   requireContact?: boolean;
   /** 結帳頁最上方的說明(設定 ext.shop.checkoutNotice);空 = 不顯示。 */
   notice?: string;
@@ -137,6 +140,7 @@ export function CheckoutView({
     signedIn,
     guestCheckout,
     requireContact,
+    ordersHref,
     checkoutNotice: notice,
   });
   const items = useSyncExternalStore(subscribeCart, getCartSnapshot, getCartServerSnapshot);
@@ -279,7 +283,7 @@ export function CheckoutView({
         spec={reportSpec}
         asGuest={asGuest}
         managed={options.managedOrders}
-        ordersHref={options.managedOrders ? "/shop/orders" : null}
+        ordersHref={options.ordersHref}
         afterOrder={afterOrder}
       />
     );
@@ -318,10 +322,14 @@ export function CheckoutView({
               會員
             </>
           )}
-          {" · "}
-          <Link href="/shop/orders" className="underline underline-offset-4">
-            我的訂單
-          </Link>
+          {options.ordersHref ? (
+            <>
+              {" · "}
+              <Link href={options.ordersHref} className="underline underline-offset-4">
+                我的訂單
+              </Link>
+            </>
+          ) : null}
         </p>
       ) : null}
 

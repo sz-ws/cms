@@ -13,7 +13,7 @@ import type { OrderAmounts, OrderLine } from "./types";
 //
 //   - 要不要出現由 provider 當下決定(fields() 讀自家設定),所以是函式不是 manifest 欄位。
 //   - 檢查失敗回 422 { error: "field_invalid", field, code, message },message 是客人的語言。
-//   - 沒有「提交時」的 hook:要和訂單同一個 batch 寫的東西(例如佣金)屬於接手訂單的插件,它讀 meta。
+//   - 沒有「提交時」的 hook:要和訂單同一個 batch 寫的東西(例如依訂單金額記的帳)屬於接手訂單的插件,它讀 meta。
 //   - 一個 provider 出錯(fields() 丟例外)只記一行、當作沒有欄位,不擋結帳。
 
 export const CHECKOUT_FIELDS_CAPABILITY = "commerce:checkout-fields";

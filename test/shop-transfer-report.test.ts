@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  CORE_REPORT_URL,
-  GUEST_REPORT_URL,
-  MEMBER_REPORT_URL,
+  REPORT_URL,
   explainTransferReportError,
+  reportEmailFor,
   reportOnce,
   sendTransferReport,
   transferReportRequest,
@@ -15,23 +14,29 @@ import {
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 describe("送到哪裡", () => {
-  it("商店自己的訂單:商店的 transfer-report,reference / payerName", () => {
-    expect(transferReportRequest({ orderNo: "SO1", managed: false }, { reference: "12345", payerName: "王小明" })).toEqual({
-      url: CORE_REPORT_URL,
-      body: { orderNo: "SO1", reference: "12345", payerName: "王小明" },
+  it("一律商店的 transfer-report;帶了下單 Email 就送,沒帶不送(伺服器看登入的人)", () => {
+    expect(transferReportRequest({ orderNo: "SM1" }, { reference: "12345", payerName: "王小明" })).toEqual({
+      url: REPORT_URL,
+      body: { orderNo: "SM1", reference: "12345", payerName: "王小明" },
     });
-    expect(CORE_REPORT_URL).toBe("/api/ext/shop/transfer-report");
+    expect(transferReportRequest({ orderNo: "SO1", email: "a@example.com" }, { payerName: "王小明" })).toEqual({
+      url: REPORT_URL,
+      body: { orderNo: "SO1", payerName: "王小明", email: "a@example.com" },
+    });
+    expect(REPORT_URL).toBe("/api/ext/shop/transfer-report");
   });
 
-  it("受管訂單:會員送 actions、訪客帶下單 Email", () => {
-    expect(transferReportRequest({ orderNo: "SM1", managed: true }, { reference: "12345" })).toEqual({ url: MEMBER_REPORT_URL, body: { action: "report", orderNo: "SM1", last5: "12345" } });
-    expect(transferReportRequest({ orderNo: "SM1", managed: true, guestEmail: "a@example.com" }, { payerName: "王小明" })).toEqual({ url: GUEST_REPORT_URL, body: { action: "report", orderNo: "SM1", email: "a@example.com", name: "王小明" } });
+  it("商店自己的訂單一律帶下單 Email(core 用它確認是下單的人);受管訂單只有訪客帶", () => {
+    const email = "a@example.com";
+    expect(reportEmailFor({ email, managed: false, asGuest: false })).toBe(email);
+    expect(reportEmailFor({ email, managed: true, asGuest: true })).toBe(email);
+    expect(reportEmailFor({ email, managed: true, asGuest: false })).toBeUndefined();
   });
 });
 
 describe("伺服器的錯誤", () => {
   it("有給一句話就用它;認得的代碼換成一句話;中文句子照原句;其餘一句通用的", async () => {
-    const request = transferReportRequest({ orderNo: "SO1", managed: false }, { reference: "12345" });
+    const request = transferReportRequest({ orderNo: "SO1" }, { reference: "12345" });
     const refused = vi.fn(async () => reply(400, { ok: false, error: "invalid_input", message: "帳號末五碼要填 5 位數字。" }));
     expect(await sendTransferReport(request, refused as unknown as typeof fetch)).toEqual({ ok: false, error: "帳號末五碼要填 5 位數字。" });
     const gone = vi.fn(async () => reply(404, { ok: false, error: "not_found" }));
@@ -43,11 +48,11 @@ describe("伺服器的錯誤", () => {
   });
 
   it("送出的內容就是 request;網路錯誤換成一句話", async () => {
-    const request = transferReportRequest({ orderNo: "SO1", managed: false }, { reference: "12345" });
+    const request = transferReportRequest({ orderNo: "SO1" }, { reference: "12345" });
     const fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => reply(200, { ok: true }));
     expect(await sendTransferReport(request, fetcher as unknown as typeof fetch)).toEqual({ ok: true });
     const [url, init] = fetcher.mock.calls[0]!;
-    expect(url).toBe(CORE_REPORT_URL);
+    expect(url).toBe(REPORT_URL);
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual(request.body);
     const offline = vi.fn(async () => { throw new TypeError("Failed to fetch"); });

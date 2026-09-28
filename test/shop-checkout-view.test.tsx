@@ -56,16 +56,20 @@ describe("CheckoutView switches", () => {
     expect(html.indexOf("每週三出貨")).toBeLessThan(html.indexOf("小計"));
   });
 
-  it("managed orders: sign-in prompt and required contact", () => {
-    const html = render({ managedOrders: true });
+  it("managed orders: sign-in prompt, required contact, and 我的訂單 only when the manager has an orders page", () => {
+    const html = render({ managedOrders: true, ordersHref: "/orders" });
     // next/link 在這裡退成純文字:「登入」與「我的訂單」各是一個連結。
     expect(html).toContain("結帳前請先登入會員 · 我的訂單");
     expect(phoneInput(html)).toContain("required");
     expect(addressInput(html)).toContain("required");
+    const without = render({ managedOrders: true });
+    expect(without).toContain("結帳前請先登入會員");
+    expect(without).not.toContain("我的訂單");
+    expect(without).not.toContain(" · ");
   });
 
   it("managed orders: signed-in members see no login prompt", () => {
-    const html = render({ managedOrders: true, signedIn: true });
+    const html = render({ managedOrders: true, signedIn: true, ordersHref: "/orders" });
     // 「已登入會員 · 我的訂單」:句號和 · 不會撞在一起。
     expect(html).toContain("已登入會員 · 我的訂單");
     expect(html).not.toContain("已登入會員。");
@@ -82,7 +86,7 @@ describe("CheckoutView switches", () => {
     expect(phoneInput(html)).toContain("required");
     expect(addressInput(html)).toContain("required");
     // A signed-in member keeps the member header even when guests are allowed.
-    const member = render({ managedOrders: true, signedIn: true, guestCheckout: true });
+    const member = render({ managedOrders: true, signedIn: true, guestCheckout: true, ordersHref: "/orders" });
     expect(member).toContain("已登入會員 · ");
     expect(member).not.toContain("已經是會員？");
   });

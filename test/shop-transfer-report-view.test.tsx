@@ -14,8 +14,8 @@ import type { TransferReportSpec } from "../src/ext/payment-kit/report-spec";
 
 const ORDER = "SM05B6686AD86846E598D347E15A91";
 const spec = (ask: TransferReportSpec["ask"], label = "帳號末五碼", digits = 5): TransferReportSpec => ({ ask, reference: { label, digits } });
-const render = (s: TransferReportSpec, extra: { guestEmail?: string; ordersHref?: string | null } = {}) =>
-  renderToStaticMarkup(createElement(TransferReportForm, { spec: s, orderNo: ORDER, ordersHref: "/orders", managed: true, ...extra }));
+const render = (s: TransferReportSpec, extra: { email?: string; guest?: boolean; ordersHref?: string | null } = {}) =>
+  renderToStaticMarkup(createElement(TransferReportForm, { spec: s, orderNo: ORDER, ordersHref: "/orders", ...extra }));
 const input = (html: string, id: string) => html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`))?.[0] ?? "";
 
 describe("欄位照收款方式的設定", () => {
@@ -65,7 +65,7 @@ describe("稍後再回報的去處", () => {
   });
 
   it("訪客:訂單查詢,說回報時要用訂單編號和下單 Email;Email 不印在頁面上", () => {
-    const html = render(spec("reference"), { guestEmail: "guest@example.com" });
+    const html = render(spec("reference"), { email: "guest@example.com", guest: true });
     expect(html).toContain(">訂單查詢</a>");
     expect(html).toContain(ORDER);
     expect(html).toContain("和下單 Email 回報。");

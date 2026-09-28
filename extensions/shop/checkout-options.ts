@@ -1,5 +1,6 @@
 import type { SettingField } from "@/ext/types";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
+import { sitePath } from "@/lib/sign-in-continue";
 
 // 結帳頁的開關(shop 0.2.0)。設定存在 settings 表(`ext.shop.<key>`),由 public-pages.tsx 在
 // 伺服器讀出、經 resolveCheckoutOptions 正規化後交給 CheckoutView。這裡沒有任何 React,所以能直接用
@@ -37,11 +38,13 @@ export interface CheckoutOptions {
   /** 受管模式下是否已登入;非受管一律 false(訪客結帳不需要登入)。 */
   signedIn: boolean;
   /**
-   * 0.7.0:受管模式下,受管訂單那一邊(`commerce:orders` provider 的 `guestCheckout()`)
-   * 開放沒登入的人結帳。true 時不擋登入,頂端改成「已經是會員？登入」。非受管一律 false。
+   * 0.7.0:受管模式下,訂單管理插件(storefront().signIn 是 optional)開放沒登入的人結帳。true 時
+   * 不擋登入,頂端改成「已經是會員？登入」。非受管一律 false。
    */
   guestCheckout: boolean;
-  /** 電話與收件地址是否必填;受管模式一律 true(伺服器端 schema 要求)。 */
+  /** 0.9.0:客人看自己訂單的站內頁面(訂單管理插件的 storefront().ordersHref);null = 沒有,不放連結。 */
+  ordersHref: string | null;
+  /** 電話與收件地址是否必填;受管模式照插件說的(沒說 = 必填)。 */
   requireContact: boolean;
   /** 結帳頁最上方的說明,已 trim;空字串 = 不顯示。 */
   notice: string;
@@ -57,6 +60,7 @@ export function resolveCheckoutOptions(input: {
   signedIn?: boolean;
   guestCheckout?: unknown;
   requireContact?: unknown;
+  ordersHref?: unknown;
   checkoutNotice?: unknown;
 }): CheckoutOptions {
   const managedOrders = input.managedOrders === true;
@@ -64,7 +68,9 @@ export function resolveCheckoutOptions(input: {
     managedOrders,
     signedIn: managedOrders && input.signedIn === true,
     guestCheckout: managedOrders && input.guestCheckout === true,
-    requireContact: managedOrders || input.requireContact === true,
+    requireContact: managedOrders ? input.requireContact !== false : input.requireContact === true,
+    // 同站路徑才收(sitePath:單一 "/" 開頭,沒有 "//"、反斜線與控制字元;/\evil.com 在瀏覽器是別的網站)。
+    ordersHref: managedOrders && typeof input.ordersHref === "string" ? sitePath(input.ordersHref) : null,
     notice:
       typeof input.checkoutNotice === "string" ? input.checkoutNotice.trim() : "",
   };

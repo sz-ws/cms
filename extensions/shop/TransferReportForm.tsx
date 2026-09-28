@@ -20,12 +20,12 @@ export const TRANSFER_REPORTED = "已回報匯款，等店家確認";
 export interface TransferReportFormProps {
   spec: TransferReportSpec;
   orderNo: string;
-  /** 訪客:下單時填的 Email(和訂單查詢同一組憑證)。已登入的會員不給。 */
-  guestEmail?: string;
-  /** 客人看自己訂單的頁面(接管訂單的插件給的);null = 沒有這一頁。 */
+  /** 和回報一起送的下單 Email(見 transfer-report.ts 的 TransferReportOrder.email)。 */
+  email?: string;
+  /** 以訪客身分下的受管訂單:回報後的字說「查詢訂單」(用訂單編號和 Email),不是「我的訂單」。 */
+  guest?: boolean;
+  /** 客人看自己訂單的頁面(訂單管理插件給的);null = 沒有這一頁。 */
   ordersHref: string | null;
-  /** 受管訂單(回報送到接管訂單的插件)。 */
-  managed: boolean;
 }
 
 function ReferenceInput({ spec, required }: { spec: TransferReportSpec; required: boolean }) {
@@ -94,14 +94,11 @@ function Reported({ orderNo, guest, ordersHref }: { orderNo: string; guest: bool
   );
 }
 
-export function TransferReportForm({ spec, orderNo, guestEmail, ordersHref, managed }: TransferReportFormProps) {
-  const guest = guestEmail !== undefined;
+export function TransferReportForm({ spec, orderNo, email, guest = false, ordersHref }: TransferReportFormProps) {
   const fields = reportFields(spec);
   // 送出中再按、送成功之後再按都不會再送(reportOnce)。訂單在這個元件的一生裡不會換。
   const [submit] = useState(() =>
-    reportOnce((value) =>
-      sendTransferReport(transferReportRequest({ orderNo, guestEmail, managed }, value)),
-    ),
+    reportOnce((value) => sendTransferReport(transferReportRequest({ orderNo, email }, value))),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

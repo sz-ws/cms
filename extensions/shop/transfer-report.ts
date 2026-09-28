@@ -4,37 +4,41 @@ import type { TransferReportValue } from "@/ext/payment-kit/report-spec";
 // 伺服器的錯誤怎麼說、只送一次,測試直接呼叫(test/shop-transfer-report.test.ts)。要填哪幾格與送出前的
 // 檢查是 payment-kit 的 report-spec.ts(伺服器用同一份);畫面在 TransferReportForm.tsx。
 //
-// 送到哪裡:
-//   - 商店自己的訂單:POST /api/ext/shop/transfer-report { orderNo, reference?, payerName? }。
-//   - 受管訂單:接管訂單那一邊現成的端點(會員看登入的人、訪客用訂單編號 + 下單 Email)。
+// 送到哪裡:一律 POST /api/ext/shop/transfer-report { orderNo, reference?, payerName?, email? }。
+// email 是下單的 Email,證明回報的是下單的人:商店自己的訂單一律帶(core 1.63.0 起沒帶、又不是登入的本人或
+// 管理員就不收);訂單管理插件的訂單由 core 轉給它(OrderManager.reportTransfer),會員看登入的人、訪客帶 Email。
 
 export type { TransferReportValue };
 
 export interface TransferReportOrder {
   orderNo: string;
-  /** 訪客:下單時填的 Email(查單的憑證)。已登入的會員不帶,伺服器看登入的人。 */
-  guestEmail?: string;
-  /** 受管訂單(接管訂單的插件收回報)。 */
-  managed: boolean;
+  /**
+   * 下單時填的 Email,和回報一起送:商店自己的訂單、訪客下的受管訂單都帶。已登入會員的受管訂單不帶
+   * (帶了,接手的插件會把它當訪客的訂單查),伺服器看登入的人。
+   */
+  email?: string;
 }
 
-export const CORE_REPORT_URL = "/api/ext/shop/transfer-report";
-export const MEMBER_REPORT_URL = "/api/ext/shop-operations/actions";
-export const GUEST_REPORT_URL = "/api/ext/shop-operations/guest";
+export const REPORT_URL = "/api/ext/shop/transfer-report";
+
+/** 結帳完成頁的回報帶不帶下單 Email:商店自己的訂單與訪客下的受管訂單帶;已登入會員的受管訂單不帶。 */
+export function reportEmailFor(order: { email: string; managed: boolean; asGuest: boolean }): string | undefined {
+  return order.asGuest || !order.managed ? order.email : undefined;
+}
 
 /** 送到哪裡、送什麼。 */
 export function transferReportRequest(
   order: TransferReportOrder,
   value: TransferReportValue,
 ): { url: string; body: Record<string, unknown> } {
-  if (!order.managed) return { url: CORE_REPORT_URL, body: { orderNo: order.orderNo, ...value } };
-  const fields = {
-    ...(value.reference ? { last5: value.reference } : {}),
-    ...(value.payerName ? { name: value.payerName } : {}),
+  return {
+    url: REPORT_URL,
+    body: {
+      orderNo: order.orderNo,
+      ...value,
+      ...(order.email !== undefined ? { email: order.email } : {}),
+    },
   };
-  return order.guestEmail !== undefined
-    ? { url: GUEST_REPORT_URL, body: { action: "report", orderNo: order.orderNo, email: order.guestEmail, ...fields } }
-    : { url: MEMBER_REPORT_URL, body: { action: "report", orderNo: order.orderNo, ...fields } };
 }
 
 const ERRORS: Record<string, string> = {

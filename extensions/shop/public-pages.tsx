@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
+import { ORDERS_CAPABILITY, storefrontOf, type OrderManager } from "@/ext/commerce-kit/order-manager";
 import { CartView } from "./CartView";
 import { CheckoutView } from "./CheckoutView";
 import { loadCheckoutFields, loadTransferReportSpec, shopProviders } from "./shop-providers";
@@ -48,19 +49,7 @@ function PageShell({
   );
 }
 
-/**
- * 受管訂單那一邊(`commerce:orders` provider,id 是訂單表名)在結帳與付款之外多給的函式。
- * 商店不 import 它,只看有沒有這幾個函式;沒有就照舊。
- */
-interface ManagedOrderHooks {
-  /** 0.7.0:開不開放訪客結帳。 */
-  guestCheckout?: () => Promise<boolean>;
-}
-
-/** 0.7.0:有 `guestCheckout()` 且回 true 才算開放;沒有這個函式 = 不開放,和以前一樣要登入。 */
-async function managedGuestCheckout(orders: ManagedOrderHooks | null): Promise<boolean> {
-  return typeof orders?.guestCheckout === "function" && (await orders.guestCheckout()) === true;
-}
+const ORDERS_TABLE = "ext_shop_orders";
 
 export function ShopCartPage() {
   return (
@@ -90,26 +79,23 @@ export async function ShopCheckoutPage() {
   ]);
   // 運費設定與結帳 handler 走同一個 parse(壞設定 → 未啟用,不擋結帳)。
   const shippingConfig = parseShippingConfig(shippingRaw);
-  const { getExtRuntime } = await import("@/ext/loader");
   const { getSessionUser } = await import("@/lib/auth");
-  // 受管訂單:shop-operations 啟用即委派(commerce-kit 依 provider 判斷,shop 端
-  // 沒有開關 —— 理由見 checkout-options.ts 檔頭與 README「商城營運模式」)。
-  const managedOrders = !!(await getExtRuntime()).byId("shop-operations");
+  // 受管訂單:有插件以 `commerce:orders` 接手訂單表,結帳就交給它(commerce-kit 依 provider 判斷,
+  // shop 端沒有開關 —— 理由見 checkout-options.ts 檔頭)。結帳頁照它的 storefront() 畫。
   const user = await getSessionUser();
   const providers = await shopProviders();
-  const orders = managedOrders
-    ? providers.getById<ManagedOrderHooks>("commerce:orders", "ext_shop_orders")
-    : null;
-  const [guestCheckout, reportSpec, fields] = await Promise.all([
-    !user && managedGuestCheckout(orders),
+  const manager = providers.getById<OrderManager>(ORDERS_CAPABILITY, ORDERS_TABLE);
+  const [storefront, reportSpec, fields] = await Promise.all([
+    manager ? storefrontOf(manager) : null,
     loadTransferReportSpec(providers),
     loadCheckoutFields(providers),
   ]);
   const options = resolveCheckoutOptions({
-    managedOrders,
-    signedIn: managedOrders && !!user,
-    guestCheckout: managedOrders && guestCheckout === true,
-    requireContact,
+    managedOrders: storefront !== null,
+    signedIn: storefront !== null && !!user,
+    guestCheckout: storefront?.signIn === "optional",
+    requireContact: storefront ? storefront.requireContact : requireContact,
+    ordersHref: storefront?.ordersHref ?? null,
     checkoutNotice,
   });
   return (
