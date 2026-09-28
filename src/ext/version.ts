@@ -1349,4 +1349,53 @@
 //   series href), `components/admin/report/ReportPeriodControl` and `RevenueChart` (client), and
 //   `formatMoney` in `ext/commerce-kit/money.ts`. dashboardStats and dashboardRevenue share
 //   `dx/dashboard-hook.ts` (isolation, admin href and text checks). `DeltaPill` takes a `unit`.
-export const CORE_API_VERSION = "1.61.0";
+// 1.62.0: Dashboard widgets — one general way for plugins to put data on the dashboard, replacing
+// 1.61.0's revenue-only hook. `Extension.dashboardWidgets` (coreApi ^1.62.0, at most 12 per plugin) declares
+// cards: `{ id, kind: "number" | "timeseries" | "proportion" | "list", title?, hint?, href?, unit?, metric?,
+// period?, load(ctx) }`; `load` returns `{ kind: "number", value, spark? }`, `{ kind: "timeseries", bucket:
+// "day", series: [{ id, label, href?, points: { "YYYY-MM-DD": n } }] }`, `{ kind: "proportion", segments,
+// total? }`, `{ kind: "list", items: [{ id, title, href?, at? }] }` or null (not this time). ctx is
+// `{ now, timeZone, locale, canOpen, period? }`; `period: { from, to, start, end }` is there for `period:
+// true` widgets (timeseries must set it). `Extension.metrics` (coreApi ^1.62.0, at most 8) declares a shared
+// number `{ key: "<namespace>.<name>", label, unit, combine: "sum" | "overlay" }`; a widget's metric must be
+// declared in the same plugin's metrics. Widgets that name the same metric (and kind, and period) from any
+// plugins merge into one card titled by the metric — sum adds numbers, stacks series and compares with the
+// previous period; overlay draws the series side by side without totals. When plugins declare a key
+// differently (label per language, unit, combine), the first declaration in plugin order wins: only the
+// later plugin's widgets on that key are dropped, with one log line naming both plugins.
+// - Units (`lib/units.ts`): count, currency (ISO 4217 `code`; omitted = the site currency), quantity
+//   (localized label, decimals ≤ 4) and percent (the value is the percentage). `formatUnit` writes them
+//   with Intl.NumberFormat; money reads NT$ 1,500 / $ 12.50 (en symbols, a space, no decimals on whole
+//   amounts). New setting `core.currency` (Settings → General, default TWD) with `getSiteCurrency()` in
+//   `lib/units-server.ts` (a code stored in lowercase, such as "usd", reads as USD). The built-in catalog's
+//   unused Currency setting is removed.
+// - Rules (`ext/dashboard-widgets.ts` zod, shared by defineExtension and `dx/dashboard-widgets.ts`): ids,
+//   admin-only hrefs, title ≤ 60, hint ≤ 80, labels ≤ 40, a title without a metric and none with one (the
+//   metric's label is the title), no unit next to a metric, no metric or unit on a list, a metric only from
+//   the plugin's own metrics. Data (`dx/dashboard-widget-data.ts`): finite numbers, never negative, day keys
+//   inside the period, at most 4 series (only those are checked) / 12 segments / 10 rows / 90 spark points;
+//   a bad series or row is dropped with a log line, a bad number or proportion drops the card. Series and
+//   segment keys are `<extId>/<widgetId>/<id>`. Every `load` is isolated (throw, 3 s timeout, wrong shape →
+//   not drawn, logged; the dashboard renders), and so is everything after it for that widget. Viewers: a custom role or staff sees a widget only through an
+//   href it can open — the widget's, else each series' or row's; a number or proportion without href is
+//   admin-only ("/admin" shows it to anyone who sees the dashboard).
+// - Dashboard: plugin cards render in the plugin section — numbers first (the stat tile), then daily
+//   charts (full width, `widgets/TimeseriesChart`), proportions (donut / bar list presets), then lists
+//   (next to declarative recent cards); plugin order, then declaration order. One period control for the
+//   page: in the header of the only period card when that is a daily chart (as in 1.61.0), otherwise at
+//   the top of the section. Core asks each period widget for the previous period too and writes the change.
+// - Adapters, deprecated, removed in 2.0, one file each: `dashboardStats` (1.52.0) → number cards
+//   (`dx/dashboard-stats.ts`; `display` stays a legacy-only override); `dashboardRevenue` (1.61.0) → a
+//   timeseries widget on commerce-kit's `REVENUE` metric (`dx/dashboard-revenue.ts`); `RevenueChart` and
+//   `report/revenue-summary.ts` wrap or re-export the generic pieces. Declarative `dashboardCards` stay:
+//   stat cards join the number row, recent cards keep their renderer.
+// - commerce-kit exports `REVENUE` (`commerce.revenue`, 營業額 / Revenue, currency, sum): each plugin that
+//   takes money declares it and adds its own series. The dashboard itself knows no metric.
+// - For report pages: `TimeseriesChart` ({ label, days, series, unit, mode }), `periodChange`, `pointsTotal`
+//   and `periodLabel` in `lib/report-period.ts`, `formatUnit` / `getSiteCurrency`. ProportionWidgetData takes
+//   optional `display` per segment and `totalDisplay`. `callDashboardLoad` in `dx/dashboard-hook.ts` isolates
+//   a call of any shape. The `revenue.*` strings are replaced by `reportChart.*` and `reportPeriod.vs*` /
+//   `noPrevious*`, which take the card's title. A custom period starts no earlier than `MIN_REPORT_DAY`
+//   (2000-01-01): `customPeriodProblem` says "early" (`reportPeriod.error.early`) and the URL falls back to
+//   the default period, as for other bad ranges.
+export const CORE_API_VERSION = "1.62.0";

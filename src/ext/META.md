@@ -34,10 +34,24 @@
   - `agent-guide.ts` (1.60.0): the guide for AI — orientation plus recipes built from what is
     enabled, each extension's `agentGuide`, then the owner's `core.ai.notes`. Appended to the
     assistant's system prompt and sent as MCP `initialize` instructions.
-  - `dx/dashboard-revenue.ts` (1.61.0): `Extension.dashboardRevenue` — daily amounts per series for
-    the dashboard's revenue chart. Each plugin call is isolated (3 s); a series with a bad id,
-    label, href or day is dropped whole; at most 4 per plugin; series the viewer can't open are
-    not drawn. Shares `dx/dashboard-hook.ts` with `dashboardStats`. Requires coreApi `^1.61.0`.
+  - `dashboard-widgets.ts` (1.62.0): the dashboard contract — `Extension.dashboardWidgets` (cards of
+    kind number / timeseries / proportion / list with `load(ctx)`, optional `unit`, `metric`,
+    `period`, `href`) and `Extension.metrics` (shared numbers `<namespace>.<name>` with a unit and
+    `combine: sum | overlay`; a widget's metric must be declared by the same plugin, values are never
+    negative), plus the zod rules defineExtension and the runtime share. Units and
+    their formatting live in `lib/units.ts` (site currency: `core.currency`). Requires coreApi `^1.62.0`.
+  - `dx/dashboard-widgets.ts` (1.62.0): the pipeline behind the dashboard's plugin section — collects
+    metrics (the first declaration of a key in plugin order wins; a later plugin that declares it
+    differently loses only its own widgets on it, logged), checks each widget, skips what the viewer can't
+    open, reads the period from the URL, calls every `load` isolated (3 s) for this and — for summed
+    period cards — the previous period, validates the data (`dx/dashboard-widget-data.ts`), merges
+    widgets on the same metric into one card and orders cards by plugin, then declaration.
+    Declarative `dashboardCards` join it (stat → number card; recent cards keep their renderer).
+  - `dx/dashboard-stats.ts`, `dx/dashboard-revenue.ts`: adapters for the deprecated 1.52.0
+    `dashboardStats` (→ number cards, `display` kept) and 1.61.0 `dashboardRevenue` (→ a timeseries
+    widget on commerce-kit's `REVENUE`). Removed in 2.0.
+  - `commerce-kit/metrics.ts` (1.62.0): `REVENUE` (`commerce.revenue`), the metric every plugin that
+    takes money declares for its series on the dashboard.
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.
