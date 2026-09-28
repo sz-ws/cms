@@ -104,7 +104,7 @@ shop 這邊只做一件事:`public-pages.tsx` 用 `getExtRuntime().byId("shop-op
 | 推薦碼 | 無 | 依 `referralMode`:欄位 / 只用連結 / 不用 |
 | 「我的訂單」連結 | 無 | 有(`/shop/orders`,shop-operations 的公開頁) |
 | 匯款成立後的說明 | 「請於三日內匯款」 | 「請依「我的訂單」顯示的付款期限付款」(期限 = shop-operations 的 `holdMinutes`,逾期自動取消並放回庫存) |
-| 匯款末五碼回報 | `POST /api/ext/shop/transfer-report` | `POST /api/ext/shop-operations/actions`,body 加 `action:"report"` |
+| 匯款回報 | 結局頁回報末五碼:`POST /api/ext/shop/transfer-report` | 結局頁直接回報,欄位照 provider 的 `transferReport()`(見下方「結局頁回報匯款」):會員 `POST /api/ext/shop-operations/actions`、訪客 `POST /api/ext/shop-operations/guest`,body 加 `action:"report"` |
 
 ### 訪客結帳(0.7.0)
 
@@ -114,8 +114,28 @@ shop 這邊只做一件事:`public-pages.tsx` 用 `getExtRuntime().byId("shop-op
 
 - 頂端不擋登入,改成「已經是會員？登入」(連到 `/login?next=/shop/checkout`;給了
   `onSignIn` 就改呼叫它),沒有「我的訂單」連結。
-- 匯款訂單的結局頁請客人「匯款後到訂單查詢回報」(`/shop/orders`),並記下訂單編號。
+- 匯款訂單的結局頁直接回報(見下一節),並請客人記下訂單編號;provider 沒有 `transferReport()` 時
+  改請客人「匯款後到訂單查詢回報」(`/shop/orders`)。
 - 伺服器要不要收訪客訂單、怎麼查單,由受管訂單那一邊決定;這裡只管頁面。
+
+### 結局頁回報匯款(0.8.0)
+
+受管訂單的匯款結局頁在匯款指示底下直接放回報表單(`TransferReportForm.tsx`,規則在
+`transfer-report.ts`),不必再到訂單頁。
+
+- **要填什麼**:`commerce:orders` provider 多一個 `transferReport(): Promise<"last5" | "name" | "either" | "both">`
+  (末五碼、匯款人姓名、擇一、兩個都要)。`public-pages.tsx` 在伺服器問它,經 `resolveCheckoutOptions`
+  正規化成 `transferReport`(不認得的值、非受管模式都是 `null`)交給 `CheckoutView`。沒有這個函式、
+  讀設定出錯時是 `null`,結局頁照舊請客人到 `/shop/orders` 回報,不擋結帳。
+- **送到哪裡**:受管訂單那一邊現成的端點,記錄和它的訂單頁相同。已登入的會員送
+  `/api/ext/shop-operations/actions`(`{ action: "report", orderNo, last5?, name? }`),伺服器看登入的人,
+  只能回報自己的訂單;訪客送 `/api/ext/shop-operations/guest`(多帶 `email`),憑證和訂單查詢一樣是
+  訂單編號 + 下單 Email —— 這一頁剛送出結帳表單,兩樣都在手上,不另外發憑證。Email 只拿來送出,
+  不印在頁面上。
+- **只送一次**:送出中、送成功之後再按都不會再送(`reportOnce`);失敗可以改了再送。
+- 回報之後說「已回報匯款，等店家確認」(和受管訂單那一邊給客人看的狀態同一句),連到我的訂單或
+  訂單查詢。
+- 舊結帳(沒有商城營運)照舊:結局頁回報末五碼,打 `/api/ext/shop/transfer-report`。
 
 ### 結帳協定的差異
 
@@ -179,7 +199,7 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 
 | 動作 | 舊結帳 | 商城營運模式 |
 |---|---|---|
-| 客人回報末五碼 | `POST /api/ext/shop/transfer-report` | `POST /api/ext/shop-operations/actions`(`action:"report"`);舊端點對受管訂單回 409「請登入會員訂單中心回報匯款」 |
+| 客人回報匯款 | `POST /api/ext/shop/transfer-report` | 會員 `POST /api/ext/shop-operations/actions`、訪客 `POST /api/ext/shop-operations/guest`(`action:"report"`);舊端點對受管訂單回 409「請登入會員訂單中心回報匯款」 |
 | 標記已收款(paid) | shop 對帳佇列核可 → `settleManual` | shop-operations 的每分鐘對帳排程(比對付款 provider 的持久化紀錄),或 `/admin/ext/shop-operations` 核實付款;shop 對帳佇列對受管訂單回 409「請至商城營運處理此訂單」 |
 | 出貨(shipped)、退款(refunded) | shop 訂單頁 | **只能**在 `/admin/ext/shop-operations` 填物流或退款憑證;shop 訂單頁與 agent tool 會收到「請至商城營運填寫物流或退款憑證」 |
 | 完成(completed)、取消(cancelled) | shop 訂單頁 | shop 訂單頁可用(需 admin)並轉交 provider:取消會放回庫存、退回佣金、還原優惠碼用量;完成會確認佣金 |
@@ -272,7 +292,7 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
   自訂殼層直接沿用即可拿到相同的預設與優先序。
 - 換整頁版面 = 改 `public-pages.tsx` 的殼,或整組換掉 publicRoutes 的 component。
 - `CheckoutView` 的 props:`cardEnabled`、`transferEnabled`(必填);`shippingConfig`、
-  `promoEnabled`、`managedOrders`、`signedIn`、`guestCheckout`、`referralMode`、
+  `promoEnabled`、`managedOrders`、`signedIn`、`guestCheckout`、`transferReport`、`referralMode`、
   `requireContact`、`notice`、`contact`(選填,預設同 `resolveCheckoutOptions`)。
   0.7.0 另有兩個函式 prop,只能從 client 元件傳:`onSignIn`(按「登入」時做的事)、
   `afterOrder({ orderNo, email })`(匯款訂單結局頁下面多放的東西)。
@@ -312,6 +332,14 @@ kit 層(兩種模式都可能遇到):`商城營運插件未啟用，暫停結帳
 
 ## 版本
 
+- **0.8.0**:需要 core 1.52.0(沒有新的需求)。
+  - 受管訂單的匯款結局頁直接回報(見「結局頁回報匯款」):欄位照受管訂單那一邊的設定(末五碼、姓名、
+    擇一或兩個都要),會員與訪客各走它現成的端點,和訂單頁記錄同一份回報;回報後說「已回報匯款，等店家確認」。
+    以前這一頁只知道末五碼,只能請客人到訂單頁回報。provider 沒有 `transferReport()` 時照舊。
+  - `resolveCheckoutOptions` 多一個 `transferReport`;`CheckoutView` 多一個同名的選填 prop。
+  - 新增 `transfer-report.ts`(欄位、檢查、送到哪裡、只送一次)、`TransferReportForm.tsx`、
+    `checkout-styles.ts`(結帳頁與回報表單共用的樣式);新增測試 `test/shop-transfer-report.test.ts`、
+    `test/shop-transfer-report-view.test.tsx`。
 - **0.7.0**:需要 core 1.52.0。
   - 訪客結帳(見「訪客結帳」一節):受管訂單那一邊開放時,沒登入也能結帳,頂端改成
     「已經是會員？登入」,匯款訂單的結局頁請客人用訂單編號查詢。`resolveCheckoutOptions`

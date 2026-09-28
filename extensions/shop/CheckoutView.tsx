@@ -15,11 +15,14 @@ import {
   subscribeCart,
 } from "./cart-store";
 import { resolveCheckoutOptions, type CheckoutContact, type ReferralMode } from "./checkout-options";
+import { CODE, FIELD, LABEL, PRIMARY_BTN } from "./checkout-styles";
+import { TransferReportForm } from "./TransferReportForm";
+import type { TransferReportMode } from "./transfer-report";
 
 // 結帳頁(client)。三種 session 結局:
 //   form-post → 動態 <form> 送出跳轉 gateway(付款結果由回呼寫回)
 //   redirect  → 直接導向
-//   manual    → 顯示匯款指示 + 末五碼回報表單(回報後清空購物車)
+//   manual    → 清空購物車,顯示匯款指示 + 回報表單
 // 忙碌狀態為靜態文字(無 pulsing —— 專案紅線)。
 //
 // 運費/優惠碼(Phase 3–4):
@@ -30,7 +33,10 @@ import { resolveCheckoutOptions, type CheckoutContact, type ReferralMode } from 
 // 受管訂單(0.2.0,shop-operations 啟用時):
 //   - 同一個 POST /api/ext/shop/checkout,但多帶 requestId(重送不重複建單)與
 //     referralCode;伺服器要求登入(guest 以上)、電話與地址必填。
-//   - 匯款回報改打 /api/ext/shop-operations/actions(action:"report")。
+//   - 0.8.0 匯款訂單的結局頁直接回報(TransferReportForm):欄位照受管訂單那一邊的設定
+//     (transferReport,public-pages.tsx 問 provider),會員送 /api/ext/shop-operations/actions、
+//     訪客送 /api/ext/shop-operations/guest(訂單編號 + 下單 Email),見 transfer-report.ts。
+//     provider 沒說要填什麼(transferReport 是 null)時照舊請客人到 /shop/orders 回報。
 //   - 三個開關(推薦碼欄位、電話地址必填、結帳頁說明)由 checkout-options.ts
 //     正規化;這裡對 props 再跑一次 resolveCheckoutOptions,自訂殼層少給幾個
 //     prop 也會得到一致的預設。
@@ -45,17 +51,6 @@ const TW_REGIONS = [
   "臺中市", "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "臺南市",
   "高雄市", "屏東縣", "宜蘭縣", "花蓮縣", "臺東縣", "澎湖縣", "金門縣", "連江縣",
 ];
-
-const FIELD =
-  "h-11 w-full rounded-[10px] bg-white px-3.5 text-[14px] text-black/85 " +
-  "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)] outline-none " +
-  "focus:shadow-[inset_0_0_0_1.5px_rgba(0,0,0,0.6)]";
-const LABEL = "mb-1.5 block text-[12.5px] text-black/55";
-/** 訂單編號、帳號這類沒有空白的長代碼:手機上放不下時在任意字元處換行,不撐出卡片。 */
-const CODE = "font-mono [overflow-wrap:anywhere]";
-const PRIMARY_BTN =
-  "grid h-11 w-full place-items-center rounded-[12px] bg-black text-[14.5px] " +
-  "font-medium text-white hover:bg-black/85 disabled:opacity-50";
 
 const ERROR_HINT: Record<string, string> = {
   invalid_input: "資料不完整或格式不對，請檢查後再送出。",
@@ -152,6 +147,7 @@ export function CheckoutView({
   managedOrders = false,
   signedIn = false,
   guestCheckout = false,
+  transferReport = null,
   onSignIn,
   afterOrder,
   referralMode,
@@ -171,6 +167,11 @@ export function CheckoutView({
   signedIn?: boolean;
   /** 0.7.0:受管模式下開放訪客結帳(不擋登入,見 checkout-options.ts)。 */
   guestCheckout?: boolean;
+  /**
+   * 0.8.0:受管訂單回報匯款要填什麼(見 checkout-options.ts)。有值時匯款訂單的結局頁直接回報;
+   * 沒給 = 照舊請客人到訂單頁回報。
+   */
+  transferReport?: TransferReportMode | null;
   /** 0.7.0:按「登入」時要做的事;沒給就連到 /login。只能從 client 元件傳。 */
   onSignIn?: () => void;
   /** 0.7.0:匯款訂單成立後,結局頁下面多放的東西。只能從 client 元件傳。 */
@@ -188,6 +189,7 @@ export function CheckoutView({
     managedOrders,
     signedIn,
     guestCheckout,
+    transferReport,
     referralMode,
     requireContact,
     checkoutNotice: notice,
@@ -376,7 +378,7 @@ export function CheckoutView({
     setBusy(true);
     setError(null);
     try {
-      // 受管訂單不在這裡回報(見下方結局頁),這裡只剩舊路徑。
+      // 受管訂單不走這裡(TransferReportForm 或到訂單頁回報),這裡只剩舊路徑。
       const res = await fetch("/api/ext/shop/transfer-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -448,6 +450,14 @@ export function CheckoutView({
               返回網站
             </Link>
           </div>
+        ) : options.transferReport ? (
+          // 0.8.0 受管訂單:在這裡直接回報,欄位照站台設定。會員看登入的人;訪客用訂單編號 + 剛填的 Email,
+          // 和訂單查詢同一組憑證(transfer-report.ts)。
+          <TransferReportForm
+            mode={options.transferReport}
+            orderNo={manual.orderNo}
+            guestEmail={asGuest ? manual.email : undefined}
+          />
         ) : asGuest ? (
           // 訪客:用訂單編號與 Email 查單,付款期限與回報匯款都在那裡。
           <div className="flex flex-col items-center gap-3 text-center">
@@ -459,8 +469,8 @@ export function CheckoutView({
             </p>
           </div>
         ) : options.managedOrders ? (
-          // 受管訂單(shop-operations)在「我的訂單」回報:那裡的表單照站台設定要末五碼、
-          // 匯款人姓名或兩者,這頁只知道末五碼,設成姓名的站台在這裡會回報失敗。
+          // 受管訂單那一邊沒說要填什麼(沒有 transferReport()):到「我的訂單」回報,那裡的表單照
+          // 站台設定要末五碼、匯款人姓名或兩者;這頁不知道,只收末五碼會讓設成姓名的站台回報失敗。
           <div className="flex flex-col items-center gap-3 text-center">
             <Link href="/shop/orders" className={PRIMARY_BTN}>
               匯款後到我的訂單回報

@@ -49,18 +49,44 @@ function PageShell({
 }
 
 /**
- * 0.7.0:受管訂單那一邊開不開放訪客結帳。`commerce:orders` provider(id 是訂單表名)有
- * `guestCheckout()` 且回 true 才算;沒有這個函式 = 不開放,和以前一樣要登入。
+ * 受管訂單那一邊(`commerce:orders` provider,id 是訂單表名)在結帳與付款之外多給的函式。
+ * 商店不 import 它,只看有沒有這幾個函式;沒有就照舊。
  */
-async function managedGuestCheckout(): Promise<boolean> {
+interface ManagedOrderHooks {
+  /** 0.7.0:開不開放訪客結帳。 */
+  guestCheckout?: () => Promise<boolean>;
+  /** 0.8.0:回報匯款要填什麼(last5 / name / either / both)。 */
+  transferReport?: () => Promise<unknown>;
+}
+
+async function managedOrderHooks(): Promise<ManagedOrderHooks | null> {
   const [{ getExtRuntime }, { buildProviderRegistry }] = await Promise.all([
     import("@/ext/loader"),
     import("@/ext/services"),
   ]);
-  const orders = buildProviderRegistry(await getExtRuntime()).getById<{
-    guestCheckout?: () => Promise<boolean>;
-  }>("commerce:orders", "ext_shop_orders");
+  return buildProviderRegistry(await getExtRuntime()).getById<ManagedOrderHooks>(
+    "commerce:orders",
+    "ext_shop_orders",
+  );
+}
+
+/** 0.7.0:有 `guestCheckout()` 且回 true 才算開放;沒有這個函式 = 不開放,和以前一樣要登入。 */
+async function managedGuestCheckout(orders: ManagedOrderHooks | null): Promise<boolean> {
   return typeof orders?.guestCheckout === "function" && (await orders.guestCheckout()) === true;
+}
+
+/**
+ * 0.8.0:回報匯款要填什麼,原始值交給 resolveCheckoutOptions 正規化。沒有這個函式或讀不出來 = undefined,
+ * 結局頁照舊請客人到訂單頁回報;讀設定出錯也不擋結帳。
+ */
+async function managedTransferReport(orders: ManagedOrderHooks | null): Promise<unknown> {
+  if (typeof orders?.transferReport !== "function") return undefined;
+  try {
+    return await orders.transferReport();
+  } catch (error) {
+    console.error("[shop] transferReport", error);
+    return undefined;
+  }
 }
 
 export function ShopCartPage() {
@@ -99,10 +125,16 @@ export async function ShopCheckoutPage() {
   // 沒有開關 —— 理由見 checkout-options.ts 檔頭與 README「商城營運模式」)。
   const managedOrders = !!(await getExtRuntime()).byId("shop-operations");
   const user = await getSessionUser();
+  const orders = managedOrders ? await managedOrderHooks() : null;
+  const [guestCheckout, transferReport] = await Promise.all([
+    !user && managedGuestCheckout(orders),
+    managedTransferReport(orders),
+  ]);
   const options = resolveCheckoutOptions({
     managedOrders,
     signedIn: managedOrders && !!user,
-    guestCheckout: managedOrders && !user && (await managedGuestCheckout()),
+    guestCheckout: managedOrders && guestCheckout === true,
+    transferReport,
     referralMode,
     requireContact,
     checkoutNotice,

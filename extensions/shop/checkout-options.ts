@@ -1,5 +1,6 @@
 import type { SettingField } from "@/ext/types";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
+import { resolveTransferReport, type TransferReportMode } from "./transfer-report";
 
 // 結帳頁的開關(shop 0.2.0)。三個設定都存在 settings 表(`ext.shop.<key>`),
 // 由 public-pages.tsx 在伺服器讀出、經 resolveCheckoutOptions 正規化後交給
@@ -61,6 +62,12 @@ export interface CheckoutOptions {
    * 開放沒登入的人結帳。true 時不擋登入,頂端改成「已經是會員？登入」。非受管一律 false。
    */
   guestCheckout: boolean;
+  /**
+   * 0.8.0:受管訂單回報匯款要填什麼(`commerce:orders` provider 的 `transferReport()`)。有值時匯款訂單的
+   * 結局頁直接回報(TransferReportForm);null = provider 沒說(沒有這個函式、不認得的值),結局頁照舊
+   * 請客人到訂單頁回報。非受管一律 null(舊結帳只收末五碼,走自己的表單)。
+   */
+  transferReport: TransferReportMode | null;
   /** 推薦碼欄位模式;非受管一律 "off"(舊結帳路徑不認得 referralCode)。 */
   referralMode: ReferralMode;
   /** 電話與收件地址是否必填;受管模式一律 true(伺服器端 schema 要求)。 */
@@ -78,6 +85,7 @@ export function resolveCheckoutOptions(input: {
   managedOrders?: boolean;
   signedIn?: boolean;
   guestCheckout?: unknown;
+  transferReport?: unknown;
   referralMode?: unknown;
   requireContact?: unknown;
   checkoutNotice?: unknown;
@@ -89,6 +97,7 @@ export function resolveCheckoutOptions(input: {
     managedOrders,
     signedIn: managedOrders && input.signedIn === true,
     guestCheckout: managedOrders && input.guestCheckout === true,
+    transferReport: managedOrders ? resolveTransferReport(input.transferReport) : null,
     referralMode: managedOrders ? referral : "off",
     requireContact: managedOrders || input.requireContact === true,
     notice:
