@@ -1272,4 +1272,33 @@
 // Registry `name`, `description`, `highlights` and `details` may be a string or
 // { "zh-Hant", en }; the index route returns the admin language's text (lib/registry-localize.ts).
 // Manifests using the new categories or fields must declare coreApi "^1.58.0".
-export const CORE_API_VERSION = "1.58.0";
+// 1.59.0: AI connections — admins connect their own AI app (Claude, ChatGPT, Claude Code, Cursor)
+// to the back office over MCP.
+// - Settings → AI 連線 (core.mcp.enabled, off by default): connection URL <origin>/api/mcp with
+//   copy, connected apps (access, allowed by, connected, last used) and disconnect
+//   (DELETE /api/ai-connections/[id]). While off, every endpoint answers 404 and connections pause.
+// - POST /api/mcp: stateless Streamable HTTP, JSON-RPC 2.0 (initialize, ping, tools/list,
+//   tools/call; protocol 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05). Tools are the agent
+//   registry under wire-safe names with inputSchema and readOnlyHint/destructiveHint/openWorldHint.
+//   View-only connections list and call read tools only. Calls run through invokeAgentTool and are
+//   written to agent_audit with source "mcp" and the app's name (new column `app`).
+// - OAuth 2.1 server: /.well-known/oauth-protected-resource and /.well-known/oauth-authorization-server
+//   (also under /api/mcp), /api/oauth/register (RFC 7591; public or confidential clients),
+//   /oauth/authorize consent screen (PKCE S256 required, exact redirect URIs, any port for loopback,
+//   RFC 8707 resource, RFC 9207 iss), /api/oauth/token (authorization_code; refresh_token with
+//   rotation; access 1 h, refresh 30 days), /api/oauth/revoke (RFC 7009). Codes, tokens and client
+//   secrets are stored as SHA-256 only. Only full admins can connect; a demoted admin's
+//   connections stop at the next call.
+// - AgentTool.destructive?: boolean (write tools, default true) feeds destructiveHint; generated
+//   content.*.create declares false. Older cores ignore it.
+// - Generated content tools for an extension id or content type name with a hyphen no longer break
+//   the whole tool registry: a hyphen becomes "__" in the tool name (names without hyphens are
+//   unchanged).
+// - /admin/users searches name and email (case-insensitive, part of the text) and filters by join
+//   date, last active (whole days in the site time zone) and, for staff, role; conditions live in
+//   the URL next to view (?q=&role=&joinedFrom=&joinedTo=&activeFrom=&activeTo=).
+//   GET /api/users/export (admin only) returns every matching row as CSV (name, email, role,
+//   joined, last active); the page and the route share users-filter.ts and users-data.ts.
+//   The CSV helper moved to lib/csv.ts (commerceCsv re-exports it).
+// - Migration 0025: mcp_clients, mcp_grants, mcp_codes, mcp_tokens, agent_audit.app.
+export const CORE_API_VERSION = "1.59.0";
