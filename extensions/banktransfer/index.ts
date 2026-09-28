@@ -1,6 +1,6 @@
 import { defineExtension } from "@/ext/types";
-import { createManualPaymentProvider } from "@/ext/payment-kit";
-import type { ManualInstructionsResult } from "@/ext/payment-kit";
+import { createManualPaymentProvider, normalizeReportSpec } from "@/ext/payment-kit";
+import type { ManualInstructionsResult, TransferReportSpec } from "@/ext/payment-kit";
 import type { CheckoutRequest } from "@/ext/capabilities";
 import type { CoreServices } from "@/ext/services";
 import { formatMoney } from "@/ext/commerce-kit/money";
@@ -16,6 +16,19 @@ import { BankTransferAdminPage } from "./admin-page";
 // 的 admin 頁只有設定狀態與付款列一覽。
 
 const ORDERS_TABLE = "ext_banktransfer_orders";
+
+/**
+ * 0.2.0:客人回報匯款要填什麼(core 1.63.0 的 reportSpec)。三個設定,預設就是以前寫死的帳號末五碼、
+ * 5 位數字;壞值由 normalizeReportSpec 換回預設。
+ */
+async function readReportSpec(services: CoreServices): Promise<TransferReportSpec> {
+  const [ask, label, digits] = await Promise.all([
+    services.settings.get<unknown>("ext.banktransfer.reportWith", "reference"),
+    services.settings.get<unknown>("ext.banktransfer.referenceLabel", ""),
+    services.settings.get<unknown>("ext.banktransfer.referenceDigits", 5),
+  ]);
+  return normalizeReportSpec({ ask, reference: { label, digits } });
+}
 
 async function buildInstructions(
   services: CoreServices,
@@ -89,6 +102,32 @@ export const banktransfer = defineExtension({
       required: true,
       default: "",
     },
+    {
+      key: "reportWith",
+      label: "回報匯款時要填",
+      type: "select",
+      options: [
+        { value: "reference", label: "參考碼（預設是帳號末五碼）" },
+        { value: "payerName", label: "匯款人姓名" },
+        { value: "either", label: "參考碼或匯款人姓名，擇一" },
+        { value: "both", label: "參考碼與匯款人姓名都要填" },
+      ],
+      default: "reference",
+    },
+    {
+      key: "referenceLabel",
+      label: "參考碼名稱",
+      description: "客人看到的欄位名稱，例如「帳號末五碼」。",
+      type: "text",
+      default: "帳號末五碼",
+    },
+    {
+      key: "referenceDigits",
+      label: "參考碼位數",
+      description: "填 0 表示不限格式，最多 40 字；留空是 5 位數字。",
+      type: "number",
+      default: 5,
+    },
   ],
   migrations: [
     {
@@ -138,6 +177,7 @@ export const banktransfer = defineExtension({
           providerId: "banktransfer",
           table: ORDERS_TABLE,
           instructions: (req) => buildInstructions(services, req),
+          reportSpec: () => readReportSpec(services),
         }),
     },
   ],

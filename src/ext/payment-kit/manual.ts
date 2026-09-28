@@ -7,6 +7,11 @@ import type {
 } from "../capabilities";
 import type { CoreServices } from "../services";
 import { settlePayment, TABLE_RE, type SettleOutcome } from "./settle";
+import {
+  DEFAULT_TRANSFER_REPORT_SPEC,
+  normalizeReportSpec,
+  type TransferReportSpec,
+} from "./report-spec";
 
 // payment-kit:人工收款引擎(1.28.0)—— 「沒有 gateway」的付款方式(銀行轉帳/
 // ATM/面交)。與 gateway 引擎(provider.ts)的差異只有兩點:
@@ -36,6 +41,10 @@ export interface ManualPaymentProviderOptions {
    * { ok:false, error:"not_configured" },不 throw。
    */
   instructions: (req: CheckoutRequest) => Promise<ManualInstructionsResult>;
+  /**
+   * 1.63.0:付款人回報匯款要填什麼(讀自家 settings;規則見 report-spec.ts)。沒給 = 預設的帳號末五碼。
+   */
+  reportSpec?: () => Promise<TransferReportSpec>;
 }
 
 /** 人工收款 provider:PaymentProvider + admin 核帳入口。 */
@@ -50,6 +59,8 @@ export interface ManualPaymentProvider extends PaymentProvider {
     succeeded: boolean,
     note?: string,
   ): Promise<SettleOutcome>;
+  /** 1.63.0:回報匯款要填什麼。選填 —— 沒有的 provider 用 DEFAULT_TRANSFER_REPORT_SPEC。 */
+  reportSpec?(): Promise<TransferReportSpec>;
 }
 
 class KitManualPaymentProvider implements ManualPaymentProvider {
@@ -88,6 +99,10 @@ class KitManualPaymentProvider implements ManualPaymentProvider {
     };
   }
 
+  async reportSpec(): Promise<TransferReportSpec> {
+    return this.opts.reportSpec ? normalizeReportSpec(await this.opts.reportSpec()) : DEFAULT_TRANSFER_REPORT_SPEC;
+  }
+
   async settleManual(
     orderNo: string,
     succeeded: boolean,
@@ -109,6 +124,22 @@ export function createManualPaymentProvider(
   opts: ManualPaymentProviderOptions,
 ): ManualPaymentProvider {
   return new KitManualPaymentProvider(opts);
+}
+
+/**
+ * 1.63.0:這個付款方式回報匯款要填什麼。不是人工收款、沒有 reportSpec()、或讀設定出錯 → 預設
+ * (帳號末五碼)。讀錯不擋回報,只記一行。
+ */
+export async function transferReportSpec(provider: unknown): Promise<TransferReportSpec> {
+  if (!isManualPaymentProvider(provider) || typeof provider.reportSpec !== "function") {
+    return DEFAULT_TRANSFER_REPORT_SPEC;
+  }
+  try {
+    return normalizeReportSpec(await provider.reportSpec());
+  } catch (error) {
+    console.error("[payment-kit] reportSpec", error);
+    return DEFAULT_TRANSFER_REPORT_SPEC;
+  }
 }
 
 /** 型別守衛:provider 是否支援人工核帳(admin 核帳 route 用)。 */

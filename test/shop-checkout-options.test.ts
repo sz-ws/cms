@@ -45,7 +45,6 @@ describe("resolveCheckoutOptions", () => {
       managedOrders: false,
       signedIn: false,
       guestCheckout: false,
-      transferReport: null,
       referralMode: "off",
       requireContact: false,
       notice: "",
@@ -73,7 +72,6 @@ describe("resolveCheckoutOptions", () => {
       managedOrders: true,
       signedIn: false,
       guestCheckout: false,
-      transferReport: null,
       referralMode: "field",
       requireContact: true,
       notice: "",
@@ -110,23 +108,11 @@ describe("resolveCheckoutOptions", () => {
     expect(resolveCheckoutOptions({ managedOrders: true, guestCheckout: true }).requireContact).toBe(true);
   });
 
-  it("0.8.0:the managed side's transfer report mode, only on managed orders and only a known value", () => {
-    for (const mode of ["last5", "name", "either", "both"] as const) {
-      expect(resolveCheckoutOptions({ managedOrders: true, transferReport: mode }).transferReport).toBe(mode);
-      // The legacy checkout keeps its own last-five-digits form.
-      expect(resolveCheckoutOptions({ managedOrders: false, transferReport: mode }).transferReport).toBeNull();
-    }
-    for (const value of [undefined, "LAST5", "phone", 5, null]) {
-      expect(resolveCheckoutOptions({ managedOrders: true, transferReport: value }).transferReport, String(value)).toBeNull();
-    }
-  });
-
   it("is idempotent so CheckoutView can re-run it on its props", () => {
     const first = resolveCheckoutOptions({
       managedOrders: true,
       signedIn: true,
       guestCheckout: true,
-      transferReport: "both",
       referralMode: "link",
       requireContact: false,
       checkoutNotice: " 預購商品 ",

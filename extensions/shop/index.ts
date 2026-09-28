@@ -221,7 +221,10 @@ export const shop = defineExtension({
       method: "POST",
       path: "transfer-report",
       public: true,
-      handler: createTransferReportHandler({ table: ORDERS_TABLE }),
+      handler: createTransferReportHandler({
+        table: ORDERS_TABLE,
+        resolveTransferProvider: (ctx) => resolveProvider(ctx, "transfer"),
+      }),
     },
     {
       method: "POST",

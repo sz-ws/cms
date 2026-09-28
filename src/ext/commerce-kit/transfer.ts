@@ -1,7 +1,9 @@
 import { resolveManagedOrder } from "./managed";
 import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
-import { isManualPaymentProvider } from "../payment-kit/manual";
+import { isManualPaymentProvider, transferReportSpec } from "../payment-kit/manual";
+import { checkTransferReport, type TransferReportSpec } from "../payment-kit/report-spec";
+import { reportedReference } from "./transfer-legacy";
 import type { ApiCtx } from "../types";
 import {
   getOrder,
@@ -12,7 +14,8 @@ import {
 import { isOrderStatus, type OrderStatus } from "./types";
 
 // commerce-kit:匯款流程的三個 handler。
-//   1. 回報(public):客人匯完款回報帳號末五碼 → pending_payment → awaiting_verify。
+//   1. 回報(public):客人匯完款回報參考碼或匯款人姓名(要填什麼照收款的 manual provider 的
+//      reportSpec(),預設帳號末五碼)→ pending_payment → awaiting_verify。
 //   2. 核帳(admin):對到帳 → manual provider 的 settleManual(true) → 走統一結算
 //      → payment:succeeded → markOrderPaid 把訂單翻 paid。**訂單翻 paid 的路徑只有
 //      hook 這一條** —— 核帳 route 自己不改訂單狀態,刷卡與匯款因此完全同構。
@@ -22,13 +25,35 @@ import { isOrderStatus, type OrderStatus } from "./types";
 const reportSchema = z
   .object({
     orderNo: z.string().regex(/^[A-Z0-9]{4,30}$/),
-    /** 匯款帳號末五碼 —— 台灣對帳慣例。 */
-    last5: z.string().regex(/^\d{5}$/),
+    /** 付款人回報的參考碼(格式照 reportSpec 檢查)。 */
+    reference: z.string().max(60).optional(),
+    /** 匯款人姓名。 */
+    payerName: z.string().max(100).optional(),
+    /** 下單的 Email(接管訂單的插件拿它認訪客;core 自己的訂單不看)。 */
+    email: z.string().max(200).optional(),
+    /** @deprecated 1.63.0 — remove in 2.0. The old name of `reference`. */
+    last5: z.string().max(60).optional(),
   })
   .strict();
 
+type TransferProviderResolver = (ctx: ApiCtx) => Promise<string>;
+
+/** 收款的 manual provider 要客人回報什麼;沒有 resolver 或 provider 就是預設(帳號末五碼)。 */
+async function reportSpecFor(
+  ctx: ApiCtx,
+  resolve: TransferProviderResolver | undefined,
+): Promise<TransferReportSpec> {
+  const providerId = resolve ? await resolve(ctx) : "";
+  const provider = providerId ? ctx.services.providers.getById<unknown>("payment", providerId) : null;
+  return transferReportSpec(provider);
+}
+
 /** 公開匯款回報 handler(POST transfer-report,ApiRoute.public)。 */
-export function createTransferReportHandler(opts: { table: string }) {
+export function createTransferReportHandler(opts: {
+  table: string;
+  /** 1.63.0:匯款 providerId 解析,用來讀它的 reportSpec()。沒給 = 預設的帳號末五碼。 */
+  resolveTransferProvider?: TransferProviderResolver;
+}) {
   return async function transferReportHandler(
     req: Request,
     _params: Record<string, string>,
@@ -52,9 +77,23 @@ export function createTransferReportHandler(opts: { table: string }) {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
 
+    const spec = await reportSpecFor(_ctx, opts.resolveTransferProvider);
+    const checked = checkTransferReport(spec, {
+      reference: reportedReference(body),
+      payerName: body.payerName,
+    });
+    if (!checked.ok) {
+      return Response.json(
+        { ok: false, error: "invalid_input", message: checked.error },
+        { status: 400 },
+      );
+    }
+
     if (await resolveManagedOrder(_ctx.services, opts.table, body.orderNo)) return Response.json({ ok: false, error: "請登入會員訂單中心回報匯款" }, { status: 409 });
+    // 一次回報取代上一次;這個付款方式不問匯款人姓名時,不碰那一欄。
     const extras = {
-      transferLast5: body.last5,
+      transferReference: checked.value.reference ?? null,
+      ...(spec.ask === "reference" ? {} : { transferPayer: checked.value.payerName ?? null }),
       transferReportedAt: Date.now(),
     };
     const moved = await transitionOrder(
@@ -70,7 +109,7 @@ export function createTransferReportHandler(opts: { table: string }) {
     //
     // 這裡**不能**再呼叫一次 transitionOrder:上面那次剛回 false,而它失敗的原因正是
     // 「awaiting_verify 不是自己的合法來源」—— 同樣的呼叫不會有不同的結果,只會安靜
-    // 地丟掉客人剛改好的末五碼,然後回報成功(見 orders.ts 的 rewriteTransferReport)。
+    // 地丟掉客人剛改好的回報,然後回報成功(見 orders.ts 的 rewriteTransferReport)。
     const rewritten = await rewriteTransferReport(
       _ctx.services,
       opts.table,
@@ -116,7 +155,7 @@ export function createTransferVerifyHandler(opts: {
     if (!order) {
       return Response.json({ ok: false, error: "not_found" }, { status: 404 });
     }
-    // 台灣沒有 open banking —— 到帳與否只有店家的銀行 App 看得到,所以核可
+    // 人工轉帳無法自動查到帳 —— 到帳與否只有店家的銀行看得到,所以核可
     // **不**以客人回報為前提:pending_payment(客人沒回報)也可直接核帳。
     // 退回則只對「已回報」有意義(awaiting_verify → pending_payment)。
     const approvable =
@@ -134,8 +173,10 @@ export function createTransferVerifyHandler(opts: {
       return Response.json({ ok: false, error: "not_available" }, { status: 503 });
     }
 
+    const { reference } = await transferReportSpec(provider);
     const stamp = `${body.approve ? "核可" : "退回"} by ${ctx.user.email}` +
-      (order.transferLast5 ? ` 末五碼 ${order.transferLast5}` : "") +
+      (order.transferReference ? ` ${reference.label} ${order.transferReference}` : "") +
+      (order.transferPayer ? ` 匯款人 ${order.transferPayer}` : "") +
       (order.status === "pending_payment" ? "（未經回報，後台直接核帳）" : "") +
       (body.note ? ` — ${body.note}` : "");
 

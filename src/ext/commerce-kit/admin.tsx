@@ -208,7 +208,7 @@ export function CommerceOrdersTable({
 }
 
 /**
- * 對帳佇列:匯款訂單列表 + 回報末五碼 + 動作。
+ * 對帳佇列:匯款訂單列表 + 客人回報的匯款資料 + 動作。
  * 兩種用法:awaiting_verify(核可/退回)與 pending_payment + directPaid
  * (等待匯款、客人未回報 —— admin 對到帳直接「標記已收款」)。
  * 1.52.0:actionsEndpoint 省略 = 只列出來,沒有動作按鈕(只能看這一頁的角色)。
@@ -218,11 +218,14 @@ export function TransferVerifyQueue({
   actionsEndpoint,
   directPaid = false,
   emptyText = "目前沒有待對帳的匯款。",
+  referenceLabel = "帳號末五碼",
 }: {
   orders: CommerceOrder[];
   actionsEndpoint?: string;
   directPaid?: boolean;
   emptyText?: string;
+  /** 1.63.0:參考碼的名稱(收款方式的 reportSpec().reference.label)。 */
+  referenceLabel?: string;
 }) {
   if (orders.length === 0) {
     return <p className="text-[13px] text-black/45 admin:text-ink/45">{emptyText}</p>;
@@ -241,11 +244,16 @@ export function TransferVerifyQueue({
                   <MoneyText amount={o.amounts.total} />
                 </span>
                 <span className="text-[12.5px] text-black/55 admin:text-ink/55">
-                  末五碼{" "}
+                  {referenceLabel}{" "}
                   <span className="font-mono text-black/80 admin:text-ink/80">
-                    {o.transferLast5 ?? "未回報"}
+                    {o.transferReference ?? "未回報"}
                   </span>
                 </span>
+                {o.transferPayer ? (
+                  <span className="text-[12.5px] text-black/55 admin:text-ink/55">
+                    匯款人 <span className="text-black/80 admin:text-ink/80">{o.transferPayer}</span>
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 truncate text-[12px] text-black/45 admin:text-ink/45">
                 {o.customerName} · {o.customerEmail}

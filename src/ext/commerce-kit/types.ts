@@ -90,7 +90,14 @@ export interface CommerceOrder {
   shippingMethod: string | null;
   /** 套用的優惠碼(大寫;折抵金額在 amounts.discount)。 */
   promoCode: string | null;
-  /** 匯款回報:帳號末五碼 + 回報時間(未回報 = null)。 */
+  /**
+   * 匯款回報:付款人回報的參考碼(預設是帳號末五碼)+ 回報時間(未回報 = null)。
+   * 1.63.0 起改名;資料庫的欄位仍叫 transfer_last5。
+   */
+  transferReference: string | null;
+  /** 1.63.0:匯款人姓名(付款方式要客人填的時候)。 */
+  transferPayer: string | null;
+  /** @deprecated 1.63.0 — remove in 2.0. Same value as transferReference. */
   transferLast5: string | null;
   transferReportedAt: number | null;
   /** 最近一次狀態動作的附註(核帳紀錄等)。 */

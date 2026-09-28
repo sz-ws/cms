@@ -19,7 +19,24 @@ export type { SettleInput, SettleOutcome } from "./settle";
 export {
   createManualPaymentProvider,
   isManualPaymentProvider,
+  transferReportSpec,
 } from "./manual";
+// 1.63.0:回報匯款要填什麼(純函式,client 也能直接 import "@/ext/payment-kit/report-spec")。
+export {
+  DEFAULT_TRANSFER_REPORT_SPEC,
+  REPORT_LIMITS,
+  TRANSFER_REPORT_ASKS,
+  checkTransferReport,
+  normalizeReportSpec,
+  reportFields,
+  reportSubject,
+} from "./report-spec";
+export type {
+  TransferReportAsk,
+  TransferReportCheck,
+  TransferReportSpec,
+  TransferReportValue,
+} from "./report-spec";
 export type {
   ManualPaymentProvider,
   ManualPaymentProviderOptions,

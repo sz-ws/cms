@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
 import { CartView } from "./CartView";
 import { CheckoutView } from "./CheckoutView";
+import { loadTransferReportSpec, shopProviders } from "./report-spec";
 import {
   CHECKOUT_NOTICE_KEY,
   REFERRAL_MODE_KEY,
@@ -55,38 +56,11 @@ function PageShell({
 interface ManagedOrderHooks {
   /** 0.7.0:開不開放訪客結帳。 */
   guestCheckout?: () => Promise<boolean>;
-  /** 0.8.0:回報匯款要填什麼(last5 / name / either / both)。 */
-  transferReport?: () => Promise<unknown>;
-}
-
-async function managedOrderHooks(): Promise<ManagedOrderHooks | null> {
-  const [{ getExtRuntime }, { buildProviderRegistry }] = await Promise.all([
-    import("@/ext/loader"),
-    import("@/ext/services"),
-  ]);
-  return buildProviderRegistry(await getExtRuntime()).getById<ManagedOrderHooks>(
-    "commerce:orders",
-    "ext_shop_orders",
-  );
 }
 
 /** 0.7.0:有 `guestCheckout()` 且回 true 才算開放;沒有這個函式 = 不開放,和以前一樣要登入。 */
 async function managedGuestCheckout(orders: ManagedOrderHooks | null): Promise<boolean> {
   return typeof orders?.guestCheckout === "function" && (await orders.guestCheckout()) === true;
-}
-
-/**
- * 0.8.0:回報匯款要填什麼,原始值交給 resolveCheckoutOptions 正規化。沒有這個函式或讀不出來 = undefined,
- * 結局頁照舊請客人到訂單頁回報;讀設定出錯也不擋結帳。
- */
-async function managedTransferReport(orders: ManagedOrderHooks | null): Promise<unknown> {
-  if (typeof orders?.transferReport !== "function") return undefined;
-  try {
-    return await orders.transferReport();
-  } catch (error) {
-    console.error("[shop] transferReport", error);
-    return undefined;
-  }
 }
 
 export function ShopCartPage() {
@@ -125,16 +99,18 @@ export async function ShopCheckoutPage() {
   // 沒有開關 —— 理由見 checkout-options.ts 檔頭與 README「商城營運模式」)。
   const managedOrders = !!(await getExtRuntime()).byId("shop-operations");
   const user = await getSessionUser();
-  const orders = managedOrders ? await managedOrderHooks() : null;
-  const [guestCheckout, transferReport] = await Promise.all([
+  const providers = await shopProviders();
+  const orders = managedOrders
+    ? providers.getById<ManagedOrderHooks>("commerce:orders", "ext_shop_orders")
+    : null;
+  const [guestCheckout, reportSpec] = await Promise.all([
     !user && managedGuestCheckout(orders),
-    managedTransferReport(orders),
+    loadTransferReportSpec(providers),
   ]);
   const options = resolveCheckoutOptions({
     managedOrders,
     signedIn: managedOrders && !!user,
     guestCheckout: managedOrders && guestCheckout === true,
-    transferReport,
     referralMode,
     requireContact,
     checkoutNotice,
@@ -147,6 +123,7 @@ export async function ShopCheckoutPage() {
         transferEnabled={Boolean(transferProvider.trim())}
         shippingConfig={shippingConfig}
         promoEnabled={promos.some((p) => p.enabled)}
+        reportSpec={reportSpec}
         contact={checkoutContact(user)}
       />
     </PageShell>

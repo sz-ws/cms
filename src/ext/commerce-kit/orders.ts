@@ -30,9 +30,14 @@ export type CommerceDb = Pick<CoreServices, "db">;
 //   payment_provider TEXT NOT NULL
 //   customer_name TEXT NOT NULL, customer_email TEXT NOT NULL
 //   customer_phone TEXT, ship_address TEXT
-//   transfer_last5 TEXT, transfer_reported_at INTEGER
+//   region TEXT, shipping_method TEXT, promo_code TEXT
+//   transfer_last5 TEXT, transfer_reported_at INTEGER   -- 付款人回報的參考碼(欄名沿用舊的)與時間
+//   transfer_payer TEXT                 -- 1.63.0:匯款人姓名(shop 的 migration 0005)
 //   note TEXT
 //   created_at / updated_at INTEGER NOT NULL
+//
+// 1.63.0 起讀取用 SELECT *、新欄位只在有值時才寫:站台部署了新版、還沒按「套用更新」時,舊表
+// 照樣讀得到、寫得進去。
 
 /** 表名驗證(同 payment-kit settle.ts)—— 開發者常數,仍擋 sql.raw 注入面。 */
 const TABLE_RE = /^[a-z][a-z0-9_]{2,60}$/;
@@ -61,18 +66,12 @@ interface OrderRow {
   promo_code: string | null;
   transfer_last5: string | null;
   transfer_reported_at: number | null;
+  /** 1.63.0(migration 0005);還沒套用更新的表沒有這一欄。 */
+  transfer_payer?: string | null;
   note: string | null;
   created_at: number;
   updated_at: number;
 }
-
-const ROW_COLUMNS = sql.raw(
-  "order_no, status, lines, subtotal, discount, shipping, total, " +
-    "payment_provider, customer_name, customer_email, customer_phone, " +
-    "ship_address, region, shipping_method, promo_code, " +
-    "transfer_last5, transfer_reported_at, note, " +
-    "created_at, updated_at",
-);
 
 function rowToOrder(row: OrderRow): CommerceOrder {
   let lines: OrderLine[] = [];
@@ -100,6 +99,8 @@ function rowToOrder(row: OrderRow): CommerceOrder {
     region: row.region,
     shippingMethod: row.shipping_method,
     promoCode: row.promo_code,
+    transferReference: row.transfer_last5,
+    transferPayer: row.transfer_payer ?? null,
     transferLast5: row.transfer_last5,
     transferReportedAt: row.transfer_reported_at,
     note: row.note,
@@ -154,7 +155,7 @@ export async function getOrder(
 ): Promise<CommerceOrder | null> {
   assertTable(table);
   const row = await deps.db.get<OrderRow>(sql`
-    SELECT ${ROW_COLUMNS} FROM ${sql.raw(table)} WHERE order_no = ${orderNo}
+    SELECT * FROM ${sql.raw(table)} WHERE order_no = ${orderNo}
   `);
   return row ? rowToOrder(row) : null;
 }
@@ -196,7 +197,7 @@ export async function listOrders(
     ? sql`WHERE ${bindPlaceholders(clauses.join(" AND "), args)}`
     : sql.raw("");
   const rows = await deps.db.all<OrderRow>(sql`
-    SELECT ${ROW_COLUMNS} FROM ${sql.raw(table)}
+    SELECT * FROM ${sql.raw(table)}
     ${where}
     ORDER BY created_at DESC LIMIT ${limit}
   `);
@@ -224,13 +225,33 @@ export async function countByStatus(
 }
 
 export interface TransitionExtras {
-  /** 一併寫入的匯款回報欄位(report-transfer 用)。 */
+  /**
+   * 一併寫入的匯款回報(report-transfer 用)。1.63.0:付款人回報的參考碼,存在 transfer_last5 欄。
+   * 給了(含 null)就取代上一次的;沒給 = 不動。
+   */
+  transferReference?: string | null;
+  /** 1.63.0:匯款人姓名(transfer_payer 欄)。給了(含 null)就取代上一次的;沒給 = 不動這一欄。 */
+  transferPayer?: string | null;
+  /** @deprecated 1.63.0 — remove in 2.0. Use transferReference. */
   transferLast5?: string;
   transferReportedAt?: number;
   /** 動作附註(核帳紀錄等)。**追加**到 note 欄(換行分隔)—— note 是審計
    *  軌跡,後面的動作不得抹掉前面的紀錄(Codex 實測抓到:「標記完成」曾把
    *  核帳紀錄蓋掉)。 */
   note?: string;
+}
+
+/** 匯款回報要寫的欄位。只寫給了的:沒有匯款人姓名的回報不碰 transfer_payer(舊表沒有這一欄)。 */
+function reportAssignments(extras: TransitionExtras): SQL[] {
+  const reference =
+    extras.transferReference !== undefined ? extras.transferReference : extras.transferLast5;
+  return [
+    ...(reference !== undefined ? [sql`transfer_last5 = ${reference}`] : []),
+    ...(extras.transferPayer !== undefined ? [sql`transfer_payer = ${extras.transferPayer}`] : []),
+    ...(extras.transferReportedAt !== undefined
+      ? [sql`transfer_reported_at = ${extras.transferReportedAt}`]
+      : []),
+  ];
 }
 
 /**
@@ -254,16 +275,20 @@ export async function transitionOrder(
     sources.map((s) => sql`${s}`),
     sql`, `,
   );
-  const rows = await deps.db.all<{ orderNo: string }>(sql`
-    UPDATE ${sql.raw(table)} SET
-      status = ${to},
-      transfer_last5 = COALESCE(${extras.transferLast5 ?? null}, transfer_last5),
-      transfer_reported_at = COALESCE(${extras.transferReportedAt ?? null}, transfer_reported_at),
-      note = CASE
+  const assignments = sql.join(
+    [
+      sql`status = ${to}`,
+      ...reportAssignments(extras),
+      sql`note = CASE
         WHEN ${extras.note ?? null} IS NULL THEN note
         ELSE COALESCE(note || char(10), '') || ${extras.note ?? null}
-      END,
-      updated_at = ${Date.now()}
+      END`,
+      sql`updated_at = ${Date.now()}`,
+    ],
+    sql`, `,
+  );
+  const rows = await deps.db.all<{ orderNo: string }>(sql`
+    UPDATE ${sql.raw(table)} SET ${assignments}
     WHERE order_no = ${orderNo} AND status IN (${sourceList})
     RETURNING order_no AS orderNo
   `);
@@ -288,14 +313,18 @@ export async function rewriteTransferReport(
   deps: CommerceDb,
   table: string,
   orderNo: string,
-  extras: Pick<TransitionExtras, "transferLast5" | "transferReportedAt">,
+  extras: Pick<
+    TransitionExtras,
+    "transferReference" | "transferPayer" | "transferLast5" | "transferReportedAt"
+  >,
 ): Promise<boolean> {
   assertTable(table);
+  const assignments = sql.join(
+    [...reportAssignments(extras), sql`updated_at = ${Date.now()}`],
+    sql`, `,
+  );
   const rows = await deps.db.all<{ orderNo: string }>(sql`
-    UPDATE ${sql.raw(table)} SET
-      transfer_last5 = COALESCE(${extras.transferLast5 ?? null}, transfer_last5),
-      transfer_reported_at = COALESCE(${extras.transferReportedAt ?? null}, transfer_reported_at),
-      updated_at = ${Date.now()}
+    UPDATE ${sql.raw(table)} SET ${assignments}
     WHERE order_no = ${orderNo} AND status = 'awaiting_verify'
     RETURNING order_no AS orderNo
   `);

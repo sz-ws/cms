@@ -37,6 +37,10 @@ const d1 = () => (env as TestEnv).DB;
 
 const SHOP_TABLE = "ext_shopflow_orders";
 const PAY_TABLE = "ext_manualflow_orders";
+/** 1.63.0:套用過 shop 0005 的表(有 transfer_payer),和收款方式自訂回報內容的 provider。 */
+const SPEC_TABLE = "ext_shopspec_orders";
+const SPEC_PAY_TABLE = "ext_manualspec_orders";
+const reportSpec = { ask: "reference" as "reference" | "payerName" | "either" | "both", label: "帳號末五碼", digits: 5 };
 
 // ---- fakes ----
 
@@ -86,11 +90,19 @@ function makeServices(): CoreServices {
       getById: (cap: string, id: string) => {
         if (cap !== "payment") return null;
         if (id === "manualtest") return manualProvider;
+        if (id === "manualspec") return specProvider;
         if (id === "fakecard") return cardProvider;
         return null;
       },
     },
   } as unknown as CoreServices;
+  const specProvider = createManualPaymentProvider({
+    services,
+    providerId: "manualspec",
+    table: SPEC_PAY_TABLE,
+    instructions: async () => ({ ok: true, instructions: [{ label: "帳號", value: "123-456" }] }),
+    reportSpec: async () => ({ ask: reportSpec.ask, reference: { label: reportSpec.label, digits: reportSpec.digits } }),
+  });
   const manualProvider = createManualPaymentProvider({
     services,
     providerId: "manualtest",
@@ -157,11 +169,20 @@ beforeAll(async () => {
   await d1().exec(
     `CREATE TABLE IF NOT EXISTS ${PAY_TABLE} (order_no TEXT PRIMARY KEY, amount INTEGER NOT NULL, description TEXT NOT NULL, email TEXT, status TEXT NOT NULL DEFAULT 'pending', trade_no TEXT, payment_type TEXT, pay_time TEXT, raw_result TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
   );
+  await d1().exec(
+    `CREATE TABLE IF NOT EXISTS ${SPEC_TABLE} (order_no TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending_payment', lines TEXT NOT NULL, subtotal INTEGER NOT NULL, discount INTEGER NOT NULL DEFAULT 0, shipping INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL, payment_provider TEXT NOT NULL, customer_name TEXT NOT NULL, customer_email TEXT NOT NULL, customer_phone TEXT, ship_address TEXT, region TEXT, shipping_method TEXT, promo_code TEXT, transfer_last5 TEXT, transfer_reported_at INTEGER, transfer_payer TEXT, note TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
+  );
+  await d1().exec(
+    `CREATE TABLE IF NOT EXISTS ${SPEC_PAY_TABLE} (order_no TEXT PRIMARY KEY, amount INTEGER NOT NULL, description TEXT NOT NULL, email TEXT, status TEXT NOT NULL DEFAULT 'pending', trade_no TEXT, payment_type TEXT, pay_time TEXT, raw_result TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`,
+  );
 });
 
 beforeEach(async () => {
   await d1().exec(`DELETE FROM ${SHOP_TABLE};`);
   await d1().exec(`DELETE FROM ${PAY_TABLE};`);
+  await d1().exec(`DELETE FROM ${SPEC_TABLE};`);
+  await d1().exec(`DELETE FROM ${SPEC_PAY_TABLE};`);
+  Object.assign(reportSpec, { ask: "reference", label: "帳號末五碼", digits: 5 });
   products.clear();
   cardCalls.length = 0;
   rateLimit.limited = false;
@@ -472,5 +493,61 @@ describe("匯款全流程:回報 → 核帳 → hook 翻單", () => {
     expect(
       (await statusHandler(statusReq("refunded"), { orderNo: otherNo }, ctx())).status,
     ).toBe(409);
+  });
+});
+
+describe("匯款回報照收款方式的 reportSpec(1.63.0)", () => {
+  const specCheckout = createCommerceCheckoutHandler({ table: SPEC_TABLE, resolveProvider: async () => "manualspec" });
+  const specReport = createTransferReportHandler({ table: SPEC_TABLE, resolveTransferProvider: async () => "manualspec" });
+  const specVerify = createTransferVerifyHandler({ table: SPEC_TABLE, resolveTransferProvider: async () => "manualspec" });
+  const report = (body: Record<string, unknown>) =>
+    new Request("https://cms.test/api/ext/shop/transfer-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "cf-connecting-ip": "1.2.3.4" },
+      body: JSON.stringify(body),
+    });
+  async function place(): Promise<string> {
+    const res = await specCheckout(post(VALID_BODY), {}, ctx());
+    return ((await res.json()) as { orderNo: string }).orderNo;
+  }
+
+  it("預設(帳號末五碼):reference 與舊的 last5 都收;還沒有 transfer_payer 欄的表照樣寫得進去", async () => {
+    const { body } = await checkout();
+    const orderNo = body.orderNo as string;
+    expect((await reportHandler(report({ orderNo, reference: "12345" }), {}, ctx())).status).toBe(200);
+    expect(await getOrder({ db: db() }, SHOP_TABLE, orderNo)).toMatchObject({ status: "awaiting_verify", transferReference: "12345", transferLast5: "12345", transferPayer: null });
+    // Deprecated until 2.0: the old body.
+    expect((await reportHandler(report({ orderNo, last5: "54321" }), {}, ctx())).status).toBe(200);
+    expect((await getOrder({ db: db() }, SHOP_TABLE, orderNo))?.transferReference).toBe("54321");
+    const bad = await reportHandler(report({ orderNo, reference: "1234" }), {}, ctx());
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ ok: false, error: "invalid_input", message: "帳號末五碼要填 5 位數字。" });
+  });
+
+  it("自訂名稱與位數:照收款方式檢查,核帳紀錄寫它的名稱", async () => {
+    Object.assign(reportSpec, { label: "轉帳後六碼", digits: 6 });
+    const orderNo = await place();
+    const short = await specReport(report({ orderNo, reference: "12345" }), {}, ctx());
+    expect(await short.json()).toMatchObject({ error: "invalid_input", message: "轉帳後六碼要填 6 位數字。" });
+    expect((await specReport(report({ orderNo, reference: "123456" }), {}, ctx())).status).toBe(200);
+    const verified = await specVerify(
+      new Request("https://cms.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) }),
+      { orderNo },
+      ctx("editor"),
+    );
+    expect(verified.status).toBe(200);
+    expect((await getOrder({ db: db() }, SPEC_TABLE, orderNo))?.note).toContain("轉帳後六碼 123456");
+  });
+
+  it("匯款人姓名:存在 transfer_payer;擇一時一次回報取代上一次", async () => {
+    reportSpec.ask = "payerName";
+    const orderNo = await place();
+    expect((await specReport(report({ orderNo, reference: "12345" }), {}, ctx())).status).toBe(400);
+    expect((await specReport(report({ orderNo, payerName: " 王小明 ", reference: "12345" }), {}, ctx())).status).toBe(200);
+    expect(await getOrder({ db: db() }, SPEC_TABLE, orderNo)).toMatchObject({ transferPayer: "王小明", transferReference: null });
+
+    reportSpec.ask = "either";
+    expect((await specReport(report({ orderNo, reference: "12345" }), {}, ctx())).status).toBe(200);
+    expect(await getOrder({ db: db() }, SPEC_TABLE, orderNo)).toMatchObject({ status: "awaiting_verify", transferPayer: null, transferReference: "12345" });
   });
 });

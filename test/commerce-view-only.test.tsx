@@ -37,6 +37,10 @@ vi.mock("@/lib/settings", () => ({
 }));
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
 vi.mock("@/lib/cf", () => ({ getDB: () => ({}) }));
+// 1.63.0: the verify page names what customers report (the transfer method's reportSpec).
+vi.mock("../extensions/shop/report-spec", () => ({
+  loadTransferReportSpec: async () => ({ ask: "reference", reference: { label: "帳號末五碼", digits: 5 } }),
+}));
 vi.mock("@/ext/commerce-kit/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/ext/commerce-kit/admin")>();
   return {
@@ -94,6 +98,8 @@ const order = (orderNo: string, status: CommerceOrder["status"]): CommerceOrder 
   region: null,
   shippingMethod: null,
   promoCode: null,
+  transferReference: status === "awaiting_verify" ? "12345" : null,
+  transferPayer: null,
   transferLast5: status === "awaiting_verify" ? "12345" : null,
   transferReportedAt: null,
   note: null,

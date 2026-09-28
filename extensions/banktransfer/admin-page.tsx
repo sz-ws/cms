@@ -8,7 +8,7 @@ import {
 } from "@/ext/payment-kit/admin";
 
 // 銀行轉帳 adminPage —— 設定狀態與付款列一覽。
-// 對帳(核可/退回)在 shop extension 的「對帳佇列」頁,那裡有訂單末五碼。
+// 對帳(核可/退回)在 shop extension 的「對帳佇列」頁,那裡有客人回報的匯款資料。
 
 export async function BankTransferAdminPage() {
   const [bankName, bankCode, accountNumber, accountName, orders] =
@@ -30,7 +30,7 @@ export async function BankTransferAdminPage() {
           銀行轉帳
         </h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
-          匯款收款：結帳時向客人出示下方帳戶，客人回報末五碼後，到商店的「對帳佇列」核可入帳。收款帳戶在設定頁填寫。
+          匯款收款：結帳時向客人出示下方帳戶，客人回報匯款後，到商店的「對帳佇列」核可入帳。收款帳戶與回報要填的資料在設定頁填寫。
         </p>
       </header>
 
@@ -61,7 +61,7 @@ export async function BankTransferAdminPage() {
           付款列
         </h2>
         <p className="mb-3 text-[13px] leading-relaxed text-ink/55">
-          每筆匯款訂單在這裡各有一列，核可後從待付款變成已付款。核可動作在商店的對帳佇列，那裡有客人回報的末五碼。
+          每筆匯款訂單在這裡各有一列，核可後從待付款變成已付款。核可動作在商店的對帳佇列，那裡有客人回報的匯款資料。
         </p>
         <PaymentOrdersTable orders={orders} />
       </section>

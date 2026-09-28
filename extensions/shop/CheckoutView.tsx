@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { useSiteCurrency } from "@/components/CurrencyProvider";
-import type { CheckoutSession, ManualInstructionLine } from "@/ext/capabilities";
+import type { CheckoutSession } from "@/ext/capabilities";
+import { DEFAULT_TRANSFER_REPORT_SPEC, type TransferReportSpec } from "@/ext/payment-kit/report-spec";
 import { formatMoney } from "@/ext/commerce-kit/money";
 import {
   computeShippingOptions,
@@ -19,8 +20,9 @@ import {
 } from "./cart-store";
 import { resolveCheckoutOptions, type CheckoutContact, type ReferralMode } from "./checkout-options";
 import { CODE, FIELD, LABEL, PRIMARY_BTN } from "./checkout-styles";
-import { TransferReportForm } from "./TransferReportForm";
-import type { TransferReportMode } from "./transfer-report";
+import { ManualResult, type ManualOrder } from "./CheckoutResult";
+
+export { InstructionLines } from "./CheckoutResult";
 
 // 結帳頁(client)。三種 session 結局:
 //   form-post → 動態 <form> 送出跳轉 gateway(付款結果由回呼寫回)
@@ -36,10 +38,8 @@ import type { TransferReportMode } from "./transfer-report";
 // 受管訂單(0.2.0,shop-operations 啟用時):
 //   - 同一個 POST /api/ext/shop/checkout,但多帶 requestId(重送不重複建單)與
 //     referralCode;伺服器要求登入(guest 以上)、電話與地址必填。
-//   - 0.8.0 匯款訂單的結局頁直接回報(TransferReportForm):欄位照受管訂單那一邊的設定
-//     (transferReport,public-pages.tsx 問 provider),會員送 /api/ext/shop-operations/actions、
-//     訪客送 /api/ext/shop-operations/guest(訂單編號 + 下單 Email),見 transfer-report.ts。
-//     provider 沒說要填什麼(transferReport 是 null)時照舊請客人到 /shop/orders 回報。
+//   - 匯款訂單的結局頁直接回報(CheckoutResult.tsx 的 TransferReportForm)。0.9.0:要填什麼照收款
+//     方式的 reportSpec(public-pages.tsx 問 payment provider),送到哪裡見 transfer-report.ts。
 //   - 三個開關(推薦碼欄位、電話地址必填、結帳頁說明)由 checkout-options.ts
 //     正規化;這裡對 props 再跑一次 resolveCheckoutOptions,自訂殼層少給幾個
 //     prop 也會得到一致的預設。
@@ -106,28 +106,6 @@ function submitToGateway(gatewayUrl: string, fields: Record<string, string>): vo
   form.submit();
 }
 
-/** 匯款指示(銀行、帳號、金額、訂單編號…):值是會換行的長代碼,窄螢幕不會撐出卡片。 */
-export function InstructionLines({ lines }: { lines: ManualInstructionLine[] }) {
-  return (
-    <dl className="mt-4 space-y-2.5">
-      {lines.map((line) => (
-        <div key={line.label} className="flex items-baseline gap-3">
-          <dt className="w-20 shrink-0 text-[12.5px] text-black/60">{line.label}</dt>
-          <dd className={`${CODE} min-w-0 text-[14px] text-black/85`}>{line.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-interface ManualState {
-  orderNo: string;
-  instructions: ManualInstructionLine[];
-  note?: string;
-  /** 下單時填的 Email(給 afterOrder)。 */
-  email: string;
-}
-
 interface AppliedPromo {
   code: string;
   label: string;
@@ -143,7 +121,7 @@ export function CheckoutView({
   managedOrders = false,
   signedIn = false,
   guestCheckout = false,
-  transferReport = null,
+  reportSpec = DEFAULT_TRANSFER_REPORT_SPEC,
   onSignIn,
   afterOrder,
   referralMode,
@@ -163,11 +141,8 @@ export function CheckoutView({
   signedIn?: boolean;
   /** 0.7.0:受管模式下開放訪客結帳(不擋登入,見 checkout-options.ts)。 */
   guestCheckout?: boolean;
-  /**
-   * 0.8.0:受管訂單回報匯款要填什麼(見 checkout-options.ts)。有值時匯款訂單的結局頁直接回報;
-   * 沒給 = 照舊請客人到訂單頁回報。
-   */
-  transferReport?: TransferReportMode | null;
+  /** 0.9.0:匯款方式要客人回報什麼(收款的 manual provider 的 reportSpec);沒給 = 帳號末五碼。 */
+  reportSpec?: TransferReportSpec;
   /** 0.7.0:按「登入」時要做的事;沒給就連到 /login。只能從 client 元件傳。 */
   onSignIn?: () => void;
   /** 0.7.0:匯款訂單成立後,結局頁下面多放的東西。只能從 client 元件傳。 */
@@ -185,7 +160,6 @@ export function CheckoutView({
     managedOrders,
     signedIn,
     guestCheckout,
-    transferReport,
     referralMode,
     requireContact,
     checkoutNotice: notice,
@@ -211,9 +185,7 @@ export function CheckoutView({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [manual, setManual] = useState<ManualState | null>(null);
-  const [last5, setLast5] = useState("");
-  const [reported, setReported] = useState(false);
+  const [manual, setManual] = useState<ManualOrder | null>(null);
 
   const request = useRef<{ fingerprint: string; id: string } | null>(null);
   const [referralCode, setReferralCode] = useState("");
@@ -370,35 +342,6 @@ export function CheckoutView({
     }
   }
 
-  async function report(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy || !manual) return;
-    setBusy(true);
-    setError(null);
-    try {
-      // 受管訂單不走這裡(TransferReportForm 或到訂單頁回報),這裡只剩舊路徑。
-      const res = await fetch("/api/ext/shop/transfer-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: manual.orderNo, last5 }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string };
-      if (!data.ok) {
-        setError(
-          data.error === "invalid_input"
-            ? "末五碼需為 5 位數字。"
-            : (ERROR_HINT[data.error ?? ""] ?? "回報失敗，請重試。"),
-        );
-        return;
-      }
-      setReported(true);
-    } catch {
-      setError("網路錯誤，請重試。");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   // 訪客下的受管訂單:沒有「我的訂單」,改用訂單編號查詢(0.7.0)。
   const asGuest = options.guestCheckout && !options.signedIn;
   const signInLink = onSignIn ? (
@@ -411,105 +354,17 @@ export function CheckoutView({
     </Link>
   );
 
-  // 結局頁:匯款指示 / 回報完成。
+  // 結局頁:匯款指示 + 回報匯款。
   if (manual) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="rounded-[14px] bg-white px-6 py-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04)]">
-          <p className="text-[13px] text-black/55">
-            {asGuest
-              ? "訂單已成立，請匯款到以下帳戶："
-              : options.managedOrders
-                ? "訂單已成立，請依「我的訂單」顯示的付款期限付款。"
-                : "訂單已成立，請於三日內匯款至以下帳戶："}
-          </p>
-          <InstructionLines lines={manual.instructions} />
-          {manual.note ? (
-            <p className="mt-4 text-[12.5px] leading-relaxed text-black/60">
-              {manual.note}
-            </p>
-          ) : null}
-        </div>
-
-        {reported ? (
-          <div className="text-center">
-            <div className="text-[32px]">✓</div>
-            <h2 className="mt-2 text-[18px] font-semibold tracking-[-0.01em] text-black/85">
-              已收到您的回報
-            </h2>
-            <p className="mt-1.5 text-[13.5px] text-black/55">
-              訂單 <span className={CODE}>{manual.orderNo}</span>{" "}
-              對帳完成後即為您處理。
-            </p>
-            <Link
-              href="/"
-              className="mt-6 inline-block text-[13.5px] text-black/70 underline underline-offset-4"
-            >
-              返回網站
-            </Link>
-          </div>
-        ) : options.transferReport ? (
-          // 0.8.0 受管訂單:在這裡直接回報,欄位照站台設定。會員看登入的人;訪客用訂單編號 + 剛填的 Email,
-          // 和訂單查詢同一組憑證(transfer-report.ts)。
-          <TransferReportForm
-            mode={options.transferReport}
-            orderNo={manual.orderNo}
-            guestEmail={asGuest ? manual.email : undefined}
-          />
-        ) : asGuest ? (
-          // 訪客:用訂單編號與 Email 查單,付款期限與回報匯款都在那裡。
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Link href="/shop/orders" className={PRIMARY_BTN}>
-              匯款後到訂單查詢回報
-            </Link>
-            <p className="text-[12px] text-black/60">
-              訂單編號 <span className={CODE}>{manual.orderNo}</span>，查詢訂單時會用到，請記下來。
-            </p>
-          </div>
-        ) : options.managedOrders ? (
-          // 受管訂單那一邊沒說要填什麼(沒有 transferReport()):到「我的訂單」回報,那裡的表單照
-          // 站台設定要末五碼、匯款人姓名或兩者;這頁不知道,只收末五碼會讓設成姓名的站台回報失敗。
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Link href="/shop/orders" className={PRIMARY_BTN}>
-              匯款後到我的訂單回報
-            </Link>
-            <p className="text-[12px] text-black/60">
-              訂單編號 <span className={CODE}>{manual.orderNo}</span>
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={(e) => void report(e)} className="flex flex-col gap-3">
-            <div>
-              <label htmlFor="shop-last5" className={LABEL}>
-                匯款完成後，回報您的帳號末五碼
-              </label>
-              <input
-                id="shop-last5"
-                className={FIELD}
-                inputMode="numeric"
-                pattern="\d{5}"
-                maxLength={5}
-                required
-                value={last5}
-                onChange={(e) => setLast5(e.target.value.replace(/\D/g, ""))}
-                placeholder="12345"
-              />
-            </div>
-            {error ? (
-              <p className="text-[13px] text-red-700">{error}</p>
-            ) : null}
-            <button type="submit" disabled={busy || last5.length !== 5} className={PRIMARY_BTN}>
-              {busy ? "送出中…" : "回報已匯款"}
-            </button>
-            <p className="text-center text-[12px] text-black/60">
-              稍後再匯也沒關係 —— 記下訂單編號
-              <span className={CODE}> {manual.orderNo} </span>
-              即可。
-            </p>
-          </form>
-        )}
-        {afterOrder ? afterOrder({ orderNo: manual.orderNo, email: manual.email }) : null}
-      </div>
+      <ManualResult
+        order={manual}
+        spec={reportSpec}
+        asGuest={asGuest}
+        managed={options.managedOrders}
+        ordersHref={options.managedOrders ? "/shop/orders" : null}
+        afterOrder={afterOrder}
+      />
     );
   }
 

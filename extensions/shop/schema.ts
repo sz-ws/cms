@@ -102,4 +102,9 @@ export const shopMigrations = [
           ON ext_shop_return_events (return_no, created_at)
       `,
     },
+    {
+      // 0.9.0(core 1.63.0):匯款人姓名(付款方式要客人回報姓名時;參考碼仍在 transfer_last5)。
+      id: "0005_transfer_payer",
+      sql: `ALTER TABLE ext_shop_orders ADD COLUMN transfer_payer TEXT`,
+    },
   ];
