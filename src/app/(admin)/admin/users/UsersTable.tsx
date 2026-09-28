@@ -2,6 +2,9 @@
 
 import {
   startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
   useOptimistic,
   useState,
   useSyncExternalStore,
@@ -44,7 +47,20 @@ import { useDateFormatter } from "@/components/DateTimeProvider";
 import type { DateFormatter } from "@/lib/datetime";
 import { UserSheet, type SheetMode } from "./UserSheet";
 import { applyUsersAction, type UsersAction } from "./users-optimistic";
-import { hrefForView, usersInView, type UsersView } from "./users-view";
+import { usersInView, type UsersView } from "./users-view";
+import {
+  choiceOf,
+  clearUsersFilter,
+  emptyUsersFilter,
+  filterUsers,
+  hrefForUsersFilter,
+  isUsersFiltered,
+  roleLabel,
+  switchUsersView,
+  type RoleChoice,
+  type UsersFilter,
+} from "./users-filter";
+import { ExportCsvLink, NoMatch, UsersFilterBar } from "./UsersFilterBar";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import type { MessageKey, Locale } from "@/lib/i18n";
 
@@ -69,12 +85,6 @@ export interface RoleOption {
   name: string;
   /** 打得開的後台頁數。 */
   pages: number;
-}
-
-type RoleChoice = "admin" | "editor" | "guest" | `role:${string}`;
-
-function choiceOf(user: Pick<UserRecord, "role" | "staffRoleId">): RoleChoice {
-  return user.staffRoleId ? `role:${user.staffRoleId}` : user.role;
 }
 
 /** 選單的值 → 要寫回列表與 API 的兩個欄位。 */
@@ -202,19 +212,6 @@ export function RolePill({
       {label ?? role}
     </span>
   );
-}
-
-function roleLabel(
-  user: Pick<UserRecord, "role" | "staffRoleId">,
-  t: ReturnType<typeof useT>,
-  roles: readonly RoleOption[],
-): string {
-  if (user.staffRoleId) {
-    return roles.find((r) => r.id === user.staffRoleId)?.name ?? t("usersTable.roleGuest");
-  }
-  if (user.role === "admin") return t("usersTable.roleAdmin");
-  if (user.role === "guest") return t("usersTable.roleGuest");
-  return t("usersTable.roleEditor");
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -491,15 +488,18 @@ export function UsersTable({
   roles,
   selfId,
   now,
-  initialView = "staff",
+  initialFilter,
 }: {
   initialUsers: UserRecord[];
   /** 1.50.0:自訂角色。 */
   roles: RoleOption[];
   selfId: string;
   now: number;
-  /** 1.56.0:後台人員 / 會員(網址的 ?view=,見 ./users-view.ts)。 */
-  initialView?: UsersView;
+  /**
+   * 1.56.0:後台人員 / 會員(?view=);1.59.0:加上搜尋與篩選。都在網址上,
+   * page.tsx 用 parseUsersFilter 讀好傳進來(見 ./users-filter.ts)。
+   */
+  initialFilter?: UsersFilter;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -514,16 +514,32 @@ export function UsersTable({
   const [sheet, setSheet] = useState<SheetMode | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<UsersView>(initialView);
-  // 分組只是篩選:樂觀更新仍作用在完整列表上(改了角色的人會自己移到另一組)。
-  const shown = usersInView(users, view);
+  const [filter, setFilter] = useState<UsersFilter>(() => initialFilter ?? emptyUsersFilter());
+  // 分組、搜尋、篩選都只是篩:樂觀更新仍作用在完整列表上(改了角色的人會自己移到另一組)。
+  // 表格跟著 deferred 的條件畫:人多時打字不卡,輸入框永遠是即時的。
+  const applied = useDeferredValue(filter);
+  const inView = useMemo(() => usersInView(users, applied.view), [users, applied.view]);
+  const shown = useMemo(
+    () => filterUsers(users, applied, dates.timeZone),
+    [users, applied, dates.timeZone],
+  );
+  const filtered = isUsersFiltered(applied);
 
-  function switchView(next: UsersView) {
-    setView(next);
+  function changeFilter(next: UsersFilter) {
+    setFilter(next);
     setConfirmDelete(null);
-    // 只換網址、不重新要資料:兩組資料本來就都在手上。
-    window.history.replaceState(null, "", hrefForView(window.location.href, next));
   }
+
+  // 條件寫進網址(重新整理、分享連結都留著)。只換網址、不重新要資料:資料本來就都在手上。
+  // 停手一下才寫:每打一個字就 replaceState,Safari 會在短時間內呼叫太多次時擋掉。
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const next = hrefForUsersFilter(window.location.href, filter);
+      const { pathname, search, hash } = window.location;
+      if (next !== `${pathname}${search}${hash}`) window.history.replaceState(null, "", next);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [filter]);
 
   const colPref = useSyncExternalStore(subscribeCols, readColPref, () => null);
   const hidden = hiddenColumns(colPref);
@@ -563,35 +579,51 @@ export function UsersTable({
     });
   }
 
-  const memberCount =
-    shown.length === 1
+  const memberCount = filtered
+    ? t("usersTable.matchCount", { n: shown.length, total: inView.length })
+    : shown.length === 1
       ? t("usersTable.memberCount.one")
       : t("usersTable.memberCount.other", { n: shown.length });
 
   return (
     <div className="flex flex-col gap-4">
-      {/* toolbar:數量在左,Display / Add member 在右(頁面 h1 已交代語境,不再包卡)。 */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <ViewSwitch view={view} onChange={switchView} />
-          <p className="text-[12.5px] text-ink/35 tabular-nums">
-            {memberCount}
-          </p>
+      {/* toolbar 兩列:分組與數量在左,匯出 / Display / Add member 在右(頁面 h1 已交代
+          語境,不再包卡);下一列是搜尋與篩選(./UsersFilterBar.tsx)。 */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <ViewSwitch
+              view={filter.view}
+              onChange={(next) => changeFilter(switchUsersView(filter, next))}
+            />
+            <p className="text-[12.5px] text-ink/35 tabular-nums" aria-live="polite">
+              {memberCount}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <ExportCsvLink filter={applied} disabled={shown.length === 0} />
+            <ColumnPicker hidden={hidden} />
+            <button
+              type="button"
+              onClick={() => setSheet({ mode: "create" })}
+              className={cn(
+                "flex h-8 items-center gap-1.5 rounded-full bg-ink pr-3.5 pl-3 text-[12.5px] font-medium text-white",
+                "transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.96]",
+              )}
+            >
+              <Plus className="size-3.5" />
+              {t("usersTable.addMember")}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ColumnPicker hidden={hidden} />
-          <button
-            type="button"
-            onClick={() => setSheet({ mode: "create" })}
-            className={cn(
-              "flex h-8 items-center gap-1.5 rounded-full bg-ink pr-3.5 pl-3 text-[12.5px] font-medium text-white",
-              "transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.96]",
-            )}
-          >
-            <Plus className="size-3.5" />
-            {t("usersTable.addMember")}
-          </button>
-        </div>
+        <UsersFilterBar
+          users={users}
+          filter={filter}
+          roles={roles}
+          dates={dates}
+          now={now}
+          onChange={changeFilter}
+        />
       </div>
 
       {error && (
@@ -605,10 +637,15 @@ export function UsersTable({
 
       {/* 表格本體:共用 CoreTable(rounded 白底 + hairline ring,窄視窗容器自己
           橫向捲)。編輯中的列上品牌藍 tint 跟右側 sheet 連動。 */}
-      {shown.length === 0 ? (
+      {inView.length === 0 ? (
         <p className="rounded-[calc(12px*var(--admin-radius-scale,1))] bg-white px-4 py-10 text-center text-[13px] text-ink/40 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
-          {t(view === "members" ? "usersTable.emptyMembers" : "usersTable.emptyStaff")}
+          {t(applied.view === "members" ? "usersTable.emptyMembers" : "usersTable.emptyStaff")}
         </p>
+      ) : shown.length === 0 ? (
+        <NoMatch
+          filter={applied}
+          onClear={(all) => changeFilter(all ? clearUsersFilter(filter) : { ...filter, q: "" })}
+        />
       ) : (
         <CoreTable
           columns={columns}
