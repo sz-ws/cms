@@ -1301,4 +1301,29 @@
 //   joined, last active); the page and the route share users-filter.ts and users-data.ts.
 //   The CSV helper moved to lib/csv.ts (commerceCsv re-exports it).
 // - Migration 0025: mcp_clients, mcp_grants, mcp_codes, mcp_tokens, agent_audit.app.
-export const CORE_API_VERSION = "1.59.0";
+// 1.60.0: Member facets — `Extension.memberFacets` (coreApi ^1.60.0) lets a plugin say what each
+// person on /admin/users is to it: one optional column per facet (badge), a 有／沒有 filter per facet
+// in the URL (`?<extId>.<facetId>=has|missing`, shared with GET /api/users/export), one CSV column
+// per facet, and a section per facet in the member sheet (lines as label/value rows, actions as
+// admin links for people with a value, without one, or always). `read(userIds, { services, locale,
+// timeZone })` runs for every facet in parallel; a failing, slow (3 s) or malformed facet is logged
+// and left out. `loadUsers` takes `{ locale, timeZone }` and returns `facets`.
+// - The dashboard shows extension cards above the content stats when any exist.
+// - The blog post editor follows the admin language (`blogEditor.*`).
+// - Sidebar links that leave the admin (a plugin's storefront page) open in a new tab.
+// - Generated share images use the site title when the manifest's og.image names no brand.
+// - Local dev and CI builds keep remote bindings off (a site binding Workers AI no longer needs a
+//   Cloudflare login to build); CMS_REMOTE_BINDINGS=1 turns them on.
+// - The AI can work with images and gets a guide. Agent tools `core.media.list` (read) and
+//   `core.media.upload` (write, `destructive: false`; a public URL fetched server-side — http(s)
+//   only, no credentials, no private hosts, redirects re-checked per hop, 15 s, 25 MB, format
+//   sniffed as JPEG/PNG/GIF/WebP/AVIF — or base64/data: URL). Uploads share
+//   `lib/media-upload.ts#saveMediaUpload` with `/api/media/upload`; `ScopedStorage.put` takes an
+//   optional `alt`. Generated `content.*.create/update` check media fields with `isMediaKey` and
+//   take the owner's extra fields under `data.extra` (update merges per key, null clears).
+// - Guide for AI (`src/ext/agent-guide.ts`): orientation, recipes built from enabled tools
+//   (product, news post, order lookup), `Extension.agentGuide` (LocalizedString ≤ 1200 chars per
+//   language; coreApi "^1.60.0") and the setting `core.ai.notes` (Settings → AI, ≤ 2000 chars).
+//   Appended to the admin assistant's system prompt and sent as MCP `initialize` instructions.
+//   Textarea settings may declare `maxLength`. The MCP request body limit goes to 8 MB.
+export const CORE_API_VERSION = "1.60.0";
