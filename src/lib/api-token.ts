@@ -35,8 +35,11 @@ const toHex = (u8: Uint8Array): string =>
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-/** base64url(無 padding)—— token body 用;URL-safe 且不含需跳脫字元。 */
-function base64url(u8: Uint8Array): string {
+/**
+ * base64url(無 padding)—— token body 用;URL-safe 且不含需跳脫字元。
+ * 1.59.0 起 export:AI 連線(src/lib/mcp/)的碼與權杖用同一套手法產生與雜湊。
+ */
+export function base64url(u8: Uint8Array): string {
   return btoa(String.fromCharCode(...u8))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -44,7 +47,7 @@ function base64url(u8: Uint8Array): string {
 }
 
 /** SHA-256(token) 的 hex(D1 只存這個;與 session hashToken 同手法)。 */
-async function hashToken(token: string): Promise<string> {
+export async function hashToken(token: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", enc(token));
   return toHex(new Uint8Array(digest));
 }

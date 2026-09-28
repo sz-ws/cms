@@ -86,6 +86,8 @@ describe("setting group derivation", () => {
       "core.ai.baseUrl",
       "core.ai.apiKey",
       "core.ai.model",
+      // 1.59.0:AI 連線的開關。同一組,但設定頁由「AI 連線」卡自己畫(不進通用表單)。
+      "core.mcp.enabled",
     ]);
     const advanced = groups.find((g) => g.id === "advanced");
     expect(advanced?.fields.some((f) => f.key.startsWith("core.ai."))).toBe(false);

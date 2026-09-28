@@ -37,6 +37,11 @@
   settings memo and the extension loader use it only when its stamps equal the
   request's; invalidation drops it.
 - `rate-limit.ts`: shared `hitRateLimit` (D1 KV-style table).
+- `mcp/` (1.59.0): AI connections — the OAuth 2.1 authorization server behind `/api/mcp`.
+  `site.ts` (switch `core.mcp.enabled`, origin, discovery documents, CORS/OAuth responses),
+  `clients.ts` (dynamic registration, redirect URI rules), `grants.ts` (connections, codes,
+  tokens, who may connect), `consent.ts` (authorize request checks, session-bound consent
+  ticket), `crypto.ts` (PKCE, hashing, ticket signing). Only full admins can connect.
 - `extra-fields.ts`: additional fields an admin adds per content type
   (`core.content.extraFields`; values in `data.extra`). Pure (zod only) so the settings
   manager and editors share it; `extra-fields-server.ts` reads the setting. Anything that

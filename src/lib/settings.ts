@@ -427,6 +427,16 @@ export const CORE_SETTINGS: SettingField[] = [
     default: "",
   },
   {
+    // 1.59.0:AI 連線(外部 AI App 經 /api/mcp 操作後台,src/lib/mcp/)。預設關:關著時
+    // MCP、探索文件、登記、換權杖與同意畫面全部回「沒有開放」,已連線的 App 暫停。
+    // 不進通用設定表單 —— 設定頁的「AI 連線」卡有自己的開關(settings/page.tsx 排除)。
+    key: "core.mcp.enabled",
+    group: "ai",
+    label: { en: "Let AI apps connect", "zh-Hant": "開放 AI 連線" },
+    type: "boolean",
+    default: false,
+  },
+  {
     // spec-login-providers.md §5:第三方登入(Google/LINE/OIDC)找不到已連結的身分時
     // 怎麼辦。email 相同也絕不自動連結(防帳號接管)。
     key: "core.auth.oauthRegistration",

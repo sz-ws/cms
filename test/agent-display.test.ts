@@ -79,7 +79,7 @@ const DISPLAY: AgentDisplay = {
 
 beforeAll(async () => {
   await d1().exec(
-    "CREATE TABLE IF NOT EXISTS agent_audit (id TEXT PRIMARY KEY, at INTEGER NOT NULL, user_id TEXT NOT NULL, user_email TEXT NOT NULL, tool TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, args TEXT NOT NULL, ok INTEGER NOT NULL, result TEXT, error TEXT);",
+    "CREATE TABLE IF NOT EXISTS agent_audit (id TEXT PRIMARY KEY, at INTEGER NOT NULL, user_id TEXT NOT NULL, user_email TEXT NOT NULL, tool TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, args TEXT NOT NULL, ok INTEGER NOT NULL, result TEXT, error TEXT, app TEXT);",
   );
   // 1.34.0:agent loop 每一次上游呼叫都會寫一列用量(src/ext/ai-usage.ts)。
   // 它 fail-open,少了這張表不會讓測試失敗 —— 但會在每一輪對話留下一則

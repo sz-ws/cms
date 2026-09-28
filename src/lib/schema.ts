@@ -375,12 +375,16 @@ export const agentAudit = sqliteTable(
     kind: text("kind", { enum: ["read", "write"] }).notNull(),
     // "chat" = loop 內自動執行的 read;"execute" = admin 按下確認卡後執行。
     // 確認制的可查證形式:不該存在 kind='write' AND source='chat' 的列。
-    source: text("source", { enum: ["chat", "execute"] }).notNull(),
+    // "mcp"(migrations/0025):外部 AI App 經 /api/mcp 執行,確認發生在那個 App 裡。
+    source: text("source", { enum: ["chat", "execute", "mcp"] }).notNull(),
     args: text("args").notNull(),
     // 0/1(SQLite 無 boolean)。失敗含「args 未過 schema」。
     ok: integer("ok").notNull(),
     result: text("result"),
     error: text("error"),
+    // migrations/0025:source = "mcp" 時那個 App 的名字(反正規化,連線撤銷後仍讀得懂);
+    // 其餘來源為 NULL。
+    app: text("app"),
   },
   // 唯一的掃描路徑是「最近 N 列」。migration 的 SQL 建的是 `(at DESC)`;drizzle 的
   // index builder 型別在本版不接受欄位的排序方向,故此處只宣告欄位 —— 名稱與欄位
@@ -481,4 +485,77 @@ export const registryNoticeSeen = sqliteTable(
     seenAt: integer("seen_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.source, t.noticeId] })],
+);
+
+// migrations/0025_mcp_connections.sql:AI 連線(外部 AI App 經 MCP 操作後台)的授權資料。
+// 碼、權杖、client secret 一律只存 SHA-256 hex;四張表各自的壽命與取捨寫在 migration 檔頭,
+// 執行期契約見 src/lib/mcp/。
+//
+// App 的動態登記。redirect_uris = JSON 字串陣列(登記時已驗過);secret_hash NULL = 公開
+// client(只靠 PKCE)。
+export const mcpClients = sqliteTable(
+  "mcp_clients",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    redirectUris: text("redirect_uris").notNull(),
+    secretHash: text("secret_hash"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("mcp_clients_created_idx").on(t.createdAt)],
+);
+
+// 一條連線 = 一個 App × 一位管理員。scope 是 "read" | "write"(write 含 read),住在這裡
+// 而不是權杖上:重新連線改了權限,手上的權杖立刻跟著變。
+export const mcpGrants = sqliteTable(
+  "mcp_grants",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpClients.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scope: text("scope", { enum: ["read", "write"] }).notNull(),
+    // RFC 8707:這條連線的權杖只對這個 MCP 網址有效。
+    resource: text("resource").notNull(),
+    createdAt: integer("created_at").notNull(),
+    lastUsedAt: integer("last_used_at"),
+  },
+  (t) => [
+    uniqueIndex("mcp_grants_client_user_idx").on(t.clientId, t.userId),
+    index("mcp_grants_user_idx").on(t.userId),
+  ],
+);
+
+// 授權碼:一次性(取用 = DELETE … RETURNING),幾分鐘內有效。
+export const mcpCodes = sqliteTable(
+  "mcp_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => mcpGrants.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    // PKCE S256 的 code_challenge(base64url),換權杖時比對 verifier。
+    codeChallenge: text("code_challenge").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (t) => [index("mcp_codes_grant_idx").on(t.grantId)],
+);
+
+// access(一小時)與 refresh(30 天,用一次換一把)權杖。
+export const mcpTokens = sqliteTable(
+  "mcp_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => mcpGrants.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["access", "refresh"] }).notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("mcp_tokens_grant_idx").on(t.grantId)],
 );
