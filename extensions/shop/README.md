@@ -296,6 +296,12 @@ core 看這一欄決定一筆訂單歸誰:
 
 ## 版本
 
+- **0.10.0**:
+  - 空的購物車有「繼續購物」。`CartView` 與 `ShopCartPage` 收 `shopHref`:站台的殼給自己的商品頁,
+    沒給回首頁。
+  - 結帳頁的「登入」直接連到網站的登入頁(有插件宣告 `signInPage` 時),帶 `?next=/shop/checkout`,
+    登入完回結帳頁;`CheckoutView` 收 `signInHref`,沒給是 `/login`(它也會轉過去)。
+  - 沒有 migration,沒有新的設定。
 - **0.9.0**:需要 core 1.63.0。
   - 訂單管理插件改看 `commerce:orders` provider(不看插件 id),結帳頁照它的 `storefront()`
     畫;「我的訂單」只在它給了 `ordersHref`(同站路徑,沒有反斜線)時出現。回報匯款一律送商店的

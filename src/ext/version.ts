@@ -1483,4 +1483,12 @@
 //   behaviour), usable as soon as it is deployed. A manager written for 1.62 keeps working through the shims; to drop
 //   them, write `managed_by` on insert and backfill old orders, implement `storefront()` and
 //   `reportTransfer()`, and declare extra checkout fields instead of custom body keys.
-export const CORE_API_VERSION = "1.63.0";
+// 1.64.0: Lists on phones. `CoreTable` takes `cards` (`CoreRowCardsProps`): below 640px the table is
+// hidden and each row is a card instead of a table scrolled sideways, sorted like the table. A card has a
+// `title`, an optional `badge` (top right, usually the status), `fields` (label and value; a value of null,
+// undefined, false or "" is left out, so a `CoreColumn` fits as is), an optional `action` (`CoreCardAction
+// { text, onClick, about?, primary? }`: the button's hit area covers the card, `about` is read after the
+// text by screen readers) and `extra` (links next to it, above the hit area). Without `cards` a table is
+// unchanged. `components/admin/core-row-cards.tsx` exports `CoreRowCards` for lists that are not tables.
+// Strings come from the caller, as for columns.
+export const CORE_API_VERSION = "1.64.0";
