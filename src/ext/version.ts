@@ -1491,4 +1491,9 @@
 // text by screen readers) and `extra` (links next to it, above the hit area). Without `cards` a table is
 // unchanged. `components/admin/core-row-cards.tsx` exports `CoreRowCards` for lists that are not tables.
 // Strings come from the caller, as for columns.
-export const CORE_API_VERSION = "1.64.0";
+// 1.65.0: A plugin that keeps financial records can allow its removal while it has none. `canUninstall`
+// takes `{ sql, message }` besides `false`: a trusted SQL predicate (same rules as `canDisable`) checked right
+// before the uninstall, before the plugin is disabled; when it doesn't hold the uninstall stops with
+// 「無法移除：{message}。」 and the plugin is left as it was. `false` still means disable only.
+// `assertCanUninstall(db, ext)` in `code-lifecycle.ts`. The object form needs coreApi >= 1.65.0.
+export const CORE_API_VERSION = "1.65.0";
