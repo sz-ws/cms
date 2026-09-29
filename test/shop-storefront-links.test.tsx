@@ -98,3 +98,26 @@ describe("空的購物車", () => {
     expect(html).toContain("前往結帳");
   });
 });
+
+describe("站台先確認過的 Email(emailLocked)", () => {
+  beforeEach(() => {
+    state.items = [{ productId: "p1", name: "商品一", unitPrice: 120, qty: 1 }];
+  });
+  const emailInput = (html: string) => html.match(/<input id="shop-email"[^>]*>/)?.[0] ?? "";
+
+  it("鎖住:照 contact.email、唯讀,有 onChangeEmail 才放「改用其他 Email」", () => {
+    const locked = checkout({ managedOrders: true, guestCheckout: true, contact: { email: "buyer@example.com" }, emailLocked: true, onChangeEmail: () => {} });
+    expect(emailInput(locked)).toContain('readOnly=""');
+    expect(emailInput(locked)).toContain('value="buyer@example.com"');
+    expect(locked).toContain(">改用其他 Email</button>");
+
+    const noChange = checkout({ managedOrders: true, guestCheckout: true, contact: { email: "buyer@example.com" }, emailLocked: true });
+    expect(noChange).not.toContain("改用其他 Email");
+  });
+
+  it("沒鎖:照舊可以改", () => {
+    const html = checkout({ managedOrders: true, guestCheckout: true, contact: { email: "buyer@example.com" } });
+    expect(emailInput(html)).not.toContain("readOnly");
+    expect(html).not.toContain("改用其他 Email");
+  });
+});

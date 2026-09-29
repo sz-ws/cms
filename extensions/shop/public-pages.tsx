@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { publicSignInPage } from "@/lib/sign-in-page";
 import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
 import { ORDERS_CAPABILITY, storefrontOf, type OrderManager } from "@/ext/commerce-kit/order-manager";
+import type { ComponentProps } from "react";
 import { CartView } from "./CartView";
 import { CheckoutView } from "./CheckoutView";
 import { PageHeader } from "./PageHeader";
@@ -19,7 +20,8 @@ import {
 // 可見性,並給一個安靜的白底單欄版面(外框由 publicHeader/publicFooter filter
 // 決定,本 extension 不越權)。
 
-function PageShell({
+/** 商店頁的版面(白底單欄)。站台自己組結帳頁(例如在表單前多一步)時也用它,和原本的頁面一樣寬。 */
+export function ShopPageShell({
   title,
   children,
 }: {
@@ -53,17 +55,20 @@ async function checkoutSignInHref(): Promise<string> {
  */
 export function ShopCartPage({ shopHref }: { shopHref?: string; params?: Record<string, string> }) {
   return (
-    <PageShell title="購物車">
+    <ShopPageShell title="購物車">
       <CartView shopHref={shopHref} />
-    </PageShell>
+    </ShopPageShell>
   );
 }
 
+export type CheckoutViewProps = ComponentProps<typeof CheckoutView>;
+
 /**
- * /shop/checkout。標題與「回購物車」由 CheckoutView 畫(成立訂單之後換成「訂單已成立」)。shopHref 同
- * ShopCartPage:空的結帳頁「繼續購物」連去哪,沒給回首頁。
+ * 結帳表單要的資料(伺服器讀設定、付款方式、結帳欄位、訂單管理插件的 storefront())。ShopCheckoutPage 用它;
+ * 站台要自己組結帳頁(例如在表單前多一步、給 afterOrder 這類只能從 client 傳的 prop)時也用它,把結果交給
+ * 自己的 client 元件去畫 CheckoutView。
  */
-export async function ShopCheckoutPage({ shopHref }: { shopHref?: string; params?: Record<string, string> } = {}) {
+export async function loadShopCheckoutProps({ shopHref }: { shopHref?: string } = {}): Promise<CheckoutViewProps> {
   const [
     cardProvider,
     transferProvider,
@@ -103,20 +108,28 @@ export async function ShopCheckoutPage({ shopHref }: { shopHref?: string; params
     ordersHref: storefront?.ordersHref ?? null,
     checkoutNotice,
   });
+  return {
+    ...options,
+    cardEnabled: Boolean(cardProvider.trim()),
+    transferEnabled: Boolean(transferProvider.trim()),
+    shippingConfig,
+    promoEnabled: promos.some((p) => p.enabled),
+    reportSpec,
+    fields,
+    signInHref,
+    shopHref,
+    contact: checkoutContact(user),
+  };
+}
+
+/**
+ * /shop/checkout。標題與「回購物車」由 CheckoutView 畫(成立訂單之後換成「訂單已成立」)。shopHref 同
+ * ShopCartPage:空的結帳頁「繼續購物」連去哪,沒給回首頁。
+ */
+export async function ShopCheckoutPage({ shopHref }: { shopHref?: string; params?: Record<string, string> } = {}) {
   return (
-    <PageShell>
-      <CheckoutView
-        {...options}
-        cardEnabled={Boolean(cardProvider.trim())}
-        transferEnabled={Boolean(transferProvider.trim())}
-        shippingConfig={shippingConfig}
-        promoEnabled={promos.some((p) => p.enabled)}
-        reportSpec={reportSpec}
-        fields={fields}
-        signInHref={signInHref}
-        shopHref={shopHref}
-        contact={checkoutContact(user)}
-      />
-    </PageShell>
+    <ShopPageShell>
+      <CheckoutView {...await loadShopCheckoutProps({ shopHref })} />
+    </ShopPageShell>
   );
 }

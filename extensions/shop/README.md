@@ -315,6 +315,10 @@ core 看這一欄決定一筆訂單歸誰:
     每行匯款指示(銀行、帳號、戶名、金額、訂單編號…)旁邊有「複製」。
   - 購物車空了(例如成立訂單之後重新整理)說「購物車是空的。」並連到 `shopHref`(`CheckoutView` 與
     `ShopCheckoutPage` 收,沒給回首頁),不再叫人去空的購物車。
+  - 站台可以自己組結帳頁(例如在表單前先驗證 Email):`loadShopCheckoutProps({ shopHref })` 回 `CheckoutView`
+    要的全部資料(伺服器),`ShopPageShell` 是商店頁的版面;兩個都從 `public-pages.tsx` 匯出。`CheckoutView`
+    多 `emailLocked`(Email 已由頁面確認過,照 `contact.email` 送出、不能改)與 `onChangeEmail`(給了就在旁邊放
+    「改用其他 Email」,由頁面決定怎麼換)。
   - 沒有 migration,沒有新的設定,沒有 core 的新需求。
 - **0.10.1**:回報匯款的參考碼格式不對時,結帳完成頁說要填幾位數字(例如「帳號末五碼要填 5 位數字」),
   不再先跳出瀏覽器的「格式不符」。

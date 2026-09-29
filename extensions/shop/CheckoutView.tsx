@@ -142,6 +142,8 @@ export function CheckoutView({
   requireContact,
   notice = "",
   contact = {},
+  emailLocked = false,
+  onChangeEmail,
 }: {
   cardEnabled: boolean;
   transferEnabled: boolean;
@@ -175,6 +177,12 @@ export function CheckoutView({
   notice?: string;
   /** 0.7.0:表單一開始帶入的姓名與 Email(已登入的人,見 checkoutContact)。 */
   contact?: CheckoutContact;
+  /**
+   * 0.11.0:Email 已經由頁面確認過(例如先驗證過信箱),照 contact.email 送出、不能在這裡改。
+   * onChangeEmail 有給就在旁邊放「改用其他 Email」,由頁面決定怎麼換。只能從 client 元件傳。
+   */
+  emailLocked?: boolean;
+  onChangeEmail?: () => void;
 }) {
   const options = resolveCheckoutOptions({
     managedOrders,
@@ -415,7 +423,23 @@ export function CheckoutView({
           <label htmlFor="shop-email" className={LABEL}>
             Email
           </label>
-          <input id="shop-email" className={FIELD} type="email" required maxLength={200} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input
+            id="shop-email"
+            className={emailLocked ? `${FIELD} bg-black/[0.03] text-black/60` : FIELD}
+            type="email"
+            required
+            maxLength={200}
+            autoComplete="email"
+            readOnly={emailLocked}
+            aria-describedby={emailLocked && onChangeEmail ? "shop-email-change" : undefined}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          {emailLocked && onChangeEmail ? (
+            <button id="shop-email-change" type="button" className="mt-1.5 text-[12.5px] text-black/60 underline underline-offset-4" onClick={onChangeEmail}>
+              改用其他 Email
+            </button>
+          ) : null}
         </div>
         <div>
           <label htmlFor="shop-phone" className={LABEL}>
