@@ -24,7 +24,9 @@ describe("欄位照收款方式的設定", () => {
     expect(html).toContain(">帳號末五碼</label>");
     expect(input(html, "shop-reference")).toContain("required");
     expect(input(html, "shop-reference")).toContain('inputMode="numeric"');
-    expect(input(html, "shop-reference")).toContain('pattern="\\d{5}"');
+    expect(input(html, "shop-reference")).toContain('maxLength="5"');
+    // 不用 pattern:瀏覽器的提示不說幾位數,送出時 checkTransferReport 會說。
+    expect(input(html, "shop-reference")).not.toContain("pattern");
     expect(html).not.toContain('id="shop-payer"');
     expect(html).not.toContain("填其中一項就可以");
   });

@@ -82,7 +82,8 @@ export const shop = defineExtension({
   // transfer-report;收件地區在運費設定;金額照 core.currency。migrations 0005–0007。
   // 0.10.0:站台決定「登入」與「繼續購物」連去哪:結帳頁的登入直接連到網站的登入頁(publicSignInPage,帶
   // ?next=),空的購物車連回 shopHref。沒有 core 的新需求。
-  version: "0.10.0",
+  // 0.10.1:回報匯款的參考碼格式不對時,說要填幾位數字(不再先跳出瀏覽器的「格式不符」)。
+  version: "0.10.1",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到

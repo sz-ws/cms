@@ -28,6 +28,7 @@ export interface TransferReportFormProps {
   ordersHref: string | null;
 }
 
+// 0.10.1:不用 pattern。瀏覽器的提示只說「格式不符」,送出時 checkTransferReport 會說要填幾位數字。
 function ReferenceInput({ spec, required }: { spec: TransferReportSpec; required: boolean }) {
   const { label, digits } = spec.reference;
   return (
@@ -40,7 +41,7 @@ function ReferenceInput({ spec, required }: { spec: TransferReportSpec; required
         name="reference"
         className={digits > 0 ? `${FIELD} font-mono` : FIELD}
         {...(digits > 0
-          ? { inputMode: "numeric" as const, pattern: `\\d{${digits}}`, maxLength: digits }
+          ? { inputMode: "numeric" as const, maxLength: digits }
           : { maxLength: REPORT_LIMITS.freeText })}
         autoComplete="off"
         required={required}
