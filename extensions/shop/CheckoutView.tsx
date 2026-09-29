@@ -66,6 +66,9 @@ function submitToGateway(gatewayUrl: string, fields: Record<string, string>): vo
   form.submit();
 }
 
+/** 沒給 signInHref 時的登入連結:/login 會轉到網站的登入頁,?next= 一起帶過去。 */
+const DEFAULT_SIGN_IN_HREF = "/login?next=%2Fshop%2Fcheckout";
+
 type CheckoutReply =
   | { ok: true; orderNo: string; session: CheckoutSession }
   | { ok: false; error: string; field?: string; message?: string };
@@ -101,6 +104,7 @@ export function CheckoutView({
   reportSpec = DEFAULT_TRANSFER_REPORT_SPEC,
   fields = [],
   onSignIn,
+  signInHref = DEFAULT_SIGN_IN_HREF,
   afterOrder,
   requireContact,
   notice = "",
@@ -124,8 +128,10 @@ export function CheckoutView({
   reportSpec?: TransferReportSpec;
   /** 0.9.0:插件宣告的結帳欄位(commerce-kit checkout-fields)。 */
   fields?: readonly PublicCheckoutField[];
-  /** 0.7.0:按「登入」時要做的事;沒給就連到 /login。只能從 client 元件傳。 */
+  /** 0.7.0:按「登入」時要做的事;沒給就連到 signInHref。只能從 client 元件傳。 */
   onSignIn?: () => void;
+  /** 「登入」連到哪(帶著回結帳頁的 ?next=);public-pages.tsx 給網站的登入頁,沒給是 /login(也會轉過去)。 */
+  signInHref?: string;
   /** 0.7.0:匯款訂單成立後,結局頁下面多放的東西。只能從 client 元件傳。 */
   afterOrder?: (order: { orderNo: string; email: string }) => ReactNode;
   /** 電話與收件地址必填(設定 ext.shop.requireContact);受管模式照插件的 storefront(),沒給 = 必填。 */
@@ -270,7 +276,7 @@ export function CheckoutView({
       登入
     </button>
   ) : (
-    <Link href="/login?next=%2Fshop%2Fcheckout" className="ml-1 underline underline-offset-4">
+    <Link href={signInHref} className="ml-1 underline underline-offset-4">
       登入
     </Link>
   );
@@ -316,7 +322,7 @@ export function CheckoutView({
           ) : (
             <>
               結帳前請先
-              <Link href="/login?next=%2Fshop%2Fcheckout" className="mx-0.5 underline underline-offset-4">
+              <Link href={signInHref} className="mx-0.5 underline underline-offset-4">
                 登入
               </Link>
               會員

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
+import { publicSignInPage } from "@/lib/sign-in-page";
 import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
 import { ORDERS_CAPABILITY, storefrontOf, type OrderManager } from "@/ext/commerce-kit/order-manager";
 import { CartView } from "./CartView";
@@ -50,11 +51,25 @@ function PageShell({
 }
 
 const ORDERS_TABLE = "ext_shop_orders";
+const CHECKOUT_PATH = "/shop/checkout";
 
-export function ShopCartPage() {
+/**
+ * 結帳頁的「登入」:直接連到網站的登入頁(有插件宣告 signInPage 的話),登入完回結帳頁。
+ * 沒有就是 /login(它也會轉到登入頁,只是多繞一次)。
+ */
+async function checkoutSignInHref(): Promise<string> {
+  const page = (await publicSignInPage()) ?? "/login";
+  return `${page}?next=${encodeURIComponent(CHECKOUT_PATH)}`;
+}
+
+/**
+ * /shop/cart。shopHref:空的購物車「繼續購物」連去哪;站台的殼直接畫這一頁時給自己的商品頁,
+ * 經由 publicRoutes 派送時沒有(回首頁)。
+ */
+export function ShopCartPage({ shopHref }: { shopHref?: string; params?: Record<string, string> }) {
   return (
     <PageShell title="購物車">
-      <CartView />
+      <CartView shopHref={shopHref} />
     </PageShell>
   );
 }
@@ -85,10 +100,11 @@ export async function ShopCheckoutPage() {
   const user = await getSessionUser();
   const providers = await shopProviders();
   const manager = providers.getById<OrderManager>(ORDERS_CAPABILITY, ORDERS_TABLE);
-  const [storefront, reportSpec, fields] = await Promise.all([
+  const [storefront, reportSpec, fields, signInHref] = await Promise.all([
     manager ? storefrontOf(manager) : null,
     loadTransferReportSpec(providers),
     loadCheckoutFields(providers),
+    checkoutSignInHref(),
   ]);
   const options = resolveCheckoutOptions({
     managedOrders: storefront !== null,
@@ -108,6 +124,7 @@ export async function ShopCheckoutPage() {
         promoEnabled={promos.some((p) => p.enabled)}
         reportSpec={reportSpec}
         fields={fields}
+        signInHref={signInHref}
         contact={checkoutContact(user)}
       />
     </PageShell>

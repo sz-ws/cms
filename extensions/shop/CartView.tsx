@@ -13,12 +13,13 @@ import {
 
 // 購物車頁(client)。localStorage 為源,useSyncExternalStore 訂閱
 // (server snapshot 為空,hydration 後自動補上 client 值)。
+// 空的購物車給一個回去挑商品的連結(shopHref):站台的殼給自己的商品頁,沒給就回首頁。
 
 const QTY_BTN =
   "grid h-7 w-7 place-items-center rounded-[8px] text-[14px] text-black/60 " +
   "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)] hover:bg-black/[0.04]";
 
-export function CartView() {
+export function CartView({ shopHref = "/" }: { shopHref?: string }) {
   const items = useSyncExternalStore(
     subscribeCart,
     getCartSnapshot,
@@ -29,6 +30,9 @@ export function CartView() {
     return (
       <p className="text-[14px] text-black/60">
         購物車是空的。
+        <Link href={shopHref} className="ml-1 underline underline-offset-4">
+          繼續購物
+        </Link>
       </p>
     );
   }
