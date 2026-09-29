@@ -68,7 +68,7 @@ export function catalogManifest(): Record<string, unknown> {
         slugField: "name",
         fields: [
           { key: "name", type: "text", required: true, label: text("Name", "商品名稱") },
-          { key: "slug", type: "slug", label: "Slug" },
+          { key: "slug", type: "slug", label: text("Slug", "網址代稱") },
           { key: "price", type: "number", label: text("Price (whole units)", "價格（整數）") },
           { key: "image", type: "media", label: text("Image", "商品圖") },
           { key: "category", type: "relation", to: "catalog.category", label: text("Category", "分類") },
@@ -94,7 +94,7 @@ export function catalogManifest(): Record<string, unknown> {
         slugField: "name",
         fields: [
           { key: "name", type: "text", required: true, label: text("Name", "分類名稱") },
-          { key: "slug", type: "slug", label: "Slug" },
+          { key: "slug", type: "slug", label: text("Slug", "網址代稱") },
         ],
       },
     ],
