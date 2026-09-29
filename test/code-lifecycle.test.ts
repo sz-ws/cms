@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
-import { noDeclarativeDependents, requiredPluginsEnabled, writeCodeEnabled, writeCodeDisabled } from "../src/ext/code-lifecycle";
+import { assertCanUninstall, noDeclarativeDependents, requiredPluginsEnabled, writeCodeEnabled, writeCodeDisabled } from "../src/ext/code-lifecycle";
 import { defineExtension } from "../src/ext/types";
 
 const db = (env as { DB: D1Database }).DB;
@@ -48,6 +48,28 @@ describe("code extension lifecycle guards", () => {
     expect(() => defineExtension({ ...dealer, requiresExtensions: ["dealer"] })).toThrow();
     expect(() => defineExtension({ ...dealer, requiresExtensions: ["wallet", "wallet"] })).toThrow();
     expect(() => defineExtension({ ...wallet, canDisable: { sql: "1; DELETE FROM users", message: "bad" } })).toThrow();
+  });
+});
+
+// 1.65.0:有條件的移除。
+describe("uninstall guards", () => {
+  it("false never uninstalls; no rule always does", async () => {
+    await expect(assertCanUninstall(db, { canUninstall: false })).rejects.toThrow("這個插件只能停用，不能移除。");
+    await expect(assertCanUninstall(db, {})).resolves.toBeUndefined();
+    await expect(assertCanUninstall(db, { canUninstall: true })).resolves.toBeUndefined();
+  });
+  it("a predicate allows uninstalling only while it holds, and says why when it doesn't", async () => {
+    const guarded = { canUninstall: { sql: "NOT EXISTS (SELECT 1 FROM pending_work)", message: "還有未處理的紀錄，只能停用" } };
+    await expect(assertCanUninstall(db, guarded)).resolves.toBeUndefined();
+    await db.prepare("INSERT INTO pending_work VALUES ('p1')").run();
+    await expect(assertCanUninstall(db, guarded)).rejects.toThrow("無法移除：還有未處理的紀錄，只能停用。");
+  });
+  it("validates the predicate and needs core API 1.65.0", () => {
+    const base = { id: "ledger", name: "Ledger", version: "0.1.0", coreApi: "^1.65.0" };
+    expect(() => defineExtension({ ...base, canUninstall: { sql: "NOT EXISTS (SELECT 1 FROM t)", message: "有紀錄" } })).not.toThrow();
+    expect(() => defineExtension({ ...base, coreApi: "^1.64.0", canUninstall: { sql: "1", message: "x" } })).toThrow(/1.65.0/);
+    expect(() => defineExtension({ ...base, canUninstall: { sql: "1; DROP TABLE users", message: "x" } })).toThrow();
+    expect(() => defineExtension({ ...base, coreApi: "^1.37.0", canUninstall: false })).not.toThrow();
   });
 });
 

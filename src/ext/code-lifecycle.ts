@@ -20,6 +20,18 @@ export async function writeCodeEnabled(db: D1Database, ext: Extension, registry:
   if (result.meta.changes !== 1) throw new ExtensionLifecycleConflict("必要插件已停用，請重新確認");
 }
 
+/**
+ * 1.65.0:移除前的檢查。canUninstall false = 只能停用;{ sql, message } = 條件成立才能移除(例如還沒有任何
+ * 金錢紀錄),不成立時的原因寫在錯誤裡。沒宣告 = 可以移除。
+ */
+export async function assertCanUninstall(db: D1Database, ext: Pick<Extension, "canUninstall">): Promise<void> {
+  const rule = ext.canUninstall;
+  if (rule === false) throw new ExtensionLifecycleConflict("這個插件只能停用，不能移除。");
+  if (typeof rule !== "object") return;
+  const allowed = await db.prepare(`SELECT 1 AS ok WHERE (${rule.sql})`).first();
+  if (!allowed) throw new ExtensionLifecycleConflict(`無法移除：${rule.message}。`);
+}
+
 /** No asynchronous guard callback can accidentally leave a read/write gap. */
 export async function writeCodeDisabled(db: D1Database, ext: Extension, registry: readonly Extension[], at: number) {
   const present = await db.prepare("SELECT id FROM extensions WHERE id = ?").bind(ext.id).first();

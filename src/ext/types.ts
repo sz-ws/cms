@@ -273,8 +273,12 @@ export interface Extension {
   requiresExtensions?: string[];
   /** Trusted SQL predicate, evaluated atomically with disabling. No user SQL. */
   canDisable?: { sql: string; message: string };
-  /** Persistent financial plugins may permit disabling but forbid destructive uninstall. */
-  canUninstall?: boolean;
+  /**
+   * Persistent financial plugins may permit disabling but forbid destructive uninstall (false). 1.65.0: or
+   * allow it only while a trusted SQL predicate holds, e.g. no financial records yet; checked right before
+   * the uninstall runs, the message says why when it doesn't. No user SQL.
+   */
+  canUninstall?: boolean | { sql: string; message: string };
   migrations?: ExtMigration[];
   settings?: SettingField[];
   adminPages?: AdminPage[];
@@ -689,7 +693,7 @@ const manifestSchema = z
     description: localizedStringSchema.optional(),
     icon: z.string().max(16384).optional(),
     menu: extensionMenuSchema.optional(),
-    canUninstall: z.boolean().optional(),
+    canUninstall: z.union([z.boolean(), z.object({ sql: z.string().min(1).refine((sql) => !/;|--|\/\*|\*\//.test(sql), "invalid uninstall predicate"), message: z.string().min(1).max(300) }).strict()]).optional(),
     requiresExtensions: z.array(z.string().regex(ID_RE)).max(20).optional(),
     canDisable: z.object({ sql: z.string().min(1).refine((sql) => !/;|--|\/\*|\*\//.test(sql), "invalid disable predicate"), message: z.string().min(1).max(300) }).strict().optional(),
     migrations: z.array(migrationSchema).optional(),
@@ -790,6 +794,7 @@ const manifestSchema = z
     };
 
     if (ext.canUninstall !== undefined && !rangeStartsAtOrAfter(ext.coreApi, "1.37.0")) ctx.addIssue({ code: "custom", message: "uninstall protection requires coreApi >= 1.37.0", path: ["coreApi"] });
+    if (typeof ext.canUninstall === "object" && !rangeStartsAtOrAfter(ext.coreApi, "1.65.0")) ctx.addIssue({ code: "custom", message: "a conditional uninstall requires coreApi >= 1.65.0", path: ["coreApi"] });
     const iconIssue = ext.icon === undefined ? null : adminIconIssue(ext.icon);
     if (iconIssue) ctx.addIssue({ code: "custom", message: iconIssue, path: ["icon"] });
     if (ext.menu?.parent === ext.id) ctx.addIssue({ code: "custom", message: "extension menu cannot nest under itself", path: ["menu", "parent"] });

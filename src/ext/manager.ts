@@ -2,6 +2,7 @@ import { getDB } from "@/lib/cf";
 import {
   ExtensionLifecycleConflict,
   NO_GUARD,
+  assertCanUninstall,
   assertCodeDependencies,
   noDeclarativeDependents,
   requiredPluginsEnabled,
@@ -270,7 +271,8 @@ export async function disableExtension(extId: string): Promise<void> {
 
 export async function uninstallExtension(extId: string): Promise<void> {
   const ext = findManifest(extId);
-  if (ext.canUninstall === false) throw new ExtensionLifecycleConflict("這個插件只能停用，不能移除。");
+  // 1.65.0:先檢查再停用(code-lifecycle.ts),擋下來時插件照原樣。
+  await assertCanUninstall(getDB(), ext);
 
   // 先 disable
   await disableExtension(extId);
