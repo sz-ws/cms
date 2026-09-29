@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { PublicCheckoutField } from "@/ext/commerce-kit/checkout-fields";
 import type { ShippingOption } from "@/ext/commerce-kit/shipping-engine";
 import type { CartItem } from "./cart-store";
@@ -79,6 +80,21 @@ export function OrderSummary({
   );
 }
 
+/**
+ * 要登入才能結帳、還沒登入(0.11.0):表單整個不畫,改成這一塊 —— 一句話加一顆「登入」。
+ * 登入連結帶著回結帳頁的 ?next=,登入完回來才填資料,不會填到一半被擋、回來又得重填。
+ */
+export function SignInFirst({ signIn }: { signIn: ReactNode }) {
+  return (
+    <section aria-labelledby="shop-sign-in-first" className={CARD}>
+      <p id="shop-sign-in-first" className="text-[14px] leading-relaxed text-black/75">
+        請先登入會員，登入後就能繼續結帳。
+      </p>
+      <div className="mt-4">{signIn}</div>
+    </section>
+  );
+}
+
 /** 配送方式:整排列出,客人挑 —— 每個選項的運費已套完規則。 */
 export function ShippingChoices({
   options,
@@ -128,7 +144,7 @@ export function ShippingChoices({
   );
 }
 
-/** 優惠碼:輸入後按「套用」試算;套用後可以移除。 */
+/** 優惠碼:輸入後按「套用」試算;套用後可以移除。0.11.0 起沒有範例代碼(客人會照著打)。 */
 export function PromoField({
   promo,
   input,
@@ -170,8 +186,8 @@ export function PromoField({
             className={`${FIELD} flex-1 font-mono uppercase`}
             maxLength={40}
             value={input}
+            autoComplete="off"
             onChange={(e) => onInput(e.target.value.toUpperCase())}
-            placeholder="EXAMPLE10"
           />
           <button
             type="button"

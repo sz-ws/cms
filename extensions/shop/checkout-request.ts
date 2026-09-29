@@ -4,6 +4,7 @@ import type { CartItem } from "./cart-store";
 //
 // 不管結帳由商店自己處理還是交給訂單管理插件,body 都是同一種:requestId(重送不重複建單)、
 // 商品、聯絡資料、配送、優惠碼、付款方式,以及插件宣告的結帳欄位(fields,commerce-kit checkout-fields)。
+// 回覆是 { ok: true, orderNo, session, expiresAt? }:expiresAt(0.11.0)是付款期限,只有訂單管理插件會帶。
 
 export const CHECKOUT_URL = "/api/ext/shop/checkout";
 
@@ -34,6 +35,19 @@ export const PROMO_REASON: Record<string, string> = {
 /** 伺服器的錯誤代碼 → 一句話;不認得的(例如接手訂單的插件回的一句話)接在「結帳失敗：」後面。 */
 export function explainCheckoutError(code: string): string {
   return ERROR_HINT[code] ?? `結帳失敗：${code}`;
+}
+
+/** 這個錯誤要客人先登入(說法旁邊放「登入」連結)。 */
+export function needsSignIn(code: string): boolean {
+  return code === "unauthorized";
+}
+
+/**
+ * 結帳回覆的付款期限(0.11.0,`expiresAt`,epoch ms)。有期限的一方才帶(訂單管理插件);沒帶、
+ * 或不是合理的時間,當作不知道 —— 結局頁照舊不寫期限。
+ */
+export function paymentDeadline(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 /** 優惠碼試算失敗的說法。 */

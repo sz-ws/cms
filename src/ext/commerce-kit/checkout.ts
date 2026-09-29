@@ -155,6 +155,11 @@ export interface CheckoutSuccessBody {
   orderNo: string;
   amounts: OrderAmounts;
   session: CheckoutSession;
+  /**
+   * 付款期限(epoch ms),選填:結帳頁寫在匯款指示上面。訂單管理插件的 checkout() 回同一個形狀,
+   * 有期限就帶上;沒帶的結帳頁照舊。這裡(商店自己的結帳)的訂單沒有期限,不帶。
+   */
+  expiresAt?: number;
 }
 
 /** 公開結帳 handler 工廠。extension 以 `{ path: "checkout", public: true }` 掛上。 */

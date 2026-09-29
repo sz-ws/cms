@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { publicSignInPage } from "@/lib/sign-in-page";
@@ -6,6 +5,7 @@ import { listPromos, parseShippingConfig } from "@/ext/commerce-kit";
 import { ORDERS_CAPABILITY, storefrontOf, type OrderManager } from "@/ext/commerce-kit/order-manager";
 import { CartView } from "./CartView";
 import { CheckoutView } from "./CheckoutView";
+import { PageHeader } from "./PageHeader";
 import { loadCheckoutFields, loadTransferReportSpec, shopProviders } from "./shop-providers";
 import {
   CHECKOUT_NOTICE_KEY,
@@ -21,30 +21,15 @@ import {
 
 function PageShell({
   title,
-  backHref,
-  backLabel,
   children,
 }: {
-  title: string;
-  backHref?: string;
-  backLabel?: string;
+  /** 頁面標題;不給 = 內容自己畫(結帳頁,見 PageHeader.tsx)。 */
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <main className="mx-auto w-full max-w-xl px-6 py-14">
-      <header className="mb-8 flex items-baseline justify-between gap-3">
-        <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-black/85">
-          {title}
-        </h1>
-        {backHref ? (
-          <Link
-            href={backHref}
-            className="text-[13px] text-black/55 underline underline-offset-4"
-          >
-            {backLabel}
-          </Link>
-        ) : null}
-      </header>
+      {title ? <PageHeader title={title} /> : null}
       {children}
     </main>
   );
@@ -74,7 +59,11 @@ export function ShopCartPage({ shopHref }: { shopHref?: string; params?: Record<
   );
 }
 
-export async function ShopCheckoutPage() {
+/**
+ * /shop/checkout。標題與「回購物車」由 CheckoutView 畫(成立訂單之後換成「訂單已成立」)。shopHref 同
+ * ShopCartPage:空的結帳頁「繼續購物」連去哪,沒給回首頁。
+ */
+export async function ShopCheckoutPage({ shopHref }: { shopHref?: string; params?: Record<string, string> } = {}) {
   const [
     cardProvider,
     transferProvider,
@@ -115,7 +104,7 @@ export async function ShopCheckoutPage() {
     checkoutNotice,
   });
   return (
-    <PageShell title="結帳" backHref="/shop/cart" backLabel="回購物車">
+    <PageShell>
       <CheckoutView
         {...options}
         cardEnabled={Boolean(cardProvider.trim())}
@@ -125,6 +114,7 @@ export async function ShopCheckoutPage() {
         reportSpec={reportSpec}
         fields={fields}
         signInHref={signInHref}
+        shopHref={shopHref}
         contact={checkoutContact(user)}
       />
     </PageShell>

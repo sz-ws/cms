@@ -106,10 +106,14 @@ core 看這一欄決定一筆訂單歸誰:
 
 | | 商店自己處理 | 訂單管理插件接手 |
 |---|---|---|
-| 身分 | 訪客,免登入 | `signIn: "required"`:要登入,頂端「結帳前請先登入會員」,「登入」連到 `/login?next=/shop/checkout`;`"optional"`:不擋,頂端「已經是會員？登入」(給了 `onSignIn` 就呼叫它) |
+| 身分 | 訪客,免登入 | `signIn: "required"`:要登入;沒登入的人看不到表單,只有「請先登入會員，登入後就能繼續結帳。」、「登入」按鈕(連到 `/login?next=/shop/checkout`,給了 `onSignIn` 就呼叫它)與訂單摘要(0.11.0);`"optional"`:不擋,頂端「已經是會員？登入」 |
 | 電話、收件地址 | 選填(`requireContact` 可改必填) | 照 `requireContact`(沒說 = 必填) |
 | 「我的訂單」連結 | 無 | 有 `ordersHref` 才有 |
-| 匯款成立後的說明 | 「請於三日內匯款」 | 有訂單頁:「請依「我的訂單」顯示的付款期限付款」;沒有:「請匯款到以下帳戶」 |
+| 匯款成立後的說明 | 「請於三日內匯款」 | 結帳回覆有 `expiresAt`:「請在 {期限} 前匯款」(站台時區);沒有時,有訂單頁:「請到「我的訂單」查看付款期限」;沒有:「請匯款到以下帳戶」 |
+
+結帳成功的回覆是 `{ ok: true, orderNo, session, expiresAt? }`(commerce-kit `CheckoutSuccessBody`)。`expiresAt`
+(0.11.0,epoch ms)是付款期限,選填:接手的插件有期限就帶,結帳完成頁寫在匯款指示上面;沒帶(商店自己的訂單、
+較舊的插件)照上表的說法。
 
 結帳 body 只有一種(`checkout-request.ts`):`requestId`(同一份表單重送用同一個 id,
 換內容才換)、`items`、聯絡資料、`region`、`shippingMethodId`(沒有選項時送空字串)、
@@ -264,9 +268,12 @@ core 看這一欄決定一筆訂單歸誰:
 - 換整頁版面 = 改 `public-pages.tsx` 的殼,或整組換掉 publicRoutes 的 component。
 - `CheckoutView` 的 props:`cardEnabled`、`transferEnabled`(必填);`shippingConfig`、
   `promoEnabled`、`managedOrders`、`signedIn`、`guestCheckout`、`ordersHref`、`requireContact`、
-  `notice`、`contact`、`reportSpec`、`fields`(選填,預設同 `resolveCheckoutOptions`)。
+  `notice`、`contact`、`reportSpec`、`fields`(選填,預設同 `resolveCheckoutOptions`);`signInHref`
+  (「登入」連去哪,預設 `/login?next=/shop/checkout`)、`shopHref`(空的結帳頁「繼續購物」,預設 `/`)。
   0.7.0 另有兩個函式 prop,只能從 client 元件傳:`onSignIn`(按「登入」時做的事)、
   `afterOrder({ orderNo, email })`(匯款訂單結局頁下面多放的東西)。
+- 0.11.0 起結帳頁的標題(h1)由 `CheckoutView` 畫(`PageHeader.tsx`):填表時「結帳」+「回購物車」,成立訂單
+  之後「訂單已成立」。自己的殼不要再放一個標題。
 
 ## 商品頁掛加入購物車鈕
 
@@ -296,6 +303,19 @@ core 看這一欄決定一筆訂單歸誰:
 
 ## 版本
 
+- **0.11.0**:
+  - 要登入才能結帳(訂單管理插件的 `signIn: "required"`)、還沒登入:不畫表單,改成一句「請先登入會員，
+    登入後就能繼續結帳。」、「登入」按鈕(`signInHref`,帶 `?next=`)與訂單摘要。以前表單填得完,按「成立訂單」
+    才說要登入,登入回來電話、地址都要重填。訪客也能結帳時照舊。伺服器還是回 `unauthorized`(例如登入過期)時,
+    錯誤旁邊有「登入」。
+  - 姓名、Email、電話、收件地區、收件地址有 `autocomplete`(`name`、`email`、`tel`、`address-level1`、
+    `street-address`),瀏覽器能自動填。優惠碼欄拿掉範例代碼(客人會照著打)。
+  - 結帳頁的標題改由 `CheckoutView` 畫:成立訂單之後是「訂單已成立」,沒有「回購物車」。付款期限:結帳回覆有
+    `expiresAt`(選填,commerce-kit `CheckoutSuccessBody`)時寫「請在 {期限} 前匯款到以下帳戶」,照站台時區。
+    每行匯款指示(銀行、帳號、戶名、金額、訂單編號…)旁邊有「複製」。
+  - 購物車空了(例如成立訂單之後重新整理)說「購物車是空的。」並連到 `shopHref`(`CheckoutView` 與
+    `ShopCheckoutPage` 收,沒給回首頁),不再叫人去空的購物車。
+  - 沒有 migration,沒有新的設定,沒有 core 的新需求。
 - **0.10.1**:回報匯款的參考碼格式不對時,結帳完成頁說要填幾位數字(例如「帳號末五碼要填 5 位數字」),
   不再先跳出瀏覽器的「格式不符」。
 - **0.10.0**:
