@@ -55,8 +55,8 @@ export function catalogManifest(): Record<string, unknown> {
     version: CORE_API_VERSION,
     coreApi: `^${CORE_API_VERSION}`,
     description: text(
-      "Products with price, image and a category picked from the category list, plus public list and detail pages.",
-      "商品含價格、圖片，分類從分類清單挑選，並有公開的商品列表與詳情頁。",
+      "Products with price, photos, long detail images and a category picked from the category list, plus public list and detail pages.",
+      "商品含價格、多張照片與說明長圖，分類從分類清單挑選，並有公開的商品列表與詳情頁。",
     ),
     icon: "package",
     // 側欄「商務」一區,排在商店(order 20)前面。
@@ -71,9 +71,12 @@ export function catalogManifest(): Record<string, unknown> {
           { key: "slug", type: "slug", label: text("Slug", "網址代稱") },
           { key: "price", type: "number", label: text("Price (whole units)", "價格（整數）") },
           { key: "image", type: "media", label: text("Image", "商品圖") },
+          // 1.66.0:主圖以外的照片,和商品說明底下接在一起的長圖(依序排列、中間不留縫)。
+          { key: "moreImages", type: "gallery", max: 12, label: text("More photos", "更多商品圖") },
           { key: "category", type: "relation", to: "catalog.category", label: text("Category", "分類") },
           { key: "summary", type: "text", label: text("Summary", "一句話簡介") },
           { key: "body", type: "richtext", label: text("Description", "商品說明") },
+          { key: "detailImages", type: "gallery", label: text("Detail images", "說明長圖") },
         ],
         layout: {
           kind: "manual",
@@ -83,7 +86,9 @@ export function catalogManifest(): Record<string, unknown> {
             { fields: ["price"] },
             { fields: ["summary"], fullWidth: true },
             { fields: ["image"], fullWidth: true },
+            { fields: ["moreImages"], fullWidth: true },
             { fields: ["body"], fullWidth: true },
+            { fields: ["detailImages"], fullWidth: true },
           ],
           wide: [],
         },

@@ -1496,4 +1496,14 @@
 // before the uninstall, before the plugin is disabled; when it doesn't hold the uninstall stops with
 // 「無法移除：{message}。」 and the plugin is left as it was. `false` still means disable only.
 // `assertCanUninstall(db, ext)` in `code-lifecycle.ts`. The object form needs coreApi >= 1.65.0.
-export const CORE_API_VERSION = "1.65.0";
+// 1.66.0: Several images in one field. The `gallery` field type (a leaf: top level or inside group /
+// repeater / blocks) stores an ordered list of media keys, each checked like a `media` value, at most
+// `max` of them (1–30, default 30; `max` is only valid on gallery fields; a required gallery can't be
+// empty). The form shows numbered tiles with move earlier / later and remove, and 「加入圖片」 opens the
+// media picker in multi-select mode: `MediaPickerDialog` takes `onSelectMany(keys)` and `limit`, its
+// library then lists images only and numbers them in the order they are clicked, and its upload tab takes
+// several files. Tables show the first image and +N, the generic detail page shows them in order, the
+// agent tools take a list of keys and the product recipe uploads each photo. The catalog product gets
+// `moreImages` (更多商品圖, up to 12) and `detailImages` (說明長圖); `image` stays the main photo. A
+// manifest with a gallery field needs coreApi >= 1.66.0; the capability name is `gallery`.
+export const CORE_API_VERSION = "1.66.0";

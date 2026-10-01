@@ -8,6 +8,7 @@ import { NumberField } from "./NumberField";
 import { DateField } from "./DateField";
 import { SelectField } from "./SelectField";
 import { MediaField } from "./MediaField";
+import { GalleryField } from "./GalleryField";
 import { RichtextField } from "./RichtextField";
 import { SlugField } from "./SlugField";
 import { JsonField } from "./JsonField";
@@ -72,6 +73,7 @@ export const FIELD_COMPONENTS: Record<
   boolean: ToggleField,
   date: DateField,
   media: MediaField,
+  gallery: GalleryField,
   select: SelectField,
   slug: SlugField,
   json: JsonField,

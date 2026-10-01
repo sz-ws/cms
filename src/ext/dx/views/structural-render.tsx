@@ -54,6 +54,30 @@ function renderLeaf(
       />
     );
   }
+  if (field.type === "gallery") {
+    // 1.66.0:每一張都過 isMediaKey,照順序往下排。
+    const keys = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && isMediaKey(v)) : [];
+    if (keys.length === 0) return null;
+    return (
+      <span className="flex flex-col gap-2">
+        {keys.map((key, index) => {
+          const d = dims.get(key);
+          return (
+            <MediaImage
+              key={`${key}-${index}`}
+              mediaKey={key}
+              alt=""
+              maxWidth={640}
+              sizes="(max-width: 672px) 100vw, 640px"
+              width={d?.width}
+              height={d?.height}
+              className="max-w-full rounded"
+            />
+          );
+        })}
+      </span>
+    );
+  }
   return <span>{displayValue(field, value)}</span>;
 }
 

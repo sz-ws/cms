@@ -25,6 +25,7 @@ export const CORE_FEATURES = [
   "contents", // 共用 contents engine(types/fields/auto-CRUD)
   "media", // R2 media library + media 欄位
   "relations", // relation/relations 欄位型別
+  "gallery", // 1.66.0:gallery(多張圖)欄位型別
   "blocks", // group/repeater/blocks 結構欄位
   "public-create", // contentType public:true 匿名 POST
   "og-image", // og.image template pipeline

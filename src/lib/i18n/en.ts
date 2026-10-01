@@ -1045,6 +1045,13 @@ export const en = {
   "dxField.media.keyLabel": "Storage key",
   "dxField.media.keyPlaceholder": "e.g. core/2026/07/abc.jpg",
   "dxField.media.keyHint": "Type or paste a storage key directly.",
+  "dxField.gallery.add": "Add images",
+  "dxField.gallery.count": "{n} / {max}",
+  "dxField.gallery.empty": "No images yet",
+  "dxField.gallery.emptyHint": "Use Add images. You can pick several at once.",
+  "dxField.gallery.moveEarlier": "Move image {n} earlier",
+  "dxField.gallery.moveLater": "Move image {n} later",
+  "dxField.gallery.remove": "Remove image {n}",
 
   // Media chooser dialog (fields/MediaPickerDialog.tsx) — media field and the richtext image button.
   "mediaPicker.title": "Choose media",
@@ -1062,6 +1069,12 @@ export const en = {
   "mediaPicker.uploading": "Uploading…",
   "mediaPicker.dropHint": "Drop a file or click to browse",
   "mediaPicker.hint": "Images, video, audio, PDF · up to 25MB",
+  "mediaPicker.titleMany": "Add images",
+  "mediaPicker.descMany": "Pick from the library or upload new images. They're added in the order you choose them.",
+  "mediaPicker.addMany": "Add {n}",
+  "mediaPicker.full": "No room for more",
+  "mediaPicker.uploadingMany": "Uploading {done}/{total}…",
+  "mediaPicker.hintMany": "Pick several at once · up to 25MB each",
 
   // 公開表單收件匣(src/lib/submissions.ts + views/InboxView.tsx)。
   "inbox.subtitle": "Messages sent through your public form.",

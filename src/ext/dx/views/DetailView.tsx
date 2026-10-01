@@ -106,6 +106,7 @@ export async function DetailView({
           if (f.type === "slug") return null;
           const value = entry.data[f.key];
           if (value === undefined || value === null || value === "") return null;
+          if (Array.isArray(value) && value.length === 0) return null;
           // author:只顯示解析出的使用者名稱;查無 user → 整欄不渲染(見上方
           // authorName 解析,不落地內部 user id)。
           if (f.key === "author") {
@@ -149,6 +150,24 @@ export async function DetailView({
                       className="max-w-full rounded"
                     />
                   ) : null
+                ) : f.type === "gallery" ? (
+                  // 1.66.0:每一張照順序往下排,一樣過 isMediaKey。
+                  <span className="flex flex-col gap-3">
+                    {(Array.isArray(value) ? value : [])
+                      .filter((key): key is string => typeof key === "string" && isMediaKey(key))
+                      .map((key, index) => (
+                        <MediaImage
+                          key={`${key}-${index}`}
+                          mediaKey={key}
+                          alt={index === 0 ? title : ""}
+                          maxWidth={640}
+                          sizes="(max-width: 672px) 100vw, 640px"
+                          width={mediaDims.get(key)?.width}
+                          height={mediaDims.get(key)?.height}
+                          className="max-w-full rounded"
+                        />
+                      ))}
+                  </span>
                 ) : f.type === "relation" || f.type === "relations" ? (
                   // 08 §2: resolved id → title, linked when the target has a
                   // public detail route + is published.

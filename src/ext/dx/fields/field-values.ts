@@ -39,7 +39,8 @@ export function toFieldValue(field: DeclarativeField, v: unknown): unknown {
       // 08 §1: single entry id string (or "" when unset).
       return typeof v === "string" ? v : "";
     case "relations":
-      // 08 §1: ordered array of entry id strings; drop non-strings defensively.
+    case "gallery":
+      // 08 §1 / 1.66.0: ordered array of entry ids / media keys; drop non-strings defensively.
       return Array.isArray(v)
         ? v.filter((el): el is string => typeof el === "string")
         : [];
@@ -114,8 +115,9 @@ export function buildFieldValue(field: DeclarativeField, raw: unknown): unknown 
     case "relation":
       // 08 §1: single entry id string. Empty = unset.
       return typeof raw === "string" && raw !== "" ? raw : undefined;
-    case "relations": {
-      // 08 §1: ordered array of entry id strings. Empty = unset.
+    case "relations":
+    case "gallery": {
+      // 08 §1 / 1.66.0: ordered array of entry ids / media keys. Empty = unset.
       if (!Array.isArray(raw) || raw.length === 0) return undefined;
       const ids = raw.filter(
         (el): el is string => typeof el === "string" && el.length > 0,

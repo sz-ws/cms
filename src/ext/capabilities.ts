@@ -159,7 +159,8 @@ export type LeafFieldType =
   | "slug"
   | "json"
   | "relation"
-  | "relations";
+  | "relations"
+  | "gallery"; // 1.66.0:有序的 media key 陣列
 
 /** 結構(compound)欄位型別(Tier 2 v1.2)。只可作 top-level(一層 nesting 上限)。 */
 export type StructuralFieldType = "group" | "repeater" | "blocks";
@@ -183,6 +184,7 @@ export interface ContentLeafFieldDef {
   options?: string[]; // select 用
   to?: string; // 08 §1:relation/relations 的目標 type key "<extId>.<typeName>"
   indexed?: boolean; // §2.4:未來側索引表用,v1 忽略
+  max?: number; // 1.66.0:gallery 的張數上限
 }
 
 /**
@@ -203,7 +205,7 @@ export interface ContentFieldDef {
   indexed?: boolean; // §2.4:未來側索引表用,v1 忽略
   fields?: ContentLeafFieldDef[]; // Tier 2:group/repeater 的 nested 子欄位
   blocks?: ContentBlockDef[]; // Tier 2:blocks 的具名 block 宣告
-  max?: number; // Tier 2:repeater/blocks 的實例數上限
+  max?: number; // Tier 2:repeater/blocks 的實例數上限;1.66.0 起也是 gallery 的張數上限
 }
 
 export interface ContentTypeDef {

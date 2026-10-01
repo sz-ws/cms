@@ -41,7 +41,13 @@ function collectLeaves(
 ): void {
   for (const f of fields) {
     if (f.type === "media") collectValue(data[f.key], out);
+    if (f.type === "gallery") collectGallery(data[f.key], out);
   }
+}
+
+/** 1.66.0:gallery 的每一張。 */
+function collectGallery(value: unknown, out: Set<string>): void {
+  if (Array.isArray(value)) for (const el of value) collectValue(el, out);
 }
 
 function asObject(v: unknown): Record<string, unknown> {
@@ -61,7 +67,7 @@ function asObjectArray(v: unknown): Record<string, unknown>[] {
 
 /**
  * 從欄位定義 + 一筆 entry 資料收集所有 media key。
- * 涵蓋頂層 media 欄與 group / repeater / blocks 的 leaf media 子欄
+ * 涵蓋頂層 media / gallery 欄與 group / repeater / blocks 的 leaf 子欄
  * ——— 也就是 structural-render 會真的 render 出 <img> 的每一處。
  */
 export function collectMediaKeys(
@@ -72,6 +78,10 @@ export function collectMediaKeys(
   for (const f of fields) {
     if (f.type === "media") {
       collectValue(data[f.key], out);
+      continue;
+    }
+    if (f.type === "gallery") {
+      collectGallery(data[f.key], out);
       continue;
     }
     if (f.type === "group") {

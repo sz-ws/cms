@@ -12,7 +12,7 @@ import type {
 } from "../capabilities";
 import type { HookBus } from "../hooks";
 import { isTiptapDoc, isValidRichtextDoc, stringToDoc } from "./fields/richtext-schema";
-import { isMediaKey } from "./media-key";
+import { GALLERY_MAX, isMediaKey } from "./media-key";
 import { slugify } from "./slug";
 import { revalidateContent } from "./cache-invalidate";
 import { indexContentEntry, removeContentIndex } from "@/lib/search";
@@ -204,6 +204,20 @@ function validateField(
       if (typeof raw !== "string") return fail(key, "expected media key string");
       if (!isMediaKey(raw)) return fail(key, "invalid media key");
       return raw;
+    case "gallery": {
+      // 1.66.0:有序的 media key 陣列,每個照 media 欄位的規則驗;張數不超過 max。
+      // 回傳新陣列(不回傳呼叫端傳入的同一個參考)。
+      if (!Array.isArray(raw)) return fail(key, "expected an array of media keys");
+      if (raw.length === 0 && field.required) return fail(key, "required");
+      const limit = field.max ?? GALLERY_MAX;
+      if (raw.length > limit) return fail(key, `at most ${limit} images`);
+      const out: string[] = [];
+      for (const el of raw) {
+        if (typeof el !== "string" || !isMediaKey(el)) return fail(key, "invalid media key");
+        out.push(el);
+      }
+      return out;
+    }
     case "number":
       if (typeof raw !== "number" || !Number.isFinite(raw))
         return fail(key, "expected finite number");

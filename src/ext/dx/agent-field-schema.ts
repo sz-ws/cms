@@ -4,7 +4,7 @@ import type {
   DeclarativeField,
   DeclarativeLeafField,
 } from "./manifest";
-import { isMediaKey } from "./media-key";
+import { GALLERY_MAX, isMediaKey } from "./media-key";
 import type { ExtraFieldDef } from "@/lib/extra-fields";
 
 /**
@@ -14,6 +14,11 @@ import type { ExtraFieldDef } from "@/lib/extra-fields";
 export const MEDIA_KEY_HINT =
   "Media key of an uploaded file, such as core/2026/09/abc123.jpg — the `key` returned by core.media.upload " +
   "or listed by core.media.list. Not a URL. An empty string removes the image.";
+
+/** 1.66.0:gallery 欄位給模型看的一句話。 */
+export const GALLERY_KEYS_HINT =
+  "List of media keys (each returned by core.media.upload or listed by core.media.list, not URLs), " +
+  "in the order they are shown. An empty list removes all images.";
 
 // docs/spec-admin-agent.md §2:declarative contentTypes 自動生成 tools 時,args
 // schema 從 manifest fields 衍生的那一半。
@@ -74,6 +79,12 @@ function leafSchema(field: DeclarativeLeafField): z.ZodType {
       return z.string().min(1);
     case "relations":
       return z.array(z.string().min(1));
+    case "gallery":
+      // 1.66.0:media key 的陣列,順序就是畫面上的順序。每個 key 用同一支 isMediaKey 驗。
+      return z
+        .array(z.string().refine((v) => isMediaKey(v), { message: MEDIA_KEY_HINT }))
+        .max(field.max ?? GALLERY_MAX)
+        .describe(GALLERY_KEYS_HINT);
     default:
       // 型別上已窮盡;真的走到這裡代表 manifest 帶了本 core 不認得的欄位型別,
       // 放行讓 provider 去回報,而不是讓整組 tool 生不出來。
@@ -218,6 +229,8 @@ function fieldHint(field: DeclarativeField): string {
     case "media":
       // 1.60.0:「media key」而不是「media」—— 值是 core.media.upload 回傳的 key,不是網址。
       return " key";
+    case "gallery":
+      return " keys";
     case "group":
     case "repeater":
       return `{${(field.fields ?? []).map((f) => f.key).join(", ")}}`;

@@ -19,3 +19,6 @@ export function isMediaKey(value: string): boolean {
   if (value.includes("..") || value.startsWith("/")) return false;
   return KEY_RE.test(value);
 }
+
+/** 1.66.0:gallery 欄位最多幾張(manifest 的 `max` 只能更少)。 */
+export const GALLERY_MAX = 30;

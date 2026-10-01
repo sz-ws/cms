@@ -117,6 +117,12 @@ function fieldLine(
       if (field.type === "media" && refs.mediaStep !== undefined) {
         return `${field.key} (${pick(locale, `the key from step ${refs.mediaStep}`, `第 ${refs.mediaStep} 步的 key`)})`;
       }
+      if (field.type === "gallery" && refs.mediaStep !== undefined) {
+        // 1.66.0:多張圖。名稱要留著 —— 同一個型別可能有好幾個 gallery(例如更多商品圖、說明長圖)。
+        const label = resolveLocalizedString(field.label, locale);
+        const keys = pick(locale, `keys from step ${refs.mediaStep}, in order`, `第 ${refs.mediaStep} 步的 key,照順序`);
+        return `${field.key} (${label ? `${label}${pick(locale, "; ", ",")}` : ""}${keys})`;
+      }
       if (field.type === "relation" && refs.relationStep && field.to === refs.relationStep.to) {
         return `${field.key} (${pick(locale, `the id from step ${refs.relationStep.step}`, `第 ${refs.relationStep.step} 步的 id`)})`;
       }
@@ -213,27 +219,44 @@ function productRecipe(ctx: GuideContext, toolNames: readonly string[], extensio
   const { locale, tool } = ctx;
   const categoryKey = `${CATALOG_EXT_ID}.category`;
   const hasCategory = ctx.types.has(categoryKey) && ctx.has(contentTool(categoryKey, "list"));
-  const canUpload = ctx.has("core.media.upload") && product.fields.some((f) => f.type === "media");
+  const canUpload =
+    ctx.has("core.media.upload") && product.fields.some((f) => f.type === "media" || f.type === "gallery");
 
   const steps: string[] = [];
   const mediaStep = canUpload ? steps.length + 1 : undefined;
   if (canUpload) {
-    // 商品目錄的商品只有一個圖片欄位:使用者一次給好幾張時,模型要知道只放得下一張。
+    // 商品只有一個圖片欄位時,使用者一次給好幾張,模型要知道只放得下一張;有 gallery 欄位
+    // (1.66.0)就每張各上傳一次,其餘的照順序放進 gallery。
     const imageFields = product.fields.filter((f) => f.type === "media").map((f) => f.key);
+    const hasGallery = product.fields.some((f) => f.type === "gallery");
     const single =
-      imageFields.length === 1
+      imageFields.length === 1 && !hasGallery
         ? pick(
             locale,
             ` A product has one image (${imageFields[0]}); if the user gives several photos, ask which one to use.`,
             `商品只有一張圖(${imageFields[0]});使用者給了好幾張時,先問要用哪一張。`,
           )
         : "";
+    const main =
+      hasGallery && imageFields.length === 1
+        ? pick(
+            locale,
+            ` ${imageFields[0]} takes one key (the main photo); each list field takes several.`,
+            `${imageFields[0]} 放一張(主圖),清單欄位可以放好幾張。`,
+          )
+        : "";
     steps.push(
-      pick(
-        locale,
-        `Photo: upload it with ${tool("core.media.upload")} { url, alt: <product name> } and keep the key it returns.${single}`,
-        `照片:用 ${tool("core.media.upload")} { url, alt: <商品名稱> } 上傳,留下回傳的 key。${single}`,
-      ),
+      hasGallery
+        ? pick(
+            locale,
+            `Photos: upload each one with ${tool("core.media.upload")} { url, alt: <product name> } and keep the keys it returns, in order.${main}`,
+            `照片:每張各用 ${tool("core.media.upload")} { url, alt: <商品名稱> } 上傳,照順序留下回傳的 key。${main}`,
+          )
+        : pick(
+            locale,
+            `Photo: upload it with ${tool("core.media.upload")} { url, alt: <product name> } and keep the key it returns.${single}`,
+            `照片:用 ${tool("core.media.upload")} { url, alt: <商品名稱> } 上傳,留下回傳的 key。${single}`,
+          ),
     );
   }
   const relationStep = hasCategory ? { to: categoryKey, step: steps.length + 1 } : undefined;

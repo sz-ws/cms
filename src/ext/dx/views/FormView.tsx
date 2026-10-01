@@ -881,7 +881,7 @@ function FieldControl({
  * media / 結構欄 / 寬型 widget 拆兩欄,大多數短欄位則維持單欄。 */
 function isFullWidthField(field: DeclarativeField): boolean {
   const t: string = field.type;
-  if (t === "richtext" || t === "media" || t === "group") return true;
+  if (t === "richtext" || t === "media" || t === "gallery" || t === "group") return true;
   if (t === "repeater" || t === "blocks") return true;
   if (t === "json") return true;
   if (t === "slug") return true;

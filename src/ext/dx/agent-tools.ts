@@ -169,13 +169,14 @@ function updateTarget(args: unknown, locale: Locale): string {
     : ` (id: ${id}; ${fieldCount} fields)`;
 }
 
-/** 這個型別(含 group / repeater / blocks 裡的子欄位)有沒有 media 欄位。 */
+/** 這個型別(含 group / repeater / blocks 裡的子欄位)有沒有 media 或 gallery 欄位。 */
 function hasMediaField(ct: DeclarativeContentType): boolean {
+  const isImage = (field: { type: string }) => field.type === "media" || field.type === "gallery";
   return ct.fields.some(
     (field) =>
-      field.type === "media" ||
-      (field.fields ?? []).some((sub) => sub.type === "media") ||
-      (field.blocks ?? []).some((block) => block.fields.some((sub) => sub.type === "media")),
+      isImage(field) ||
+      (field.fields ?? []).some(isImage) ||
+      (field.blocks ?? []).some((block) => block.fields.some(isImage)),
   );
 }
 

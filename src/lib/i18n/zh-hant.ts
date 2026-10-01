@@ -1022,6 +1022,13 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "dxField.media.keyLabel": "儲存路徑",
   "dxField.media.keyPlaceholder": "例如 core/2026/07/abc.jpg",
   "dxField.media.keyHint": "直接輸入或貼上檔案的儲存路徑。",
+  "dxField.gallery.add": "加入圖片",
+  "dxField.gallery.count": "{n} / {max} 張",
+  "dxField.gallery.empty": "還沒有圖片",
+  "dxField.gallery.emptyHint": "按「加入圖片」，可以一次選好幾張。",
+  "dxField.gallery.moveEarlier": "第 {n} 張往前移",
+  "dxField.gallery.moveLater": "第 {n} 張往後移",
+  "dxField.gallery.remove": "移除第 {n} 張",
 
   // 選擇檔案的對話框(fields/MediaPickerDialog.tsx):媒體欄位與富文字的插入圖片。
   "mediaPicker.title": "選擇檔案",
@@ -1039,6 +1046,12 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "mediaPicker.uploading": "上傳中…",
   "mediaPicker.dropHint": "拖放檔案或點擊瀏覽",
   "mediaPicker.hint": "圖片、影片、音訊、PDF · 最多 25MB",
+  "mediaPicker.titleMany": "加入圖片",
+  "mediaPicker.descMany": "從媒體庫點選或上傳新圖片，會照你選的順序加進去。",
+  "mediaPicker.addMany": "加入 {n} 張",
+  "mediaPicker.full": "已經選滿了",
+  "mediaPicker.uploadingMany": "上傳中 {done}/{total}…",
+  "mediaPicker.hintMany": "可以一次選好幾張 · 每張最多 25MB",
 
   // 內容版本歷史(src/lib/revisions.ts + views/RevisionHistory.tsx)。
   // 公開表單收件匣(src/lib/submissions.ts + views/InboxView.tsx)。

@@ -93,10 +93,10 @@ describe("buildAgentGuide", () => {
   it("writes the product, post and order recipes from what the site has", () => {
     const guide = buildAgentGuide(input());
     expect(guide).toContain("### Create a complete product (catalog.product)");
-    expect(guide).toContain("1. Photo: upload it with core.media.upload");
-    expect(guide).toContain("A product has one image (image); if the user gives several photos, ask which one to use.");
+    expect(guide).toContain("1. Photos: upload each one with core.media.upload");
+    expect(guide).toContain("image takes one key (the main photo); each list field takes several.");
     expect(guide).toContain("2. Category: find its id with content.catalog_category.list");
-    expect(guide).toMatch(/3\. Create the product with content\.catalog_product\.create\. data: name \(Name, required\), price .*image \(the key from step 1\), category \(the id from step 2\).*extra\.\{origin\}/);
+    expect(guide).toMatch(/3\. Create the product with content\.catalog_product\.create\. data: name \(Name, required\), price .*image \(the key from step 1\), moreImages \(More photos; keys from step 1, in order\), category \(the id from step 2\).*detailImages \(Detail images; keys from step 1, in order\).*extra\.\{origin\}/);
     expect(guide).toContain('content.catalog_product.update { id, status: "published" }');
     expect(guide).toContain("content.catalog_product.get");
     expect(guide).toContain("### Publish a news post with a cover (blog.post)");
@@ -107,12 +107,23 @@ describe("buildAgentGuide", () => {
     expect(guide).toContain("never a URL");
   });
 
+  it("asks which photo to use when a product has room for one only", () => {
+    const oneImage = catalogTypes.map((ct) =>
+      ct.typeKey === "catalog.product" ? { ...ct, fields: ct.fields.filter((f) => f.type !== "gallery") } : ct,
+    );
+    const guide = buildAgentGuide(input({ contentTypes: [...oneImage, POST as unknown as (typeof catalogTypes)[number]] }));
+    expect(guide).toContain("1. Photo: upload it with core.media.upload");
+    expect(guide).toContain("A product has one image (image); if the user gives several photos, ask which one to use.");
+    expect(guide).not.toContain("moreImages");
+  });
+
   it("follows the admin language", () => {
     const guide = buildAgentGuide(input({ locale: "zh-Hant" }));
     expect(guide).toContain("### 從零建立一個完整的商品(catalog.product)");
     expect(guide).toContain("image (第 1 步的 key)");
+    expect(guide).toContain("moreImages (更多商品圖,第 1 步的 key,照順序)");
     expect(guide).toContain("name (商品名稱,必填)");
-    expect(guide).toContain("商品只有一張圖(image)");
+    expect(guide).toContain("image 放一張(主圖),清單欄位可以放好幾張。");
     expect(guide).toContain("### 發佈一篇有封面的消息(blog.post)");
     expect(guide).toContain("title (標題,必填)");
     expect(guide).toContain("### 查一筆訂單");

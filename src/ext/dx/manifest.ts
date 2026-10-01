@@ -24,6 +24,7 @@ import {
   type DeclarativeScript,
 } from "./scripts";
 import { isSubmissionTypeName } from "./submission";
+import { GALLERY_MAX } from "./media-key";
 import { IDENTITY_MAX, IDENTITY_RE, type PluginRequirement } from "../plugin-ref";
 import { CATEGORIES_SINCE_1_58, STORE_CATEGORIES, type StoreCategory } from "../store-categories";
 
@@ -135,6 +136,8 @@ export const LEAF_FIELD_TYPES = [
   // relations = 有序 entryId 字串陣列。兩者 manifest 皆須 `to: "<extId>.<typeName>"`。
   "relation",
   "relations",
+  // 1.66.0:多張圖。value = 有序的 media key 陣列(每個都照 media 欄位的規則驗)。
+  "gallery",
 ] as const;
 
 // ---- structural field types(Tier 2 v1.2:core-v2 §3.2 + dx-field-components.md)----
@@ -175,6 +178,8 @@ const leafFieldSchema = z
     // text 欄位:宣告 multiline 可把 input 升級為可放大寫作的 textarea。
     // (richer writing → TextFullscreenEditor overlay,Esc 收。)
     multiline: z.boolean().optional(),
+    // 1.66.0:gallery 專用;最多幾張(沒寫 = GALLERY_MAX)。
+    max: z.number().int().positive().max(GALLERY_MAX).optional(),
   })
   .strict()
   .refine((f) => f.type !== "select" || (f.options?.length ?? 0) >= 1, {
@@ -192,6 +197,10 @@ const leafFieldSchema = z
   .refine((f) => f.multiline === undefined || f.type === "text", {
     message: "`multiline` is only valid on text fields",
     path: ["multiline"],
+  })
+  .refine((f) => f.max === undefined || f.type === "gallery", {
+    message: "`max` is only valid on gallery fields",
+    path: ["max"],
   });
 
 // leaf 子欄位陣列(group/repeater/blocks 的 nested fields)。v1 限制:只允許 leaf
@@ -609,6 +618,22 @@ const loginProviderSchema = z
 
 // ---- top-level manifest ----
 
+type FieldShape = { type: string };
+type FieldTree = FieldShape & { fields?: readonly FieldShape[]; blocks?: readonly { fields: readonly FieldShape[] }[] };
+
+/** 1.66.0:有沒有 gallery 欄位(含 group / repeater / blocks 裡的子欄位)。 */
+function usesGallery(types: readonly { fields: readonly FieldTree[] }[]): boolean {
+  const isGallery = (f: FieldShape) => f.type === "gallery";
+  return types.some((ct) =>
+    ct.fields.some(
+      (f) =>
+        isGallery(f) ||
+        (f.fields ?? []).some(isGallery) ||
+        (f.blocks ?? []).some((b) => b.fields.some(isGallery)),
+    ),
+  );
+}
+
 export const manifestSchema = z
   .object({
     kind: z.literal("declarative"),
@@ -972,6 +997,14 @@ export const manifestSchema = z
       ctx.addIssue({
         code: "custom",
         message: `${storeFields.join(", ")} require${storeFields.length === 1 ? "s" : ""} coreApi "^1.58.0" or newer`,
+        path: ["coreApi"],
+      });
+    }
+
+    if (usesGallery(m.contentTypes ?? []) && !rangeStartsAtOrAfter(m.coreApi, "1.66.0")) {
+      ctx.addIssue({
+        code: "custom",
+        message: 'gallery fields require coreApi "^1.66.0" or newer',
         path: ["coreApi"],
       });
     }

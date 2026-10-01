@@ -82,6 +82,8 @@ const COLUMN_TYPES = new Set<DeclarativeField["type"]>([
   // cell 由 RelationCell 客端解析 id → title(見 cell-renderers.tsx 的 N+1 caveat)。
   "relation",
   "relations",
+  // 1.66.0:gallery 在格子裡是第一張縮圖 +N。
+  "gallery",
 ]);
 
 /**
@@ -150,6 +152,9 @@ export function displayValue(
     case "relations":
       // 08 §1: ordered id array; fallback label is the count of linked entries.
       return Array.isArray(value) ? `${value.length} linked` : "";
+    case "gallery":
+      // 1.66.0: ordered media keys; fallback label is the count of images.
+      return Array.isArray(value) ? `${value.length} images` : "";
     case "text":
     case "slug":
     case "media":

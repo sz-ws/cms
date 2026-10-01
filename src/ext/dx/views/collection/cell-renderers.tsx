@@ -109,6 +109,19 @@ export function renderCell(
       return <StatusBadge status={String(value)} />;
     case "media":
       return <MediaCell value={value} />;
+    case "gallery": {
+      // 1.66.0:第一張縮圖,後面還有幾張就接「+N」。
+      const keys = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+      if (keys.length === 0) return EMPTY;
+      return (
+        <span className="inline-flex items-center gap-1.5">
+          <MediaCell value={keys[0]} />
+          {keys.length > 1 ? (
+            <span className="text-[12px] tabular-nums text-black/45 admin:text-ink/45">+{keys.length - 1}</span>
+          ) : null}
+        </span>
+      );
+    }
     case "richtext": {
       const text = richtextToPlainText(value, 80);
       return text ? (
