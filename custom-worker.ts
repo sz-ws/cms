@@ -1,6 +1,7 @@
 import openNextHandler from "./.open-next/worker.js";
 import { runCronTick } from "./extensions/cron/scheduled";
 import { withScheduledReporting } from "./extensions/sentry/scheduled";
+import { runInRequestScope } from "./src/lib/request-scope";
 import { runTimed, startTiming, timedEnv, withServerTiming } from "./src/lib/server-timing";
 import { stripPublicPageHeader } from "./src/lib/stamps";
 
@@ -23,12 +24,16 @@ const worker = {
     // 「這是公開頁,版本戳可以從 KV 拿」只能由 middleware 說(src/lib/stamps.ts)。middleware
     // 不經過 /api 與 /_next,瀏覽器自己帶來的這個標頭在這裡對每個請求刪掉;沒帶就原樣。
     const request = stripPublicPageHeader(incoming);
-    if ((env as unknown as { CMS_SERVER_TIMING?: string }).CMS_SERVER_TIMING !== "1") {
-      return openNextHandler.fetch(request, env, ctx);
-    }
-    const timing = startTiming();
-    const response = await runTimed(timing, () => openNextHandler.fetch(request, timedEnv(env, timing), ctx));
-    return withServerTiming(request, response, timing, ctx);
+    // 每個請求一個請求範圍(src/lib/request-scope.ts):Route Handler 沒有 React cache() 的
+    // 「同一個請求」,靠它讓同一個請求裡算過的東西(版本戳)不必每次重問 D1。
+    return runInRequestScope(async () => {
+      if ((env as unknown as { CMS_SERVER_TIMING?: string }).CMS_SERVER_TIMING !== "1") {
+        return openNextHandler.fetch(request, env, ctx);
+      }
+      const timing = startTiming();
+      const response = await runTimed(timing, () => openNextHandler.fetch(request, timedEnv(env, timing), ctx));
+      return withServerTiming(request, response, timing, ctx);
+    });
   },
 
   // 分鐘級準時排程的「錶」。實作在 extensions/cron/scheduled.ts —— core 本身

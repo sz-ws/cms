@@ -435,11 +435,13 @@ async function disableDeclarativeGuarded(extId: string): Promise<void> {
   if (!(await setDeclarativeEnabled(extId, 0, noDeclarativeDependents(extId, identity)))) {
     throw new ExtensionLifecycleConflict(DEPENDENT_JUST_ENABLED);
   }
+  // 寫完就失效:兩個呼叫端接下來都要拿「停用之後」的 runtime,不能靠它自己重算戳才發現
+  // (同一個請求裡戳只算一次,見 @/lib/request-stamps)。
+  invalidateExtRuntimeMemo();
 }
 
 export async function disableDeclarative(extId: string): Promise<void> {
   await disableDeclarativeGuarded(extId);
-  invalidateExtRuntimeMemo();
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
 }

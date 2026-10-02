@@ -3,6 +3,7 @@ import { db } from "./db";
 import { getDB } from "./cf";
 import { contents, extJobs, storageHistory } from "./schema";
 import { getHeartbeats, setHeartbeats } from "./heartbeats";
+import { runInRequestScope } from "./request-scope";
 import { indexContentEntry } from "./search";
 import { revalidateContent } from "@/ext/dx/cache-invalidate";
 
@@ -240,6 +241,8 @@ interface ExtJobRow {
   payload: string | null;
   attempts: number;
   status: "pending" | "dead";
+  /** 上一輪留下的錯誤;成功時只有它不是 null 才需要清(見 recurring 的執行段)。 */
+  lastError: string | null;
 }
 
 /** payload JSON.parse 失敗以 null 續行(同 parseData 哲學);recurring 恆為 null。 */
@@ -331,6 +334,7 @@ const extJobsJob: CoreJob = {
         payload: extJobs.payload,
         attempts: extJobs.attempts,
         status: extJobs.status,
+        lastError: extJobs.lastError,
       })
       .from(extJobs)
       .where(
@@ -384,10 +388,13 @@ const extJobsJob: CoreJob = {
             const services = scopedServices(row.extId, rt.hooks, registry);
             await handler.run(services, null, now);
             processed++;
-            await db()
-              .update(extJobs)
-              .set({ lastError: null })
-              .where(eq(extJobs.id, row.id));
+            // 上一輪也成功的話這一欄本來就是 null:每分鐘跑的 job 不必每分鐘多寫一列。
+            if (row.lastError !== null) {
+              await db()
+                .update(extJobs)
+                .set({ lastError: null })
+                .where(eq(extJobs.id, row.id));
+            }
           } catch (e) {
             processed++;
             failed++;
@@ -563,8 +570,16 @@ const CORE_JOBS: readonly CoreJob[] = [
 /**
  * 依序執行所有 core job。**逐任務失敗隔離**:任一任務 throw 不影響其他任務。每支任務
  * 執行後寫 `core.jobs.lastRun.<id>`(epoch ms,heartbeats 表)。回傳逐任務報告。
+ *
+ * 整輪在一個請求範圍裡跑(./request-scope.ts):一輪裡各支 job 讀幾十次設定,「設定變了沒」
+ * 只問 D1 一次;job 自己改了設定(寫入路徑會作廢那一格)之後的讀取照樣重問。正式站的請求
+ * 本來就在 Worker 入口開的範圍裡(沿用那一個),這裡是給不經過入口的 `next dev` 與測試用的。
  */
-export async function runDueJobs(now: number = Date.now()): Promise<JobRunReport[]> {
+export function runDueJobs(now: number = Date.now()): Promise<JobRunReport[]> {
+  return runInRequestScope(() => runJobs(now));
+}
+
+async function runJobs(now: number): Promise<JobRunReport[]> {
   const reports: JobRunReport[] = [];
   const bookkeeping: Record<string, number> = {};
   for (const job of CORE_JOBS) {

@@ -3,6 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare/cloudflare-context"
 import { getDB } from "./cf";
 import { computeExtRuntimeStamp } from "@/ext/runtime-stamp";
 import { coldStampsRecord } from "./cold-snapshot";
+import { requestScope } from "./request-scope";
 import {
   COMBINED_STAMP_SQL,
   PUBLIC_PAGE_HEADER,
@@ -31,8 +32,8 @@ export { SETTINGS_STAMP_SQL };
 // 任何寫入在「下一個 request」立即看得見,不是 TTL。
 //
 // 改變的只有**怎麼問**:以前兩邊各打一次 D1,公開站每一頁固定兩趟來回(layout 拿頁首
-// 頁尾要 runtime、root layout 與頁面要 settings)。這裡用一條 scalar subselect 一次
-// 拿回兩組,React cache() 讓同一個 request 裡兩邊共用這一趟。SQL 與字串格式在 ./stamps.ts,
+// 頁尾要 runtime、root layout 與頁面要 settings)。這裡用一條查詢一次拿回兩組,
+// React cache() 讓同一個 request 裡兩邊共用這一趟。SQL 與字串格式在 ./stamps.ts,
 // 與 middleware 的 scripts 戳、KV 副本共用同一份。
 //
 // 合併查詢失敗時(典型:其中一張表還不存在 —— 測試的最小 DDL、剛建好還沒跑完
@@ -43,7 +44,8 @@ export { SETTINGS_STAMP_SQL };
 // 同 request 內的新鮮度:兩組戳在這個 request 第一次用到任一邊時一起算好。這個 request
 // 之後若寫入,寫入路徑本來就會主動清 memo(invalidateSettingsCache /
 // invalidateExtRuntimeMemo)→ 呼叫端退回完整讀取,讀到的是新值;route handler 沒有
-// React cache 的 request 範圍,每次呼叫都會重算。render 期間唯一的寫入是 admin layout
+// React cache 的 request 範圍,改用請求範圍(./request-scope.ts)記住這一趟,寫入時同樣
+// 作廢(見 getRequestStamps / publishRequestStamps)。render 期間唯一的寫入是 admin layout
 // 的 maybeRunJobs:它的心跳寫進 heartbeats 表(migrations/0018),**刻意不在任何一組
 // 戳裡** —— 每分鐘一次的心跳若推動 settings 的戳,整包設定快取就每分鐘失效一次。
 //
@@ -163,11 +165,7 @@ async function isPublicPageRequest(): Promise<boolean> {
   }
 }
 
-/**
- * 一個 request 一趟:同時拿 settings 與 extension runtime 的版本戳。公開頁有夠新的 KV
- * 副本時一趟 D1 都不打。除了 Next 自己的控制訊號(見 isPublicPageRequest),永不 throw。
- */
-export const getRequestStamps = cache(async (): Promise<RequestStamps> => {
+async function computeRequestStamps(): Promise<RequestStamps> {
   // 先看 binding(同步、不碰 headers()):沒綁 KV 的站完全不經過下面任何一行 KV 的程式。
   const target = stampsTarget();
   if (!target || !(await isPublicPageRequest())) return (await fromD1()).stamps;
@@ -177,16 +175,48 @@ export const getRequestStamps = cache(async (): Promise<RequestStamps> => {
   const { stamps, record } = await fromD1(cached.state === "refresh");
   if (cached.state === "refresh" && record) refreshStamps(target, record);
   return stamps;
+}
+
+/** 這個請求算好的戳放在請求範圍(./request-scope.ts)的哪一格。三個 module 圖共用。 */
+const SCOPE_SLOT = Symbol.for("cms.request-stamps");
+
+/**
+ * 一個 request 一趟:同時拿 settings 與 extension runtime 的版本戳。公開頁有夠新的 KV
+ * 副本時一趟 D1 都不打。除了 Next 自己的控制訊號(見 isPublicPageRequest),永不 throw。
+ *
+ * 「一個 request」靠兩層:Server Component 的 render 有 React cache();Route Handler 沒有,
+ * 靠請求範圍 —— 同一個請求(或同一輪排程)裡第二次以後直接拿第一次算好的。這個請求自己
+ * 寫了東西之後 publishRequestStamps 會把那一格刪掉,下一次讀就重算。不在任何範圍裡
+ * (`next dev`、測試)→ 每次呼叫都重算,與以前相同。
+ */
+export const getRequestStamps = cache((): Promise<RequestStamps> => {
+  const scope = requestScope();
+  if (!scope) return computeRequestStamps();
+  const known = scope.get(SCOPE_SLOT) as Promise<RequestStamps> | undefined;
+  if (known) return known;
+  const computing = computeRequestStamps();
+  scope.set(SCOPE_SLOT, computing);
+  // 只記「兩組都算出來」的那一次。有一組查不到(D1 一時失敗、表還沒建)、或被 Next 的控制
+  // 訊號打斷的,不留:下一個呼叫自己再問一次,與沒有範圍時相同。
+  const forget = () => {
+    if (scope.get(SCOPE_SLOT) === computing) scope.delete(SCOPE_SLOT);
+  };
+  computing.then((stamps) => {
+    if (!stamps.settings.ok || !stamps.extensions.ok) forget();
+  }, forget);
+  return computing;
 });
 
 /**
- * 寫入之後(invalidateSettingsCache / invalidateExtRuntimeMemo 呼叫):從 D1 重算三組戳、
- * 在回應之後寫進 KV。沒綁 CMS_KV、不在 request 裡 → 什麼都不做。永不 throw。
+ * 寫入之後(invalidateSettingsCache / invalidateExtRuntimeMemo 呼叫):這個請求先前算好的
+ * 戳作廢(請求範圍裡的那一格,之後的讀取會重算),並從 D1 重算三組戳、在回應之後寫進 KV。
+ * 沒綁 CMS_KV、不在 request 裡 → 只做前半。永不 throw。
  *
  * 保證:寫入者所在機房的下一個公開頁請求就看得見;其他機房在 KV 快取過期後(約 60 秒)。
  * 發布失敗會刪掉副本(公開頁回去讀 D1);連刪都失敗,最壞等副本滿 5 分鐘過期。
  */
 export function publishRequestStamps(): void {
+  requestScope()?.delete(SCOPE_SLOT);
   try {
     const target = stampsTarget();
     if (target) publishStamps(target);

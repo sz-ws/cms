@@ -32,6 +32,7 @@ vi.mock("@/ext/loader", async () => {
 });
 
 import { runDueJobs } from "../src/lib/jobs";
+import { requestScope } from "../src/lib/request-scope";
 import { invalidateSettingsCache } from "../src/lib/settings";
 
 type TestEnv = { DB: D1Database };
@@ -216,6 +217,83 @@ describe("ext-jobs — recurring execution", () => {
     expect(handler).toHaveBeenCalledWith(expect.anything(), null, early);
     const row = await getRecurringRow("acme", "sync");
     expect(row?.run_at).toBe(early + EVERY_MS);
+  });
+
+  it("a successful run writes the row once (the claim), not a second time to clear an error that is not there", async () => {
+    const handler = vi.fn(async () => {});
+    const now = 2_800_000;
+    rtState.enabled = [
+      fakeExt("acme", [{ id: "sync", every: EVERY_MIN, run: handler }]),
+    ];
+    await runDueJobs(now); // seed
+
+    const prepare = vi.spyOn(d1(), "prepare");
+    try {
+      await runDueJobs(now + EVERY_MS);
+      expect(handler).toHaveBeenCalledTimes(1);
+      const updates = prepare.mock.calls
+        .map(([sql]) => sql)
+        .filter((sql) => /^update "ext_jobs"/i.test(sql));
+      expect(updates).toHaveLength(1);
+      expect(updates[0]).toMatch(/"run_at"/);
+    } finally {
+      prepare.mockRestore();
+    }
+    expect((await getRecurringRow("acme", "sync"))?.last_error).toBeNull();
+  });
+
+  it("runs every job of one sweep in the same request scope, and the next sweep in a new one", async () => {
+    // 一輪排程裡「設定變了沒」只問 D1 一次,靠的就是這個範圍(@/lib/request-scope)。
+    const seen: unknown[] = [];
+    const record = vi.fn(async () => {
+      seen.push(requestScope());
+    });
+    const now = 2_900_000;
+    rtState.enabled = [
+      fakeExt("acme", [{ id: "sync", every: EVERY_MIN, run: record }]),
+      fakeExt("beta", [{ id: "sync", every: EVERY_MIN, run: record }]),
+    ];
+    await runDueJobs(now); // seed
+    await runDueJobs(now + EVERY_MS);
+    await runDueJobs(now + 2 * EVERY_MS);
+
+    expect(seen).toHaveLength(4);
+    expect(seen[0]).toBeInstanceOf(Map);
+    expect(seen[1]).toBe(seen[0]);
+    expect(seen[2]).toBeInstanceOf(Map);
+    expect(seen[2]).not.toBe(seen[0]);
+    expect(requestScope()).toBeUndefined();
+  });
+
+  it("asks D1 whether the settings changed once per sweep, however many settings the jobs read", async () => {
+    // 合併戳的查詢要三張表都在才成立(少一張會退回兩條各自的查詢)。
+    await d1().exec(
+      "CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, version TEXT NOT NULL, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+    );
+    await d1().exec(
+      "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);",
+    );
+    const reads = vi.fn(async (services: { settings: { get(key: string, fallback?: unknown): Promise<unknown> } }) => {
+      for (const key of ["a", "b", "c", "d", "e"]) await services.settings.get(key, null);
+    });
+    const now = 2_950_000;
+    rtState.enabled = [
+      fakeExt("acme", [{ id: "sync", every: EVERY_MIN, run: reads as unknown as ExtJobRegistration["run"] }]),
+      fakeExt("beta", [{ id: "sync", every: EVERY_MIN, run: reads as unknown as ExtJobRegistration["run"] }]),
+    ];
+    await runDueJobs(now); // seed
+
+    const prepare = vi.spyOn(d1(), "prepare");
+    try {
+      await runDueJobs(now + EVERY_MS);
+      expect(reads).toHaveBeenCalledTimes(2); // 兩支 job、共讀 10 次設定
+      const stampQueries = prepare.mock.calls
+        .map(([sql]) => sql)
+        .filter((sql) => /COUNT\(\*\)/.test(sql) && /\bsettings\b/.test(sql));
+      expect(stampQueries).toHaveLength(1);
+    } finally {
+      prepare.mockRestore();
+    }
   });
 
   it("only executes once under two concurrent sweeps hitting the same due row (CAS)", async () => {

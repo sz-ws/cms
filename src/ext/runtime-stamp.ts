@@ -16,8 +16,8 @@ import {
 // 任一 mutation 都必然改變此戳。SQL 與字串格式在 @/lib/stamps,與合併查詢、KV 副本
 // 共用同一份。
 //
-// 用 getDB() 直打 D1(而非 drizzle db()):這只是低階純量指紋查詢,scalar subselect
-// 一趟到底最省;失敗由 loader 端 catch 後退回完整載入路徑(§5:絕不 crash loader)。
+// 用 getDB() 直打 D1(而非 drizzle db()):這只是低階純量指紋查詢,一條 SQL、每張表
+// 掃一次最省;失敗由 loader 端 catch 後退回完整載入路徑(§5:絕不 crash loader)。
 
 /**
  * 計算目前的 extension runtime 版本戳。失敗時 throw(呼叫端負責 fallback)。

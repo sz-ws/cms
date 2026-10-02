@@ -219,6 +219,8 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
         console.error("[loader] reconciling built-in extensions failed", e);
         builtinsSettled = false;
         coldDeclaratives = null;
+        // 失敗之前可能已經寫進去一部分:這個請求先前算的戳不能再用,KV 的副本也要換。
+        publishRequestStamps();
       }
     }
 

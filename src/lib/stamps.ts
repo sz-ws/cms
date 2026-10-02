@@ -43,29 +43,26 @@ import { APPROVED_SCRIPTS_SQL, SCRIPT_HOST_RE, hostsFromApprovedRows, type Appro
 export const SETTINGS_STAMP_SQL =
   "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), 0) AS m FROM settings";
 
+// D1 依「掃過的列」計費,而這幾條查詢每個請求都跑。一張表的幾個數字放在同一個子查詢裡
+// 一次算完(一張表掃一次);每個數字各寫一條 scalar subselect 的話,同一張表會被掃兩三次。
+// 沒有 GROUP BY 的聚合一定回一列,所以空表照樣得到 0,三個子查詢相乘也還是一列。
+const EXTENSIONS_AGGREGATE =
+  "(SELECT COUNT(*) AS exN, COALESCE(MAX(updated_at), 0) AS exM, COALESCE(SUM(enabled), 0) AS exE FROM extensions) AS ex";
+const DECLARATIVE_AGGREGATE =
+  "(SELECT COUNT(*) AS dxN, COALESCE(MAX(updated_at), 0) AS dxM, COALESCE(SUM(enabled), 0) AS dxE FROM declarative_extensions) AS dx";
+
 /** extension runtime 戳:extensions 與 declarative_extensions 各一組 (COUNT, MAX(updated_at), SUM(enabled))。 */
-export const EXT_RUNTIME_STAMP_SQL = `SELECT
-  (SELECT COUNT(*) FROM extensions) AS exN,
-  (SELECT COALESCE(MAX(updated_at), 0) FROM extensions) AS exM,
-  (SELECT COALESCE(SUM(enabled), 0) FROM extensions) AS exE,
-  (SELECT COUNT(*) FROM declarative_extensions) AS dxN,
-  (SELECT COALESCE(MAX(updated_at), 0) FROM declarative_extensions) AS dxM,
-  (SELECT COALESCE(SUM(enabled), 0) FROM declarative_extensions) AS dxE`;
+export const EXT_RUNTIME_STAMP_SQL = `SELECT ex.exN, ex.exM, ex.exE, dx.dxN, dx.dxM, dx.dxE
+  FROM ${EXTENSIONS_AGGREGATE}, ${DECLARATIVE_AGGREGATE}`;
 
 /** CSP 主機白名單的戳:只看 declarative_extensions(middleware 只讀這張表)。 */
 export const SCRIPTS_STAMP_SQL = `SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), 0) AS m, COALESCE(SUM(enabled), 0) AS e
   FROM declarative_extensions`;
 
-/** 三組戳一趟拿齊(scalar subselect)。任一張表不存在就整條失敗,呼叫端各自退回。 */
-export const COMBINED_STAMP_SQL = `SELECT
-  (SELECT COUNT(*) FROM settings) AS sN,
-  (SELECT COALESCE(MAX(updated_at), 0) FROM settings) AS sM,
-  (SELECT COUNT(*) FROM extensions) AS exN,
-  (SELECT COALESCE(MAX(updated_at), 0) FROM extensions) AS exM,
-  (SELECT COALESCE(SUM(enabled), 0) FROM extensions) AS exE,
-  (SELECT COUNT(*) FROM declarative_extensions) AS dxN,
-  (SELECT COALESCE(MAX(updated_at), 0) FROM declarative_extensions) AS dxM,
-  (SELECT COALESCE(SUM(enabled), 0) FROM declarative_extensions) AS dxE`;
+/** 三組戳一趟拿齊,每張表掃一次。任一張表不存在就整條失敗,呼叫端各自退回。 */
+export const COMBINED_STAMP_SQL = `SELECT s.sN, s.sM, ex.exN, ex.exM, ex.exE, dx.dxN, dx.dxM, dx.dxE
+  FROM (SELECT COUNT(*) AS sN, COALESCE(MAX(updated_at), 0) AS sM FROM settings) AS s,
+    ${EXTENSIONS_AGGREGATE}, ${DECLARATIVE_AGGREGATE}`;
 
 export interface SettingsStampRow {
   n: number;

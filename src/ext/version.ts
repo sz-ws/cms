@@ -1506,4 +1506,10 @@
 // agent tools take a list of keys and the product recipe uploads each photo. The catalog product gets
 // `moreImages` (更多商品圖, up to 12) and `detailImages` (說明長圖); `image` stays the main photo. A
 // manifest with a gallery field needs coreApi >= 1.66.0; the capability name is `gallery`.
-export const CORE_API_VERSION = "1.66.0";
+// 1.66.1: Fewer D1 rows read by an idle site. A request asks D1 "did the settings or plugins change" once:
+// Route Handlers (API, callbacks, the cron tick) had no per-request scope and asked on every settings read,
+// about 30 times per tick. `lib/request-scope.ts` gives every request one (opened in `custom-worker.ts`
+// and by `runDueJobs`); a write in the same request drops the remembered stamps (`publishRequestStamps`).
+// The stamp queries scan each table once instead of once per number. A recurring job that succeeds no
+// longer rewrites `last_error` when it is already empty.
+export const CORE_API_VERSION = "1.66.1";
