@@ -223,6 +223,18 @@ export const CORE_SETTINGS: SettingField[] = [
     default: "",
   },
   {
+    // 1.68.0:瀏覽器分頁上的網站圖示。讀的地方與規則見 src/lib/site-icon.ts。
+    key: "core.siteIcon",
+    group: "general",
+    label: { en: "Site icon URL", "zh-Hant": "網站圖示網址" },
+    description: {
+      en: "The small picture on the browser tab. Upload a square image (PNG, at least 180 × 180) to the Media Library and paste its URL here. Leave empty for the default icon.",
+      "zh-Hant": "瀏覽器分頁上的小圖。先把正方形圖片（PNG，至少 180 × 180）上傳到媒體庫，再把圖片網址貼在這裡；留空就用預設圖示。",
+    },
+    type: "text",
+    default: "",
+  },
+  {
     // 1.40.0:後台主色。選中的項目、連結、勾選、焦點框都用它;淡色與深色由 CSS 的
     // color-mix() 從這一色推(globals.css 的 --admin-accent)。只收 #rrggbb。
     // AdminTheme 的 SSR/sync 讀這個值;保留原 key 供舊站與 API 相容。

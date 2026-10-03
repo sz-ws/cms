@@ -7,8 +7,8 @@
 //   - 站名 / 描述               → settings(core.siteTitle、core.siteDescription),
 //                                 下面的 generateMetadata() 已經在讀
 //   - 公開站的頁首頁尾         → (public)/layout.tsx 的 filter,見該檔說明
-//   - favicon                   → 公開站的 icon 由架站者自己放在 (public)/,
-//                                 (admin)/ 底下那份是後台用的產品 icon
+//   - favicon                   → 後台「設定」的網站圖示網址(core.siteIcon,下面的
+//                                 generateMetadata() 在讀);(admin)/ 底下那份是後台用的產品 icon
 // ─────────────────────────────────────────────────────────────────────────────
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -27,6 +27,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { DateTimeProvider } from "@/components/DateTimeProvider";
 import { CurrencyProvider } from "@/components/CurrencyProvider";
 import { getSetting } from "@/lib/settings";
+import { siteIconMetadata } from "@/lib/site-icon";
 import { getSiteTimeZone } from "@/lib/datetime-server";
 import { getSiteCurrency } from "@/lib/units-server";
 import { getLocale } from "@/lib/i18n/server";
@@ -63,13 +64,16 @@ export const dynamic = "force-dynamic";
 // <title>CMS</title>。兩個 setting 早就存在,(public)/page.tsx 也已經在讀。
 // 讀不到時才退回產品名,那是「還沒設定過」的合理預設而非別人的品牌。
 export async function generateMetadata(): Promise<Metadata> {
-  const [title, description] = await Promise.all([
+  const [title, description, icons] = await Promise.all([
     getSetting<string>("core.siteTitle"),
     getSetting<string>("core.siteDescription"),
+    siteIconMetadata(),
   ]);
   return {
     title: title?.trim() || "CMS by szws",
     description: description?.trim() || undefined,
+    // 1.68.0:後台設了網站圖示就用它(沒設時不給,各段路由自己的圖示檔照舊)。
+    ...(icons ? { icons } : {}),
   };
 }
 

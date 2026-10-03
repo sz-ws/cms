@@ -1521,4 +1521,10 @@
 // Fix: sign-in with an OAuth client (Google, LINE) failed on Workers with `fetch_failed` before reaching
 // the provider: `lib/oidc.ts` called fetch with `redirect: "error"`, which the Workers runtime rejects.
 // It now uses `redirect: "manual"` and refuses any 3xx answer, so redirects are still not followed.
-export const CORE_API_VERSION = "1.67.0";
+// 1.68.0: The site icon (favicon) is a setting. `core.siteIcon` (Settings, general card) takes a path on
+// the site or an https URL of an image; the root layout puts it in `metadata.icons` (icon and apple touch
+// icon). Empty or anything else (`siteIconHref` in `lib/site-icon.ts`) leaves icons as they were. A route
+// folder that holds `icon.*` / `apple-icon.*` files keeps those (Next prefers files), so a site that wants
+// the setting to apply there gives its default icon from `generateMetadata` instead:
+// `icons: (await siteIconMetadata()) ?? DEFAULTS`.
+export const CORE_API_VERSION = "1.68.0";
