@@ -189,13 +189,18 @@ function assertPublicHttpsUrl(raw: string): void {
 }
 
 // ---- bounded fetch(https + SSRF guard + timeout;redirect 一律拒)----
+//
+// 拒絕轉址的寫法是 redirect: "manual" 加 res.ok:轉址的回應(3xx)不是 ok,照 http_3xx 擋掉,
+// 不會跟過去。不能寫 redirect: "error" —— Workers 的 fetch 不支援,一呼叫就丟 TypeError,
+// 每一次登入都變成 fetch_failed(1.67.0 之前正式站的 Google / LINE 登入就是這樣全部失敗;
+// 測試裡的 fetch 是假的,看不出來)。
 
 async function fetchJson(url: string): Promise<unknown> {
   assertPublicHttpsUrl(url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal, redirect: "error" });
+    const res = await fetch(url, { signal: controller.signal, redirect: "manual" });
     if (!res.ok) throw new OidcError(`http_${res.status}`);
     return await res.json();
   } catch (e) {
@@ -218,7 +223,7 @@ async function postForm(
     const res = await fetch(url, {
       method: "POST",
       signal: controller.signal,
-      redirect: "error",
+      redirect: "manual",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         accept: "application/json",
@@ -242,7 +247,7 @@ async function fetchBearerJson(url: string, accessToken: string): Promise<unknow
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      redirect: "error",
+      redirect: "manual",
       headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
     });
     if (!res.ok) throw new OidcError(`userinfo_http_${res.status}`);

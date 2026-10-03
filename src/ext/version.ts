@@ -1512,4 +1512,13 @@
 // and by `runDueJobs`); a write in the same request drops the remembered stamps (`publishRequestStamps`).
 // The stamp queries scan each table once instead of once per number. A recurring job that succeeds no
 // longer rewrites `last_error` when it is already empty.
-export const CORE_API_VERSION = "1.66.1";
+// 1.67.0: A setting that doesn't apply is greyed out instead of left looking fillable. A core
+// `SettingField` takes `enabledWhen { key, oneOf }`: while the other field's value is not one of `oneOf`,
+// the field stays on the page but is dimmed and can't be edited (its stored value is kept). `showWhen`
+// still hides a field; use it when the choice swaps one set of fields for another, and `enabledWhen` when
+// the same fields are simply unused this time. The AI card uses it: API base URL and API key need OpenAI-
+// or Anthropic-compatible, the model needs any provider other than Off.
+// Fix: sign-in with an OAuth client (Google, LINE) failed on Workers with `fetch_failed` before reaching
+// the provider: `lib/oidc.ts` called fetch with `redirect: "error"`, which the Workers runtime rejects.
+// It now uses `redirect: "manual"` and refuses any 3xx answer, so redirects are still not followed.
+export const CORE_API_VERSION = "1.67.0";

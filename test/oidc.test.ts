@@ -117,7 +117,12 @@ beforeAll(async () => {
   ecJwk.use = "sig";
   jwksDoc = { keys: [rsaJwk, ecJwk] };
 
-  global.fetch = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+  global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // 正式站的 Workers fetch 不接受 redirect: "error"(一呼叫就丟 TypeError),假的 fetch 照做 ——
+    // 不這樣的話,整套登入在測試裡會過、上線後每一次都 fetch_failed(1.67.0 修掉的就是這個)。
+    if (init?.redirect === "error") {
+      throw new TypeError('Invalid redirect value, must be one of "follow" or "manual"');
+    }
     const url = typeof input === "string" ? input : input.toString();
     if (url.endsWith("/.well-known/openid-configuration")) return jsonResponse(discoveryDoc);
     if (url.endsWith("/jwks")) return jsonResponse(jwksDoc);

@@ -310,6 +310,13 @@ export function SettingsWorkspace({
           if (showWhen && state[`${section.keyPrefix}${showWhen.key}`] !== showWhen.equals) {
             return null;
           }
+          // 1.67.0:enabledWhen 不成立的欄位照樣畫,但反灰、不能改(值照舊保存)。
+          // 判斷寫在這裡的理由同上面的 showWhen。
+          const enabledWhen = field.enabledWhen;
+          const controller = enabledWhen ? state[`${section.keyPrefix}${enabledWhen.key}`] : undefined;
+          const off = enabledWhen
+            ? !enabledWhen.oneOf.some((allowed) => allowed === controller)
+            : false;
           const controlId = settingControlId(fullKey);
           // 分頁選項自己的說明(選到哪個就顯示哪個的)。
           const optionDescription =
@@ -321,7 +328,13 @@ export function SettingsWorkspace({
           return (
             <div
               key={fullKey}
-              className={`row-span-3 grid min-w-0 grid-rows-subgrid items-start gap-y-1.5 ${fieldWrapperClass(field)}`}
+              className={cn(
+                "row-span-3 grid min-w-0 grid-rows-subgrid items-start gap-y-1.5 transition-opacity duration-150",
+                fieldWrapperClass(field),
+                off && "opacity-55",
+              )}
+              // 色票與分頁沒有自己的 disabled,整格設成 inert;其餘控制項各自 disabled(讀屏會唸「停用」)。
+              inert={off && (field.type === "color" || (field.type === "select" && field.presentation === "tabs"))}
             >
               <label id={`${controlId}-label`} htmlFor={controlId} className={labelClass()}>
                 {resolveLocalizedString(field.label, locale)}
@@ -336,10 +349,11 @@ export function SettingsWorkspace({
                   id={controlId}
                   aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
-                  className="min-h-[120px] rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
+                  className="min-h-[120px] rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 disabled:bg-ink/[0.06] disabled:opacity-100 placeholder:text-ink/25"
                   maxLength={field.maxLength}
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
+                  disabled={off}
                   onChange={(e) => update(fullKey, e.target.value)}
                 />
               ) : field.type === "boolean" ? (
@@ -349,6 +363,7 @@ export function SettingsWorkspace({
                     aria-describedby={descriptionId}
                     checked={Boolean(state[fullKey])}
                     aria-required={field.required || undefined}
+                    disabled={off}
                     onChange={(e) => update(fullKey, e.target.checked)}
                   />
                 </div>
@@ -381,6 +396,7 @@ export function SettingsWorkspace({
               ) : field.type === "select" ? (
                 <Select
                   value={String(state[fullKey] ?? "")}
+                  disabled={off}
                   onValueChange={(next) => update(fullKey, String(next))}
                   // 沒給 items 時 Base UI 的 <Select.Value> 顯示的是原始值(「field」),
                   // 不是選項文字。
@@ -394,7 +410,7 @@ export function SettingsWorkspace({
                     aria-describedby={descriptionId}
                     aria-invalid={fieldErrors[fullKey] ? true : undefined}
                     aria-required={field.required || undefined}
-                    className="w-full rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85"
+                    className="w-full rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 disabled:bg-ink/[0.06] disabled:opacity-100"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -413,10 +429,11 @@ export function SettingsWorkspace({
                     id={controlId}
                     aria-describedby={[descriptionId, `${controlId}-unit`].filter(Boolean).join(" ")}
                     aria-invalid={fieldErrors[fullKey] ? true : undefined}
-                    className="min-w-0 flex-1 rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
+                    className="min-w-0 flex-1 rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 disabled:bg-ink/[0.06] disabled:opacity-100 placeholder:text-ink/25"
                     type="number"
                     value={String(state[fullKey] ?? "")}
                     aria-required={field.required || undefined}
+                    disabled={off}
                     onChange={(e) => update(fullKey, e.target.value)}
                   />
                   <SettingUnitHint id={`${controlId}-unit`} unit={field.unit} value={state[fullKey]} />
@@ -426,11 +443,12 @@ export function SettingsWorkspace({
                   id={controlId}
                   aria-describedby={descriptionId}
                   aria-invalid={fieldErrors[fullKey] ? true : undefined}
-                  className="rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 placeholder:text-ink/25"
+                  className="rounded-[calc(10px*var(--admin-radius-scale,1))] border-ink/10 bg-surface text-[14px] text-ink/85 disabled:bg-ink/[0.06] disabled:opacity-100 placeholder:text-ink/25"
                   type={inputType(field)}
                   maxLength={field.type === "text" ? field.maxLength : undefined}
                   value={String(state[fullKey] ?? "")}
                   aria-required={field.required || undefined}
+                  disabled={off}
                   onChange={(e) => update(fullKey, e.target.value)}
                   // 伺服器把存過的密鑰遮成 "•••";沒存過的不該寫「已設定」。
                   placeholder={

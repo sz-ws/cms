@@ -41,6 +41,12 @@ export interface SettingFieldBase {
    * 畫面,值照舊保存。
    */
   showWhen?: { key: string; equals: string | boolean };
+  /**
+   * 1.67.0:另一個欄位是 oneOf 其中一個值時才能填;其他時候欄位照樣顯示,但反灰、不能改
+   * (例如 AI 服務選 Workers AI 時的 API 金鑰)。key 的寫法同 showWhen;值照舊保存。
+   * 跟 showWhen 的差別:showWhen 是「換了一組欄位」,enabledWhen 是「同一組欄位,這次用不到」。
+   */
+  enabledWhen?: { key: string; oneOf: readonly (string | boolean)[] };
 }
 
 /** select 的一個選項。logo / description 只在 presentation: "tabs" 時畫出來。 */
@@ -412,6 +418,7 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.ai.baseUrl",
     group: "ai",
+    enabledWhen: { key: "core.ai.mode", oneOf: ["openai", "anthropic"] },
     label: { en: "API base URL", "zh-Hant": "API 網址" },
     description: {
       en: "Leave empty to use the provider's own address. Not used with Workers AI.",
@@ -423,6 +430,7 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.ai.apiKey",
     group: "ai",
+    enabledWhen: { key: "core.ai.mode", oneOf: ["openai", "anthropic"] },
     label: { en: "API key", "zh-Hant": "API 金鑰" },
     description: {
       en: "Needed for OpenAI and Anthropic, not for Workers AI. Stored encrypted.",
@@ -435,6 +443,7 @@ export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.ai.model",
     group: "ai",
+    enabledWhen: { key: "core.ai.mode", oneOf: ["openai", "anthropic", "workers-ai"] },
     label: { en: "Model", "zh-Hant": "模型" },
     description: {
       en: "For example gpt-4o-mini, claude-haiku-4-5-20251001, or @cf/meta/llama-3.1-8b-instruct.",
