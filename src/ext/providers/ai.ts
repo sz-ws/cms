@@ -592,8 +592,9 @@ export class CoreAiProvider implements AiProvider {
         ai.run(model, { messages: opts.messages, max_tokens: maxTokens }),
         GENERATE_TIMEOUT_MS,
       );
-      // Workers AI REST 慣例回應形狀 { response: string };防禦性讀取。
-      const text = (result as { response?: unknown } | null)?.response;
+      // 舊的回應形狀是 { response: string };新的模型只回 OpenAI 的 choices[0].message.content(1.69.0)。
+      const body = result as { response?: unknown; choices?: { message?: { content?: unknown } }[] } | null;
+      const text = typeof body?.response === "string" ? body.response : body?.choices?.[0]?.message?.content;
       if (typeof text !== "string") {
         return { ok: false, error: "workers-ai: unexpected response shape" };
       }
@@ -651,9 +652,11 @@ export class CoreAiProvider implements AiProvider {
           yield { type: "done", model };
           return;
         }
-        const parsed = safeJsonParse<{ response?: string }>(frame.data);
-        if (typeof parsed?.response === "string" && parsed.response.length > 0) {
-          yield { type: "delta", text: parsed.response };
+        // 舊的串流一格是 { response },新的模型是 OpenAI 的 choices[0].delta.content(1.69.0)。
+        const parsed = safeJsonParse<{ response?: unknown; choices?: { delta?: { content?: unknown } }[] }>(frame.data);
+        const piece = typeof parsed?.response === "string" ? parsed.response : parsed?.choices?.[0]?.delta?.content;
+        if (typeof piece === "string" && piece.length > 0) {
+          yield { type: "delta", text: piece };
         }
       }
       // 同 openai/anthropic 版:防禦性補一個 done,避免上游未送 [DONE] 就斷線。

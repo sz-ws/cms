@@ -172,16 +172,6 @@ function toolUsesOf(
   );
 }
 
-/** id → tool 名稱。workers-ai 的 tool 結果訊息要帶 name(它的 tool_calls 不給 id,
- *  所以無法像 openai 那樣只靠 id 對回去),從整份 transcript 的 tool_use 建表。 */
-function toolNamesById(messages: AiChatMessage[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const msg of messages) {
-    for (const use of toolUsesOf(msg.content)) map.set(use.id, use.name);
-  }
-  return map;
-}
-
 /** 有 tool_use 就一律以 "tool_use" 收尾 —— 不完全信任上游的 finish/stop reason
  *  字串(OpenAI-compatible 代理常在帶 tool_calls 時仍回 "stop")。有實際的工具
  *  呼叫是比一個字串更硬的事實。 */
@@ -653,55 +643,37 @@ export async function chatAnthropic(
 // workers-ai mode —— 僅部分模型支援(spec §3)
 // ---------------------------------------------------------------------------
 
-interface WorkersAiToolCall {
-  name?: string;
-  arguments?: unknown;
+/**
+ * Workers AI 的對話用 OpenAI chat-completions 的格式送(1.69.0):工具帶 type:"function",
+ * 助理的工具呼叫帶 id,工具結果用 tool_call_id 接回。舊的平鋪寫法({ name, arguments }、
+ * 工具結果靠 name 對回)現在只有第一輪過得去 —— 工具結果送回去的那一輪,每個模型都回
+ * 8007 validation error,助理一用工具就壞。
+ *
+ * 跟 openai mode 唯一的差別:助理那一則沒有文字時 content 給空字串。llama、qwen、gpt-oss
+ * 的輸入 schema 不收 null(「Type mismatch … not in 'string'」);其餘模型兩種都收。
+ */
+function toWorkersAiMessages(opts: AiChatOptions): OpenAiMessage[] {
+  return toOpenAiMessages(opts).map((message) =>
+    message.role === "assistant" && message.content === null ? { ...message, content: "" } : message,
+  );
 }
 
-interface WorkersAiMessage {
-  role: string;
-  content: string;
-  name?: string;
-  tool_calls?: { name: string; arguments: unknown }[];
-}
-
-function toWorkersAiMessages(opts: AiChatOptions): WorkersAiMessage[] {
-  const names = toolNamesById(opts.messages);
-  const out: WorkersAiMessage[] = [];
-  if (opts.system) out.push({ role: "system", content: opts.system });
-  for (const msg of opts.messages) {
-    const text = textOf(msg.content);
-    if (msg.role === "assistant") {
-      const uses = toolUsesOf(msg.content);
-      if (uses.length > 0) {
-        out.push({
-          role: "assistant",
-          content: text,
-          tool_calls: uses.map((u) => ({
-            name: u.name,
-            arguments: u.input ?? {},
-          })),
-        });
-      } else if (text.length > 0) {
-        out.push({ role: "assistant", content: text });
-      }
-      continue;
-    }
-    // 同 openai:工具結果要緊接在提出呼叫的那一輪之後,排在同一則訊息的文字之前。
-    for (const block of msg.content) {
-      if (block.type !== "tool_result") continue;
-      // workers-ai 的工具結果訊息以 name 對應(它的 tool_calls 不給 id),
-      // 故從 transcript 的 tool_use 反查;查不到就不帶 name。
-      const name = names.get(block.toolUseId);
-      out.push({
-        role: "tool",
-        content: block.content,
-        ...(name ? { name } : {}),
-      });
-    }
-    if (text.length > 0) out.push({ role: "user", content: text });
+/** 回應裡的一個工具呼叫:新格式(function.name / function.arguments 是 JSON 字串)或舊格式。 */
+function workersAiToolUse(call: unknown, index: number, fromWire: (name: string) => string): AiChatToolUse | null {
+  if (typeof call !== "object" || call === null) return null;
+  const c = call as { id?: unknown; name?: unknown; arguments?: unknown; function?: { name?: unknown; arguments?: unknown } };
+  if (typeof c.function?.name === "string") {
+    return {
+      id: typeof c.id === "string" && c.id ? c.id : `wai_${index}_${c.function.name}`,
+      name: fromWire(c.function.name),
+      input: typeof c.function.arguments === "string" ? parseToolArguments(c.function.arguments) : (c.function.arguments ?? {}),
+    };
   }
-  return out;
+  if (typeof c.name === "string") {
+    // 舊格式不回 id,合成一個穩定的識別碼供工具結果接回。
+    return { id: `wai_${index}_${c.name}`, name: fromWire(c.name), input: c.arguments ?? {} };
+  }
+  return null;
 }
 
 /** spec §3:workers-ai 僅部分模型支援 tool use。判定刻意從簡 —— 不維護模型白名單
@@ -731,31 +703,33 @@ export async function chatWorkersAi(
         ...(opts.tools.length > 0
           ? {
               tools: opts.tools.map((t) => ({
-                name: t.name,
-                description: t.description,
-                parameters: t.inputSchema,
+                type: "function",
+                function: { name: t.name, description: t.description, parameters: t.inputSchema },
               })),
             }
           : {}),
       }),
       GENERATE_TIMEOUT_MS,
     );
+    // 回應有兩種形狀:OpenAI 的 choices[0].message(每個模型都有),以及舊的頂層
+    // response / tool_calls(只有一部分模型還帶)。先讀前者,沒有才讀後者。
     const body = result as {
+      choices?: { message?: { content?: unknown; tool_calls?: unknown } }[];
       response?: unknown;
-      tool_calls?: WorkersAiToolCall[];
+      tool_calls?: unknown;
       usage?: unknown;
     } | null;
-    const rawCalls = Array.isArray(body?.tool_calls) ? body.tool_calls : [];
-    const toolUses: AiChatToolUse[] = rawCalls
-      .filter((c) => typeof c?.name === "string")
-      .map((c, i) => ({
-        // workers-ai 不回 id,合成一個穩定的識別碼供 tool_result 接回。
-        id: `wai_${i}_${c.name as string}`,
-        name: wire.fromWire(c.name as string),
-        input: c.arguments ?? {},
-      }));
-    const text = typeof body?.response === "string" ? body.response : "";
-    if (toolUses.length === 0 && typeof body?.response !== "string") {
+    const message = body?.choices?.[0]?.message;
+    const rawCalls = message
+      ? Array.isArray(message.tool_calls) ? message.tool_calls : []
+      : Array.isArray(body?.tool_calls) ? body.tool_calls : [];
+    const toolUses: AiChatToolUse[] = rawCalls.flatMap((call, i) => {
+      const use = workersAiToolUse(call, i, wire.fromWire);
+      return use ? [use] : [];
+    });
+    const rawText = message ? message.content : body?.response;
+    const text = typeof rawText === "string" ? rawText : "";
+    if (!message && toolUses.length === 0 && typeof body?.response !== "string") {
       return { ok: false, error: "tool_use_not_supported" };
     }
     // 盡力而為(1.34.0):Workers AI 的回應形狀不保證有 usage —— 模型目錄與回應
@@ -775,6 +749,8 @@ export async function chatWorkersAi(
     if (e instanceof Error && e.message === "timeout") {
       return { ok: false, error: "timeout" };
     }
+    // 管理員看到的是「不支援工具呼叫」;真正的原因(模型名打錯、上游改了格式)留在 log。
+    console.error("[ai] workers-ai chat failed", model, e);
     return { ok: false, error: "tool_use_not_supported" };
   }
 }

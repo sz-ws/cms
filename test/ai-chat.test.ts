@@ -624,7 +624,7 @@ describe("CoreAiProvider.chat", () => {
       expect(await provider.chat(ASK)).toEqual({ ok: false, error: "timeout" });
     });
 
-    it("passes tools as parameters-shaped defs and flattens the transcript", async () => {
+    it("sends tools and the transcript in the OpenAI chat format, with ids on tool calls and results", async () => {
       const run = vi.fn(async () => ({ response: "done" }));
       cfState.ai = { run };
       await provider.chat({
@@ -640,30 +640,81 @@ describe("CoreAiProvider.chat", () => {
             role: "assistant",
             content: "let me check",
             tool_calls: [
-              { name: "core-content-list", arguments: { type: "post" } },
+              { id: "call_1", type: "function", function: { name: "core-content-list", arguments: '{"type":"post"}' } },
             ],
           },
-          // tool 結果訊息帶 name(workers-ai 的 tool_calls 沒有 id,只能靠名字對回),
-          // 名字由 transcript 裡的 tool_use 反查 —— 兩處都已是 wire 名,對得上。
-          {
-            role: "tool",
-            content: '{"items":[]}',
-            name: "core-content-list",
-          },
+          // 工具結果用 tool_call_id 接回提出呼叫的那一輪。
+          { role: "tool", tool_call_id: "call_1", content: '{"items":[]}' },
           { role: "user", content: "anything else?" },
         ],
         max_tokens: 1024,
         tools: [
           {
-            name: "core-content-list",
-            description: "List content items",
-            parameters: TOOLS[0].inputSchema,
+            type: "function",
+            function: {
+              name: "core-content-list",
+              description: "List content items",
+              parameters: TOOLS[0].inputSchema,
+            },
           },
         ],
       });
     });
 
-    it("tool_calls in the response become toolUses with a synthesized id", async () => {
+    it("an assistant turn with only a tool call is sent with an empty string, not null", async () => {
+      // llama、qwen、gpt-oss 的輸入 schema 不收 content: null(「Type mismatch … not in 'string'」)。
+      const run = vi.fn(async () => ({ response: "done" }));
+      cfState.ai = { run };
+      await provider.chat({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "list posts" }] },
+          { role: "assistant", content: [{ type: "tool_use", id: "call_1", name: "core.content.list", input: {} }] },
+          { role: "user", content: [{ type: "tool_result", toolUseId: "call_1", content: "[]" }] },
+        ],
+        tools: TOOLS,
+      });
+      const sent = (run.mock.calls[0] as unknown as [string, { messages: { role: string; content: unknown }[] }])[1];
+      expect(sent.messages.find((m) => m.role === "assistant")?.content).toBe("");
+    });
+
+    it("reads an OpenAI-shaped answer: tool calls keep the model's id, arguments are parsed", async () => {
+      // 新的模型(gpt-oss、gemma …)只回 choices,沒有頂層的 response / tool_calls。
+      cfState.ai = {
+        run: vi.fn(async () => ({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  { id: "chatcmpl-tool-1", type: "function", function: { name: "core-content-list", arguments: '{"type":"post"}' } },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        })),
+      };
+      expect(await provider.chat(ASK)).toEqual({
+        ok: true,
+        text: "",
+        toolUses: [{ id: "chatcmpl-tool-1", name: "core.content.list", input: { type: "post" } }],
+        stopReason: "tool_use",
+        model: "@cf/meta/llama-3.1-8b-instruct",
+      });
+    });
+
+    it("reads an OpenAI-shaped text answer", async () => {
+      cfState.ai = { run: vi.fn(async () => ({ choices: [{ message: { content: "just text" }, finish_reason: "stop" }] })) };
+      expect(await provider.chat(ASK)).toEqual({
+        ok: true,
+        text: "just text",
+        toolUses: [],
+        stopReason: "end_turn",
+        model: "@cf/meta/llama-3.1-8b-instruct",
+      });
+    });
+
+    it("the older top-level tool_calls still work, with a synthesized id", async () => {
       cfState.ai = {
         run: vi.fn(async () => ({
           response: "",

@@ -1527,4 +1527,12 @@
 // folder that holds `icon.*` / `apple-icon.*` files keeps those (Next prefers files), so a site that wants
 // the setting to apply there gives its default icon from `generateMetadata` instead:
 // `icons: (await siteIconMetadata()) ?? DEFAULTS`.
-export const CORE_API_VERSION = "1.68.0";
+// 1.69.0: The assistant works with Workers AI again, on any tool-calling model. Workers AI now validates
+// conversations as OpenAI chat completions, so the flat shape this mode sent ({ name, arguments } tool calls,
+// tool results matched by name) was refused on the turn that returns a tool result, and newer models
+// (gpt-oss, gemma, ...) answer only in `choices[0].message`, which was read as "tool calling not supported".
+// The mode now sends tools as `{ type: "function", function }`, tool calls with their id and results with
+// `tool_call_id` (an assistant turn without text gets "" because some models reject null), and reads
+// `choices[0].message` first, the older top-level `response` / `tool_calls` second. Plain generation and
+// streaming accept both shapes too. A failed call is logged; the admin still sees the same message.
+export const CORE_API_VERSION = "1.69.0";
