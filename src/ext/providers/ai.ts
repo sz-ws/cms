@@ -6,6 +6,7 @@ import {
   GENERATE_TIMEOUT_MS,
   OPENAI_DEFAULT_BASE_URL,
   parseSseStream,
+  resolveChatMaxTokens,
   resolveMaxTokens,
   safeJsonParse,
   truncate,
@@ -180,7 +181,7 @@ export class CoreAiProvider implements AiProvider {
     if (mode === "off" || !model) {
       return { ok: false, error: "not_configured" };
     }
-    const maxTokens = resolveMaxTokens(opts.maxTokens);
+    const maxTokens = resolveChatMaxTokens(opts.maxTokens);
 
     if (mode === "openai") return chatOpenAi(opts, model, maxTokens);
     if (mode === "anthropic") return chatAnthropic(opts, model, maxTokens);
@@ -205,7 +206,7 @@ export class CoreAiProvider implements AiProvider {
       yield { type: "result", result: { ok: false, error: "not_configured" } };
       return;
     }
-    const maxTokens = resolveMaxTokens(opts.maxTokens);
+    const maxTokens = resolveChatMaxTokens(opts.maxTokens);
 
     if (mode === "openai") {
       yield* chatOpenAiStream(opts, model, maxTokens);

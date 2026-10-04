@@ -185,6 +185,21 @@ describe("正常來回", () => {
     expect(restored?.pendingAsk).toEqual({ ask: ASK, toolUseId: "toolu_ask_1" });
   });
 
+  it("提案的預覽跟著對話存回來;壞掉的預覽當作沒有,對話照樣讀得回來", () => {
+    const preview = { kind: "changes" as const, lines: [{ change: "added" as const, text: "新的一段" }] };
+    const base = proposalOutcome();
+    if (base.status !== "proposal") throw new Error("unreachable");
+    const state = applyChatOutcome(appendUserMessage(emptyTranscript(), "改"), {
+      ...base,
+      proposal: { ...base.proposal, preview },
+    });
+    const raw = serializeTranscript(state) as string;
+    expect(deserializeTranscript(raw)).toEqual(state);
+
+    const broken = deserializeTranscript(raw.replaceAll('"kind":"changes"', '"kind":"html"'));
+    expect(broken?.pending).toEqual(base.proposal);
+  });
+
   it("卡片處置過之後的 state 也回得來,而且可以繼續送", () => {
     const state = applyProposalResolution(
       applyChatOutcome(appendUserMessage(emptyTranscript(), "改"), proposalOutcome()),

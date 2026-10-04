@@ -2,6 +2,7 @@ import { z } from "zod";
 import { askArgsSchema } from "@/ext/agent-ask";
 import { codeArgsSchema } from "@/ext/agent-code";
 import { agentDisplaySchema } from "@/ext/agent-display";
+import { agentPreviewSchema } from "@/ext/agent-preview";
 import type { AgentProposal } from "@/ext/agent-loop";
 import type { AiChatContentBlock, AiChatMessage } from "@/ext/providers/ai";
 import { withStorage } from "./persist-keys";
@@ -122,6 +123,8 @@ const proposalSchema = z
     toolUseId: z.string().min(1),
     args: z.unknown(),
     summary: z.string(),
+    // 壞掉的預覽當作沒有(卡片退回參數表),不讓整份對話因此讀不回來。
+    preview: agentPreviewSchema.optional().catch(undefined),
   })
   .transform(
     (proposal): AgentProposal => ({
@@ -129,6 +132,7 @@ const proposalSchema = z
       toolUseId: proposal.toolUseId,
       args: proposal.args,
       summary: proposal.summary,
+      ...(proposal.preview ? { preview: proposal.preview } : {}),
     }),
   );
 

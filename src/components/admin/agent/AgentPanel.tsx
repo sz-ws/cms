@@ -636,7 +636,11 @@ function Notice({ tone, detail }: { tone: "maxSteps" | "error"; detail?: string 
         ? t("agent.error.notConfigured")
         : detail === "timeout"
           ? t("agent.error.timeout")
-          : t("agent.error.generic", { detail: detail ?? "" });
+          : detail === "output_truncated"
+            ? t("agent.error.outputTruncated")
+            : detail === "empty_response"
+              ? t("agent.error.emptyResponse")
+              : t("agent.error.generic", { detail: detail ?? "" });
 
   return (
     <div

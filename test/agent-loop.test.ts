@@ -310,6 +310,77 @@ describe("鐵律:write tool 在 loop 內永不執行(spec §1.2)", () => {
     expect(await auditRows()).toHaveLength(0);
   });
 
+  it("write tool 有 check 而且檢查不過 → 不出確認卡,原因還給模型,execute 照樣沒被呼叫", async () => {
+    const run = vi.fn(async () => ({ done: true }));
+    const registry = new AgentToolRegistryImpl();
+    registry.register(
+      defineAgentTool({
+        name: "test.thing.patch",
+        description: "Patch one thing.",
+        kind: "write",
+        schema: z.object({ id: z.string().min(1) }).strict(),
+        check: async (_ctx, args) => (args.id === "missing" ? "not_found: missing" : null),
+        run,
+      }),
+    );
+    const script = scriptedChat([
+      toolUseResult("test.thing.patch", { id: "missing" }),
+      toolUseResult("test.thing.patch", { id: 42 }),
+      toolUseResult("test.thing.patch", { id: "x1" }),
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: [{ role: "user", content: [{ type: "text", text: "改一下" }] }],
+      system: "sys",
+      registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    // 前兩次(找不到、參數形狀不對)都沒有變成卡片;第三次才提案。
+    expect(outcome.status).toBe("proposal");
+    if (outcome.status !== "proposal") throw new Error("unreachable");
+    expect(outcome.proposal.args).toEqual({ id: "x1" });
+    expect(outcome.steps).toBe(3);
+    const firstResult = outcome.appended[1]!.content[0]!;
+    expect(firstResult).toMatchObject({ type: "tool_result", isError: true });
+    expect(firstResult.type === "tool_result" && firstResult.content).toContain("not_found: missing");
+    expect(run).not.toHaveBeenCalled();
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("write tool 有 preview → 提案帶著它;形狀不合或 throw → 提案照出,只是沒有預覽", async () => {
+    const propose = async (preview: () => unknown) => {
+      const registry = new AgentToolRegistryImpl();
+      registry.register(
+        defineAgentTool({
+          name: "test.thing.patch",
+          description: "Patch one thing.",
+          kind: "write",
+          schema: z.object({ id: z.string().min(1) }).strict(),
+          preview: async () => preview() as never,
+          run: async () => ({ done: true }),
+        }),
+      );
+      const outcome = await runAgentChat({
+        messages: [{ role: "user", content: [{ type: "text", text: "改一下" }] }],
+        system: "sys",
+        registry,
+        ctx: CTX,
+        chat: scriptedChat([toolUseResult("test.thing.patch", { id: "x1" })]).chat,
+      });
+      if (outcome.status !== "proposal") throw new Error("unreachable");
+      return outcome.proposal;
+    };
+    const good = { kind: "changes", lines: [{ change: "added", text: "新的一段" }] };
+    expect((await propose(() => good)).preview).toEqual(good);
+    // 站外的圖片路徑、不認得的 kind、throw:都不擋提案。
+    const bad = { kind: "changes", lines: [{ change: "added", text: "", image: "https://evil.test/x.png" }] };
+    expect(Object.hasOwn(await propose(() => bad), "preview")).toBe(false);
+    expect(Object.hasOwn(await propose(() => ({ kind: "html", html: "<b>x</b>" })), "preview")).toBe(false);
+    expect(Object.hasOwn(await propose(() => { throw new Error("boom"); }), "preview")).toBe(false);
+  });
+
   it("write tool 仍然餵給 LLM(看得到、永不執行)", async () => {
     const fakes = makeFakes();
     const script = scriptedChat([FINAL]);
@@ -640,6 +711,73 @@ describe("harness 紀律(spec §4.5)", () => {
     if (outcome.status !== "error") throw new Error("unreachable");
     expect(outcome.error).toBe("tool_use_not_supported");
     expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("回覆在輸出上限被截斷(沒有文字也沒有工具呼叫)→ output_truncated,不把空的一則接進 transcript", async () => {
+    // 模型把整份輸出額度花在一個寫到一半的工具呼叫上時,上游回的是空內容。把那一則空的
+    // assistant 訊息接回去,下一句話就會被 /chat 的 schema 以 400 退回,對話從此卡死。
+    const fakes = makeFakes();
+    const script = scriptedChat([
+      { ok: true, text: "", toolUses: [], stopReason: "max_tokens" },
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: [{ role: "user", content: [{ type: "text", text: "把圖片放進文章" }] }],
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") throw new Error("unreachable");
+    expect(outcome.error).toBe("output_truncated");
+    expect(outcome.appended).toEqual([]);
+  });
+
+  it("工具呼叫的參數在輸出上限被截斷 → output_truncated,不拿半份參數去提案", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([
+      {
+        ok: true,
+        text: "",
+        toolUses: [{ id: "tu-1", name: "test.thing.create", input: '{"data":{"title":"寫到一' }],
+        stopReason: "max_tokens",
+      },
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: [{ role: "user", content: [{ type: "text", text: "建一筆" }] }],
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") throw new Error("unreachable");
+    expect(outcome.error).toBe("output_truncated");
+    expect(outcome.appended).toEqual([]);
+  });
+
+  it("空回覆(不是截斷)→ empty_response,同樣不接進 transcript", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([
+      { ok: true, text: "", toolUses: [], stopReason: "end_turn" },
+    ]);
+
+    const outcome = await runAgentChat({
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      system: "sys",
+      registry: fakes.registry,
+      ctx: CTX,
+      chat: script.chat,
+    });
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") throw new Error("unreachable");
+    expect(outcome.error).toBe("empty_response");
+    expect(outcome.appended).toEqual([]);
   });
 
   it("文字與工具呼叫同時出現時,兩者都回得出來", async () => {

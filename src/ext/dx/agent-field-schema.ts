@@ -5,6 +5,7 @@ import type {
   DeclarativeLeafField,
 } from "./manifest";
 import { GALLERY_MAX, isMediaKey } from "./media-key";
+import { hasUnplaceableImage } from "./fields/richtext-schema";
 import type { ExtraFieldDef } from "@/lib/extra-fields";
 
 /**
@@ -14,6 +15,25 @@ import type { ExtraFieldDef } from "@/lib/extra-fields";
 export const MEDIA_KEY_HINT =
   "Media key of an uploaded file, such as core/2026/09/abc123.jpg — the `key` returned by core.media.upload " +
   "or listed by core.media.list. Not a URL. An empty string removes the image.";
+
+/**
+ * 1.69.1:richtext 欄位給模型看的說明。沒有它,模型只知道「字串或物件」:圖片的 src 用猜的
+ * (猜成 media key,存得進去、前台不畫),也不知道 update 是整份取代。
+ */
+export const RICHTEXT_HINT =
+  "Rich text. Plain text works (a blank line starts a new paragraph). For headings, lists, links or images send a " +
+  "Tiptap JSON document: { type: \"doc\", content: [nodes] }. Block nodes: paragraph, heading (attrs.level 2 or 3), " +
+  "bulletList / orderedList of listItem, blockquote, codeBlock, horizontalRule, image. Inline: text (marks: bold, " +
+  "italic, strike, code, link with attrs.href) and hardBreak. An image is its own block between paragraphs: " +
+  "{ type: \"image\", attrs: { src: \"/api/files/<media key>\", alt: \"what the picture shows\" } }, with the " +
+  "`key` from core.media.list or core.media.upload. The value replaces the whole field: when changing existing " +
+  "text, send every block again, not only the new ones. To change only some blocks of a top-level rich text " +
+  "field, use the entry's edit_text tool instead.";
+
+/** 圖片的 src 認不出來時退回給模型的訊息。 */
+export const RICHTEXT_IMAGE_HINT =
+  "An image src must be /api/files/<media key>, with the `key` from core.media.list or core.media.upload. " +
+  "Images from other sites can't be used: upload the file first.";
 
 /** 1.66.0:gallery 欄位給模型看的一句話。 */
 export const GALLERY_KEYS_HINT =
@@ -47,7 +67,12 @@ function leafSchema(field: DeclarativeLeafField): z.ZodType {
       return z.string();
     case "richtext":
       // provider 收 Tiptap JSON 文件物件,並向後相容純字串(寫入時升級為單段文件)。
-      return z.union([z.string(), z.record(z.string(), z.unknown())]);
+      // 比 provider 嚴的第二處(1.69.1):圖片的 src 認不出來就退回。provider 收得下(人在
+      // 編輯器貼的外站圖片),但那張圖不會被畫出來;模型不會看前台,只能在這裡得到回饋。
+      return z
+        .union([z.string(), z.record(z.string(), z.unknown())])
+        .refine((v) => typeof v === "string" || !hasUnplaceableImage(v), { message: RICHTEXT_IMAGE_HINT })
+        .describe(RICHTEXT_HINT);
     case "media":
       // storage key 字串。1.60.0 起在這裡就用 provider 的**同一支** isMediaKey 驗(不是複製
       // 規則,所以不會比 provider 嚴):模型最常犯的錯是把網址塞進圖片欄位,在 schema 層

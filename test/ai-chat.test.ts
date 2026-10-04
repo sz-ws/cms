@@ -404,14 +404,14 @@ describe("CoreAiProvider.chat", () => {
       expect(res.error).not.toContain("sk-secret");
     });
 
-    it("caps maxTokens at 8192", async () => {
+    it("caps maxTokens at 16000", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(200, {
           choices: [{ message: { content: "x" }, finish_reason: "stop" }],
         }),
       );
       await provider.chat({ ...ASK, maxTokens: 999_999 });
-      expect(bodyOf(fetchMock).max_tokens).toBe(8192);
+      expect(bodyOf(fetchMock).max_tokens).toBe(16000);
     });
   });
 
@@ -675,6 +675,39 @@ describe("CoreAiProvider.chat", () => {
       });
       const sent = (run.mock.calls[0] as unknown as [string, { messages: { role: string; content: unknown }[] }])[1];
       expect(sent.messages.find((m) => m.role === "assistant")?.content).toBe("");
+    });
+
+    it("an answer cut off at the output limit reports max_tokens", async () => {
+      // 實測(deepseek-v4-flash):工具呼叫寫到一半就到上限時,回的是空 content、沒有
+      // tool_calls、finish_reason "length"。
+      cfState.ai = {
+        run: vi.fn(async () => ({
+          choices: [{ message: { content: "" }, finish_reason: "length" }],
+        })),
+      };
+      expect(await provider.chat(ASK)).toMatchObject({
+        ok: true,
+        text: "",
+        toolUses: [],
+        stopReason: "max_tokens",
+      });
+    });
+
+    it("a tool call that arrives with a cut-off answer is still reported as max_tokens", async () => {
+      cfState.ai = {
+        run: vi.fn(async () => ({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [{ id: "c1", type: "function", function: { name: "core-content-list", arguments: '{"type":"po' } }],
+              },
+              finish_reason: "length",
+            },
+          ],
+        })),
+      };
+      expect(await provider.chat(ASK)).toMatchObject({ ok: true, stopReason: "max_tokens" });
     });
 
     it("reads an OpenAI-shaped answer: tool calls keep the model's id, arguments are parsed", async () => {

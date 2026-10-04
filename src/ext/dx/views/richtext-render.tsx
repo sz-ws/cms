@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/core";
-import { toDoc, isEmptyDoc } from "../fields/richtext-schema";
+import { toDoc, isEmptyDoc, richtextImageSrc } from "../fields/richtext-schema";
 import { buildSrcSet } from "@/lib/image-variants";
 
 // C.5b §3: SAFE public rendering of richtext Tiptap JSON.
@@ -98,7 +98,8 @@ function renderBlock(node: JSONContent, key: string): ReactNode {
     case "horizontalRule":
       return <hr key={key} />;
     case "image": {
-      const src = node.attrs?.src;
+      // 1.69.1 之前存進來的文件可能只有 media key 或完整網址;認得出來就照畫。
+      const src = richtextImageSrc(node.attrs?.src) ?? node.attrs?.src;
       // Phase E §12: belt-and-suspenders — don't rely solely on the
       // downstream /api/files/<key> route to reject traversal; refuse any
       // src containing ".." here too, even though ALLOWED_IMG_SRC's

@@ -11,7 +11,7 @@ import type {
   ContentTypeDef,
 } from "../capabilities";
 import type { HookBus } from "../hooks";
-import { isTiptapDoc, isValidRichtextDoc, stringToDoc } from "./fields/richtext-schema";
+import { isTiptapDoc, isValidRichtextDoc, normalizeRichtextImages, stringToDoc } from "./fields/richtext-schema";
 import { GALLERY_MAX, isMediaKey } from "./media-key";
 import { slugify } from "./slug";
 import { revalidateContent } from "./cache-invalidate";
@@ -195,7 +195,9 @@ function validateField(
       if (typeof raw === "string") return stringToDoc(raw);
       if (!isTiptapDoc(raw)) return fail(key, "expected Tiptap JSON document or string");
       if (!isValidRichtextDoc(raw)) return fail(key, "invalid richtext document");
-      return raw;
+      // 1.69.1:圖片的 src 收斂成 /api/files/<key>。助理(與 MCP)手上是 media key 或完整
+      // 網址,原樣存進去的話前台不畫、也沒有錯誤。
+      return normalizeRichtextImages(raw);
     }
     case "media":
       // v1:media 儲存為 storage key 字串。

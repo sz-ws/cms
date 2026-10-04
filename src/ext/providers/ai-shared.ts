@@ -17,6 +17,8 @@ export type AiMode = "off" | "openai" | "anthropic" | "workers-ai";
 export const GENERATE_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_TOKENS = 1024;
 export const MAX_TOKENS_CAP = 8192;
+/** 對話(chat)的上限(1.70.0)。助理一輪可能要寫一整篇文章;generate 那邊維持 8192。 */
+export const CHAT_MAX_TOKENS_CAP = 16_000;
 export const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com";
 export const ANTHROPIC_VERSION = "2023-06-01";
@@ -24,6 +26,10 @@ const ERROR_DETAIL_MAX = 200; // 上游錯誤摘要截斷長度。
 
 export function resolveMaxTokens(input: number | undefined): number {
   return Math.min(input ?? DEFAULT_MAX_TOKENS, MAX_TOKENS_CAP);
+}
+
+export function resolveChatMaxTokens(input: number | undefined): number {
+  return Math.min(input ?? DEFAULT_MAX_TOKENS, CHAT_MAX_TOKENS_CAP);
 }
 
 /** 截斷至 200 字(spec:上游訊息摘要),絕不含呼叫端傳入的 apiKey(呼叫處保證不拼入)。 */

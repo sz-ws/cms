@@ -82,7 +82,6 @@ const bodySchema = z
                   toolResultBlockSchema,
                 ]),
               )
-              .min(1)
               .max(MAX_BLOCKS),
           })
           .strict(),
@@ -163,7 +162,16 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const messages: AiChatMessage[] = parsed.messages.map((message) => ({
+  // 沒有內容的 assistant 訊息:1.69.1 之前,模型的回覆在輸出上限被截斷時會留下這樣一則
+  // (存在瀏覽器裡的對話可能還帶著)。略過它,對話才接得下去;使用者那一側的空訊息仍是錯的。
+  const kept = parsed.messages.filter(
+    (message) => message.role !== "assistant" || message.content.length > 0,
+  );
+  if (kept.length === 0 || kept.some((message) => message.content.length === 0)) {
+    return Response.json({ error: "invalid_input" }, { status: 400 });
+  }
+
+  const messages: AiChatMessage[] = kept.map((message) => ({
     role: message.role,
     content: message.content.map(toChatBlock),
   }));
@@ -250,6 +258,15 @@ function sseResponse(
           // client 已斷線。loop 會在下一步的 signal 檢查停下來。
         }
       };
+      // 一次上游呼叫最長可以等四分鐘(AGENT_CHAT_TIMEOUT_MS),這段時間沒有任何事件。
+      // 每 15 秒送一行 SSE 註解,免得中間的代理把看起來閒置的連線關掉;前端的 parser 不理它。
+      const keepAlive = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": keep-alive\n\n"));
+        } catch {
+          // client 已斷線。
+        }
+      }, 15_000);
       try {
         const outcome = await run((event) => send(event.type, event));
         send("outcome", outcome);
@@ -264,6 +281,7 @@ function sseResponse(
           toolCalls: [],
         } satisfies AgentChatOutcome);
       } finally {
+        clearInterval(keepAlive);
         try {
           controller.close();
         } catch {

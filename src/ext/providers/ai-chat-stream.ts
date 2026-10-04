@@ -102,7 +102,7 @@ export async function* chatOpenAiStream(
     (await getSetting<string>("core.ai.baseUrl", "")) || OPENAI_DEFAULT_BASE_URL;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), source.timeoutMs ?? GENERATE_TIMEOUT_MS);
   try {
     // 1.34.0:串流預設**不回** usage,要主動要(`stream_options.include_usage`)。
     // 它是 OpenAI 官方 API 的一部分,但這個站接的是**任意 OpenAI-compatible 端點**
@@ -324,7 +324,7 @@ export async function* chatAnthropicStream(
     ANTHROPIC_DEFAULT_BASE_URL;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), source.timeoutMs ?? GENERATE_TIMEOUT_MS);
   try {
     const res = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",

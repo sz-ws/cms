@@ -9,6 +9,8 @@ import { CODE_DESCRIPTION, codeArgsSchema } from "./agent-code";
 import type { AgentCode } from "./agent-code";
 import { agentDisplaySchema } from "./agent-display";
 import type { AgentDisplay } from "./agent-display";
+import { agentPreviewSchema } from "./agent-preview";
+import type { AgentPreview } from "./agent-preview";
 import { invokeAgentTool } from "./agent-tools";
 import type {
   AgentTool,
@@ -96,8 +98,13 @@ import type {
 
 /** 步數上限(spec §4)。到頂回明確狀態,不是靜默停止。 */
 export const AGENT_MAX_STEPS = 8;
-/** 每次 chat 呼叫的 maxTokens。Phase B 預設 1024 對帶工具的 loop 偏緊。 */
-export const AGENT_MAX_TOKENS = 4096;
+/**
+ * 每次 chat 呼叫的 maxTokens(1.70.0:4096 → 16000)。會思考的模型把思考也算在這個數字裡,
+ * 4096 連一篇長文都寫不完。上限防的是模型失控地一直寫,不是正常的長回覆。
+ */
+export const AGENT_MAX_TOKENS = 16_000;
+/** 每次 chat 呼叫最多等多久。寫滿 16000 個 token 要幾分鐘,60 秒的共用預算不夠。 */
+export const AGENT_CHAT_TIMEOUT_MS = 240_000;
 /** 單筆 tool_result 上限(字元,spec §4.5)。 */
 export const TOOL_RESULT_MAX_CHARS = 4_000;
 /** 整輪(一次 /chat 請求內所有 tool_result 的總和)上限(字元,spec §4.5)。 */
@@ -236,6 +243,8 @@ export interface AgentProposal {
   args: unknown;
   /** 人話摘要(確認卡標題用)。 */
   summary: string;
+  /** 會改動什麼(1.70.0)。tool 有提供才有;沒有時確認卡顯示參數表。 */
+  preview?: AgentPreview;
 }
 
 /** 這一輪實際跑過的 tool(給面板的「工具呼叫」摺疊區用)。 */
@@ -316,7 +325,8 @@ export type AgentChatOutcome =
   | (AgentOutcomeBase & { status: "max_steps"; text: string })
   | (AgentOutcomeBase & {
       status: "error";
-      /** "not_configured" | "timeout" | "tool_use_not_supported" | 上游摘要。 */
+      /** "not_configured" | "timeout" | "tool_use_not_supported" | "output_truncated" |
+       *  "empty_response" | 上游摘要。 */
       error: string;
     });
 
@@ -685,6 +695,25 @@ function syntheticInvalidArgs(
   };
 }
 
+/**
+ * 確認卡的預覽:問 tool、過 agentPreviewSchema。tool 沒有 preview、它 throw、或回的形狀
+ * 不合 → undefined(卡片顯示參數表)。預覽壞掉不能擋住提案本身。
+ */
+async function proposalPreview(
+  tool: AgentTool,
+  ctx: AgentToolCtx,
+  input: unknown,
+): Promise<AgentPreview | undefined> {
+  if (!tool.preview) return undefined;
+  try {
+    const parsed = agentPreviewSchema.safeParse(await tool.preview(ctx, input));
+    return parsed.success ? parsed.data : undefined;
+  } catch (e) {
+    console.error(`[agent-loop] "${tool.name}".preview failed`, e);
+    return undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // loop
 // ---------------------------------------------------------------------------
@@ -868,6 +897,7 @@ export async function runAgentChat(
       tools,
       system: params.system,
       maxTokens: AGENT_MAX_TOKENS,
+      timeoutMs: AGENT_CHAT_TIMEOUT_MS,
     };
     const res = streaming
       ? await runStreamStep(streaming, opts, emit)
@@ -898,9 +928,27 @@ export async function runAgentChat(
       };
     }
 
-    const assistant = toAssistantMessage(res);
     const uses = res.toolUses ?? [];
     lastText = res.text ?? "";
+
+    // 這一步沒有可用的內容(1.69.1)。兩種情況:
+    //   · 到輸出上限才停,而且手上是寫到一半的工具呼叫(參數是半份 JSON)或什麼都沒有;
+    //   · 上游回了一則全空的訊息。
+    // 都不接進 transcript:一則沒有內容的 assistant 訊息會讓之後每一句話在 /chat 被退回,
+    // 半份參數則會變成一張按了必定失敗的確認卡。回錯誤碼,讓面板說清楚發生了什麼。
+    const cutOff = res.stopReason === "max_tokens" && (uses.length > 0 || lastText === "");
+    if (cutOff || (uses.length === 0 && lastText === "")) {
+      return {
+        status: "error",
+        error: cutOff ? "output_truncated" : "empty_response",
+        appended,
+        steps: step,
+        toolCalls,
+        ...(usage ? { usage } : {}),
+      };
+    }
+
+    const assistant = toAssistantMessage(res);
 
     if (uses.length === 0) {
       return {
@@ -973,6 +1021,23 @@ export async function runAgentChat(
 
     if (halting) {
       const tool = params.registry.get(halting.name);
+      // 1.70.0:tool 有提案前的檢查就先問(AgentTool.check)。有問題 → 不出確認卡,把原因
+      // 當成這次工具呼叫的錯誤還給模型,續 loop。什麼都沒執行,所以不記 audit。
+      const problem = tool?.check
+        ? await tool.check(params.ctx, halting.input).catch((e: unknown) => {
+            console.error(`[agent-loop] "${halting.name}".check failed`, e);
+            return null; // 檢查自己壞了不擋提案:確認後的執行仍會完整驗一次。
+          })
+        : null;
+      if (problem) {
+        const retry = syntheticInvalidArgs(assistant, halting, [problem], remaining);
+        remaining -= retry.used;
+        toolCalls.push(retry.log);
+        appended.push(retry.assistantMessage, retry.resultMessage);
+        transcript = [...transcript, retry.assistantMessage, retry.resultMessage];
+        continue;
+      }
+      const preview = tool ? await proposalPreview(tool, params.ctx, halting.input) : undefined;
       return {
         status: "proposal",
         text: lastText,
@@ -985,6 +1050,7 @@ export async function runAgentChat(
           summary: tool
             ? proposalSummary(tool, halting.input, params.locale ?? "en")
             : halting.name,
+          ...(preview ? { preview } : {}),
         },
         appended: [...appended, haltingAssistantMessage(assistant, halting.id)],
         steps: step,

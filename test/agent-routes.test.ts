@@ -267,6 +267,24 @@ describe("POST /api/admin/agent/chat — guards(spec §1.1 admin-only)", () => {
     }
   });
 
+  it("an empty assistant message left by a cut-off answer is skipped, not refused", async () => {
+    aiState.results = [{ ok: true, text: "好的。", toolUses: [], stopReason: "end_turn" }];
+    const res = await chatPost(
+      chatReq({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "把圖片放進文章" }] },
+          { role: "assistant", content: [] },
+          { role: "user", content: [{ type: "text", text: "繼續" }] },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const sent = aiState.calls[0] as { messages: { role: string }[] };
+    expect(sent.messages.map((m) => m.role)).toEqual(["user", "user"]);
+    // 只有空的 assistant 訊息 → 沒有東西可以送。
+    expect((await chatPost(chatReq({ messages: [{ role: "assistant", content: [] }] }))).status).toBe(400);
+  });
+
   it("429 after exceeding the rate limit", async () => {
     for (let i = 0; i < 20; i++) {
       expect((await chatPost(chatReq(HELLO))).status).toBe(200);

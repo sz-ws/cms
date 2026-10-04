@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { isMediaKey } from "../media-key";
 
 // C.5b §1: single source of truth for the richtext Tiptap schema. Both the
 // client editor (RichtextField) and the server renderer (views/richtext-render)
@@ -177,4 +178,55 @@ export function richtextToPlainText(value: unknown, max = 160): string {
   if (doc.content) doc.content.forEach(walk);
   const text = parts.join(" ").replace(/\s+/g, " ").trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+const FILES_PREFIX = "/api/files/";
+
+/**
+ * 內文圖片的 src:一律是 `/api/files/<media key>`(編輯器插入的寫法,也是 renderer 唯一會畫的)。
+ * 認得三種來源:已經是這個路徑、只有 media key、完整網址(core.media.list 的 `url`,取路徑、
+ * 丟掉 query)。其餘回 null —— 外站圖片、data:、路徑跳脫都不是這裡能收斂的東西。
+ */
+export function richtextImageSrc(src: unknown): string | null {
+  if (typeof src !== "string") return null;
+  const value = src.trim();
+  if (isMediaKey(value)) return `${FILES_PREFIX}${value}`;
+  let path = value;
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      path = new URL(value).pathname;
+    } catch {
+      return null;
+    }
+  }
+  if (!path.startsWith(FILES_PREFIX)) return null;
+  // URL().pathname 會把中文等字元編碼;key 本身只有 ASCII,解不開就當作不認得。
+  let key: string;
+  try {
+    key = decodeURIComponent(path.slice(FILES_PREFIX.length).split("?")[0] ?? "");
+  } catch {
+    return null;
+  }
+  return isMediaKey(key) ? `${FILES_PREFIX}${key}` : null;
+}
+
+/** 文件裡有沒有 src 認不出來的圖片(存得進去,但不會被畫出來)。 */
+export function hasUnplaceableImage(node: JSONContent): boolean {
+  if (node.type === "image" && richtextImageSrc(node.attrs?.src) === null) return true;
+  return (node.content ?? []).some(hasUnplaceableImage);
+}
+
+/**
+ * 回傳一份新文件,裡面每張認得出來的圖片都改成 `/api/files/<key>`。認不出來的圖片與其餘
+ * 節點原樣保留:這裡只收斂寫法。人在編輯器裡貼進來的外站圖片照舊存得進去;助理那條路
+ * 在工具的 schema 就退回(agent-field-schema.ts)。
+ */
+export function normalizeRichtextImages(doc: JSONContent): JSONContent {
+  const walk = (node: JSONContent): JSONContent => {
+    const content = node.content ? { content: node.content.map(walk) } : {};
+    if (node.type !== "image") return { ...node, ...content };
+    const src = richtextImageSrc(node.attrs?.src);
+    return src === null ? { ...node, ...content } : { ...node, ...content, attrs: { ...node.attrs, src } };
+  };
+  return walk(doc);
 }

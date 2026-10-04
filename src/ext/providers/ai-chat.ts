@@ -78,8 +78,10 @@ export interface AiChatOptions {
   tools: AiToolDef[];
   /** system prompt(spec §4.5:住 code、per-request 組裝)。 */
   system?: string;
-  /** 省略 → 1024;上限 8192(同 generate())。 */
+  /** 省略 → 1024;上限 16000(CHAT_MAX_TOKENS_CAP)。 */
   maxTokens?: number;
+  /** 這一次上游呼叫最多等多久(1.70.0)。省略 → 60 秒(GENERATE_TIMEOUT_MS)。 */
+  timeoutMs?: number;
 }
 
 /** 助理這一輪要求的一次工具呼叫。 */
@@ -174,15 +176,18 @@ function toolUsesOf(
 
 /** 有 tool_use 就一律以 "tool_use" 收尾 —— 不完全信任上游的 finish/stop reason
  *  字串(OpenAI-compatible 代理常在帶 tool_calls 時仍回 "stop")。有實際的工具
- *  呼叫是比一個字串更硬的事實。 */
+ *  呼叫是比一個字串更硬的事實。
+ *
+ *  例外(1.69.1):上游明說到了輸出上限。那時手上的工具呼叫可能只寫到一半(參數是
+ *  半份 JSON),不能當成一個完整的呼叫交給 loop。 */
 export function normalizeStopReason(
   raw: string | undefined,
   hasToolUse: boolean,
   maxTokensValues: readonly string[],
   endTurnValues: readonly string[],
 ): AiChatStopReason {
-  if (hasToolUse) return "tool_use";
   if (raw && maxTokensValues.includes(raw)) return "max_tokens";
+  if (hasToolUse) return "tool_use";
   if (raw && endTurnValues.includes(raw)) return "end_turn";
   return "other";
 }
@@ -401,7 +406,7 @@ export async function chatOpenAi(
     (await getSetting<string>("core.ai.baseUrl", "")) || OPENAI_DEFAULT_BASE_URL;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), source.timeoutMs ?? GENERATE_TIMEOUT_MS);
   try {
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -544,7 +549,7 @@ export async function chatAnthropic(
     ANTHROPIC_DEFAULT_BASE_URL;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), source.timeoutMs ?? GENERATE_TIMEOUT_MS);
   try {
     const res = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",
@@ -709,12 +714,12 @@ export async function chatWorkersAi(
             }
           : {}),
       }),
-      GENERATE_TIMEOUT_MS,
+      source.timeoutMs ?? GENERATE_TIMEOUT_MS,
     );
     // 回應有兩種形狀:OpenAI 的 choices[0].message(每個模型都有),以及舊的頂層
     // response / tool_calls(只有一部分模型還帶)。先讀前者,沒有才讀後者。
     const body = result as {
-      choices?: { message?: { content?: unknown; tool_calls?: unknown } }[];
+      choices?: { message?: { content?: unknown; tool_calls?: unknown }; finish_reason?: unknown }[];
       response?: unknown;
       tool_calls?: unknown;
       usage?: unknown;
@@ -741,7 +746,10 @@ export async function chatWorkersAi(
       ok: true,
       text,
       toolUses,
-      stopReason: toolUses.length > 0 ? "tool_use" : "end_turn",
+      // 到輸出上限時 finish_reason 是 "length"(工具呼叫寫到一半的話,content 是空的、
+      // tool_calls 也沒有)。舊格式的回應沒有這個欄位,照舊當作正常收尾。
+      stopReason:
+        body?.choices?.[0]?.finish_reason === "length" ? "max_tokens" : toolUses.length > 0 ? "tool_use" : "end_turn",
       model,
       ...(usage ? { usage } : {}),
     };

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { SessionUser } from "@/lib/auth";
 import type { Locale } from "@/lib/i18n/index";
 import type { AgentDisplay } from "./agent-display";
+import type { AgentPreview } from "./agent-preview";
 import type { CoreServices } from "./services";
 
 // docs/spec-admin-agent.md §2:行動層(agent tool registry)。
@@ -81,6 +82,22 @@ export interface AgentTool {
    * 不畫半殘的卡。失敗或被截斷的結果不會走到這裡 —— 那份資料本來就不完整。
    */
   display?(result: unknown, locale: Locale): AgentDisplay | undefined;
+  /**
+   * 送出確認卡之前的檢查(1.70.0;write tool 用)。回一句話 = 這份參數現在執行一定失敗,
+   * 原因是這句話;回 null = 可以提案。
+   *
+   * 沒有它的 write tool 照舊:參數在提案時不驗,錯誤要等 admin 按下確認才出現。對「指到
+   * 既有資料的某一處」這類 tool(例:改內文的第幾段),那等於讓 admin 去按一張注定失敗的
+   * 卡。有 check 的 tool,loop 先問它;有問題就把那句話當成工具錯誤還給模型重來,admin
+   * 看不到那張卡。**只讀、不寫**:它跑在確認之前。
+   */
+  check?(ctx: AgentToolCtx, args: unknown): Promise<string | null>;
+  /**
+   * 確認卡上的「會改動什麼」(1.70.0;write tool 用,見 agent-preview.ts)。省略或回
+   * undefined → 卡片照舊顯示參數表。跟 check 一樣跑在確認之前,**只讀、不寫**;回傳值還要
+   * 過 agentPreviewSchema,不合的整份丟掉。
+   */
+  preview?(ctx: AgentToolCtx, args: unknown): Promise<AgentPreview | undefined>;
 }
 
 /**
@@ -152,6 +169,10 @@ export function defineAgentTool<S extends z.ZodType>(def: {
    * 少寫那幾行防禦性讀取 —— 這個函式跑在渲染卡片的最後一哩,炸掉就是一張白卡。
    */
   display?: (result: unknown, locale: Locale) => AgentDisplay | undefined;
+  /** 見 AgentTool.check。收到的是驗過 schema 的參數;schema 沒過時由這裡回報,不會叫到它。 */
+  check?: (ctx: AgentToolCtx, args: z.output<S>) => Promise<string | null>;
+  /** 見 AgentTool.preview。收到的是驗過 schema 的參數;schema 沒過就沒有預覽。 */
+  preview?: (ctx: AgentToolCtx, args: z.output<S>) => Promise<AgentPreview | undefined>;
 }): AgentTool {
   const tool: AgentTool = {
     name: def.name,
@@ -164,6 +185,27 @@ export function defineAgentTool<S extends z.ZodType>(def: {
     ...(def.destructive === undefined ? {} : { destructive: def.destructive }),
     ...(def.summarize ? { summarize: def.summarize } : {}),
     ...(def.display ? { display: def.display } : {}),
+    ...(def.preview
+      ? {
+          preview: async (ctx: AgentToolCtx, args: unknown) => {
+            const parsed = def.schema.safeParse(args);
+            return parsed.success ? def.preview!(ctx, parsed.data) : undefined;
+          },
+        }
+      : {}),
+    ...(def.check
+      ? {
+          check: async (ctx: AgentToolCtx, args: unknown) => {
+            const parsed = def.schema.safeParse(args);
+            if (!parsed.success) {
+              return parsed.error.issues
+                .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+                .join("; ");
+            }
+            return def.check!(ctx, parsed.data);
+          },
+        }
+      : {}),
   };
   assertToolShape(tool);
   return tool;

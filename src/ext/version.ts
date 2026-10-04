@@ -1535,4 +1535,41 @@
 // `tool_call_id` (an assistant turn without text gets "" because some models reject null), and reads
 // `choices[0].message` first, the older top-level `response` / `tool_calls` second. Plain generation and
 // streaming accept both shapes too. A failed call is logged; the admin still sees the same message.
-export const CORE_API_VERSION = "1.69.0";
+// 1.69.1: Fixes found in the assistant's production log.
+// Images the assistant put in rich text did not show: it wrote the media key (or the full URL from
+// `core.media.list`) as the image `src`, the write accepted it, and the renderer only draws
+// `/api/files/<key>`. A rich text write now stores every recognisable image as `/api/files/<key>`
+// (`normalizeRichtextImages`), the renderer draws documents saved before this the same way, and a rich
+// text field's tool schema now describes the document format, the image node and that the value replaces
+// the whole field (`RICHTEXT_HINT`). An image the assistant can't place (another site's URL) is refused by
+// the tool schema with what to send instead; the editor still saves whatever a person pastes.
+// A conversation died after an answer hit the output limit: the model returned an empty message
+// (Workers AI: empty content, no tool calls, `finish_reason: "length"`), the loop stored it, and `/chat`
+// refused every later request with 400. Workers AI mode now reports `max_tokens`, and every mode reports
+// it even when a (half-written) tool call came with the cut-off answer; the loop answers
+// `output_truncated` or `empty_response` and stores nothing; `/chat` skips an empty assistant message
+// already in a saved conversation.
+// 1.70.0: The assistant can change part of a text, and may write longer answers.
+// Every content type with a top-level rich text field gets a write tool `content.<type>.edit_text`
+// ({ id, field, edits }): each edit inserts, replaces or removes whole top-level blocks, pointing at a block
+// by `match` (words found in exactly one block; an image by its alt text or file name) or `index`, and every
+// edit refers to the field as it was before the call (`dx/fields/richtext-edit.ts`). It answers with the new
+// outline (index, type, first words) instead of the whole entry. Before this, adding one image meant sending
+// the whole text again through `update`. Inbox types don't get it.
+// `AgentTool.check(ctx, args)` (optional, write tools): asked before the confirmation card is shown; a
+// returned sentence goes back to the model as a tool error and no card appears. It must only read.
+// `defineAgentTool` validates the schema first, so `check` receives parsed args. `edit_text` uses it for
+// "no such block" and "no such entry". Tools without `check` behave as before.
+// `AgentTool.preview(ctx, args)` (optional, write tools; `agent-preview.ts`): what the confirmation card
+// shows instead of the flattened parameters. One kind so far, `changes`: lines that are `kept`, `added` or
+// `removed` (text, optionally an image under /api/files/ or a heading) and `gap` lines for the unchanged
+// stretch in between. The tool computes it from the site's data, the loop checks it against
+// `agentPreviewSchema` and drops anything else, and the panel draws it; the parameters stay available behind
+// a disclosure. `edit_text` shows each changed block with one unchanged block either side. A saved
+// conversation keeps the preview of its cards.
+// A chat call may now produce 16,000 output tokens (was 4,096; `CHAT_MAX_TOKENS_CAP`, generation keeps
+// 8,192) and wait 240 seconds (`AiChatOptions.timeoutMs`, default still 60); models that think count their
+// thinking inside the output limit. The chat stream sends an SSE comment every 15 seconds while it waits.
+// A provider may refuse `max_tokens` above a model's own output limit: 16,000 is accepted by the Workers AI
+// model checked (deepseek-v4-flash); other models are not checked.
+export const CORE_API_VERSION = "1.70.0";

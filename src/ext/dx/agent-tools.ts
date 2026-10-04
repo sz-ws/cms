@@ -12,11 +12,22 @@ import type { DeclarativeContentType, DeclarativeManifest } from "./manifest";
 import { submissionTypeNames } from "./submission";
 import {
   EXTRA_KEY,
+  RICHTEXT_IMAGE_HINT,
   contentDataSchema,
   describeExtraFields,
   describeFields,
 } from "./agent-field-schema";
 import { displayValue, pickTitleField } from "./views/field-utils";
+import { hasUnplaceableImage, isValidRichtextDoc, toDoc } from "./fields/richtext-schema";
+import {
+  RICHTEXT_EDITS_MAX,
+  applyRichtextEdits,
+  richtextChangePreview,
+  richtextOutline,
+  type RichtextEdit,
+  type RichtextStep,
+} from "./fields/richtext-edit";
+import type { JSONContent } from "@tiptap/core";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import {
   coerceExtraValues,
@@ -207,6 +218,91 @@ async function mergedExtra(
   return coerceExtraValues(defs, { ...current, ...readExtraValues(incoming) });
 }
 
+/** edit_text 的一個區塊:一段純文字,或一個 Tiptap 節點。圖片認不出來的當場退回。 */
+const richtextBlockSchema = z
+  .union([z.string().min(1), z.record(z.string(), z.unknown())])
+  .refine((block) => typeof block === "string" || !hasUnplaceableImage(block), {
+    message: RICHTEXT_IMAGE_HINT,
+  });
+
+/**
+ * edit_text 的一個修改。刻意是一個扁平的物件而不是三種形狀的 union:工具參數的 JSON Schema
+ * 越平,各家模型填對的機率越高;「insert / replace 要帶 blocks」用一條 refine 表達。
+ */
+const richtextEditSchema = z
+  .object({
+    op: z.enum(["insert", "replace", "remove"]),
+    index: z.number().int().min(0).optional().describe("0-based position of the block this edit points at. Prefer `match`; give both to make sure the block is still the one you mean."),
+    match: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("A few words that appear in exactly one block (for an image: its alt text or file name)."),
+    position: z
+      .enum(["before", "after", "start", "end"])
+      .optional()
+      .describe('insert only. Default "after" the block; "start" / "end" of the field need no index or match.'),
+    blocks: z
+      .array(richtextBlockSchema)
+      .min(1)
+      .max(RICHTEXT_EDITS_MAX)
+      .optional()
+      .describe("insert / replace: the new blocks, each a plain string (one paragraph) or a Tiptap node."),
+  })
+  .strict()
+  .refine((edit) => edit.op === "remove" || edit.blocks !== undefined, {
+    message: "insert and replace need `blocks`",
+  });
+
+/** schema 驗過的修改 → applyRichtextEdits 吃的形狀。 */
+function toRichtextEdit(edit: z.output<typeof richtextEditSchema>): RichtextEdit {
+  const target = {
+    ...(edit.index === undefined ? {} : { index: edit.index }),
+    ...(edit.match === undefined ? {} : { match: edit.match }),
+  };
+  if (edit.op === "remove") return { op: "remove", ...target };
+  const blocks = (edit.blocks ?? []) as (string | JSONContent)[];
+  return edit.op === "replace"
+    ? { op: "replace", ...target, blocks }
+    : { op: "insert", ...target, blocks, ...(edit.position ? { position: edit.position } : {}) };
+}
+
+/** 把修改套到這一筆現在的內文上:成功回新文件,否則回一句給模型看的原因。 */
+async function plannedRichtext(
+  provider: ContentProvider,
+  type: string,
+  args: { id: string; field: string; edits: readonly z.output<typeof richtextEditSchema>[] },
+): Promise<{ ok: true; doc: JSONContent; steps: RichtextStep[] } | { ok: false; error: string }> {
+  const entry = await provider.get(type, args.id);
+  if (!entry) return { ok: false, error: `not_found: ${args.id}` };
+  const planned = applyRichtextEdits(toDoc(entry.data[args.field]), args.edits.map(toRichtextEdit));
+  if (!planned.ok) return planned;
+  return isValidRichtextDoc(planned.doc)
+    ? planned
+    : { ok: false, error: "blocks: not a valid rich text block. See the field description for the allowed nodes." };
+}
+
+/** edit_text 摘要的括號段:`(id: abc;新增 1 處、移除 1 處)`。讀的是未經驗證的 input。 */
+function editTextTarget(args: unknown, locale: Locale): string {
+  const id = readStringArg(args, "id");
+  const edits =
+    typeof args === "object" && args !== null && Array.isArray((args as { edits?: unknown }).edits)
+      ? ((args as { edits: unknown[] }).edits)
+      : [];
+  const count = (op: string) =>
+    edits.filter((e) => typeof e === "object" && e !== null && (e as { op?: unknown }).op === op).length;
+  const zh = locale === "zh-Hant";
+  const parts = [
+    [count("insert"), zh ? "新增" : "add"],
+    [count("replace"), zh ? "改寫" : "rewrite"],
+    [count("remove"), zh ? "移除" : "remove"],
+  ]
+    .filter(([n]) => (n as number) > 0)
+    .map(([n, verb]) => (zh ? `${verb} ${n} 處` : `${verb} ${n}`));
+  if (id.length === 0 || parts.length === 0) return "";
+  return zh ? `(id: ${id};${parts.join("、")})` : ` (id: ${id}; ${parts.join(", ")})`;
+}
+
 /**
  * 為單一 declarative content type 產生 agent tools。
  *
@@ -317,6 +413,56 @@ export function contentTypeAgentTools(
 
   if (isSubmission) return [...readTools, deleteTool];
 
+  // 1.70.0:有 richtext 欄位的型別多一個 edit_text —— 改內文的一部分,不必整份重寫。
+  const richtextKeys = ct.fields.filter((f) => f.type === "richtext").map((f) => f.key);
+  const editTextSchema = z
+    .object({
+      id: z.string().min(1),
+      field: z.enum(richtextKeys.length > 0 ? richtextKeys : [""]),
+      edits: z.array(richtextEditSchema).min(1).max(RICHTEXT_EDITS_MAX),
+    })
+    .strict();
+  const editTextTools: AgentTool[] =
+    richtextKeys.length === 0
+      ? []
+      : [
+          defineAgentTool({
+            name: `content.${slug}.edit_text`,
+            description:
+              `Change part of a rich text field of one "${label}" (${def.type}) entry without sending the rest again: ` +
+              `insert, replace or remove whole blocks (paragraphs, headings, images, lists). ` +
+              `Use this instead of content.${slug}.update for any change to text that already exists, ` +
+              `such as putting an image between two paragraphs or rewriting one paragraph. ` +
+              `Each edit points at a block with \`match\` or \`index\`; every edit refers to the field as it is before this call. ` +
+              `An image block is { type: "image", attrs: { src: "/api/files/<media key>", alt: "..." } }. ` +
+              `If a block can't be found, the error lists the blocks. Returns the new list of blocks ` +
+              `(index, type, first words). Rich text fields: ${richtextKeys.join(", ")}.`,
+            kind: "write",
+            schema: editTextSchema,
+            summarize: (args, locale) => {
+              const l = localizedTypeLabel(ct, locale);
+              const target = editTextTarget(args, locale);
+              return locale === "zh-Hant" ? `修改一筆「${l}」的內文${target}` : `Edit the text of one "${l}" entry${target}`;
+            },
+            check: async (ctx, args) => {
+              const planned = await plannedRichtext(await contentProvider(ctx, def), def.type, args);
+              return planned.ok ? null : planned.error;
+            },
+            preview: async (ctx, args) => {
+              const planned = await plannedRichtext(await contentProvider(ctx, def), def.type, args);
+              return planned.ok ? richtextChangePreview(planned.steps) : undefined;
+            },
+            run: async (ctx, args) => {
+              const provider = await contentProvider(ctx, def);
+              const planned = await plannedRichtext(provider, def.type, args);
+              if (!planned.ok) throw new Error(planned.error);
+              const updated = await provider.update(def.type, args.id, { [args.field]: planned.doc });
+              // 回大綱而不是整筆:下一個修改需要的是「現在有哪些區塊」,不是整篇文章再讀一次。
+              return { id: args.id, field: args.field, blocks: richtextOutline(toDoc(updated.data[args.field])) };
+            },
+          }),
+        ];
+
   return [
     ...readTools,
     defineAgentTool({
@@ -389,6 +535,7 @@ export function contentTypeAgentTools(
         });
       },
     }),
+    ...editTextTools,
     deleteTool,
   ];
 }

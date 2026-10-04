@@ -25,6 +25,7 @@ vi.mock("@/ext/loader", async () => {
   return { getExtRuntime: async () => rt };
 });
 
+import { z } from "zod";
 import { invokeAgentTool } from "../src/ext/agent-tools";
 import type { AgentTool, AgentToolCtx } from "../src/ext/agent-tools";
 import {
@@ -137,6 +138,7 @@ describe("contentTypeAgentTools(spec §2:每個 content type 自動長出 CRUD t
     expect(tools.map((t) => `${t.name} ${t.kind}`).sort()).toEqual([
       "content.gallery_item.create write",
       "content.gallery_item.delete write",
+      "content.gallery_item.edit_text write",
       "content.gallery_item.get read",
       "content.gallery_item.list read",
       "content.gallery_item.update write",
@@ -269,6 +271,23 @@ describe("args schema 從 manifest fields 衍生", () => {
     expect(parse(create, { data: { title: "T", body: 42 } }).success).toBe(false);
   });
 
+  it("richtext 裡的圖片:media key 與 /api/files 路徑都收,外站網址退回並說明該給什麼", () => {
+    const withImage = (src: string) => ({
+      data: { title: "T", body: { type: "doc", content: [{ type: "image", attrs: { src } }] } },
+    });
+    expect(parse(create, withImage("core/2026/10/abc.png")).success).toBe(true);
+    expect(parse(create, withImage("/api/files/core/2026/10/abc.png")).success).toBe(true);
+    const refused = parse(create, withImage("https://cdn.example.com/a.jpg"));
+    expect(refused.success).toBe(false);
+    expect(JSON.stringify(refused.error?.issues)).toContain("/api/files/<media key>");
+  });
+
+  it("richtext 欄位帶著給模型看的格式說明:圖片怎麼寫、update 是整份取代", () => {
+    const schema = JSON.stringify(z.toJSONSchema(create.schema));
+    expect(schema).toContain("/api/files/<media key>");
+    expect(schema).toContain("replaces the whole field");
+  });
+
   it("relations 收字串陣列;空字串元素退回", () => {
     expect(parse(create, { data: { title: "T", related: ["a", "b"] } }).success).toBe(true);
     expect(parse(create, { data: { title: "T", related: [""] } }).success).toBe(false);
@@ -396,6 +415,123 @@ describe("生成的 tools 端到端跑在真的 D1 上", () => {
     }
     expect(create.description).toContain("core.media.upload");
     expect(create.description).toContain("image (media key, required)");
+  });
+});
+
+// ------------------------------------------------------------ edit_text(1.70.0)
+
+describe("edit_text:改內文的一部分", () => {
+  const tools = byName(
+    contentTypeAgentTools("blog", {
+      name: "post",
+      label: "Post",
+      slugField: "title",
+      fields: [
+        { key: "title", type: "text", required: true },
+        { key: "body", type: "richtext" },
+      ],
+    }),
+  );
+  const edit = tools.get("content.blog_post.edit_text")!;
+  const para = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
+
+  async function seedPost(ctx: AgentToolCtx): Promise<string> {
+    const created = await invokeAgentTool(tools.get("content.blog_post.create")!, ctx, {
+      data: { title: "CEO 講堂", body: "第一段。\n\n第二段。\n\n第三段。" },
+    });
+    if (!created.ok) throw new Error("seed failed");
+    return (created.result as { id: string }).id;
+  }
+
+  it("只有帶 richtext 欄位的型別才有這個 tool;收件匣沒有", () => {
+    expect(edit.kind).toBe("write");
+    expect(edit.description).toContain("Rich text fields: body");
+    const plain = byName(contentTypeAgentTools("blog", { name: "tag", fields: [{ key: "title", type: "text" }] }));
+    expect(plain.has("content.blog_tag.edit_text")).toBe(false);
+    const inbox = byName(contentTypeAgentTools("contact", ITEM, true));
+    expect(inbox.has("content.contact_item.edit_text")).toBe(false);
+  });
+
+  it("在兩段之間插一張圖:其餘段落不必重送,圖片存成 /api/files/<key>,回傳新的大綱", async () => {
+    const ctx = makeCtx();
+    const id = await seedPost(ctx);
+    const res = await invokeAgentTool(edit, ctx, {
+      id,
+      field: "body",
+      edits: [
+        { op: "insert", match: "第一段", blocks: [{ type: "image", attrs: { src: "core/2026/10/abc.png", alt: "現場" } }] },
+        { op: "replace", index: 2, blocks: ["改寫過的第三段。"] },
+      ],
+    });
+    expect(res).toMatchObject({
+      ok: true,
+      result: {
+        id,
+        field: "body",
+        blocks: [
+          { index: 0, type: "paragraph", text: "第一段。" },
+          { index: 1, type: "image", text: "現場 /api/files/core/2026/10/abc.png" },
+          { index: 2, type: "paragraph", text: "第二段。" },
+          { index: 3, type: "paragraph", text: "改寫過的第三段。" },
+        ],
+      },
+    });
+    const got = await invokeAgentTool(tools.get("content.blog_post.get")!, ctx, { id });
+    const body = got.ok === true ? (got.result as { data: { title: string; body: { content: unknown[] } } }).data : null;
+    expect(body?.title).toBe("CEO 講堂");
+    expect(body?.body.content[2]).toEqual(para("第二段。"));
+  });
+
+  it("check:指不到段落、不存在的 id、不合法的節點 → 一句原因;指得到 → null,而且什麼都沒寫", async () => {
+    const ctx = makeCtx();
+    const id = await seedPost(ctx);
+    const miss = await edit.check!(ctx, { id, field: "body", edits: [{ op: "remove", match: "沒有這段" }] });
+    expect(miss).toContain("0 paragraph: 第一段。");
+    expect(await edit.check!(ctx, { id: "nope", field: "body", edits: [{ op: "remove", index: 0 }] })).toContain("not_found");
+    expect(
+      await edit.check!(ctx, { id, field: "body", edits: [{ op: "insert", blocks: [{ type: "iframe" }] }] }),
+    ).toContain("not a valid rich text block");
+    // schema 沒過的也由 check 回報(insert 沒帶 blocks、外站圖片)。
+    expect(await edit.check!(ctx, { id, field: "body", edits: [{ op: "insert" }] })).toContain("blocks");
+    expect(
+      await edit.check!(ctx, {
+        id,
+        field: "body",
+        edits: [{ op: "insert", blocks: [{ type: "image", attrs: { src: "https://cdn.example.com/a.jpg" } }] }],
+      }),
+    ).toContain("/api/files/<media key>");
+
+    expect(await edit.check!(ctx, { id, field: "body", edits: [{ op: "remove", index: 0 }] })).toBeNull();
+    const got = await invokeAgentTool(tools.get("content.blog_post.get")!, ctx, { id });
+    expect(got.ok === true && (got.result as { data: { body: { content: unknown[] } } }).data.body.content).toHaveLength(3);
+  });
+
+  it("preview:確認卡看得到圖會加在哪一段後面;參數不合或指不到 → 沒有預覽", async () => {
+    const ctx = makeCtx();
+    const id = await seedPost(ctx);
+    const args = {
+      id,
+      field: "body",
+      edits: [{ op: "insert", match: "第一段", blocks: [{ type: "image", attrs: { src: "core/2026/10/abc.png", alt: "現場" } }] }],
+    };
+    expect(await edit.preview!(ctx, args)).toEqual({
+      kind: "changes",
+      lines: [
+        { change: "kept", text: "第一段。" },
+        { change: "added", text: "現場", image: "/api/files/core/2026/10/abc.png" },
+        { change: "kept", text: "第二段。" },
+        { change: "gap", count: 1 },
+      ],
+    });
+    expect(await edit.preview!(ctx, { id, field: "body", edits: [{ op: "remove", match: "沒有這段" }] })).toBeUndefined();
+    expect(await edit.preview!(ctx, { id, field: "nope", edits: [] })).toBeUndefined();
+  });
+
+  it("確認卡的摘要說得出改了幾處", () => {
+    const args = { id: "abc", field: "body", edits: [{ op: "insert" }, { op: "insert" }, { op: "remove" }] };
+    expect(edit.summarize!(args, "zh-Hant")).toBe("修改一筆「Post」的內文(id: abc;新增 2 處、移除 1 處)");
+    expect(edit.summarize!(args, "en")).toBe('Edit the text of one "Post" entry (id: abc; add 2, remove 1)');
+    expect(edit.summarize!({}, "zh-Hant")).toBe("修改一筆「Post」的內文");
   });
 });
 
