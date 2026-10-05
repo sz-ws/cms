@@ -784,3 +784,16 @@ describe("沙盒卡的渲染條目", () => {
     expect(before).toEqual(snapshot);
   });
 });
+
+describe("1.71.0:伺服器整理過的 transcript", () => {
+  it("換成整理後的那一份再接上這一輪;畫面上的紀錄照舊", () => {
+    const before = applyChatOutcome(appendUserMessage(emptyTranscript(), "有幾筆貓?"), readThenTextOutcome());
+    const asked = appendUserMessage(before, "再來呢?");
+    const compacted: AiChatMessage[] = [{ role: "user", content: [{ type: "text", text: "[Summary]\n查過貓。" }, { type: "text", text: "再來呢?" }] }];
+    const reply: AiChatMessage = { role: "assistant", content: [{ type: "text", text: "好。" }] };
+    const after = applyChatOutcome(asked, { status: "text", text: "好。", appended: [reply], steps: 1, toolCalls: [], compacted });
+    expect(after.messages).toEqual([...compacted, reply]);
+    expect(after.entries.length).toBeGreaterThan(asked.entries.length);
+    expect(after.entries.slice(0, asked.entries.length)).toEqual(asked.entries);
+  });
+});

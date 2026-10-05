@@ -1572,4 +1572,15 @@
 // thinking inside the output limit. The chat stream sends an SSE comment every 15 seconds while it waits.
 // A provider may refuse `max_tokens` above a model's own output limit: 16,000 is accepted by the Workers AI
 // model checked (deepseek-v4-flash); other models are not checked.
-export const CORE_API_VERSION = "1.70.0";
+// 1.71.0: A long conversation with the assistant no longer stops working.
+// The transcript lives in the administrator's browser and is sent whole with every message, so it only
+// grows; past 80 messages `/chat` refused it with 400 and the panel showed a generic error. Before the loop
+// runs, `runAgentChat` now checks the size (`agent-compact.ts`): over 40 messages or 60,000 characters, the
+// part before the most recent turns is summarised by one extra model call (no tools, 2,000 output tokens,
+// 60 seconds; recorded in `ai_usage` like any other call) and the summary is put at the front of the first
+// kept administrator message. The cut is always just before a message the administrator typed, so no tool
+// call is separated from its result. `AgentChatOutcome.compacted` carries the shortened transcript; the panel
+// replaces its copy with it and keeps showing the whole conversation. If the summary cannot be written the
+// conversation continues unchanged and is tried again next time; past 60 messages or 120,000 characters the
+// older part is dropped with a note instead. Tools, cards and saved conversations are unchanged.
+export const CORE_API_VERSION = "1.71.0";

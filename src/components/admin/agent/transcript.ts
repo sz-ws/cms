@@ -379,7 +379,8 @@ export function applyChatOutcome(
   }
 
   return {
-    messages: [...state.messages, ...outcome.appended],
+    // 伺服器把較早的對話整理成摘要了(1.71.0):換成它給的那一份再接上這一輪。畫面上的紀錄(entries)不動。
+    messages: [...(outcome.compacted ?? state.messages), ...outcome.appended],
     entries: built.entries,
     seq: built.seq,
     pending,

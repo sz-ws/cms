@@ -18,6 +18,7 @@ import type {
   AgentToolRegistry,
 } from "./agent-tools";
 import { recordAgentToolRun } from "./agent-audit";
+import { compactTranscript } from "./agent-compact";
 import { AI_USAGE_FEATURE_AGENT_CHAT, recordAiUsage } from "./ai-usage";
 import type { Locale } from "@/lib/i18n/index";
 import { toAssistantMessage } from "./providers/ai";
@@ -282,6 +283,11 @@ interface AgentOutcomeBase {
    * 「不知道」。這一批不渲染它。
    */
   usage?: AiChatUsage;
+  /**
+   * 對話太長,較早的部分已整理成摘要(1.71.0,./agent-compact.ts)。這是整理後、這一輪開跑之前的
+   * **整份** transcript:前端拿它換掉自己那一份,再接上 appended。沒整理時這個鍵不存在。
+   */
+  compacted?: AiChatMessage[];
 }
 
 export type AgentChatOutcome =
@@ -847,6 +853,25 @@ function withStepBudgetNote(
  * 而不是一句通用錯誤(spec §4.5)。
  */
 export async function runAgentChat(
+  params: AgentChatParams,
+): Promise<AgentChatOutcome> {
+  // 對話太長就先整理(1.71.0)。整理失敗不擋對話:compactTranscript 自己退回原樣或直接截短。
+  const compact = await compactTranscript(params.messages, params.chat ?? defaultChat);
+  if (compact.call) {
+    await recordAiUsage({
+      actor: params.ctx.user,
+      feature: AI_USAGE_FEATURE_AGENT_CHAT,
+      model: compact.call.model,
+      usage: compact.call.usage,
+      ok: compact.call.ok,
+      error: compact.call.error,
+    });
+  }
+  const outcome = await runAgentLoop({ ...params, messages: compact.messages });
+  return compact.compacted ? { ...outcome, compacted: compact.messages } : outcome;
+}
+
+async function runAgentLoop(
   params: AgentChatParams,
 ): Promise<AgentChatOutcome> {
   const chat = params.chat ?? defaultChat;

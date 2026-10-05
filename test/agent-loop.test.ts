@@ -61,6 +61,7 @@ import {
 } from "../src/ext/agent-prompt";
 import type { AgentPromptContentType } from "../src/ext/agent-prompt";
 import type {
+  AiChatMessage,
   AiChatOptions,
   AiChatResult,
   AiChatStreamEvent,
@@ -2047,5 +2048,44 @@ describe("core.code.run:與串流並用", () => {
       onEvent: () => {},
     });
     expect(withEvents).toEqual(withoutEvents);
+  });
+});
+
+describe("1.71.0:太長的對話先整理再跑", () => {
+  const long: AiChatMessage[] = Array.from({ length: 22 }, (_, i) => [
+    { role: "user" as const, content: [{ type: "text" as const, text: `問題 ${i}` }] },
+    { role: "assistant" as const, content: [{ type: "text" as const, text: `回答 ${i}` }] },
+  ]).flat();
+
+  it("第一次上游呼叫寫摘要,loop 用整理後的 transcript,outcome 帶著它", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([
+      { ok: true, text: "先前改了跑馬燈。", toolUses: [], stopReason: "end_turn", model: "fake-model" },
+      { ok: true, text: "好的。", toolUses: [], stopReason: "end_turn", model: "fake-model" },
+    ]);
+    const messages: AiChatMessage[] = [...long, { role: "user", content: [{ type: "text", text: "接著做" }] }];
+
+    const outcome = await runAgentChat({ messages, system: "sys", registry: fakes.registry, ctx: CTX, chat: script.chat });
+
+    expect(outcome.status).toBe("text");
+    expect(script.calls).toHaveLength(2);
+    expect(script.calls[0]!.tools).toEqual([]);
+    expect(outcome.compacted).toBeDefined();
+    expect(outcome.compacted!.length).toBeLessThan(messages.length);
+    expect(JSON.stringify(outcome.compacted![0])).toContain("先前改了跑馬燈。");
+    // loop 那一次呼叫看到的是整理後的那一份(最後一則仍是使用者剛說的話)。
+    expect(script.calls[1]!.messages.length).toBe(outcome.compacted!.length);
+    expect(JSON.stringify(script.calls[1]!.messages.at(-1))).toContain("接著做");
+  });
+
+  it("短的對話不整理:只打一次上游,outcome 沒有 compacted", async () => {
+    const fakes = makeFakes();
+    const script = scriptedChat([{ ok: true, text: "好的。", toolUses: [], stopReason: "end_turn", model: "fake-model" }]);
+    const outcome = await runAgentChat({
+      messages: [{ role: "user", content: [{ type: "text", text: "嗨" }] }],
+      system: "sys", registry: fakes.registry, ctx: CTX, chat: script.chat,
+    });
+    expect(script.calls).toHaveLength(1);
+    expect("compacted" in outcome).toBe(false);
   });
 });
