@@ -273,7 +273,14 @@ export function AdminSidebar({
   return (
     <Sidebar collapsible="dock" className="bg-background">
       <SidebarHeader>
-        <div className="flex items-center gap-x-2.5 px-1 py-0.5">
+        {/* 品牌那一塊連到網站首頁,開在新分頁(編到一半的內容不會被換掉)。 */}
+        <a
+          href="/"
+          target="_blank"
+          rel="noopener noreferrer"
+          title={t("sidebar.viewSite")}
+          className="flex items-center gap-x-2.5 rounded-[calc(8px*var(--admin-radius-scale,1))] px-1 py-0.5 outline-none transition-colors hover:bg-ink/[0.04] focus-visible:ring-2 focus-visible:ring-ink/30"
+        >
           {/* 自訂品牌(core.brandLogo);空值退回預設黑底 mark。 */}
           {brandLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -294,7 +301,7 @@ export function AdminSidebar({
           <SidebarLabel className="truncate text-[14px] font-semibold tracking-[-0.01em] text-ink/90">
             {siteTitle}
           </SidebarLabel>
-        </div>
+        </a>
       </SidebarHeader>
 
       <SidebarContent className="px-1.5">

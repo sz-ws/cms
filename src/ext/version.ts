@@ -1583,4 +1583,6 @@
 // replaces its copy with it and keeps showing the whole conversation. If the summary cannot be written the
 // conversation continues unchanged and is tried again next time; past 60 messages or 120,000 characters the
 // older part is dropped with a note instead. Tools, cards and saved conversations are unchanged.
-export const CORE_API_VERSION = "1.71.0";
+// 1.71.1: The site name and logo at the top of the admin sidebar open the site's home page in a new tab,
+// so an unsaved form in the admin stays where it is (`AdminSidebar.tsx`, new string `sidebar.viewSite`).
+export const CORE_API_VERSION = "1.71.1";

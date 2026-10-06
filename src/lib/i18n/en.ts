@@ -701,6 +701,7 @@ export const en = {
   "registry.noticesHint": "When this source adds a new service, each admin sees one short introduction.",
 
   // AdminSidebar
+  "sidebar.viewSite": "Open the site",
   "sidebar.account": "Account",
   "sidebar.logOut": "Log out",
   "sidebar.signingOut": "Signing out…",

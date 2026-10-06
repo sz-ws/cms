@@ -683,6 +683,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "registry.noticesHint": "這個來源上架新服務時，每位管理員會在後台看到一次介紹。",
 
   // AdminSidebar
+  "sidebar.viewSite": "開啟網站",
   "sidebar.account": "帳戶",
   "sidebar.logOut": "登出",
   "sidebar.signingOut": "登出中…",
