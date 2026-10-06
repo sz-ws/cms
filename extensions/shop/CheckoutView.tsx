@@ -197,8 +197,8 @@ export function CheckoutView({
   const money = (amount: number) => formatMoney(amount, currency);
   const [name, setName] = useState(contact.name ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState(contact.phone ?? "");
+  const [address, setAddress] = useState(contact.address ?? "");
   const [region, setRegion] = useState("");
   const [shipChoice, setShipChoice] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");

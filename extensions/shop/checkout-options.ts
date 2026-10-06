@@ -80,6 +80,9 @@ export function resolveCheckoutOptions(input: {
 export interface CheckoutContact {
   name?: string;
   email?: string;
+  /** 0.11.1:站台已經知道的電話與收件地址(例如會員存的),先帶入、照樣能改。 */
+  phone?: string;
+  address?: string;
 }
 
 /**
