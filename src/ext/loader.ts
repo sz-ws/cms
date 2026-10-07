@@ -156,6 +156,9 @@ const reportSlotError: SlotErrorReporter = (error, info) => {
  * 緊急開關:Worker 變數 CMS_LAYER_FILLS = "off" 時,代理商與站台那兩層填的插槽都不套用,
  * 畫面回到只有一般插件的樣子(一層填壞了、又來不及改程式重新部署的時候用)。只關「填」:
  * 那兩層的設定、provides、排程照舊。
+ *
+ * 後台與前台一起關:站台那一層在前台填的東西(例如換成自己的購物車)也會回到插件原本的樣子。
+ * 伺服器端的規則(結帳欄位這類 provides)不受影響,所以只是畫面變回通用的,不會放行不該成立的訂單。
  */
 function layerFillsOff(): boolean {
   try {

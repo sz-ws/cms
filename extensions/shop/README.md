@@ -266,10 +266,15 @@ core 看這一欄決定一筆訂單歸誰:
 - `checkout-options.ts` 是開關層:設定定義 + `resolveCheckoutOptions()`,沒有 React,
   自訂殼層直接沿用即可拿到相同的預設與優先序。`checkout-request.ts` 是送出的 body 與錯誤說法。
 - 換整頁版面 = 改 `public-pages.tsx` 的殼,或整組換掉 publicRoutes 的 component。
+- 只換內容不換版面(0.12.0):購物車頁與結帳頁的內容各是一個插槽(`slots.ts` 的 `ShopCart`、`ShopCheckout`,
+  core 1.74.0)。別的插件或站台那一層用 `wrap` 填:拿得到這一頁的 props 與原本的內容(`children`),可以照畫、
+  在外面多包一層、或換成自己的。例:會員插件在結帳表單前多一步(訪客先確認 Email);數量有規矩的店換成
+  自己的購物車。不必另開一個路由檔把這一頁重組一次。
 - `CheckoutView` 的 props:`cardEnabled`、`transferEnabled`(必填);`shippingConfig`、
   `promoEnabled`、`managedOrders`、`signedIn`、`guestCheckout`、`ordersHref`、`requireContact`、
   `notice`、`contact`、`reportSpec`、`fields`(選填,預設同 `resolveCheckoutOptions`);`signInHref`
-  (「登入」連去哪,預設 `/login?next=/shop/checkout`)、`shopHref`(空的結帳頁「繼續購物」,預設 `/`)。
+  (「登入」連去哪,預設 `/login?next=/shop/checkout`)、`shopHref`(空的結帳頁「繼續購物」;元件自己的預設是 `/`,
+  經由這個插件的兩頁畫出來時,商品目錄開著就是它的列表頁 `/products`,0.12.0)。
   0.7.0 另有兩個函式 prop,只能從 client 元件傳:`onSignIn`(按「登入」時做的事)、
   `afterOrder({ orderNo, email })`(匯款訂單結局頁下面多放的東西)。
 - 0.11.0 起結帳頁的標題(h1)由 `CheckoutView` 畫(`PageHeader.tsx`):填表時「結帳」+「回購物車」,成立訂單
@@ -303,6 +308,13 @@ core 看這一欄決定一筆訂單歸誰:
 
 ## 版本
 
+- **0.12.0**(core 1.74.0):
+  - 購物車頁與結帳頁的內容各是一個插槽(`slots.ts`),見上面「只換內容不換版面」。沒有人填時跟原本一樣。
+  - 「繼續購物」沒指定時,商品目錄開著就連它的列表頁(`/products`);原本一律回首頁。站台直接畫這兩頁、
+    自己給 `shopHref` 的照舊用給的。
+  - 沒有新的設定與 migration。
+- **0.11.1**:`CheckoutView` 的 `contact` 多收 `phone`、`address`(站台或別的插件已經知道的,例如會員存的),
+  先帶入,照樣能改。
 - **0.11.0**:
   - 要登入才能結帳(訂單管理插件的 `signIn: "required"`)、還沒登入:不畫表單,改成一句「請先登入會員，
     登入後就能繼續結帳。」、「登入」按鈕(`signInHref`,帶 `?next=`)與訂單摘要。以前表單填得完,按「成立訂單」

@@ -14,6 +14,8 @@ import { CORE_API_VERSION } from "../version";
 // 更新、停用或移除它;開關是商店設定裡的「商品目錄」。
 
 export const CATALOG_EXT_ID = "catalog";
+/** 前台商品列表頁的網址(下面 publicRoutes 的第一條)。別的頁面要連回「去逛商品」時用它。 */
+export const CATALOG_LIST_PATH = "/products";
 /** 用到 commerce-kit 的店面。它沒啟用,商品目錄就不啟用。 */
 export const CATALOG_HOST_EXT = "shop";
 /** 開關掛在店面的設定裡:ext.shop.catalog。 */
@@ -110,8 +112,8 @@ export function catalogManifest(): Record<string, unknown> {
       { slug: "categories", title: text("Categories", "分類"), view: "collection", contentType: "category", layout: "table" },
     ],
     publicRoutes: [
-      { pattern: "/products", view: "list", contentType: "product", layout: "grid" },
-      { pattern: "/products/:slug", view: "detail", contentType: "product" },
+      { pattern: CATALOG_LIST_PATH, view: "list", contentType: "product", layout: "grid" },
+      { pattern: `${CATALOG_LIST_PATH}/:slug`, view: "detail", contentType: "product" },
     ],
   };
 }

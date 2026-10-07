@@ -1625,5 +1625,10 @@
 // a value and a view slot throws; the sidebar items a fill returns are checked before rendering
 // (`normalizeAdminMenu`); and the Worker variable `CMS_LAYER_FILLS=off` skips the fills of both layers
 // when one of them breaks the admin (their settings, providers and jobs keep running).
+// Plugins fill each other's slots too: the shop's cart and checkout pages are slots (`extensions/shop/slots.ts`),
+// so a members plugin can add a step before the checkout form without a site re-assembling the page.
+// A fill, or the content it wraps, may call `redirect()` or `notFound()`: the boundary around a fill lets
+// Next's own signals through and only catches real render errors (`components/SlotFillBoundary.tsx`).
+// `CATALOG_LIST_PATH` (`commerce-kit/catalog.ts`) is the address of the catalog's public list page.
 // A plugin that uses `fills` or `layer` declares coreApi "^1.74.0".
 export const CORE_API_VERSION = "1.74.0";

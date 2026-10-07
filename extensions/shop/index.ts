@@ -87,7 +87,9 @@ export const shop = defineExtension({
   // 範例代碼;結帳頁的標題由 CheckoutView 畫,成立訂單之後是「訂單已成立」;結帳回覆帶 expiresAt 時寫出
   // 付款期限;每行匯款指示可以複製;空的結帳頁連回 shopHref。沒有 core 的新需求。
   // 0.11.1:CheckoutView 的 contact 多收 phone、address(站台已經知道的,例如會員存的),先帶入、照樣能改。
-  version: "0.11.1",
+  // 0.12.0(core 1.74.0):購物車頁與結帳頁的內容各是一個插槽(slots.ts 的 ShopCart、ShopCheckout),別的插件或
+  // 站台用 wrap 包起來,不必另開路由檔重組這一頁。「繼續購物」沒指定時,商品目錄開著就連它的列表頁(原本一律回首頁)。
+  version: "0.12.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -107,7 +109,9 @@ export const shop = defineExtension({
   //
   // ^1.63.0(0.9.0):OrderManager / storefrontOf、結帳欄位、reportSpec、運費的 regions 與
   // CurrencyProvider。
-  coreApi: "^1.63.0",
+  //
+  // ^1.74.0(0.12.0):插槽(defineSlot、<Slot>)與商品目錄的 CATALOG_LIST_PATH。
+  coreApi: "^1.74.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",
