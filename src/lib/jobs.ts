@@ -385,7 +385,7 @@ const extJobsJob: CoreJob = {
           }
 
           try {
-            const services = scopedServices(row.extId, rt.hooks, registry);
+            const services = scopedServices(row.extId, rt.hooks, registry, rt.slots);
             await handler.run(services, null, now);
             processed++;
             // 上一輪也成功的話這一欄本來就是 null:每分鐘跑的 job 不必每分鐘多寫一列。
@@ -436,7 +436,7 @@ const extJobsJob: CoreJob = {
           }
 
           try {
-            const services = scopedServices(row.extId, rt.hooks, registry);
+            const services = scopedServices(row.extId, rt.hooks, registry, rt.slots);
             await handler.run(services, parsePayload(row.payload), now);
             processed++;
             await db().delete(extJobs).where(eq(extJobs.id, row.id));

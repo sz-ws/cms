@@ -10,6 +10,7 @@ import { HookBus } from "./hooks";
 import { SlotRegistry, slotSources, type SlotErrorReporter } from "./slots";
 import { reportError } from "@/lib/observe/report";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { getEnv } from "@/lib/cf";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import { interpretManifest } from "./dx/interpret";
@@ -150,6 +151,19 @@ const reportSlotError: SlotErrorReporter = (error, info) => {
     // 沒有請求的地方(測試、建置):reportError 自己不會 throw,放著讓它跑完。
   }
 };
+
+/**
+ * 緊急開關:Worker 變數 CMS_LAYER_FILLS = "off" 時,代理商與站台那兩層填的插槽都不套用,
+ * 畫面回到只有一般插件的樣子(一層填壞了、又來不及改程式重新部署的時候用)。只關「填」:
+ * 那兩層的設定、provides、排程照舊。
+ */
+function layerFillsOff(): boolean {
+  try {
+    return (getEnv() as unknown as { CMS_LAYER_FILLS?: string }).CMS_LAYER_FILLS === "off";
+  } catch {
+    return false;
+  }
+}
 
 // 03 §4:每個 request 第一次用到 extension 系統時,建立當次 request 的 runtime。
 // 用 React cache() 做 per-request 快取,不可用 module 全域變數存 request 狀態。
@@ -381,7 +395,10 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     for (const [name, fn] of Object.entries(ext.hooks ?? {}))
       hooks.register(ext.id, name as HookName, fn!);
 
-  const slots = new SlotRegistry(slotSources(enabled), reportSlotError);
+  const slots = new SlotRegistry(
+    slotSources(layerFillsOff() ? enabled.filter((ext) => !ext.layer) : enabled),
+    reportSlotError,
+  );
 
   return {
     enabled,

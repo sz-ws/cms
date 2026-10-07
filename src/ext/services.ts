@@ -10,6 +10,7 @@ import type { ExtRuntime } from "./loader";
 import { createRegistry, registerExtensionProviders } from "./providers";
 import type { HookBus } from "./hooks";
 import type { ProviderRegistry, ProviderRegistryImpl } from "./providers";
+import type { SlotRegistry } from "./slots";
 
 // core-v2 §2.1:CoreServices —— 傳給 extension API handler 的 ctx.services。
 // storage/settings 皆 scope 綁定至 extId;providers active id 於此預先解析。
@@ -53,6 +54,8 @@ export interface CoreServices {
   settings: ScopedSettings;
   hooks: HookBus;
   providers: ProviderRegistry;
+  /** 1.74.0:插槽(slots.ts)—— 這次請求或這一輪排程裡,啟用中的插件與站台各層填了什麼。 */
+  slots: SlotRegistry;
   jobs: ScopedJobs;
 }
 
@@ -126,6 +129,7 @@ export function scopedServices(
   extId: string,
   hooks: HookBus,
   providers: ProviderRegistry,
+  slots: SlotRegistry,
 ): CoreServices {
   return {
     db: db(),
@@ -133,6 +137,7 @@ export function scopedServices(
     settings: makeScopedSettings(extId),
     hooks,
     providers,
+    slots,
     jobs: makeScopedJobs(extId),
   };
 }
@@ -152,7 +157,7 @@ export function scopedServices(
 export function buildProviderRegistry(rt: ExtRuntime): ProviderRegistryImpl {
   const reg = createRegistry(rt.hooks);
   registerExtensionProviders(reg, rt.enabled, (extId) =>
-    scopedServices(extId, rt.hooks, reg),
+    scopedServices(extId, rt.hooks, reg, rt.slots),
   );
   return reg;
 }
@@ -165,5 +170,5 @@ export async function createServices(extId: string): Promise<CoreServices> {
   const rt = await getExtRuntime();
   const providers = buildProviderRegistry(rt);
   await providers.resolveActive();
-  return scopedServices(extId, rt.hooks, providers);
+  return scopedServices(extId, rt.hooks, providers, rt.slots);
 }

@@ -5,7 +5,7 @@ import { SlotFillBoundary } from "./SlotFillBoundary";
 // 畫面上的插槽(機制見 src/ext/slots.ts)。這個檔是伺服器端的:向當次請求的 runtime 要「誰填了什麼」。
 //
 // 伺服器元件裡直接放:
-//   <Slot of={OrderSummary} orderNo={no}>
+//   <Slot of={OrderSummary} props={{ orderNo: no }}>
 //     <DefaultSummary orderNo={no} />        ← 沒有人換掉就畫這個
 //   </Slot>
 //
@@ -31,8 +31,7 @@ function guarded<P extends object>(slotId: string, place: string, components: Vi
 }
 
 /** 前面的、(換掉的 或 預設內容)、後面的,整塊再由裡到外包起來。 */
-export async function Slot<P extends object>({ of, children, ...rest }: { of: ViewSlot<P>; children?: ReactNode } & P): Promise<ReactNode> {
-  const props = rest as unknown as P;
+export async function Slot<P extends object>({ of, props, children }: { of: ViewSlot<P>; props: P; children?: ReactNode }): Promise<ReactNode> {
   const plan = (await requestSlots()).view(of);
   const Replace = plan.replace;
   let content: ReactNode = (

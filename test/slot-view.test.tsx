@@ -31,7 +31,7 @@ const fallback = <p>default</p>;
 /** 伺服器那條路。 */
 async function viaSlot(sources: SlotSource[]): Promise<string> {
   runtime.slots = new SlotRegistry(sources);
-  return renderToStaticMarkup(await Slot({ of: Panel, title: "T", children: fallback }));
+  return renderToStaticMarkup(await Slot({ of: Panel, props: { title: "T" }, children: fallback }));
 }
 
 /** client 元件那條路。 */

@@ -135,6 +135,37 @@ export function normalizeAdminSections(
     .map(({ section }) => section);
 }
 
+/** 一個側欄項目形狀對不對(href、title 是非空字串);子項另外看。 */
+function isMenuItem(raw: unknown): raw is AdminMenuItem {
+  if (!raw || typeof raw !== "object") return false;
+  const { href, title } = raw as Record<string, unknown>;
+  return typeof href === "string" && href !== "" && typeof title === "string" && title.trim() !== "";
+}
+
+/**
+ * 1.74.0:側欄項目的插槽(core-slots.ts 的 AdminSidebarItems)的輸出是上層給的,渲染前在這裡收斂:
+ * 逐項丟掉形狀不對的(子項也是),形狀對的原樣通過。整份不是陣列、或全被丟光,就用填之前的 ——
+ * 一個寫壞的填法不能讓整個後台開不起來。
+ */
+export function normalizeAdminMenu(value: unknown, fallback: AdminMenuItem[]): AdminMenuItem[] {
+  if (!Array.isArray(value)) return fallback;
+  const items: AdminMenuItem[] = [];
+  for (const raw of value) {
+    if (!isMenuItem(raw)) continue;
+    const children: unknown = raw.children;
+    if (children === undefined) {
+      items.push(raw);
+    } else if (Array.isArray(children) && children.every(isMenuItem)) {
+      items.push(raw);
+    } else {
+      const rest = Object.fromEntries(Object.entries(raw).filter(([key]) => key !== "children")) as unknown as AdminMenuItem;
+      const kept = Array.isArray(children) ? children.filter(isMenuItem) : [];
+      items.push(kept.length > 0 ? { ...rest, children: kept } : rest);
+    }
+  }
+  return items.length === 0 ? fallback : items;
+}
+
 const EXT_ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const DEFAULT_ORDER = 100;
 

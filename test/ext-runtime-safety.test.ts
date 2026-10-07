@@ -257,6 +257,28 @@ describe("extension runtime slots and layers", () => {
     expect(rt.slots.value(Names, ["core"])).toEqual(["core", "plugin", "agency", "site"]);
   });
 
+  it("skips the fills of both layers when the Worker variable CMS_LAYER_FILLS is off", async () => {
+    const { defineValueSlot, fill } = await import("../src/ext/slots");
+    const Names = defineValueSlot<string[]>("test.runtime-names");
+    const add = (name: string) => fill(Names, (names) => [...names, name]);
+    registryState.entries.push(
+      { ...codeExtension("the-site", "^1.0.0", () => undefined), layer: "site", fills: [add("site")] },
+      { ...codeExtension("the-agency", "^1.0.0", () => undefined), layer: "agency", fills: [add("agency")] },
+      { ...codeExtension("a-plugin", "^1.0.0", () => undefined), fills: [add("plugin")] },
+    );
+    await enableCode("a-plugin");
+    const vars = env as unknown as { CMS_LAYER_FILLS?: string };
+    vars.CMS_LAYER_FILLS = "off";
+    try {
+      const rt = await (await getLoader()).getExtRuntime();
+      // 只關「填」:那兩層照樣在 runtime 裡(設定、provides、排程不受影響)。
+      expect(rt.enabled.map((ext) => ext.id)).toEqual(["the-site", "the-agency", "a-plugin"]);
+      expect(rt.slots.value(Names, ["core"])).toEqual(["core", "plugin"]);
+    } finally {
+      delete vars.CMS_LAYER_FILLS;
+    }
+  });
+
   it("leaves out a layer whose coreApi does not match, like any other plugin", async () => {
     registryState.entries.push({ ...codeExtension("old-layer", "^2.0.0", () => undefined), layer: "site" });
 

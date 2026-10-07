@@ -1604,7 +1604,7 @@
 // `defineSlot<Props>(id)` for a piece of UI. A plugin fills slots in its definition (`Extension.fills`):
 // `fill(valueSlot, (value, { slots }) => next)`, or `fill(viewSlot, { before | after | replace | wrap })`.
 // The request's `ExtRuntime.slots` (`SlotRegistry`) resolves them: `slots.value(slot, base)`,
-// `<Slot of={slot} …>default</Slot>` in a Server Component (`components/Slot.tsx`), and for a Client
+// `<Slot of={slot} props={…}>default</Slot>` in a Server Component (`components/Slot.tsx`), and for a Client
 // Component `slotParts()` on the server plus `<SlotRegion>` (`components/SlotRegion.tsx`). A fill that
 // throws is skipped and reported, as with filters.
 // Layers: `Extension.layer` is "agency" (shared by every site of one agency) or "site" (this site only).
@@ -1614,5 +1614,16 @@
 // Core's first slots (`src/ext/core-slots.ts`): `admin.sidebar.sections`, `admin.sidebar.items`,
 // `admin.status-sets`. The filters `filter:adminSections`, `filter:adminMenu` and `filter:statusSets`
 // still run, before the slot; the other customisation mechanisms are unchanged for now.
+// Slots are for an upper layer changing a lower one. Services other plugins rely on (payment, stock,
+// checkout fields) stay capabilities, a page that takes over another page's address stays
+// `AdminPage.replaces`, and declarative (JSON) plugins cannot carry fills.
+// More in the same release: every admin content list and edit page is a slot
+// (`adminCollectionSlot(type)`, `adminFormSlot(type)` in `core-slots.ts`, placed in `dx/interpret.tsx`),
+// so a plugin adds a block before or after the generic page instead of replacing it;
+// `CoreServices.slots` gives jobs, API handlers and providers the same registry; `slots.explain(slot)`
+// lists who filled a slot and how; a fill function receives its own plugin id; declaring one id as both
+// a value and a view slot throws; the sidebar items a fill returns are checked before rendering
+// (`normalizeAdminMenu`); and the Worker variable `CMS_LAYER_FILLS=off` skips the fills of both layers
+// when one of them breaks the admin (their settings, providers and jobs keep running).
 // A plugin that uses `fills` or `layer` declares coreApi "^1.74.0".
 export const CORE_API_VERSION = "1.74.0";

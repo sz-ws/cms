@@ -16,8 +16,11 @@
     `defineSlot` declare a named place, a plugin's `fills` fill it (`fill(slot, …)`), and the request's
     `ExtRuntime.slots` resolves it. Order follows `Extension.layer`: plain plugins, then "agency", then
     "site"; a layer is on when compiled in, without being enabled. `core-slots.ts` holds core's own slots
-    (admin sidebar sections and items, admin status sets); UI slots are placed with `components/Slot.tsx`
-    (server) and `components/SlotRegion.tsx` (client).
+    (admin sidebar sections and items, admin status sets, and one slot per admin content list and edit
+    page); UI slots are placed with `components/Slot.tsx` (server) and `components/SlotRegion.tsx`
+    (client). `services.slots` is the same registry for jobs and API handlers; `slots.explain(slot)` says
+    who filled what. Slots are for changing a lower layer; services (payment, stock, checkout fields)
+    stay capabilities. `CMS_LAYER_FILLS=off` (Worker variable) skips the fills of both layers.
   - `semver.ts`: coreApi ↔ CORE_API_VERSION range comparison.
   - `version.ts`: CORE_API_VERSION constant.
   - `admin-menu.ts`: sidebar data model; `admin-access.ts` (1.50.0): custom-role rules —

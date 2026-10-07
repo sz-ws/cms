@@ -128,7 +128,7 @@ async function scopedServicesFor(extId: string) {
   const rt = await getExtRuntime();
   const reg = buildProviderRegistry(rt);
   await reg.resolveActive();
-  return scopedServices(extId, rt.hooks, reg);
+  return scopedServices(extId, rt.hooks, reg, rt.slots);
 }
 
 const EVERY_MIN = 5;

@@ -146,3 +146,43 @@ describe("畫面的插槽", () => {
     expect(new SlotRegistry(sources).view(Panel).wrap).toEqual([A, C]);
   });
 });
+
+describe("同一個名字是同一個插槽", () => {
+  it("宣告兩次沒關係,但不能一次是值、一次是畫面", () => {
+    expect(defineValueSlot<number>("test.same-kind").id).toBe("test.same-kind");
+    expect(defineValueSlot<number>("test.same-kind").id).toBe("test.same-kind");
+    defineSlot("test.kind-clash");
+    expect(() => defineValueSlot<number>("test.kind-clash")).toThrow(/already declared as a view slot/);
+  });
+});
+
+describe("查得到誰填了什麼", () => {
+  it("填的函式知道自己是哪個插件", () => {
+    const seen: string[] = [];
+    const sources: SlotSource[] = [
+      { extId: "one", fills: [fill(Names, (names, ctx) => (seen.push(ctx.extId), names))] },
+      { extId: "the-site", layer: "site", fills: [fill(Names, (names, ctx) => (seen.push(ctx.extId), names))] },
+    ];
+    new SlotRegistry(sources).value(Names, []);
+    expect(seen).toEqual(["one", "the-site"]);
+  });
+
+  it("explain() 照實際的先後列出每一筆:哪個插件、哪一層、怎麼填", () => {
+    const sources: SlotSource[] = [
+      { extId: "the-site", layer: "site", fills: [fill(Panel, { replace: C }), add("site")] },
+      { extId: "the-agency", layer: "agency", fills: [fill(Panel, { wrap: B })] },
+      { extId: "shop", fills: [fill(Panel, { before: A }), add("shop")] },
+    ];
+    const slots = new SlotRegistry(sources);
+    expect(slots.explain(Panel)).toEqual([
+      { ext: "shop", layer: "plugin", how: "before" },
+      { ext: "the-agency", layer: "agency", how: "wrap" },
+      { ext: "the-site", layer: "site", how: "replace" },
+    ]);
+    expect(slots.explain(Names)).toEqual([
+      { ext: "shop", layer: "plugin", how: "value" },
+      { ext: "the-site", layer: "site", how: "value" },
+    ]);
+    expect(slots.explain(Greeting)).toEqual([]);
+  });
+});

@@ -9,7 +9,7 @@ import type { ComponentType, ReactNode } from "react";
 //        fill(SidebarItems, (items) => [...items, mine])            // 值:把值改成什麼
 //        fill(OrderActions, { after: PrintLabel })                  // 畫面:before / after / replace / wrap
 //   3. 用:本體在那個地方向當次請求的 SlotRegistry(ExtRuntime.slots)要結果。
-//        rt.slots.value(SidebarItems, items)      <Slot of={OrderActions} orderNo={no}>預設內容</Slot>
+//        rt.slots.value(SidebarItems, items)      <Slot of={OrderActions} props={{ orderNo }}>預設內容</Slot>
 //
 // 先後照層:一般插件 → 代理商那一層(layer: "agency")→ 這個站自己(layer: "site");同一層照
 // extensions/registry.ts 的順序,同一個插件裡照 fills 寫的順序。所以站台永遠蓋得過代理商,代理商
@@ -17,6 +17,13 @@ import type { ComponentType, ReactNode } from "react";
 //
 // 插槽的名字是全站識別:用點分開的小寫段落,本體的以 admin. / site. 開頭,插件的以自己的 id 開頭
 // (例如 "agency-admin.placements")。同一個名字就是同一個插槽。
+//
+// 插槽管的是「上層改下層」:改一個值、在一塊畫面前後加東西、換掉它、包起來。不是每一種擴充都是這個:
+// 別的插件靠它運作的服務(付款、庫存、結帳要多填什麼)是 provides / capability;一頁取代另一頁牽涉網址
+// 與權限,是 AdminPage.replaces;宣告式(JSON)插件帶不了函式。那些照舊。
+//
+// 當次請求才有的資料(語言、登入的人、資料庫裡的東西)由開插槽的那一方先讀好,放進值或 props 一起傳:
+// 填的函式是同步的,不自己去查。
 //
 // 這個檔不 import React 的執行期,也不碰資料庫:值的插槽在 lib 裡、測試裡都能直接用。
 
@@ -36,24 +43,35 @@ export interface ViewSlot<P extends object> {
   readonly __props?: P;
 }
 
-function checkedId(id: string): string {
+// 宣告過的名字與種類。同一個名字宣告幾次都算同一個插槽(模組重新載入、照內容型別產生的一族插槽
+// 都會這樣),但不能一邊當值、一邊當畫面。
+const declared = new Map<string, "value" | "view">();
+
+function declare(id: string, kind: "value" | "view"): string {
   if (!SLOT_ID_RE.test(id)) {
     throw new Error(`[slots] invalid slot id "${id}": use lowercase segments separated by dots, e.g. "admin.sidebar.items"`);
   }
+  const known = declared.get(id);
+  if (known && known !== kind) throw new Error(`[slots] "${id}" is already declared as a ${known} slot`);
+  declared.set(id, kind);
   return id;
 }
 
 export function defineValueSlot<V>(id: string): ValueSlot<V> {
-  return { kind: "value", id: checkedId(id) };
+  return { kind: "value", id: declare(id, "value") };
 }
 
 export function defineSlot<P extends object = Record<string, never>>(id: string): ViewSlot<P> {
-  return { kind: "view", id: checkedId(id) };
+  return { kind: "view", id: declare(id, "view") };
 }
 
-/** 填的函式拿到的第二個參數:可以讀別的插槽(例如代理商那一層讀站台填給它的規則)。 */
+/**
+ * 填的函式拿到的第二個參數。slots:可以讀別的插槽(例如代理商那一層讀站台填給它的規則);
+ * extId:這個填的是哪個插件的(記 log 時用)。
+ */
 export interface FillContext {
   slots: SlotRegistry;
+  extId: string;
 }
 
 /** 畫面的插槽怎麼填,四選一。wrap 的元件多拿到 children(被包住的內容)。 */
@@ -141,6 +159,13 @@ export interface SlotParts {
 
 export type SlotErrorReporter = (error: unknown, info: { slot: string; ext: string }) => void;
 
+/** explain() 的一筆:哪個插件、哪一層、怎麼填(值的插槽是 "value")。 */
+export interface SlotFillInfo {
+  ext: string;
+  layer: SlotLayer | "plugin";
+  how: "value" | Place;
+}
+
 function isThenable(value: unknown): boolean {
   return typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
 }
@@ -151,7 +176,7 @@ const logSlotError: SlotErrorReporter = (error, info) => {
 
 /** 當次請求裡所有啟用中的插件填了什麼。 */
 export class SlotRegistry {
-  private readonly fills = new Map<string, { extId: string; fill: SlotFill }[]>();
+  private readonly fills = new Map<string, { extId: string; layer: SlotLayer | "plugin"; fill: SlotFill }[]>();
   private readonly resolving = new Set<string>();
   private readonly onError: SlotErrorReporter;
 
@@ -162,7 +187,7 @@ export class SlotRegistry {
       .sort((a, b) => LAYER_RANK[a.source.layer ?? "plugin"] - LAYER_RANK[b.source.layer ?? "plugin"] || a.index - b.index);
     for (const { source } of ordered) {
       for (const entry of source.fills ?? []) {
-        this.fills.set(entry.slotId, [...(this.fills.get(entry.slotId) ?? []), { extId: source.extId, fill: entry }]);
+        this.fills.set(entry.slotId, [...(this.fills.get(entry.slotId) ?? []), { extId: source.extId, layer: source.layer ?? "plugin", fill: entry }]);
       }
     }
   }
@@ -176,7 +201,7 @@ export class SlotRegistry {
       for (const { extId, fill: entry } of this.fills.get(slot.id) ?? []) {
         if (entry.kind !== "value") continue;
         try {
-          const next = entry.apply(value, { slots: this });
+          const next = entry.apply(value, { slots: this, extId });
           // 值的插槽是同步的:回傳 Promise 的函式會把 Promise 當成值塞進去,所以當作出錯跳過。
           if (isThenable(next)) throw new Error(`[slots] a fill of "${slot.id}" returned a promise; value fills must be synchronous`);
           value = next as V;
@@ -188,6 +213,13 @@ export class SlotRegistry {
     } finally {
       this.resolving.delete(slot.id);
     }
+  }
+
+  /** 這個插槽照實際的先後有誰填、怎麼填 —— 查「這個值是誰改的」「這塊是誰加的」用。 */
+  explain(slot: ValueSlot<unknown> | ViewSlot<object>): SlotFillInfo[] {
+    return (this.fills.get(slot.id) ?? [])
+      .filter(({ fill: entry }) => entry.kind === slot.kind)
+      .map(({ extId, layer, fill: entry }) => ({ ext: extId, layer, how: entry.kind === "value" ? "value" : entry.place }));
   }
 
   view<P extends object>(slot: ViewSlot<P>): ViewPlan<P> {

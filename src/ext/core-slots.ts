@@ -1,6 +1,8 @@
 import type { AdminMenuItem, AdminNavSection } from "./admin-menu";
+import type { CollectionViewProps } from "./dx/views/CollectionView";
+import type { FormViewPageProps } from "./dx/views/FormViewPage";
 import type { ResolvedStatusSets } from "./record-status";
-import { defineValueSlot } from "./slots";
+import { defineSlot, defineValueSlot, type ViewSlot } from "./slots";
 
 // 本體自己宣告的插槽(機制見 slots.ts)。插件宣告的插槽放在插件自己的資料夾裡。
 
@@ -19,3 +21,18 @@ export const AdminSidebarItems = defineValueSlot<AdminMenuItem[]>("admin.sidebar
  * (addon);系統狀態本身不變,只影響後台怎麼講。輸出經 normalizeStatusSets 收斂(ext/record-status.ts)。
  */
 export const AdminStatusSets = defineValueSlot<ResolvedStatusSets>("admin.status-sets");
+
+// ---- 後台的內容頁:每個內容型別各有一個插槽 ----
+// key 是完整的型別代號 `<extId>.<type>`(例如 "catalog.product")。預設內容是泛用的列表或編輯頁
+// (或 overrides.ts 登記的整頁替換);別的插件在它前後加一塊(例如商品列表上方的缺貨提醒、
+// 商品編輯頁下方的庫存),不必把整頁換掉。填的元件拿到的 props 跟那一頁一樣。
+
+/** 後台某個內容型別的列表頁。 */
+export function adminCollectionSlot(contentType: string): ViewSlot<CollectionViewProps> {
+  return defineSlot<CollectionViewProps>(`admin.collection.${contentType}`);
+}
+
+/** 後台某個內容型別的新增／編輯頁。props.entryId:編輯中的那一筆,新增時沒有。 */
+export function adminFormSlot(contentType: string): ViewSlot<FormViewPageProps> {
+  return defineSlot<FormViewPageProps>(`admin.form.${contentType}`);
+}

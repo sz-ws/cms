@@ -26,6 +26,8 @@ import type { ListViewProps } from "./views/ListView";
 import { DetailView } from "./views/DetailView";
 import type { DetailViewProps } from "./views/DetailView";
 import { ExtThemeScope } from "./theme-scope";
+import { Slot } from "@/components/Slot";
+import { adminCollectionSlot, adminFormSlot } from "../core-slots";
 import { buildCrudRoutes } from "./crud";
 import { compilePattern, matchSegments } from "./route-matcher";
 import { makeWebhookHandler } from "./webhook";
@@ -146,19 +148,26 @@ function buildAdminPages(
       CollectionView,
     );
     // collection 頁。分頁·排序·filter state 由 searchParams 帶入。
+    // 1.74.0:整頁是插槽 adminCollectionSlot(型別)的預設內容,別的插件可以在前後加一塊。
+    const collectionSlot = adminCollectionSlot(contentType);
     pages.push({
       slug,
       title: ap.title,
-      component: ({ searchParams }) => (
-        <Collection
-          extId={extId}
-          title={ap.title}
-          adminSlug={slug}
-          contentType={ct}
-          searchParams={searchParams}
-          layout={ap.layout} // §3.5 缺省 → table(view 內處理)
-        />
-      ),
+      component: ({ searchParams }) => {
+        const props: CollectionViewProps = {
+          extId,
+          title: ap.title,
+          adminSlug: slug,
+          contentType: ct,
+          searchParams,
+          layout: ap.layout, // §3.5 缺省 → table(view 內處理)
+        };
+        return (
+          <Slot of={collectionSlot} props={props}>
+            <Collection {...props} />
+          </Slot>
+        );
+      },
     });
     // §3.6:form surface —— override(admin:<type>:form)或泛用 baseline。
     const Form = resolveSurface<FormViewPageProps>(
@@ -166,6 +175,7 @@ function buildAdminPages(
       surfaceIds.adminForm(contentType),
       FormViewPage,
     );
+    const formSlot = adminFormSlot(contentType);
     // edit / new 頁(不進 menu)。title 保留原始 LocalizedString(memo-safe);此頁
     // showInMenu:false 且 admin ext route 只用 component、不顯示 title,故不再拼
     // `${title} — Edit`(拼 LocalizedString 物件會壞)——實際編輯頁標題由 FormViewPage
@@ -176,15 +186,21 @@ function buildAdminPages(
       showInMenu: false,
       // 1.50.0:能開列表的人就能開編輯頁(能不能存檔看 CRUD API 的「編輯」)。
       accessAs: slug ? `${extId}/${slug}` : extId,
-      component: ({ searchParams }) => (
-        <Form
-          extId={extId}
-          title={ap.title}
-          adminSlug={slug}
-          contentType={ct}
-          entryId={searchParams.id || undefined}
-        />
-      ),
+      // 1.74.0:整頁是插槽 adminFormSlot(型別)的預設內容。
+      component: ({ searchParams }) => {
+        const props: FormViewPageProps = {
+          extId,
+          title: ap.title,
+          adminSlug: slug,
+          contentType: ct,
+          entryId: searchParams.id || undefined,
+        };
+        return (
+          <Slot of={formSlot} props={props}>
+            <Form {...props} />
+          </Slot>
+        );
+      },
     });
   }
   return pages;

@@ -3,6 +3,7 @@ import { getExtRuntime } from "@/ext/loader";
 import {
   buildExtensionMenu,
   defaultAdminSections,
+  normalizeAdminMenu,
   normalizeAdminSections,
   type AdminMenuItem,
   type AdminNavSection,
@@ -59,11 +60,10 @@ export async function buildAdminMenu(options: AdminMenuOptions): Promise<AdminMe
       : []),
   ];
 
-  // 1.74.0:側欄項目是插槽(core-slots.ts)。舊的 filter:adminMenu 先照跑,結果再交給插槽。
-  return rt.slots.value(
-    AdminSidebarItems,
-    await rt.hooks.applyFilters<AdminMenuItem[]>("filter:adminMenu", menu),
-  );
+  // 1.74.0:側欄項目是插槽(core-slots.ts)。舊的 filter:adminMenu 先照跑,結果再交給插槽;
+  // 插槽的輸出收斂過才畫(寫壞的填法只會被丟掉,後台照開)。
+  const filtered = await rt.hooks.applyFilters<AdminMenuItem[]>("filter:adminMenu", menu);
+  return normalizeAdminMenu(rt.slots.value(AdminSidebarItems, filtered), filtered);
 }
 
 /** 側欄分區(預設五區,經插槽 AdminSidebarSections 讓上層改名、加區、排序)。 */
