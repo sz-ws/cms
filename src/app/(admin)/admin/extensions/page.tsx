@@ -52,10 +52,12 @@ export default async function ExtensionsPage() {
     name: resolveLocalizedString(e.name, locale) ?? e.id,
     version: e.version,
     description: resolveLocalizedString(e.description, locale),
-    enabled: enabledIds.has(e.id),
-    installed: installedIds.has(e.id),
+    // 1.74.0:代理商那一層與站台自己那一層(Extension.layer)編進來就生效,不看 extensions 表。
+    enabled: enabledIds.has(e.id) || Boolean(e.layer),
+    installed: installedIds.has(e.id) || Boolean(e.layer),
     kind: "code",
-    issue: enabledIds.has(e.id) ? (rt.unavailableById.get(e.id) ?? null) : null,
+    layer: e.layer ?? null,
+    issue: enabledIds.has(e.id) || e.layer ? (rt.unavailableById.get(e.id) ?? null) : null,
     upgrade: upgrades.get(e.id) ?? null,
     needs: needsOf("code", e.id),
   }));

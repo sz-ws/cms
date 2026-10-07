@@ -42,6 +42,7 @@ import {
   MAX_MEMBER_FACET_ACTIONS,
   MEMBER_FACET_ID_RE,
 } from "./member-facets";
+import type { SlotFill, SlotLayer } from "./slots";
 
 // 03 §1:Extension 型別(完整內容,欄位一字不差照 spec)。
 // core-v2 §2.1 / §2.2 / §3.1:ApiCtx.services、manifest coreApi/provides、zod 驗證。
@@ -334,6 +335,18 @@ export interface Extension {
    */
   memberFacets?: MemberFacet[];
   hooks?: Partial<Record<HookName, HookHandler>>;
+  /**
+   * 1.74.0:插槽(src/ext/slots.ts)。這個插件往哪些插槽填東西 —— 上層改下層只有這一種寫法:
+   * `fill(某個值的插槽, (值) => 新的值)`、`fill(某個畫面的插槽, { before | after | replace | wrap })`。
+   * 插槽由本體或別的插件用 defineSlot / defineValueSlot 宣告;插件也可以宣告自己的,給上層填。
+   */
+  fills?: SlotFill[];
+  /**
+   * 1.74.0:這個插件是哪一層。不寫 = 一般插件(店家在後台啟用、停用的功能)。
+   * "agency" = 代理商給旗下每個站共用的那一層;"site" = 這個站自己的。這兩層是站台本身的一部分:
+   * 編進網站就生效,不必在後台啟用;填插槽時排在一般插件後面,站台最後(所以站台蓋得過代理商)。
+   */
+  layer?: SlotLayer;
   provides?: ProviderRegistration[]; // core-v2 §2.2:選填
   jobs?: ExtJobRegistration[]; // spec-extension-jobs.md:週期性 / 一次性任務宣告
   /**
@@ -719,6 +732,9 @@ const manifestSchema = z
       )
       .optional(),
     jobs: jobsSchema,
+    // 1.74.0:插槽。fill() 產生的物件;這裡只驗形狀,先後與名字的規則在 slots.ts。
+    fills: z.array(z.object({ kind: z.enum(["value", "view"]), slotId: z.string().min(1) }).passthrough()).optional(),
+    layer: z.enum(["agency", "site"]).optional(),
     agentTools: z.array(agentToolSchema).optional(),
     agentGuide: agentGuideSchema.optional(), // 1.60.0
     statusSets: z.array(statusSetSchema).max(10).optional(),

@@ -143,6 +143,9 @@ function ExtensionSheetBody({
           <SectionLabel>{t("extensions.status")}</SectionLabel>
           <div className="flex items-center justify-between rounded-[calc(10px*var(--admin-radius-scale,1))] border border-ink/[0.08] px-3.5 py-2.5">
             <StatusPill enabled={ext.enabled} issue={ext.issue} />
+            {ext.layer ? (
+              <span className="text-[12.5px] text-ink/55">{t("extensions.partOfSite")}</span>
+            ) : (
             <button
               type="button"
               disabled={busy}
@@ -164,6 +167,7 @@ function ExtensionSheetBody({
                   ? t("extensions.disable")
                   : t("extensions.enable")}
             </button>
+            )}
           </div>
           {ext.issue && <RuntimeIssue issue={ext.issue} />}
           {ext.needs && ext.needs.length > 0 && <MissingRequirements needs={ext.needs} />}
@@ -184,8 +188,8 @@ function ExtensionSheetBody({
           </div>
         )}
 
-        {/* Danger zone */}
-        {ext.installed && (
+        {/* Danger zone(1.74.0:網站本身的一層沒有移除這件事) */}
+        {ext.installed && !ext.layer && (
           <div className="mt-2 flex flex-col gap-2 border-t border-ink/[0.06] pt-5">
             <SectionLabel tone="danger">
               {t("extensions.sheet.dangerZone")}

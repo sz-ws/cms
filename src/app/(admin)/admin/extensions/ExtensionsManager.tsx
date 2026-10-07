@@ -45,6 +45,8 @@ export interface ExtensionRow {
   scripts?: "running" | "stopped" | "compiled" | null;
   /** 1.50.0:需要、但沒裝(missing / different)或停用(disabled)的插件;都齊了 = 不給。 */
   needs?: { id: string; name: string; state: "missing" | "disabled" | "different" }[];
+  /** 1.74.0:代理商那一層或站台自己那一層(Extension.layer)—— 網站本身的一部分,不能啟用、停用或移除。 */
+  layer?: "agency" | "site" | null;
 }
 
 /** 1.50.0:缺的必要插件,分成「要先安裝」與「要先啟用」兩句(列表與詳情共用)。 */
@@ -422,20 +424,22 @@ function InstalledTab({ extensions }: { extensions: ExtensionRow[] }) {
                 <CircleArrowUp className="size-3.5" />
               </RowIconButton>
             )}
-            <RowIconButton
-              label={e.enabled ? t("extensions.disable") : t("extensions.enable")}
-              onClick={() => {
-                if (pending === null)
-                  run(e.id, e.enabled ? "disable" : "enable", e.kind);
-              }}
-            >
-              {pending === `${e.id}:enable` || pending === `${e.id}:disable` ? (
-                <span className="text-[12px]">…</span>
-              ) : (
-                <Power className="size-3.5" />
-              )}
-            </RowIconButton>
-            {e.installed && (
+            {!e.layer && (
+              <RowIconButton
+                label={e.enabled ? t("extensions.disable") : t("extensions.enable")}
+                onClick={() => {
+                  if (pending === null)
+                    run(e.id, e.enabled ? "disable" : "enable", e.kind);
+                }}
+              >
+                {pending === `${e.id}:enable` || pending === `${e.id}:disable` ? (
+                  <span className="text-[12px]">…</span>
+                ) : (
+                  <Power className="size-3.5" />
+                )}
+              </RowIconButton>
+            )}
+            {e.installed && !e.layer && (
               <RowIconButton
                 label={t("extensions.uninstall")}
                 danger

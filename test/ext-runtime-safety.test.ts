@@ -234,3 +234,35 @@ describe("extension runtime: scripts compiled into the site", () => {
     expect((await state("proof-dx"))?.updatedAt).toBe(proof!.updatedAt);
   });
 });
+
+// core 1.74.0:插槽與分層(src/ext/slots.ts)。runtime 帶著這次請求的 SlotRegistry;代理商那一層與
+// 站台自己那一層(Extension.layer)編進來就生效,不看 extensions 表。
+describe("extension runtime slots and layers", () => {
+  it("collects fills from enabled plugins and from layers, ordered by layer", async () => {
+    const { defineValueSlot, fill } = await import("../src/ext/slots");
+    const Names = defineValueSlot<string[]>("test.runtime-names");
+    const add = (name: string) => fill(Names, (names) => [...names, name]);
+    registryState.entries.push(
+      { ...codeExtension("the-site", "^1.0.0", () => undefined), layer: "site", fills: [add("site")] },
+      { ...codeExtension("the-agency", "^1.0.0", () => undefined), layer: "agency", fills: [add("agency")] },
+      { ...codeExtension("a-plugin", "^1.0.0", () => undefined), fills: [add("plugin")] },
+      { ...codeExtension("off-plugin", "^1.0.0", () => undefined), fills: [add("off")] },
+    );
+    // 只有一般插件要在後台啟用;兩個層沒有 extensions 列。
+    await enableCode("a-plugin");
+
+    const rt = await (await getLoader()).getExtRuntime();
+
+    expect(rt.enabled.map((ext) => ext.id)).toEqual(["the-site", "the-agency", "a-plugin"]);
+    expect(rt.slots.value(Names, ["core"])).toEqual(["core", "plugin", "agency", "site"]);
+  });
+
+  it("leaves out a layer whose coreApi does not match, like any other plugin", async () => {
+    registryState.entries.push({ ...codeExtension("old-layer", "^2.0.0", () => undefined), layer: "site" });
+
+    const rt = await (await getLoader()).getExtRuntime();
+
+    expect(rt.enabled).toEqual([]);
+    expect(rt.unavailableById.get("old-layer")).toMatchObject({ kind: "core-api-incompatible" });
+  });
+});

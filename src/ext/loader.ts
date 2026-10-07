@@ -7,6 +7,9 @@ import {
   declarativeExtensions as dxTable,
 } from "@/lib/schema";
 import { HookBus } from "./hooks";
+import { SlotRegistry, slotSources, type SlotErrorReporter } from "./slots";
+import { reportError } from "@/lib/observe/report";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import { interpretManifest } from "./dx/interpret";
@@ -110,6 +113,8 @@ export interface ExtRuntime {
   enabled: Extension[]; // 只含 enabled=1 且存在於 registry 的
   all: Extension[]; // registry 全部(admin 的 extensions 頁要列出)
   hooks: HookBus;
+  /** 1.74.0:插槽(slots.ts)—— 啟用中的插件與站台各層填了什麼,照層的先後。 */
+  slots: SlotRegistry;
   byId: (id: string) => Extension | undefined; // 只查 enabled
   // core-v2 §1:某 extension 的 coreApi 是否相容目前 CORE_API_VERSION
   // (/admin/extensions 用來標示不可啟用者)。
@@ -133,6 +138,18 @@ function coreApiIssue(ext: Extension): ExtensionRuntimeIssue | null {
         coreVersion: CORE_API_VERSION,
       };
 }
+
+// 填插槽的函式出錯:印出來並往錯誤收集端報一次(同 HookBus;reportError 絕不 throw)。
+// 值的插槽是同步的,等不了回報送完:交給這個請求的 waitUntil,回應送出後它才不會被切掉。
+const reportSlotError: SlotErrorReporter = (error, info) => {
+  console.error(`[slot:${info.slot}] ext=${info.ext}`, error);
+  const sending = reportError(error, { slot: info.slot, ext: info.ext, kind: "slot" });
+  try {
+    getCloudflareContext().ctx.waitUntil(sending);
+  } catch {
+    // 沒有請求的地方(測試、建置):reportError 自己不會 throw,放著讓它跑完。
+  }
+};
 
 // 03 §4:每個 request 第一次用到 extension 系統時,建立當次 request 的 runtime。
 // 用 React cache() 做 per-request 快取,不可用 module 全域變數存 request 狀態。
@@ -189,7 +206,9 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     const unavailable = new Map<string, ExtensionRuntimeIssue>();
     codeEnabled = [];
     for (const ext of registry) {
-      if (!enabledIds.has(ext.id)) continue;
+      // 1.74.0:代理商那一層與站台自己那一層(Extension.layer)是站台本身,編進來就生效,
+      // 不看 extensions 表;一般插件照舊要在後台啟用。
+      if (!enabledIds.has(ext.id) && !ext.layer) continue;
       const issue = coreApiIssue(ext);
       if (issue) {
         unavailable.set(ext.id, issue);
@@ -362,10 +381,13 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     for (const [name, fn] of Object.entries(ext.hooks ?? {}))
       hooks.register(ext.id, name as HookName, fn!);
 
+  const slots = new SlotRegistry(slotSources(enabled), reportSlotError);
+
   return {
     enabled,
     all: registry,
     hooks,
+    slots,
     byId: (id) => enabled.find((e) => e.id === id),
     isCompatible: (ext) => coreApiIssue(ext) === null,
     unavailableById,

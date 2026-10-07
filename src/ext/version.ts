@@ -1599,4 +1599,20 @@
 // save bar, and leaving a section with a half-typed number or date points at that field first. The list ends
 // with a link to the person's own account page (sign-in methods and linked accounts). Pressing Enter in the
 // token and registry-source panels no longer submits the whole page.
-export const CORE_API_VERSION = "1.73.0";
+// 1.74.0: Slots — one way for an upper layer to change a lower one (`src/ext/slots.ts`). Core or a plugin
+// declares a named slot where something may be changed: `defineValueSlot<V>(id)` for a value,
+// `defineSlot<Props>(id)` for a piece of UI. A plugin fills slots in its definition (`Extension.fills`):
+// `fill(valueSlot, (value, { slots }) => next)`, or `fill(viewSlot, { before | after | replace | wrap })`.
+// The request's `ExtRuntime.slots` (`SlotRegistry`) resolves them: `slots.value(slot, base)`,
+// `<Slot of={slot} …>default</Slot>` in a Server Component (`components/Slot.tsx`), and for a Client
+// Component `slotParts()` on the server plus `<SlotRegion>` (`components/SlotRegion.tsx`). A fill that
+// throws is skipped and reported, as with filters.
+// Layers: `Extension.layer` is "agency" (shared by every site of one agency) or "site" (this site only).
+// A layer is part of the site itself: compiled in means on, without a row in `extensions`. Fills run in
+// layer order — plain plugins, then agency, then site — and in registry order inside a layer, so a site
+// always has the last word.
+// Core's first slots (`src/ext/core-slots.ts`): `admin.sidebar.sections`, `admin.sidebar.items`,
+// `admin.status-sets`. The filters `filter:adminSections`, `filter:adminMenu` and `filter:statusSets`
+// still run, before the slot; the other customisation mechanisms are unchanged for now.
+// A plugin that uses `fills` or `layer` declares coreApi "^1.74.0".
+export const CORE_API_VERSION = "1.74.0";

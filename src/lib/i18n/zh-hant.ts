@@ -536,6 +536,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "extensions.actions": "操作",
   "extensions.declarative": "宣告式",
   "extensions.enabled": "已啟用",
+  "extensions.partOfSite": "這是網站本身的一部分，一直是開著的。",
   "extensions.disabled": "已停用",
   "extensions.unavailable": "無法執行",
   "extensions.unavailable.coreApi":

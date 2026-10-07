@@ -58,7 +58,8 @@ export async function listInstalledPlugins(
   const code: InstalledPluginInfo[] = codeRegistry.map((ext) => ({
     id: ext.id,
     kind: "code",
-    enabled: enabledCode.has(ext.id),
+    // 1.74.0:Extension.layer 的插件是網站本身,編進來就算啟用。
+    enabled: enabledCode.has(ext.id) || Boolean(ext.layer),
     identity: ext.identity ?? null,
     name: ext.name,
     version: ext.version,

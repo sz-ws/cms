@@ -8,6 +8,7 @@ import {
   type AdminNavSection,
 } from "@/ext/admin-menu";
 import { deriveAccessSections, type AccessSection } from "@/ext/admin-access";
+import { AdminSidebarItems, AdminSidebarSections } from "@/ext/core-slots";
 import {
   buildAdminNavGroups,
   type AdminNavGroupData,
@@ -26,7 +27,7 @@ export interface AdminMenuOptions {
   people: boolean;
 }
 
-/** 固定項 + 每個啟用中 extension 的後台頁,再過 filter:adminMenu。 */
+/** 固定項 + 每個啟用中 extension 的後台頁,再交給插槽 AdminSidebarItems(上層可增刪、改名、排序)。 */
 export async function buildAdminMenu(options: AdminMenuOptions): Promise<AdminMenuItem[]> {
   const rt = await getExtRuntime();
   const locale = await getLocale();
@@ -58,11 +59,14 @@ export async function buildAdminMenu(options: AdminMenuOptions): Promise<AdminMe
       : []),
   ];
 
-  // menu 過 filter:adminMenu(extension 可增刪排序 menu 項)。
-  return rt.hooks.applyFilters<AdminMenuItem[]>("filter:adminMenu", menu);
+  // 1.74.0:側欄項目是插槽(core-slots.ts)。舊的 filter:adminMenu 先照跑,結果再交給插槽。
+  return rt.slots.value(
+    AdminSidebarItems,
+    await rt.hooks.applyFilters<AdminMenuItem[]>("filter:adminMenu", menu),
+  );
 }
 
-/** 側欄分區(預設五區,經 filter:adminSections 讓站台改名、加區、排序)。 */
+/** 側欄分區(預設五區,經插槽 AdminSidebarSections 讓上層改名、加區、排序)。 */
 export async function buildAdminSections(): Promise<AdminNavSection[]> {
   const rt = await getExtRuntime();
   const messages = getMessages(await getLocale());
@@ -73,8 +77,12 @@ export async function buildAdminSections(): Promise<AdminNavSection[]> {
     shop: messages["nav.group.shop"],
     system: messages["nav.group.system"],
   });
+  // 舊的 filter:adminSections 先照跑,結果再交給插槽。
   return normalizeAdminSections(
-    await rt.hooks.applyFilters<AdminNavSection[]>("filter:adminSections", builtinSections),
+    rt.slots.value(
+      AdminSidebarSections,
+      await rt.hooks.applyFilters<AdminNavSection[]>("filter:adminSections", builtinSections),
+    ),
     builtinSections,
   );
 }

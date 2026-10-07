@@ -15,6 +15,7 @@ import { getExtRuntime } from "@/ext/loader";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { RegistryNoticeDialog } from "@/components/admin/RegistryNoticeDialog";
 import type { AdminMenuItem } from "@/ext/admin-menu";
+import { AdminStatusSets } from "@/ext/core-slots";
 import {
   customRoleCanOpen,
   editorCanOpen,
@@ -103,12 +104,16 @@ export default async function AdminLayout({
     }
   }
 
-  // 1.40.0:狀態組(record-status.ts),過站台的 slot(filter:statusSets)再給後台畫。
+  // 1.40.0:狀態組(record-status.ts)。1.74.0:上層用插槽 AdminStatusSets 改名或補說明;
+  // 舊的 filter:statusSets 先照跑,結果再交給插槽。
   const baseStatusSets = resolveStatusSets(rt.enabled, (value) =>
     resolveLocalizedString(value, locale),
   );
   const statusSets = normalizeStatusSets(
-    await rt.hooks.applyFilters<ResolvedStatusSets>("filter:statusSets", baseStatusSets),
+    rt.slots.value(
+      AdminStatusSets,
+      await rt.hooks.applyFilters<ResolvedStatusSets>("filter:statusSets", baseStatusSets),
+    ),
     baseStatusSets,
   );
 

@@ -6,7 +6,7 @@ import type { AdminMenuItem } from "./admin-menu";
 // 純函式,不碰 React / D1:layout、頁面守門、API dispatch、角色頁與測試共用同一份。
 //
 // 授權的單位是「後台頁」,鍵是它的路徑(/admin、/admin/media、/admin/ext/<id>[/<slug>])。
-// 矩陣的列直接取自側欄(core + 啟用中的插件 + 站台的 filter:adminMenu),所以新裝插件的
+// 矩陣的列直接取自側欄(core + 啟用中的插件 + 上層填在側欄插槽裡的),所以新裝插件的
 // 頁自動出現,而且對既有的自訂角色一律是「無」。站台改名、搬分區不影響授權:鍵是路徑。
 //
 // 三個預設角色(admin / editor / guest)不走這裡的授權:它們的行為與 1.49.0 相同。

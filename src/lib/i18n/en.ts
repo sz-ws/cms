@@ -547,6 +547,7 @@ export const en = {
   "extensions.actions": "Actions",
   "extensions.declarative": "Declarative",
   "extensions.enabled": "enabled",
+  "extensions.partOfSite": "Part of the site itself. It is always on.",
   "extensions.disabled": "disabled",
   "extensions.unavailable": "unavailable",
   "extensions.unavailable.coreApi":

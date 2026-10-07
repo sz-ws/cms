@@ -2,9 +2,22 @@ import type { Extension } from "./types";
 
 export class ExtensionLifecycleConflict extends Error {}
 
+/**
+ * 1.74.0:網站本身的一層(Extension.layer)編進來就生效,不看 extensions 表,也不能在後台啟用、停用、移除。
+ */
+export function assertNotLayer(ext: Pick<Extension, "layer">, action: "停用" | "移除"): void {
+  if (ext.layer) throw new ExtensionLifecycleConflict(`這是網站本身的一部分，不能${action}。`);
+}
+
+/** 需要先在後台啟用的必要插件:網站本身的層(layer)一直是開著的,不用算。 */
+function switchableRequirements(ext: Extension, registry: readonly Extension[]): string[] {
+  return (ext.requiresExtensions ?? []).filter((id) => !registry.find((entry) => entry.id === id)?.layer);
+}
+
 export async function assertCodeDependencies(db: D1Database, ext: Extension, registry: readonly Extension[]) {
-  const ids = ext.requiresExtensions ?? [];
-  if (ids.some((id) => !registry.some((entry) => entry.id === id))) throw new ExtensionLifecycleConflict(`請先安裝必要插件：${ids.join(", ")}`);
+  const required = ext.requiresExtensions ?? [];
+  if (required.some((id) => !registry.some((entry) => entry.id === id))) throw new ExtensionLifecycleConflict(`請先安裝必要插件：${required.join(", ")}`);
+  const ids = switchableRequirements(ext, registry);
   const row = await db.prepare("SELECT COUNT(*) AS n FROM extensions WHERE enabled = 1 AND id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(ids)).first<{ n: number }>();
   if (row?.n !== ids.length) throw new ExtensionLifecycleConflict(`請先啟用必要插件：${ids.join(", ")}`);
 }
@@ -12,7 +25,7 @@ export async function assertCodeDependencies(db: D1Database, ext: Extension, reg
 /** Final dependency check and enabled write share one statement, closing races. */
 export async function writeCodeEnabled(db: D1Database, ext: Extension, registry: readonly Extension[], at: number) {
   await assertCodeDependencies(db, ext, registry);
-  const ids = ext.requiresExtensions ?? [];
+  const ids = switchableRequirements(ext, registry);
   const result = await db.prepare(`INSERT INTO extensions (id, enabled, version, installed_at, updated_at)
     SELECT ?, 1, ?, ?, ? WHERE (SELECT COUNT(*) FROM extensions WHERE enabled = 1 AND id IN (SELECT value FROM json_each(?))) = ?
     ON CONFLICT(id) DO UPDATE SET enabled = 1, version = excluded.version, updated_at = excluded.updated_at`)
@@ -36,7 +49,10 @@ export async function assertCanUninstall(db: D1Database, ext: Pick<Extension, "c
 export async function writeCodeDisabled(db: D1Database, ext: Extension, registry: readonly Extension[], at: number) {
   const present = await db.prepare("SELECT id FROM extensions WHERE id = ?").bind(ext.id).first();
   if (!present) return;
-  const dependents = registry.filter((entry) => entry.requiresExtensions?.includes(ext.id)).map((entry) => entry.id);
+  const requiring = registry.filter((entry) => entry.requiresExtensions?.includes(ext.id));
+  // 1.74.0:需要它的是網站本身的一層(一直開著,沒有 extensions 列可查)就直接擋。
+  if (requiring.some((entry) => entry.layer)) throw new ExtensionLifecycleConflict("尚有啟用中的插件依賴此插件");
+  const dependents = requiring.map((entry) => entry.id);
   const declarative = noDeclarativeDependents(ext.id, ext.identity ?? null);
   const result = await db.prepare(`UPDATE extensions SET enabled = 0, updated_at = ? WHERE id = ?
     AND NOT EXISTS (SELECT 1 FROM extensions WHERE enabled = 1 AND id IN (SELECT value FROM json_each(?)))

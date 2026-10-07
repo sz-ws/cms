@@ -4,6 +4,7 @@ import {
   NO_GUARD,
   assertCanUninstall,
   assertCodeDependencies,
+  assertNotLayer,
   noDeclarativeDependents,
   requiredPluginsEnabled,
   writeCodeEnabled,
@@ -105,16 +106,20 @@ export async function pendingCodeUpgrades(
     db().select({ id: extMigrations.id }).from(extMigrations),
   ]);
   const appliedIds = new Set(applied.map((r) => r.id));
+  const rowById = new Map(rows.map((row) => [row.id, row]));
   const out = new Map<string, PendingUpgrade>();
-  for (const row of rows) {
-    if (row.enabled !== 1) continue;
-    const ext = registry.find((e) => e.id === row.id);
-    if (!ext) continue;
+  for (const ext of registry) {
+    const row = rowById.get(ext.id);
+    const enabled = row?.enabled === 1;
+    // 1.74.0:網站本身的一層(Extension.layer)不看 extensions 表就在跑,所以沒有列也要看它的 migration。
+    if (!enabled && !ext.layer) continue;
     const migrations = (ext.migrations ?? [])
       .map((m) => m.id)
       .filter((id) => !appliedIds.has(`${ext.id}:${id}`));
-    if (migrations.length === 0 && row.version === ext.version) continue;
-    out.set(ext.id, { from: row.version, to: ext.version, migrations });
+    // 層沒有「啟用」這一步,表裡記的版號只是上次套用時的;只有還有 migration 沒跑才需要人按。
+    const versionBehind = !ext.layer && row !== undefined && row.version !== ext.version;
+    if (migrations.length === 0 && !versionBehind) continue;
+    out.set(ext.id, { from: row?.version ?? ext.version, to: ext.version, migrations });
   }
   return out;
 }
@@ -257,6 +262,7 @@ export async function enableExtension(
 export async function disableExtension(extId: string): Promise<void> {
   // update enabled=0 → doAction("ext:disabled")。不動資料表、不動 settings。
   const ext = findManifest(extId);
+  assertNotLayer(ext, "停用");
   // 1.50.0:需要它的插件(兩種都算)先擋一次、給名稱;writeCodeDisabled 的條件再擋一次競態。
   await assertNotRequired("code", extId);
   await writeCodeDisabled(getDB(), ext, registry, Date.now());
@@ -271,6 +277,7 @@ export async function disableExtension(extId: string): Promise<void> {
 
 export async function uninstallExtension(extId: string): Promise<void> {
   const ext = findManifest(extId);
+  assertNotLayer(ext, "移除");
   // 1.65.0:先檢查再停用(code-lifecycle.ts),擋下來時插件照原樣。
   await assertCanUninstall(getDB(), ext);
 

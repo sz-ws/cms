@@ -12,6 +12,12 @@
   - `services.ts`: per-request scoped service bundle.
   - `types.ts`: shared Extension / ApiRoute / PublicRoute / HookName contract.
   - `hooks.ts`: typed action/filter bus.
+  - `slots.ts` (1.74.0): slots — the one way an upper layer changes a lower one. `defineValueSlot` /
+    `defineSlot` declare a named place, a plugin's `fills` fill it (`fill(slot, …)`), and the request's
+    `ExtRuntime.slots` resolves it. Order follows `Extension.layer`: plain plugins, then "agency", then
+    "site"; a layer is on when compiled in, without being enabled. `core-slots.ts` holds core's own slots
+    (admin sidebar sections and items, admin status sets); UI slots are placed with `components/Slot.tsx`
+    (server) and `components/SlotRegion.tsx` (client).
   - `semver.ts`: coreApi ↔ CORE_API_VERSION range comparison.
   - `version.ts`: CORE_API_VERSION constant.
   - `admin-menu.ts`: sidebar data model; `admin-access.ts` (1.50.0): custom-role rules —
