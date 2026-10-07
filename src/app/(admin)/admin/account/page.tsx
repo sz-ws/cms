@@ -204,7 +204,8 @@ export default async function AccountPage({
         <PasskeysManager initialPasskeys={initialPasskeys} now={now} />
 
         {showIdentities && (
-          <div className="mt-5 border-t border-ink/[0.06] pt-5">
+          // id:設定頁左邊清單的「我的帳戶」連到這一塊(settings-nav.ts 的 ACCOUNT_LINK_HREF)。
+          <div id="connected-accounts" className="mt-5 scroll-mt-6 border-t border-ink/[0.06] pt-5">
             <div className="mb-4 flex flex-col gap-1">
               <h4 className="text-[14px] font-semibold tracking-[-0.01em] text-ink/85">
                 {m["account.connectedAccounts"]}

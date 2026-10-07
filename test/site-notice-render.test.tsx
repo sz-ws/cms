@@ -10,6 +10,7 @@ vi.mock("next/link", () => ({
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ prefetch: () => {}, refresh: () => {}, push: () => {} }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import { I18nProvider } from "@/lib/i18n/I18nProvider";

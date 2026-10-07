@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { isImeKeyEvent } from "@/lib/ime";
 
 export interface RegistrySource {
   url: string;
@@ -236,7 +237,13 @@ export function RegistrySourcesManager({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    // 外層是設定頁的 <form>:在這張卡的輸入框按 Enter 不該送出整頁設定(同 ExtraFieldsManager)。
+    <div
+      className="flex flex-col gap-4"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && e.target instanceof HTMLInputElement && !isImeKeyEvent(e)) e.preventDefault();
+      }}
+    >
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">

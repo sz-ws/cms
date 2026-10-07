@@ -449,8 +449,6 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settingsWorkspace.notAllowed": "不允許此操作。",
   "settingsWorkspace.saveFailedError": "儲存失敗。",
   "settingsWorkspace.networkError": "網路連線錯誤。",
-  "settingsWorkspace.surface": "設定面板",
-  "settingsWorkspace.surfaceSubtitle": "改完一起按儲存。",
   "settingsWorkspace.core": "核心",
   "settingsWorkspace.style": "風格",
   "settingsWorkspace.declarativeTab": "宣告式",
@@ -458,6 +456,23 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "settingsWorkspace.savingButton": "儲存中…",
   "settingsWorkspace.saveAllChanges": "儲存所有變更",
   "settingsWorkspace.registryAndTokens": "來源與權杖",
+
+  // SettingsNav:設定頁左邊的清單。
+  "settingsNav.label": "設定類別",
+  "settingsNav.searchLabel": "搜尋設定",
+  "settingsNav.searchPlaceholder": "搜尋設定…",
+  "settingsNav.clearSearch": "清除搜尋",
+  "settingsNav.noResults": "找不到與「{q}」相關的設定。",
+  "settingsNav.choose": "切換設定類別",
+  "settingsNav.unsaved": "有未儲存的變更",
+  "settingsNav.needsAttention": "有必填欄位還沒填",
+  "settingsNav.hasError": "有欄位要修正",
+  "settingsNav.account": "我的帳戶",
+  "settingsNav.accountDesc": "登入方式與已連結帳號",
+  // 只給搜尋比對用(畫面上不顯示)。這裡不寫任何一家登入服務的名字:
+  // 網站已啟用的登入方式的名字在執行時加進來。
+  "settingsNav.accountKeywords": "登入 連結 綁定 解除連結 第三方登入 社群帳號 帳號 Passkey 個人資料 頭像",
+  "settingsNav.styleKeywords": "外觀 主題 顏色 配色 主色 字體 圓角 陰影 圖示 後台風格",
 
   // PasskeysManager
   "passkeys.adding": "新增中…",

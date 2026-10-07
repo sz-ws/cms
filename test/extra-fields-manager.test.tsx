@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ prefetch: () => {}, refresh: () => {}, push: () => {} }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
@@ -57,7 +58,7 @@ describe("ExtraFieldsManager", () => {
 });
 
 describe("SettingsWorkspace", () => {
-  it("gives additional fields their own card and quick-nav entry on the core tab", () => {
+  it("gives additional fields their own card and an entry in the settings list", () => {
     const html = inAdmin(
       createElement(SettingsWorkspace, {
         sections: [
@@ -75,6 +76,6 @@ describe("SettingsWorkspace", () => {
     );
     expect(html).toContain('id="section-extra-fields"');
     expect(html.indexOf("extra-fields-card")).toBeLessThan(html.indexOf("core-addon-card"));
-    expect(html).toMatch(/<button[^>]*>額外欄位/);
+    expect(html).toMatch(/<a[^>]*href="\/admin\/settings\?section=extra-fields"[^>]*><span[^>]*>額外欄位/);
   });
 });

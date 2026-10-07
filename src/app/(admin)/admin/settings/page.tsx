@@ -29,6 +29,7 @@ import { AiConnectCard } from "@/components/admin/AiConnectCard";
 import { MCP_ENABLED_SETTING, mcpResourceUrl } from "@/lib/mcp/site";
 import { pageMcpOrigin } from "@/lib/mcp/page-origin";
 import { listConnections } from "@/lib/mcp/grants";
+import { listLoginProviders } from "@/lib/oidc";
 // named import 讓打包只留 version 欄位(同 AdminSidebar 曾用的手法)。
 import { version } from "../../../../../package.json";
 
@@ -48,7 +49,7 @@ export default async function SettingsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await requireAuth("admin");
-  const { tab } = await searchParams;
+  const { tab, section } = await searchParams;
 
   const locale = await getLocale();
   const m = getMessages(locale);
@@ -164,12 +165,18 @@ export default async function SettingsPage({
 
   // 1.59.0:AI 連線。網址與 App 看到的探索文件出自同一個 origin(lib/mcp/site.ts)。
   const now = requestTimestamp();
-  const [mcpOrigin, aiConnections] = await Promise.all([
+  const [mcpOrigin, aiConnections, loginProviders] = await Promise.all([
     pageMcpOrigin(),
     // migration 0025 還沒套用(先部署了 Worker、後跑 db:migrate:remote)時表不存在:
     // 清單當作空的,整張設定頁不該因此打不開。
     listConnections(now).catch((e: unknown) => {
       console.error("[settings] AI connections could not be listed", e);
+      return [];
+    }),
+    // 已啟用的登入方式,只拿按鈕上的名字:左邊清單最後連到帳戶頁的那一項,搜尋時打這些
+    // 名字也找得到(核心不寫死任何一家)。查不到就當沒有,設定頁照開。
+    listLoginProviders().catch((e: unknown) => {
+      console.error("[settings] login providers could not be listed", e);
       return [];
     }),
   ]);
@@ -189,6 +196,8 @@ export default async function SettingsPage({
         sections={sections}
         values={values}
         initialTab={typeof tab === "string" ? tab : undefined}
+        initialSection={typeof section === "string" ? section : undefined}
+        accountKeywords={loginProviders.map((provider) => provider.label)}
         styleTab={
           <AdminThemeEditor
             initial={resolveAdminAppearance(values["core.adminTheme"], values["core.adminAccent"])}

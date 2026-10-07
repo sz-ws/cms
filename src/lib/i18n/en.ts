@@ -459,8 +459,6 @@ export const en = {
   "settingsWorkspace.notAllowed": "Not allowed.",
   "settingsWorkspace.saveFailedError": "Save failed.",
   "settingsWorkspace.networkError": "Network error.",
-  "settingsWorkspace.surface": "Settings surface",
-  "settingsWorkspace.surfaceSubtitle": "Make your changes, then save once.",
   "settingsWorkspace.core": "Core",
   "settingsWorkspace.style": "Style",
   "settingsWorkspace.declarativeTab": "Declarative",
@@ -468,6 +466,23 @@ export const en = {
   "settingsWorkspace.savingButton": "Saving…",
   "settingsWorkspace.saveAllChanges": "Save all changes",
   "settingsWorkspace.registryAndTokens": "Registry & Tokens",
+
+  // SettingsNav — the list on the left of the settings page.
+  "settingsNav.label": "Settings categories",
+  "settingsNav.searchLabel": "Search settings",
+  "settingsNav.searchPlaceholder": "Search settings…",
+  "settingsNav.clearSearch": "Clear search",
+  "settingsNav.noResults": "No settings found for “{q}”.",
+  "settingsNav.choose": "Switch category",
+  "settingsNav.unsaved": "Unsaved changes",
+  "settingsNav.needsAttention": "Missing required fields",
+  "settingsNav.hasError": "Some fields need fixing",
+  "settingsNav.account": "My account",
+  "settingsNav.accountDesc": "Sign-in methods and connected accounts",
+  // Search-only words (never shown). No provider names here: the names of the
+  // sign-in methods a site has switched on are added at run time.
+  "settingsNav.accountKeywords": "sign in login log in link linked connect disconnect social third-party passkey profile avatar photo",
+  "settingsNav.styleKeywords": "appearance look theme colors colours accent font corners radius shadow icons admin style",
 
   // PasskeysManager
   "passkeys.adding": "Adding…",

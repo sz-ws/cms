@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ prefetch: () => {}, refresh: () => {}, push: () => {} }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/i18n/I18nProvider", async () => {
@@ -45,7 +46,7 @@ function sectionClasses(html: string): string[] {
 }
 
 describe("settings cards", () => {
-  it("每一組設定是一張卡片,沒有外層玻璃框", () => {
+  it("畫出來的每一區是一張卡片,沒有外層玻璃框", () => {
     const html = renderToStaticMarkup(
       createElement(SettingsWorkspace, {
         sections: [
@@ -57,8 +58,9 @@ describe("settings cards", () => {
       }),
     );
     expect(html).not.toContain(GLASS_SHELL);
+    // 一次只畫選到的那一區(這裡是第一區),加上收起來但還在頁面上的附加區塊。
     const cards = sectionClasses(html);
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(2);
     for (const cls of cards) expect(cls).toContain("--admin-shadow-card");
   });
 

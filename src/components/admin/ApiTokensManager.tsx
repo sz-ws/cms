@@ -259,7 +259,11 @@ export function ApiTokensManager({ initialTokens }: ApiTokensManagerProps) {
                     onKeyDown={(e) => {
                       // 組字中的 Enter 是在確定候選字(見 @/lib/ime)。
                       if (ime.isComposingKey(e)) return;
-                      if (e.key === "Enter") handleCreate();
+                      if (e.key === "Enter") {
+                        // 外層是設定頁的 <form>:不擋的話 Enter 會順便送出整頁設定。
+                        e.preventDefault();
+                        handleCreate();
+                      }
                     }}
                   />
                 </div>

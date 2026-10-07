@@ -48,7 +48,7 @@ export default async function AgentPage() {
             <p className="text-[13px] text-ink/50">{m["agent.unavailable.body"]}</p>
           </div>
           <Link
-            href="/admin/settings#section-core-ai"
+            href="/admin/settings?section=core-ai"
             className="inline-flex h-8 items-center rounded-[calc(8px*var(--admin-radius-scale,1))] bg-ink px-3 text-[13px] font-medium text-white transition-[background-color,transform] duration-150 ease-out hover:bg-ink/85 active:scale-[0.97]"
           >
             {m["agent.unavailable.action"]}

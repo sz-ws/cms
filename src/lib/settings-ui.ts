@@ -203,3 +203,43 @@ export function changedSettingEntries(
   }
   return entries;
 }
+
+type SettingValues = Readonly<Record<string, string | boolean>>;
+
+/**
+ * 儲存成功後的對照值(之後拿它判斷「有沒有改過」):送出當下的值,密鑰清空 ——
+ * 明文不該留在畫面上,下次儲存也不會重送。
+ */
+export function savedSettingsBaseline(
+  sections: readonly SettingsEntrySection[],
+  submitted: SettingValues,
+): Record<string, string | boolean> {
+  const secretKeys = new Set(
+    sections.flatMap((section) =>
+      section.fields
+        .filter((field) => field.secret)
+        .map((field) => `${section.keyPrefix}${field.key}`),
+    ),
+  );
+  return Object.fromEntries(
+    Object.entries(submitted).map(([key, value]) => [key, secretKeys.has(key) ? "" : value]),
+  );
+}
+
+/**
+ * 儲存成功後的畫面值。等伺服器回應的那段時間欄位還能改(人也可能已經換到別區):
+ * 送出後又改過的欄位留著 —— 它們還沒存,跟 baseline 不同所以照樣算有變更;
+ * 其餘的換成 baseline(這次存進去的密鑰因此清空)。
+ */
+export function keepEditsSinceSubmit(
+  current: SettingValues,
+  submitted: SettingValues,
+  baseline: SettingValues,
+): Record<string, string | boolean> {
+  return Object.fromEntries(
+    Object.entries(current).map(([key, value]) => [
+      key,
+      value === submitted[key] ? (baseline[key] ?? value) : value,
+    ]),
+  );
+}

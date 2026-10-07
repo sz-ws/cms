@@ -160,8 +160,11 @@ export function AdminThemeEditor({ initial, pluginPresets = [] }: { initial: Adm
         <p className="text-[12px] text-ink/40">{c.subtitle}</p>
       </div>
       {/* 窄螢幕:預設風格 → 預覽 → 細部調整,調的時候預覽就在上面。
-          寬螢幕:左邊控制、右邊預覽跟著捲動停在畫面裡。 */}
-      <div className="grid min-w-0 gap-x-10 gap-y-7 [grid-template-areas:'presets'_'preview'_'controls'] xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)] xl:[grid-template-areas:'presets_preview'_'controls_preview']">
+          寬螢幕:左邊控制、右邊預覽跟著捲動停在畫面裡。
+          從 1420px 起才並排(原本是 xl / 1280px):設定頁左邊多了一欄清單,這張卡在同一個
+          視窗寬度下窄了大約 236px,1420px 時右邊的預覽還有 440px 左右。不用 @container:
+          這個表單裡有 fixed 的儲存列,容器查詢在部分瀏覽器會讓它改成相對於表單定位。 */}
+      <div className="grid min-w-0 gap-x-10 gap-y-7 [grid-template-areas:'presets'_'preview'_'controls'] min-[1420px]:grid-cols-[minmax(300px,380px)_minmax(0,1fr)] min-[1420px]:[grid-template-areas:'presets_preview'_'controls_preview']">
         <fieldset disabled={pending} className="min-w-0 [grid-area:presets]">
           <legend className="mb-3.5 text-[13px] font-medium text-ink/85">{c.presets}</legend>
           <div className="grid grid-cols-2 gap-2.5">
@@ -200,7 +203,7 @@ export function AdminThemeEditor({ initial, pluginPresets = [] }: { initial: Adm
           </div>
         </fieldset>
 
-        <div className="min-w-0 [grid-area:preview] xl:sticky xl:top-6 xl:self-start">
+        <div className="min-w-0 [grid-area:preview] min-[1420px]:sticky min-[1420px]:top-6 min-[1420px]:self-start">
           <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h4 className="text-[13px] font-medium text-ink/85">{c.preview}</h4>
             <p className="text-[12px] text-ink/40">{c.previewNote}</p>

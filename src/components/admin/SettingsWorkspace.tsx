@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { SettingField } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { Checkbox, Input, Textarea } from "../ui/legacy";
@@ -12,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { EmailDomainChips } from "./EmailDomainChips";
 import { ColorSwatchPicker } from "./ColorSwatchPicker";
 import { SettingUnitHint } from "./SettingUnitHint";
@@ -20,7 +19,41 @@ import { SaveBar, SAVE_BUTTON_CLASS } from "./SaveBar";
 import { SettingTabs } from "./SettingTabs";
 import { useT, useLocale } from "@/lib/i18n/I18nProvider";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
-import { changedSettingEntries, settingControlId } from "@/lib/settings-ui";
+import {
+  changedSettingEntries,
+  keepEditsSinceSubmit,
+  savedSettingsBaseline,
+  settingControlId,
+} from "@/lib/settings-ui";
+import { SettingsNav } from "./SettingsNav";
+import {
+  AI_CONNECT_ID,
+  CORE_ADDON_ID,
+  DECLARATIVE_ID,
+  EXTRA_FIELDS_ID,
+  STYLE_ID,
+  accountSettingsLink,
+  buildSettingsNav,
+  findSettingsField,
+  flattenSettingsNav,
+  resolveSettingsHash,
+  resolveSettingsSelection,
+  sectionAnchorId,
+  sectionArea,
+  settingsItemKey,
+  settingsSectionStatus,
+  settingsSelectionParams,
+  type SettingsNavField,
+  type SettingsNavItem,
+} from "./settings-nav";
+import {
+  fieldReveal,
+  firstInvalidControl,
+  focusSettingControl,
+  sectionTitleId,
+  useLocationHash,
+  type RevealRequest,
+} from "./settings-reveal";
 
 export interface SettingsSection {
   id: string;
@@ -35,32 +68,35 @@ interface SettingsWorkspaceProps {
   sections: SettingsSection[];
   values: Record<string, unknown>;
   coreAddon?: React.ReactNode;
-  /** 額外欄位管理(核心分頁,自己一張卡、自己一個導覽錨點)。有自己的儲存鈕,不進這裡的表單。 */
+  /** 額外欄位管理(核心底下自己一區)。有自己的儲存鈕,不進這裡的表單。 */
   extraFieldsSection?: React.ReactNode;
   /**
-   * 1.59.0:AI 連線(核心分頁,排在 AI 那張卡後面,自己一個導覽錨點)。開關與中斷連線
+   * 1.59.0:AI 連線(核心底下自己一區,排在 AI 設定後面)。開關與中斷連線
    * 各自即時生效,不進這裡的表單。
    */
   aiConnectSection?: React.ReactNode;
-  /** 「風格」分頁的內容(AdminThemeEditor)。有自己的儲存鈕,不進這裡的表單。 */
+  /** 「風格」那一區的內容(AdminThemeEditor)。有自己的儲存鈕,不進這裡的表單。 */
   styleTab?: React.ReactNode;
-  /** 網址的 ?tab=,不認得的值回到核心。 */
+  /** 網址的 ?tab=(核心 / 風格 / 宣告式 / 擴充功能),不認得的值回到核心。 */
   initialTab?: string;
+  /** 網址的 ?section=:那個分類裡的哪一區;沒給就是第一區。 */
+  initialSection?: string;
+  /** 網站已啟用的登入方式的名字:搜尋時打這些字也找得到帳戶頁的連結。 */
+  accountKeywords?: readonly string[];
 }
 
 type SettingsState = Record<string, string | boolean>;
-type SettingsTab = "core" | "style" | "declarative" | "extensions";
-const SETTINGS_TABS: readonly SettingsTab[] = ["core", "style", "declarative", "extensions"];
+
+const STYLE_KEY = settingsItemKey("style", STYLE_ID);
+const DECLARATIVE_KEY = settingsItemKey("declarative", DECLARATIVE_ID);
+const AI_CONNECT_KEY = settingsItemKey("core", AI_CONNECT_ID);
+const EXTRA_FIELDS_KEY = settingsItemKey("core", EXTRA_FIELDS_ID);
+const CORE_ADDON_KEY = settingsItemKey("core", CORE_ADDON_ID);
 
 // 每一組設定是一張單層卡片(同角色頁與成員表格)。外面再包一圈玻璃框,
 // 「細邊線」風格下兩層陰影都變成 1px 線,會畫成兩道邊。
 const SECTION_CARD =
   "rounded-[calc(14px*var(--admin-radius-scale,1))] bg-surface px-6 pt-6 pb-5 shadow-[var(--admin-shadow-card,0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_-1px_rgba(0,0,0,0.06),0_2px_4px_0_rgba(0,0,0,0.04))]";
-
-function resolveTab(value: string | undefined, hasStyle: boolean): SettingsTab {
-  const tab = SETTINGS_TABS.find((id) => id === value) ?? "core";
-  return tab === "style" && !hasStyle ? "core" : tab;
-}
 
 function initialValue(
   field: SettingField,
@@ -112,9 +148,10 @@ function isTabs(field: SettingField): boolean {
 
 function fieldWrapperClass(field: SettingField): string {
   // 分頁(1.44.0)佔整列:它決定下面出現哪些欄位,放半欄會跟旁邊的欄位混在一起。
+  // 其餘欄位在卡片夠寬(@lg)時佔半欄。
   return field.type === "textarea" || isTabs(field)
     ? "col-span-full"
-    : "col-span-full sm:col-span-1";
+    : "col-span-full @lg:col-span-1";
 }
 
 /** 1.56.0:一般輸入框的 type —— 數字、日期(text 的 format: "date"),其餘是文字。 */
@@ -129,65 +166,6 @@ function labelClass(): string {
 
 function descriptionClass(): string {
   return "text-[12px] leading-relaxed text-ink/40";
-}
-
-/** AI 設定那張分組卡的 id(AI 連線的卡跟在它後面)。 */
-const AI_SECTION_ID = "core-ai";
-
-/** core 分組卡的 id 慣例:`core-<group>`(見 settings/page.tsx)。 */
-function isCoreSection(section: SettingsSection): boolean {
-  return section.id.startsWith("core-");
-}
-
-/** anchor id 慣例:section.id 前面加 `section-` 前綴,避免跟其他頁面元素撞名。 */
-function sectionAnchorId(id: string): string {
-  return `section-${id}`;
-}
-
-// 快速導覽條的單一分頁:「正常」的底線切換樣式(對比上方 FluidTabs 的動畫藥丸),
-// active 用站台唯一的 accent(dither blue)畫底線,不是又一組 pill。
-function NavAnchor({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "relative shrink-0 whitespace-nowrap px-3 py-2.5 text-[13px] font-medium transition-colors",
-        active ? "text-ink/90" : "text-ink/40 hover:text-ink/65",
-      )}
-    >
-      {label}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-x-3 -bottom-px h-[2px] rounded-full transition-opacity duration-150",
-          active ? "opacity-100" : "opacity-0",
-        )}
-        style={{ backgroundColor: "var(--admin-accent)" }}
-      />
-    </button>
-  );
-}
-
-function visibleSections(
-  sections: SettingsSection[],
-  activeTab: SettingsTab,
-): SettingsSection[] {
-  if (activeTab === "core") {
-    return sections.filter(isCoreSection);
-  }
-  if (activeTab === "extensions") {
-    return sections.filter((section) => !isCoreSection(section));
-  }
-  return [];
 }
 
 // 伺服器回的欄位錯誤碼(lib/setting-validation.ts)→ 欄位下方那一行字。
@@ -238,6 +216,8 @@ export function SettingsWorkspace({
   aiConnectSection,
   styleTab,
   initialTab,
+  initialSection,
+  accountKeywords,
 }: SettingsWorkspaceProps) {
   const t = useT();
   // §1 #9–#11:extension settings 的 label/description/option.label 可為 LocalizedString;
@@ -249,46 +229,13 @@ export function SettingsWorkspace({
   // fullKey → 伺服器回的錯誤碼;改動該欄位就清掉那一格的錯誤。
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Registry manager + API tokens:core tab 最後一張獨立卡(不塞進任何分組卡)。
-  function renderCoreAddonSection() {
-    if (!coreAddonNode) return null;
+  // 有自己儲存鈕的區塊(AI 連線、額外欄位、來源與權杖):沒選到時收起來但不卸載,
+  // 裡面打到一半的東西才不會因為換區就不見(同下面的風格)。
+  function renderPanel(key: string, id: string, node: React.ReactNode) {
+    if (!node) return null;
     return (
-      <section
-        key="core-addon"
-        id={sectionAnchorId("core-addon")}
-        className={cn("scroll-mt-20", SECTION_CARD)}
-      >
-        {coreAddonNode}
-      </section>
-    );
-  }
-
-  // 額外欄位:放在分組卡之後、來源與權杖之前 —— 它是「內容長什麼樣」的設定,
-  // 跟上面的網站設定同一類,不該埋進來源與權杖那張卡。
-  function renderExtraFieldsSection() {
-    if (!extraFieldsNode) return null;
-    return (
-      <section
-        key="extra-fields"
-        id={sectionAnchorId("extra-fields")}
-        className={cn("scroll-mt-20", SECTION_CARD)}
-      >
-        {extraFieldsNode}
-      </section>
-    );
-  }
-
-  // AI 連線:緊跟在 AI 設定卡後面 —— 兩者是同一件事的兩面(這個站自己的 AI、外面的 AI
-  // App 連進來)。沒有 AI 卡時(理論上不會)排在分組卡之後。
-  function renderAiConnectSection() {
-    if (!aiConnectNode) return null;
-    return (
-      <section
-        key="ai-connect"
-        id={sectionAnchorId("ai-connect")}
-        className={cn("scroll-mt-20", SECTION_CARD)}
-      >
-        {aiConnectNode}
+      <section id={sectionAnchorId(id)} hidden={selected?.key !== key} className={SECTION_CARD}>
+        {node}
       </section>
     );
   }
@@ -298,7 +245,9 @@ export function SettingsWorkspace({
       // 每個欄位佔三列(標題 / 輸入框 / 說明),用 subgrid 跟同一排的欄位共用列高:
       // 一邊有說明、一邊沒有,或標題折成兩行時,兩邊的輸入框仍然對齊。
       // 說明放在輸入框下面,沒有說明的欄位標題才不會跟輸入框隔一段空白。
-      <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
+      // 夠寬才兩欄並排,看的是卡片的寬度(@lg,卡片是 @container)不是視窗:左邊多了
+      // 一欄清單,同一個視窗寬度下卡片比以前窄。
+      <div className="grid grid-cols-1 gap-x-5 gap-y-5 @lg:grid-cols-2">
         {section.fields.map((field) => {
           const fullKey = `${section.keyPrefix}${field.key}`;
           // 1.44.0:showWhen 不成立的欄位不畫(值照舊保存,沒改就不會送出)。
@@ -484,15 +433,22 @@ export function SettingsWorkspace({
     );
   }
 
-  function renderSection(section: SettingsSection) {
+  function renderSection(section: SettingsSection, key: string) {
     return (
+      // key:換區時整張卡重來,上一區的輸入框不會被 React 拿去接著用。
+      // data-settings-fields:送出前只檢查這張卡裡的輸入框(見 firstInvalidControl)。
       <section
-        key={section.id}
+        key={key}
         id={sectionAnchorId(section.id)}
-        className={cn("scroll-mt-20", SECTION_CARD)}
+        data-settings-fields=""
+        className={cn("@container", SECTION_CARD)}
       >
         <div className="mb-5 flex flex-col gap-1">
-          <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
+          <h3
+            id={sectionTitleId(section.id)}
+            tabIndex={-1}
+            className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90 outline-none"
+          >
             {section.title}
           </h3>
           {section.description && (
@@ -504,26 +460,9 @@ export function SettingsWorkspace({
     );
   }
 
-  function renderSections(sectionsToRender: SettingsSection[]) {
-    return (
-      <>
-        {sectionsToRender.flatMap((section) =>
-          activeTab === "core" && section.id === AI_SECTION_ID
-            ? [renderSection(section), renderAiConnectSection()]
-            : [renderSection(section)],
-        )}
-        {activeTab === "core" &&
-          !sectionsToRender.some((section) => section.id === AI_SECTION_ID) &&
-          renderAiConnectSection()}
-        {activeTab === "core" && renderExtraFieldsSection()}
-        {activeTab === "core" && renderCoreAddonSection()}
-      </>
-    );
-  }
-
   function renderDeclarativePlaceholder() {
     return (
-      <section className={SECTION_CARD}>
+      <section id={sectionAnchorId(DECLARATIVE_ID)} className={SECTION_CARD}>
         <div className="flex flex-col gap-1">
           <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink/90">
             {t("settingsWorkspace.declarative")}
@@ -537,15 +476,110 @@ export function SettingsWorkspace({
   }
 
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(initialTab, Boolean(styleTab)));
+  const hasStyle = Boolean(styleTab);
+  const hasAiConnect = Boolean(aiConnectNode);
+  const hasExtraFields = Boolean(extraFieldsNode);
+  const hasCoreAddon = Boolean(coreAddonNode);
+
+  // 左邊清單的內容:四個分類就是原本的四個分頁,每一區一列。
+  const navGroups = useMemo(
+    () =>
+      buildSettingsNav({
+        sections,
+        locale,
+        areaLabels: {
+          core: t("settingsWorkspace.core"),
+          style: t("settingsWorkspace.style"),
+          declarative: t("settingsWorkspace.declarativeTab"),
+          extensions: t("settingsWorkspace.extensions"),
+        },
+        panels: {
+          aiConnect: hasAiConnect
+            ? { title: t("aiConnect.title"), description: t("aiConnect.desc") }
+            : undefined,
+          extraFields: hasExtraFields
+            ? { title: t("extraFields.title"), description: t("extraFields.desc") }
+            : undefined,
+          // 這一區裡是擴充功能來源、API 權杖與匯出內容三塊,搜尋時三個名字都找得到。
+          coreAddon: hasCoreAddon
+            ? {
+                title: t("settingsWorkspace.registryAndTokens"),
+                keywords: [t("registry.title"), t("apiTokens.title"), t("export.title")].join(" "),
+              }
+            : undefined,
+          style: hasStyle
+            ? { title: t("settingsWorkspace.style"), keywords: t("settingsNav.styleKeywords") }
+            : undefined,
+          declarative: { title: t("settingsWorkspace.declarative") },
+        },
+      }),
+    [sections, locale, t, hasAiConnect, hasExtraFields, hasCoreAddon, hasStyle],
+  );
+  const navLinks = [
+    accountSettingsLink(
+      {
+        title: t("settingsNav.account"),
+        description: t("settingsNav.accountDesc"),
+        keywords: t("settingsNav.accountKeywords"),
+      },
+      accountKeywords,
+    ),
+  ];
+
+  // 選到哪一區。網址(?tab= / ?section=)只決定一開始在哪;之後換區是這裡的 state,
+  // 網址跟著改(selectItem),不重新載入頁面。
+  const [selectedKey, setSelectedKey] = useState<string | null>(
+    () => resolveSettingsSelection(navGroups, { tab: initialTab, section: initialSection })?.key ?? null,
+  );
+  // 人已經在設定頁時又點了一個設定頁的連結(側欄的「設定」、別的元件的 ?tab= 連結):網址換了、
+  // 這個元件沒有重新掛載,所以跟著網址上的 ?tab= / ?section= 換區 —— render 中跟著輸入重設 state,
+  // 不用 key 重掛(那樣沒存的修改會不見)。看的是網址本身(useSearchParams),不是 initialTab:
+  // 這一頁自己換區只改網址(selectItem 的 replaceState),伺服器給的 initialTab 不會跟著變。
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab") ?? undefined;
+  const urlSection = searchParams.get("section") ?? undefined;
+  const urlSelection = `${urlTab ?? ""}/${urlSection ?? ""}`;
+  const [appliedUrlSelection, setAppliedUrlSelection] = useState(urlSelection);
+  if (urlSelection !== appliedUrlSelection) {
+    setAppliedUrlSelection(urlSelection);
+    setSelectedKey(resolveSettingsSelection(navGroups, { tab: urlTab, section: urlSection })?.key ?? null);
+  }
+  const [reveal, setReveal] = useState<RevealRequest | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // 別頁既有的連結用 #section-<id> 指到某一區。# 變了就換到那一區 —— render 中跟著
+  // 輸入重設 state(同下面的 showBar),不用 effect。
+  const hash = useLocationHash();
+  const [appliedHash, setAppliedHash] = useState("");
+  if (hash !== appliedHash) {
+    setAppliedHash(hash);
+    const target = resolveSettingsHash(navGroups, hash, initialTab);
+    if (target) {
+      setSelectedKey(target.item.key);
+      setReveal(target.field ? fieldReveal(target.item, target.field) : { kind: "section" });
+    }
+  }
+
+  // 清單變了(擴充功能停用、章節增減)而選到的那一區不在了:退回第一區。
+  const navItems = flattenSettingsNav(navGroups);
+  const selected = navItems.find((item) => item.key === selectedKey) ?? navItems[0] ?? null;
+  const selectedArea = selected ? navGroups.find((group) => group.area === selected.area) : undefined;
+  const styleShown = selected?.key === STYLE_KEY;
+  const shownSection =
+    selected?.kind === "fields"
+      ? sections.find((section) => settingsItemKey(sectionArea(section), section.id) === selected.key)
+      : undefined;
+
   const [state, setState] = useState<SettingsState>(() =>
     buildInitialState(sections, values),
   );
-  const initialStateRef = useRef<SettingsState>(state);
+  // 上次儲存後的值。畫面上一次只有一區,但 state 與這份對照值都是整頁的:
+  // 沒顯示的區改過的值留在 state 裡,照樣算「有變更」、照樣一起送出。
+  const [baseline, setBaseline] = useState<SettingsState>(state);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const dirty = !sameState(state, baseline);
   const [showBar, setShowBar] = useState(false);
   // Show immediately (render-time "adjust state" — see UsersTable's
   // prevInitial pattern); only the delayed hide needs the effect, and that
@@ -559,72 +593,44 @@ export function SettingsWorkspace({
     return () => window.clearTimeout(t);
   }, [barActive]);
 
-  const shownSections = useMemo(
-    () => visibleSections(sections, activeTab),
-    [sections, activeTab],
-  );
+  // 清單上的標記:哪幾區有還沒存的變更、必填還沒填、儲存時被退回。
+  const status = settingsSectionStatus({ sections, state, baseline, saved: values, fieldErrors });
 
-  // 快速導覽:core/extensions 分頁內容常常一長串卡片往下疊,加一條 sticky 的
-  // anchor-nav 讓人不用捲軸慢慢找。declarative 只有單一 placeholder 卡,不需要。
-  const navTargets = useMemo(() => {
-    const list = shownSections.map((s) => ({ id: s.id, label: s.title }));
-    if (activeTab === "core" && aiConnectNode) {
-      const ai = list.findIndex((target) => target.id === AI_SECTION_ID);
-      list.splice(ai === -1 ? list.length : ai + 1, 0, {
-        id: "ai-connect",
-        label: t("aiConnect.title"),
-      });
-    }
-    if (activeTab === "core" && extraFieldsNode) {
-      list.push({ id: "extra-fields", label: t("extraFields.title") });
-    }
-    if (activeTab === "core" && coreAddonNode) {
-      list.push({
-        id: "core-addon",
-        label: t("settingsWorkspace.registryAndTokens"),
-      });
-    }
-    return list;
-  }, [shownSections, activeTab, aiConnectNode, extraFieldsNode, coreAddonNode, t]);
-
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-  // activeSectionId 若不屬於這輪 navTargets(剛切分頁、章節增減)就退回第一個
-  // 目標 —— 純 render-time 推導,不需要額外 state/effect 去同步它。
-  const displayActiveId = navTargets.some((n) => n.id === activeSectionId)
-    ? activeSectionId
-    : (navTargets[0]?.id ?? null);
-
-  // 用 id 查 DOM 而非 ref callback 收集 Map —— 在 callback ref 裡 mutate 一顆
-  // useRef Map,會讓 React Compiler 判斷「memoization 無法保留」而放棄優化整個
-  // 元件(連帶波及上面完全無關的 shownSections/navTargets useMemo)。section 本
-  // 來就有穩定的 id 屬性,直接 getElementById 查沒有這個副作用。
-  function scrollToSection(id: string) {
-    document
-      .getElementById(sectionAnchorId(id))
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setActiveSectionId(id);
-  }
-
+  // 換區之後:指定了欄位就把焦點放上去;否則如果原本捲到下面,把新的一區帶回畫面裡。
   useEffect(() => {
-    if (navTargets.length <= 1) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting);
-        if (visible.length === 0) return;
-        const top = visible.reduce((a, b) =>
-          a.boundingClientRect.top < b.boundingClientRect.top ? a : b,
-        );
-        const id = top.target.id.replace(/^section-/, "");
-        setActiveSectionId(id);
-      },
-      { rootMargin: "-88px 0px -70% 0px", threshold: 0 },
-    );
-    for (const { id } of navTargets) {
-      const el = document.getElementById(sectionAnchorId(id));
-      if (el) observer.observe(el);
+    if (!reveal) return;
+    if (reveal.kind === "field") {
+      focusSettingControl(reveal.controlId, reveal.fallbackId);
+      return;
     }
-    return () => observer.disconnect();
-  }, [navTargets]);
+    const content = contentRef.current;
+    if (content && content.getBoundingClientRect().top < 0) {
+      content.scrollIntoView({ block: "start" });
+    }
+  }, [reveal]);
+
+  // 換到某一區(可以指定要停在哪個欄位),網址跟著改:重新整理或把連結給別人會停在
+  // 同一區。核心是預設不帶 tab,每個分類的第一區不帶 section(舊連結的樣子不變)。
+  function selectItem(item: SettingsNavItem, field?: SettingsNavField) {
+    // 這一區有瀏覽器認為填錯的欄位(數字框打到一半、日期只填一半)時先留在這裡指出來:
+    // 那種欄位在 state 裡是空的,換區之後它不在畫面上,按儲存會把原本的值清掉。
+    const form = contentRef.current?.closest("form");
+    const invalid = item.key !== selected?.key && form ? firstInvalidControl(form) : null;
+    if (invalid) {
+      invalid.reportValidity();
+      return;
+    }
+    setSelectedKey(item.key);
+    setReveal(field ? fieldReveal(item, field) : { kind: "section" });
+    const url = new URL(window.location.href);
+    const { tab, section } = settingsSelectionParams(navGroups, item);
+    if (tab) url.searchParams.set("tab", tab);
+    else url.searchParams.delete("tab");
+    if (section) url.searchParams.set("section", section);
+    else url.searchParams.delete("section");
+    url.hash = "";
+    window.history.replaceState(null, "", url);
+  }
 
   function update(fullKey: string, value: string | boolean) {
     if (fieldErrors[fullKey]) {
@@ -632,29 +638,27 @@ export function SettingsWorkspace({
         Object.fromEntries(Object.entries(prev).filter(([key]) => key !== fullKey)),
       );
     }
-    setState((prev) => {
-      const next = { ...prev, [fullKey]: value };
-      setDirty(!sameState(next, initialStateRef.current));
-      return next;
-    });
+    setState((prev) => ({ ...prev, [fullKey]: value }));
     if (saved) setSaved(false);
   }
 
-  function findField(fullKey: string) {
-    const section = sections.find((s) =>
-      s.fields.some((field) => `${s.keyPrefix}${field.key}` === fullKey),
-    );
-    const field = section?.fields.find((f) => `${section.keyPrefix}${f.key}` === fullKey);
-    return section && field ? { section, field } : null;
-  }
-
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // 表單是 noValidate:瀏覽器自己擋的話,只要有一個看不到的欄位不合格(收起來的區塊裡的),
+    // 整頁就默默送不出去。所以改成自己檢查畫面上這一區,不合格的照瀏覽器原本的方式指出來。
+    // 沒顯示的區沒有輸入框,它們的值由伺服器檢查,被退回時下面會換到那一區。
+    const invalid = firstInvalidControl(e.currentTarget);
+    if (invalid) {
+      invalid.reportValidity();
+      return;
+    }
     setError(null);
     setSaved(false);
     setPending(true);
 
-    const entries = changedSettingEntries(sections, state, initialStateRef.current);
+    // 送出當下的值。等回應時欄位還能改(也可能已經換到別區),存好之後要分得出哪些是後來改的。
+    const submitted = state;
+    const entries = changedSettingEntries(sections, submitted, baseline);
 
     try {
       const res = await fetch("/api/settings", {
@@ -664,20 +668,11 @@ export function SettingsWorkspace({
       });
       if (res.ok) {
         // 密鑰欄位存完就清空:明文不該留在畫面上,下次儲存也不會重送。
-        const secretKeys = new Set(
-          sections.flatMap((section) =>
-            section.fields
-              .filter((field) => field.secret)
-              .map((field) => `${section.keyPrefix}${field.key}`),
-          ),
-        );
-        const settled: SettingsState = Object.fromEntries(
-          Object.entries(state).map(([key, value]) => [key, secretKeys.has(key) ? "" : value]),
-        );
-        setState(settled);
-        initialStateRef.current = settled;
+        // 等回應時又改的欄位留著,照樣算還沒存(以前會被這裡蓋回送出時的值)。
+        const settled = savedSettingsBaseline(sections, submitted);
+        setState((current) => keepEditsSinceSubmit(current, submitted, settled));
+        setBaseline(settled);
         setFieldErrors({});
-        setDirty(false);
         setSaved(true);
         router.refresh();
         window.setTimeout(() => setSaved(false), 1200);
@@ -691,13 +686,19 @@ export function SettingsWorkspace({
             Object.fromEntries(body.fields.map((f) => [f.key, f.code])),
           );
           const names = body.fields.map((f) => {
-            const hit = findField(f.key);
-            const label = hit
-              ? `${hit.section.title} › ${resolveLocalizedString(hit.field.label, locale)}`
-              : f.key;
+            const hit = findSettingsField(navGroups, f.key);
+            const label = hit ? `${hit.item.title} › ${hit.field.label}` : f.key;
             return `${label}(${fieldErrorText(f.code, t)})`;
           });
           setError(t("settingsWorkspace.fixFields", { fields: names.join("、") }));
+          // 被退回的欄位可能在沒顯示的區:換到那一區,把焦點放到欄位上(欄位下面有原因)。
+          // 目前這一區就有的話留在原地。
+          const rejected = body.fields.flatMap((f) => {
+            const hit = findSettingsField(navGroups, f.key);
+            return hit ? [hit] : [];
+          });
+          const target = rejected.find((hit) => hit.item.key === selected?.key) ?? rejected[0];
+          if (target) selectItem(target.item, target.field);
         } else {
           setError(
             body?.error === "invalid_values"
@@ -719,65 +720,39 @@ export function SettingsWorkspace({
 
   const bar = statusLine(pending, saved, error, t);
 
-  // 分頁寫進網址(?tab=),重新整理或分享連結會停在同一頁;核心是預設,不帶參數。
-  function selectTab(id: string) {
-    const next = resolveTab(id, Boolean(styleTab));
-    setActiveTab(next);
-    const url = new URL(window.location.href);
-    if (next === "core") url.searchParams.delete("tab");
-    else url.searchParams.set("tab", next);
-    url.hash = "";
-    window.history.replaceState(null, "", url);
-  }
-
   return (
-    <div className="relative flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink/90">
-            {t("settingsWorkspace.surface")}
-          </h2>
-          <p className="text-[12px] text-ink/40">
-            {t("settingsWorkspace.surfaceSubtitle")}
-          </p>
-        </div>
-        <FluidTabs
-          compact
-          tabs={[
-            { id: "core", label: t("settingsWorkspace.core") },
-            ...(styleTab ? [{ id: "style", label: t("settingsWorkspace.style") }] : []),
-            { id: "declarative", label: t("settingsWorkspace.declarativeTab") },
-            { id: "extensions", label: t("settingsWorkspace.extensions") },
-          ]}
-          defaultActive={activeTab}
-          onChange={selectTab}
-        />
-      </div>
+    <div className="grid min-w-0 grid-cols-1 gap-x-7 gap-y-4 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      <SettingsNav
+        groups={navGroups}
+        links={navLinks}
+        selected={selected}
+        status={status}
+        saveBarVisible={showBar && !styleShown}
+        onSelect={selectItem}
+      />
 
-      {/* 切走時不卸載:沒存的風格草稿要留著。 */}
-      {styleTab && <div hidden={activeTab !== "style"}>{styleTab}</div>}
+      <div ref={contentRef} className="min-w-0 scroll-mt-6">
+        {selectedArea && <h2 className="sr-only">{selectedArea.label}</h2>}
 
-      {activeTab !== "style" && (
+        {/* 切走時不卸載:沒存的風格草稿要留著。 */}
+        {styleTab && (
+          <div id={sectionAnchorId(STYLE_ID)} hidden={!styleShown}>
+            {styleTab}
+          </div>
+        )}
+
+        {/* 一個表單、一顆儲存鈕管全部的區:畫面上只有選到的那一區,其餘的值在 state 裡。 */}
         <form
+          noValidate
+          hidden={styleShown}
           onSubmit={onSubmit}
           className={`flex flex-col gap-5 ${showBar ? "pb-28" : "pb-6"}`}
         >
-          {navTargets.length > 1 && (
-            <div className="sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto rounded-t-[calc(14px*var(--admin-radius-scale,1))] bg-background/90 px-1 pt-1 shadow-[0_1px_0_rgba(0,0,0,0.06)] backdrop-blur-md">
-              {navTargets.map((target) => (
-                <NavAnchor
-                  key={target.id}
-                  label={target.label}
-                  active={displayActiveId === target.id}
-                  onClick={() => scrollToSection(target.id)}
-                />
-              ))}
-            </div>
-          )}
-
-          {activeTab === "declarative"
-            ? renderDeclarativePlaceholder()
-            : renderSections(shownSections)}
+          {shownSection && selected && renderSection(shownSection, selected.key)}
+          {renderPanel(AI_CONNECT_KEY, AI_CONNECT_ID, aiConnectNode)}
+          {renderPanel(EXTRA_FIELDS_KEY, EXTRA_FIELDS_ID, extraFieldsNode)}
+          {renderPanel(CORE_ADDON_KEY, CORE_ADDON_ID, coreAddonNode)}
+          {selected?.key === DECLARATIVE_KEY && renderDeclarativePlaceholder()}
 
           <SaveBar visible={showBar} title={bar.title} note={bar.note} alert={Boolean(error)}>
             <button type="submit" disabled={pending || !dirty} className={SAVE_BUTTON_CLASS}>
@@ -786,7 +761,7 @@ export function SettingsWorkspace({
             </button>
           </SaveBar>
         </form>
-      )}
+      </div>
     </div>
   );
 }

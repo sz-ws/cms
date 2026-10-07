@@ -1591,4 +1591,12 @@
 // when section titles are the main level of the navigation (a section with `collapse: "active"`), the items
 // under a title are indented a little so they read as belonging to it (`AdminNavGroup.tsx`); the icon-only
 // rail is unchanged.
-export const CORE_API_VERSION = "1.72.0";
+// 1.73.0: The settings page has a vertical list on the left instead of tabs, and shows one section at a
+// time (`components/admin/SettingsNav.tsx`, `settings-nav.ts`). The address keeps the section
+// (`?tab=` as before, plus `?section=<id>`; `#section-<id>` links still land on their section). A search box
+// filters sections and fields by title, label and description (`settings-search.ts`). Sections with unsaved
+// changes or an empty required field are marked in the list; all edits are still saved together by the one
+// save bar, and leaving a section with a half-typed number or date points at that field first. The list ends
+// with a link to the person's own account page (sign-in methods and linked accounts). Pressing Enter in the
+// token and registry-source panels no longer submits the whole page.
+export const CORE_API_VERSION = "1.73.0";

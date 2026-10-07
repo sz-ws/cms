@@ -95,8 +95,8 @@ import {
 // 取消:/execute 只吃 toolName + args,不綁任何 session 或 hash(spec §8 已拍板),
 // 所以一張隔天才被按下的確認卡與剛長出來的那一張走的是同一條路。
 
-/** AI 設定所在的 admin 設定頁錨點(SettingsWorkspace 的 sectionAnchorId 慣例)。 */
-const AI_SETTINGS_HREF = "/admin/settings#section-core-ai";
+/** AI 設定在設定頁的那一區(?section= 是那一區的 id,見 components/admin/settings-nav.ts)。 */
+const AI_SETTINGS_HREF = "/admin/settings?section=core-ai";
 
 /** 面板目前的狀態摘要,回報給持有「開新對話」按鈕的那一層。 */
 export interface AgentPanelStatus {
