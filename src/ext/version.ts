@@ -1585,4 +1585,10 @@
 // older part is dropped with a note instead. Tools, cards and saved conversations are unchanged.
 // 1.71.1: The site name and logo at the top of the admin sidebar open the site's home page in a new tab,
 // so an unsaved form in the admin stays where it is (`AdminSidebar.tsx`, new string `sidebar.viewSite`).
-export const CORE_API_VERSION = "1.71.1";
+// 1.72.0: Two changes to the admin sidebar. Sections and folders a person opens or closes are no longer kept
+// in localStorage (`components/admin/nav-open-store.ts` is removed): a click lasts until the page changes,
+// then the sidebar goes back to showing the section that holds the current page (`AdminSidebar.tsx`). And
+// when section titles are the main level of the navigation (a section with `collapse: "active"`), the items
+// under a title are indented a little so they read as belonging to it (`AdminNavGroup.tsx`); the icon-only
+// rail is unchanged.
+export const CORE_API_VERSION = "1.72.0";

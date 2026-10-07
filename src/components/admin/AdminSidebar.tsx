@@ -34,7 +34,6 @@ import { AdminNavLink } from "./AdminNavLink";
 import { NavIcon } from "./adminNavIcons";
 import { pickActiveHref } from "./nav-active";
 import { roleLabel } from "./role-label";
-import { setNavOpen, useNavOpen } from "./nav-open-store";
 import type { AdminNavGroupData, AdminNavItem, AdminNavKind } from "./nav-groups";
 
 // Admin sidebar. Structure/behavior (a11y, mobile drawer, keyboard toggle) come
@@ -108,6 +107,13 @@ function childItemClasses(active: boolean): string {
   return cn(navItemClasses(active), "h-7 ps-9");
 }
 
+/** 這一頁上使用者自己點開、收起的分區與資料夾(id → 是否展開);沒點過的照預設。 */
+interface NavToggles {
+  groups: Readonly<Record<string, boolean>>;
+  folders: Readonly<Record<string, boolean>>;
+}
+const NO_TOGGLES: NavToggles = { groups: {}, folders: {} };
+
 
 export function AdminSidebar({
   user,
@@ -129,9 +135,13 @@ export function AdminSidebar({
   // Folders open when they hold the current page; a click overrides that.
   // 1.40.0:分區同一套規則。"open" 的分區預設展開;"active" 的只有目前頁面所在
   // 那一區展開。
-  // 1.43.0:點過的開合記在 localStorage(nav-open-store.ts),重新整理後還在。
-  // 資料夾以 href(第一個子項,選單內穩定)為 key,分區以 id 為 key。
-  const remembered = useNavOpen();
+  // 1.72.0:點過的開合不記在瀏覽器裡(1.43.0 的 localStorage 拿掉),只留到換頁為止 —— 換到別頁或
+  // 重新整理,側欄就回到「目前頁面所在的那一區展開」。記下是在哪一頁點的,網址一換這筆自動失效
+  // (跟下面的 pending 同一種寫法,不用 effect)。資料夾以 href(第一個子項)為 key,分區以 id 為 key。
+  const [toggled, setToggled] = useState<(NavToggles & { at: string }) | null>(null);
+  const remembered = toggled?.at === pathname ? toggled : NO_TOGGLES;
+  const toggle = (kind: keyof NavToggles, id: string, open: boolean) =>
+    setToggled({ at: pathname, groups: remembered.groups, folders: remembered.folders, [kind]: { ...remembered[kind], [id]: open } });
   // 有任何一區平常收合,分區標題就是主要導覽層 —— 全部用同一種標題樣式,不然常駐
   // 展開的那一區會比其他區小一號。
   const accordion = groups.some((group) => group.collapse === "active");
@@ -234,7 +244,7 @@ export function AdminSidebar({
           type="button"
           aria-expanded={open}
           aria-controls={panelId}
-          onClick={() => setNavOpen("folders", item.href, !open)}
+          onClick={() => toggle("folders", item.href, !open)}
           className={cn(
             navItemClasses(chip),
             "flex w-full items-center gap-x-2.5 text-start outline-hidden focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
@@ -321,7 +331,7 @@ export function AdminSidebar({
                 label={group.label}
                 // Icon rail has no group headers to click, so every group shows.
                 open={docked || open}
-                onToggle={() => setNavOpen("groups", group.id, !open)}
+                onToggle={() => toggle("groups", group.id, !open)}
                 prominent={accordion}
                 holdsActive={holdsActive}
               >

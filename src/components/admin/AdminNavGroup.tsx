@@ -73,10 +73,16 @@ export function AdminNavGroup({
           )}
         />
       </button>
-      {/* Items stay mounted for a11y focus order; hidden when collapsed. */}
+      {/* Items stay mounted for a11y focus order; hidden when collapsed.
+          1.72.0:分區標題是主要導覽層(prominent)時,項目往內縮一點,看得出它們屬於上面那一區;
+          收成只剩圖示的側欄沒有標題,不縮。 */}
       <div
         id={panelId}
-        className={cn("flex flex-col gap-y-0.5 pt-0.5", !open && "hidden")}
+        className={cn(
+          "flex flex-col gap-y-0.5 pt-0.5",
+          prominent && "ps-2 in-data-[collapsible=dock]:ps-0",
+          !open && "hidden",
+        )}
       >
         {children}
       </div>
