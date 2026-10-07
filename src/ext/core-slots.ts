@@ -5,6 +5,7 @@ import type { ResolvedStatusSets } from "./record-status";
 import { defineSlot, defineValueSlot, type ViewSlot } from "./slots";
 
 // 本體自己宣告的插槽(機制見 slots.ts)。插件宣告的插槽放在插件自己的資料夾裡。
+// 另一個本體的插槽在 account-entries.ts:AccountEntries(「我的帳戶」裡各插件的項目),連同它的讀法一起放在那裡。
 
 /**
  * 後台側欄的分區(預設五區:workspace、content、commerce、shop、system)。填的人可以改名、加區、

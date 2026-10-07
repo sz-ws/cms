@@ -1630,5 +1630,10 @@
 // A fill, or the content it wraps, may call `redirect()` or `notFound()`: the boundary around a fill lets
 // Next's own signals through and only catches real render errors (`components/SlotFillBoundary.tsx`).
 // `CATALOG_LIST_PATH` (`commerce-kit/catalog.ts`) is the address of the catalog's public list page.
+// Account entries (`src/ext/account-entries.ts`): a plugin that has a page for the signed-in person (orders,
+// a dealer area, a profile) appends one entry to the `AccountEntries` slot with a key, an address, a name and a
+// `note(person, locale)` that says where that person stands; whoever draws an account overview reads them with
+// `accountEntriesFor(slots, person, locale)` and decides order and icons. Core does not draw them.
+// `isSitePath` (`src/ext/site-path.ts`) checks an address a plugin or site supplies before it becomes a link.
 // A plugin that uses `fills` or `layer` declares coreApi "^1.74.0".
 export const CORE_API_VERSION = "1.74.0";

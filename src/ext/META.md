@@ -15,7 +15,7 @@
   - `slots.ts` (1.74.0): slots — the one way an upper layer changes a lower one. `defineValueSlot` /
     `defineSlot` declare a named place, a plugin's `fills` fill it (`fill(slot, …)`), and the request's
     `ExtRuntime.slots` resolves it. Order follows `Extension.layer`: plain plugins, then "agency", then
-    "site"; a layer is on when compiled in, without being enabled. `core-slots.ts` holds core's own slots
+    "site"; a layer is on when compiled in, without being enabled. `account-entries.ts` is the slot for the entries of a signed-in person's account area (plus how to read them), `site-path.ts` checks a supplied address; `core-slots.ts` holds core's own slots
     (admin sidebar sections and items, admin status sets, and one slot per admin content list and edit
     page); UI slots are placed with `components/Slot.tsx` (server) and `components/SlotRegion.tsx`
     (client). `services.slots` is the same registry for jobs and API handlers; `slots.explain(slot)` says
