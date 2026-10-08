@@ -74,7 +74,7 @@ const noteSchema = z.string().trim().min(1).max(NOTE_MAX);
  * note 是**看訂單的人**唯一會讀到的軌跡,所以「這個動作是 AI 提議、由人核可的」
  * 要寫在這裡。handler 另外會補上 admin 的 email,兩者合起來就是完整的責任鏈。
  */
-const AGENT_STAMP = "（AI 助理提案，管理員確認）";
+const AGENT_STAMP = "（AI 小幫手提案，管理員確認）";
 function stampNote(note: string | undefined): string {
   return note ? `${note} ${AGENT_STAMP}` : AGENT_STAMP;
 }

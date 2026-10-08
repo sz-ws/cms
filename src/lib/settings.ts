@@ -472,7 +472,7 @@ export const CORE_SETTINGS: SettingField[] = [
     label: { en: "Notes for AI", "zh-Hant": "給 AI 的說明" },
     description: {
       en: "Your AI assistant and connected AI apps follow these, for example tone, naming, or which categories to use.",
-      "zh-Hant": "後台 AI 助理和連線的 AI App 都會照著做，例如語氣、命名方式、該用哪些分類。",
+      "zh-Hant": "後台的 AI 小幫手和連線的 AI App 都會照著做，例如語氣、命名方式、該用哪些分類。",
     },
     type: "textarea",
     maxLength: AI_NOTES_MAX_LENGTH,

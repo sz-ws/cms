@@ -490,7 +490,7 @@ describe("commerce-kit 訂單 tools(裝了 shop,AI 就會操作訂單)", () => {
 
     // 訂單自己的 note 軌跡留下「AI 提案、人核可」與 admin 身分。
     const note = (await getOrder({ db: db() }, ORDERS_TABLE, "SO5"))?.note ?? "";
-    expect(note).toContain("AI 助理提案，管理員確認");
+    expect(note).toContain("AI 小幫手提案，管理員確認");
     expect(note).toContain("admin@test.com");
     expect(note).toContain("對到 5/12 入帳 760");
   });
@@ -548,7 +548,7 @@ describe("commerce-kit 訂單 tools(裝了 shop,AI 就會操作訂單)", () => {
     const after = await getOrder({ db: db() }, ORDERS_TABLE, "SO10");
     expect(after?.status).toBe("shipped");
     expect(after?.note).toContain("黑貓 123");
-    expect(after?.note).toContain("AI 助理提案，管理員確認");
+    expect(after?.note).toContain("AI 小幫手提案，管理員確認");
 
     await seedOrder("SO11");
     const illegal = await invokeAgentTool(byName("shoptest.orders.transition"), ctx(), {

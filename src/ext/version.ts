@@ -1636,4 +1636,7 @@
 // `accountEntriesFor(slots, person, locale)` and decides order and icons. Core does not draw them.
 // `isSitePath` (`src/ext/site-path.ts`) checks an address a plugin or site supplies before it becomes a link.
 // A plugin that uses `fills` or `layer` declares coreApi "^1.74.0".
-export const CORE_API_VERSION = "1.74.0";
+// 1.74.1: Wording (zh-Hant). The admin assistant is called 「AI 小幫手」 instead of 「助理」 in the sidebar, on its
+// page and activity log, in the script check prompts and in the note it leaves on an order it changed.
+// English stays "Assistant". Notes written before this keep the old wording.
+export const CORE_API_VERSION = "1.74.1";
