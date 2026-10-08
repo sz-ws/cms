@@ -39,11 +39,17 @@ export {
   storefrontOf,
 } from "./order-manager";
 export type {
+  CustomerOrderAnswer,
+  CustomerOrderInput,
   OrderManager,
   OrderOwner,
   OrderStorefront,
   TransferReportInput,
 } from "./order-manager";
+// 這個人是不是這張訂單的客人(公開路由讓客人自己對訂單做事之前先問;訂單管理插件的訂單問它的 customerOrder())。
+// startOrderEmailProof:用「訂單編號 + Email」認人的額度(只算猜錯的);插件自己的查單用同一份。
+export { ORDER_EMAIL_PROOF_LIMITS, resolveCustomerOrder, startOrderEmailProof } from "./customer-order";
+export type { CustomerOrderProof, OrderEmailProofAttempt } from "./customer-order";
 export type { ManagedCommerceProvider } from "./managed";
 export { ORDER_SEARCH_FIELDS } from "./orders";
 export { createCommerceCheckoutHandler } from "./checkout";
@@ -162,8 +168,22 @@ export type {
   ReturnableOrder,
   ReturnStock,
   CreateReturnInput,
+  CustomerReturnInput,
   TransitionReturnInput,
 } from "./returns-engine";
 export { createReturnsApiRoutes, RETURNS_ROLE } from "./returns-api";
+// 客人自己申請退貨:公開路由(returns/customer)、設定值怎麼讀、後台怎麼認出是客人申請的。
+export { createCustomerReturnRoutes, CUSTOMER_RETURN_LIMITS } from "./returns-customer";
+export type { CustomerReturnsOptions } from "./returns-customer";
+export {
+  CUSTOMER_ACTOR,
+  CUSTOMER_RETURN_MAX_DAYS,
+  askedByCustomer,
+  customerActorId,
+  customerReturnDays,
+  customerReturnDeadline,
+  isCustomerActor,
+} from "./returns";
+export type { CustomerReturnBlock, CustomerReturnSummary, CustomerReturnView } from "./returns";
 // 1.62.0:儀表板的共用數字(營業額)。
 export { REVENUE } from "./metrics";

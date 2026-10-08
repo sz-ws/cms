@@ -16,9 +16,9 @@ vi.mock("next/navigation", () => ({
 import { I18nProvider } from "../src/lib/i18n/I18nProvider";
 import { getMessages } from "../src/lib/i18n";
 import { ReturnsWorkspace, type ReturnsWorkspaceProps } from "../src/ext/commerce-kit/ReturnsWorkspace";
-import { ActionForm, Summary } from "../src/ext/commerce-kit/ReturnDetailSheet";
+import { ActionForm, Summary, toTimeline } from "../src/ext/commerce-kit/ReturnDetailSheet";
 import type { ReturnStatus, ShopReturn } from "../src/ext/commerce-kit/returns";
-import type { ReturnDetail } from "../src/ext/commerce-kit/returns-ui";
+import type { ReturnDetail, Translate } from "../src/ext/commerce-kit/returns-ui";
 
 const zh = (node: ReactNode) =>
   renderToStaticMarkup(createElement(I18nProvider, { locale: "zh-Hant", messages: getMessages("zh-Hant") }, node));
@@ -178,5 +178,38 @@ describe("退貨明細", () => {
       "送出後這筆退貨就結束，不能再改。",
     );
     expect(zh(createElement(ActionForm, { detail: detail("completed"), busy: false, onSubmit: () => {} }))).toBe("");
+  });
+});
+
+describe("客人自己申請的退貨", () => {
+  const ASKED: ShopReturn = { ...RETURN, returnNo: "RTCUST01", createdBy: "customer:u-9" };
+  const t: Translate = (key) => getMessages("zh-Hant")[key];
+
+  it("列表:那一列標「客人申請」,店家代建的不標", () => {
+    const html = zh(createElement(ReturnsWorkspace, props({ rows: [ASKED, RETURN], counts: { requested: 2 } })));
+    expect(html.match(/客人申請/g)).toHaveLength(1);
+    expect(html).toMatch(/RTCUST01<\/span><span[^>]*>客人申請<\/span>/);
+  });
+
+  it("明細:多一行來源;店家代建的沒有這一行", () => {
+    const asked = zh(createElement(Summary, { detail: detail("requested", { return: ASKED }), ordersPage: "/admin/ext/shop" }));
+    expect(asked).toMatch(/<dt[^>]*>來源<\/dt><dd[^>]*>客人自己申請<\/dd>/);
+    const staff = zh(createElement(Summary, { detail: detail("requested"), ordersPage: "/admin/ext/shop" }));
+    expect(staff).not.toContain("來源");
+    expect(staff).not.toContain("客人自己申請");
+  });
+
+  it("處理紀錄:第一筆寫「客人申請退貨」,人是訂單上的客人;店家建的照舊是「建立退貨」", () => {
+    const created = (actorId: string, actorName: string) => ({ id: "RTCUST01:created", action: "created" as const, actorId, actorName, note: "外盒破損", at: 1 });
+    const approved = { id: "RTCUST01:approved", action: "approved" as const, actorId: "u-admin", actorName: "店長", note: null, at: 2 };
+    expect(toTimeline(t, [created("customer", "王小明"), approved], "TWD").map((item) => [item.title, item.actor])).toEqual([["客人申請退貨", "王小明"], ["同意退貨", "店長"]]);
+    expect(toTimeline(t, [created("u-admin", "店長")], "TWD")[0].title).toBe("建立退貨");
+  });
+
+  it("英文介面也有這幾句", () => {
+    const en = getMessages("en");
+    for (const key of ["returns.byCustomer", "returns.field.source", "returns.source.customer", "returns.event.createdByCustomer"] as const) {
+      expect(en[key], key).toMatch(/^[A-Z]/);
+    }
   });
 });

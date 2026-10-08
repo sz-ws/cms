@@ -4,6 +4,8 @@ import { env } from "cloudflare:test";
 // 退貨 API(commerce-kit 1.50.0)走真的 ext API dispatcher:誰能呼叫(未登入 401、
 // guest 403、editor 403、admin 可以)、跨源擋下、輸入驗證,以及 admin 從建立到收到退貨、
 // 經 providers registry 找到的庫存 provider 放回庫存。
+// 客人自己申請的那一條(returns/customer)是唯一公開的:沒登入也到得了,跨源照樣擋;規則在
+// commerce-returns-customer.test.ts。
 
 vi.mock("@/lib/cf", () => ({
   getEnv: () => env,
@@ -11,10 +13,12 @@ vi.mock("@/lib/cf", () => ({
   getStorage: () => (env as { STORAGE?: unknown }).STORAGE,
 }));
 
+const site = vi.hoisted(() => ({ settings: {} as Record<string, unknown> }));
 vi.mock("@/lib/settings", () => ({
-  getSetting: async (_key: string, fallback?: unknown) => fallback,
+  getSetting: async (key: string, fallback?: unknown) => (key in site.settings ? site.settings[key] : fallback),
   setSettings: async () => {},
 }));
+vi.mock("@/lib/rate-limit", () => ({ hitRateLimit: async () => false, refundRateLimit: async () => {} }));
 
 type Role = "admin" | "editor" | "guest";
 const auth = vi.hoisted(() => ({ user: null as null | { id: string; email: string; name: string; role: Role; avatarKey: null } }));
@@ -32,11 +36,12 @@ vi.mock("@/lib/auth", async (importActual) => {
   };
 });
 
-const setup = vi.hoisted(() => ({ ordersTable: "ext_rtroute_orders", stockPrefix: "ext_rtroute_stock", twoStocks: false }));
+const setup = vi.hoisted(() => ({ ordersTable: "ext_rtroute_orders", stockPrefix: "ext_rtroute_stock", twoStocks: false, daysKey: "ext.rtshop.customerReturnDays" }));
 vi.mock("@/ext/loader", async () => {
   const { HookBus } = await import("../src/ext/hooks");
   const { defineExtension } = await import("../src/ext/types");
   const { createReturnsApiRoutes } = await import("../src/ext/commerce-kit/returns-api");
+  const { createCustomerReturnRoutes } = await import("../src/ext/commerce-kit/returns-customer");
   const { createLedgerProvider } = await import("../src/ext/ledger-kit");
   const db = (env as { DB: D1Database }).DB;
   const item = (sku: string) => ({ id: sku, owner: { type: "sku", id: sku }, unit: "item", precision: 0 });
@@ -45,7 +50,10 @@ vi.mock("@/ext/loader", async () => {
     name: "rtshop",
     version: "0.0.1",
     coreApi: "^1.50.0",
-    apiRoutes: createReturnsApiRoutes({ ordersTable: setup.ordersTable, prefix: "ext_shop_return" }),
+    apiRoutes: [
+      ...createReturnsApiRoutes({ ordersTable: setup.ordersTable, prefix: "ext_shop_return" }),
+      ...createCustomerReturnRoutes({ ordersTable: setup.ordersTable, prefix: "ext_shop_return" }, { daysKey: setup.daysKey }),
+    ],
   });
   // capability "inventory",形狀是 RestockProvider;id 刻意不是 "inventory"(1.63.0 起用 find() 認形狀,不看 id)。
   const stock = defineExtension({
@@ -97,6 +105,7 @@ vi.mock("@/ext/loader", async () => {
 import { GET, POST } from "../src/app/api/ext/[extId]/[[...path]]/route";
 import { commitLedgerOperations, createLedgerProvider, ledgerAdjustmentSchema, ledgerSchema } from "../src/ext/ledger-kit";
 import { createReturnsApiRoutes } from "../src/ext/commerce-kit/returns-api";
+import { createCustomerReturnRoutes } from "../src/ext/commerce-kit/returns-customer";
 import { RETURN_STATUS_SET, orderStockReservationId } from "../src/ext/commerce-kit/returns";
 import { defineExtension } from "../src/ext/types";
 import { shopMigrations } from "../extensions/shop/schema";
@@ -149,6 +158,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   auth.user = null;
+  site.settings = {};
 });
 
 describe("退貨 API 權限", () => {
@@ -291,5 +301,63 @@ describe("退貨 API(admin)", () => {
     expect(over.status).toBe(409);
     expect(await over.json()).toEqual({ ok: false, error: "amount_exceeds" });
     expect((await call("POST", `returns/${no}/status`, { to: "refunded", refund: { amount: 150, method: "cash" } })).status).toBe(200);
+  });
+});
+
+describe("客人自己申請退貨(公開路由)", () => {
+  const customerRoutes = () => createCustomerReturnRoutes(SHOP_RETURNS, { daysKey: "ext.shop.customerReturnDays" });
+
+  it("商店的宣告過得了 manifest 驗證;只有這一條是公開的,後台那四條照舊不是", () => {
+    const routes = [...createReturnsApiRoutes(SHOP_RETURNS).map((route) => ({ ...route, accessAs: "shop/returns" })), ...customerRoutes()];
+    expect(() =>
+      defineExtension({
+        id: "shop",
+        name: "shop",
+        version: "0.6.0",
+        coreApi: "^1.50.0",
+        adminPages: [{ slug: "returns", title: { en: "Returns", "zh-Hant": "退貨管理" }, component: () => null, search: SHOP_RETURNS_SEARCH }],
+        apiRoutes: routes,
+        statusSets: [RETURN_STATUS_SET],
+      }),
+    ).not.toThrow();
+    expect(routes.filter((r) => r.public === true).map((r) => `${r.method} ${r.path}`)).toEqual(["POST returns/customer"]);
+    expect(customerRoutes()[0].accessAs).toBeUndefined();
+  });
+
+  it("沒登入也到得了(不是 401):不是自己的訂單回 404;跨源擋下", async () => {
+    site.settings[setup.daysKey] = 7;
+    const res = await call("POST", "returns/customer", { action: "status", orderNo: "SOR1", email: "someone@example.com" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ ok: false, error: "not_found" });
+    expect((await call("POST", "returns/customer", { action: "status", orderNo: "SOR1", email: "hua@example.com" }, "https://evil.example")).status).toBe(403);
+  });
+
+  it("訪客用訂單編號 + 下單 Email 申請,後台的退貨明細看得到是客人申請的,照常往下處理", async () => {
+    site.settings[setup.daysKey] = 7;
+    const now = Date.now();
+    await d1()
+      .prepare(
+        `INSERT INTO ${setup.ordersTable} (order_no, status, lines, subtotal, total, payment_provider, customer_name, customer_email, customer_phone, created_at, updated_at)
+         VALUES ('SOR4', 'shipped', ?, 300, 300, 'banktransfer', '陳小華', 'hua@example.com', '0922000111', ?, ?)`,
+      )
+      .bind(JSON.stringify([{ productId: "p4", name: "商品四", unitPrice: 300, qty: 1 }]), now, now)
+      .run();
+    const asked = await call("POST", "returns/customer", { action: "request", orderNo: "SOR4", email: "hua@example.com", lines: [{ productId: "p4", qty: 1 }], reason: "changed_mind" });
+    expect(asked.status).toBe(200);
+    const { returnNo } = (await asked.json()) as { returnNo: string };
+
+    // 客人看不到後台的退貨 API。
+    expect((await call("GET", `returns/${returnNo}`)).status).toBe(401);
+    auth.user = user("admin");
+    const detail = (await (await call("GET", `returns/${returnNo}`)).json()) as { return: { status: string; createdBy: string; requestedAmount: number }; events: { action: string; actorId: string; actorName: string }[] };
+    expect(detail.return).toMatchObject({ status: "requested", createdBy: "customer", requestedAmount: 300 });
+    expect(detail.events).toMatchObject([{ action: "created", actorId: "customer", actorName: "陳小華" }]);
+    expect((await call("POST", `returns/${returnNo}/status`, { to: "approved" })).status).toBe(200);
+  });
+
+  it("設定沒開(預設 0):申請不收", async () => {
+    const res = await call("POST", "returns/customer", { action: "request", orderNo: "SOR4", email: "hua@example.com", lines: [{ productId: "p4", qty: 1 }], reason: "other" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "closed" });
   });
 });

@@ -26,6 +26,8 @@ import {
 // 權限:只給 admin。退貨有客人個資與退款金額,而它唯一的畫面(extension 後台頁)本來
 // 就只開給 admin;dispatcher 的預設門檻是 editor,這裡再收緊。要放寬改 RETURNS_ROLE
 // 一處。
+//
+// 客人自己申請的那一條(returns/customer,公開)不在這裡,在 returns-customer.ts。
 
 export const RETURNS_ROLE = "admin";
 

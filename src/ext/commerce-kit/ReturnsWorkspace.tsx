@@ -9,7 +9,7 @@ import { useAdminPageTitle } from "@/components/admin/admin-titles";
 import { useDateFormatter } from "@/components/DateTimeProvider";
 import { useSiteCurrency } from "@/components/CurrencyProvider";
 import { useT } from "@/lib/i18n/I18nProvider";
-import { RETURN_STATUSES, RETURN_STATUS_SET, type ReturnStatus, type ShopReturn } from "./returns";
+import { RETURN_STATUSES, RETURN_STATUS_SET, askedByCustomer, type ReturnStatus, type ShopReturn } from "./returns";
 import { cls, linesSummary, money } from "./returns-ui";
 import { ReturnDetailSheet } from "./ReturnDetailSheet";
 import { ReturnCreateSheet } from "./ReturnCreateSheet";
@@ -99,7 +99,17 @@ export function ReturnsWorkspace(props: ReturnsWorkspaceProps) {
   const searching = search !== "";
 
   const columns: CoreColumn<ShopReturn>[] = [
-    { key: "no", label: t("returns.col.return"), render: (r) => <span className={cls.mono}>{r.returnNo}</span> },
+    {
+      key: "no",
+      label: t("returns.col.return"),
+      // 客人自己從訂單頁申請的標出來,店家分得出哪些是自己代建的。
+      render: (r) => (
+        <span className="whitespace-nowrap">
+          <span className={cls.mono}>{r.returnNo}</span>
+          {askedByCustomer(r) ? <span className="ml-2 text-[12px] text-black/45 admin:text-ink/45">{t("returns.byCustomer")}</span> : null}
+        </span>
+      ),
+    },
     {
       key: "order",
       label: t("returns.col.order"),

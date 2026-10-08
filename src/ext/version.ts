@@ -1644,7 +1644,7 @@
 // page, a landing page) was unknown to it. The value slot `SitemapPaths` (`core-slots.ts`) takes same-site paths,
 // or functions that return some (for a page that exists only when a setting is on; a function that throws only
 // loses what it would have reported). `seo-cache.ts` adds them after the list pages, once each.
-// 1.76.0: Sign-in and promo codes.
+// 1.76.0: Sign-in, promo codes and returns.
 // Sign-in with LINE on the web works. LINE signs a web sign-in ID token with HS256 and the channel secret (its
 // discovery document lists only ES256, which is what its app SDK and LIFF use); `verifyJwt` (`src/lib/oidc-jwt.ts`)
 // refused HS256, so every LINE web sign-in ended in `oauth_failed`. It now accepts HS256 only when the caller
@@ -1666,6 +1666,14 @@
 // `commerce:promos` (`promo-catalog.ts`, `PromoCatalog`) answers what a code looks like now, so the asker does
 // not read the promo table. `promo-link.ts` builds and reads a `?promo=CODE` link; the plugin that owns the
 // promo codes remembers the code in the browser for 30 days and applies it at checkout.
+// Customers can ask for a return: the public route `returns/customer` (`commerce-kit/returns-customer.ts`), open
+// only when the extension's setting gives a number of days after shipment (0 = off, and then the route answers
+// everyone the same without looking anything up). `resolveCustomerOrder` (`customer-order.ts`) decides whose
+// order it is: a managed order asks the manager's new optional `OrderManager.customerOrder()`, core's own orders
+// go by order number and the order's email, and email proofs are rate limited per order number before anything
+// is looked up. The request is an ordinary `requested` return whose `created_by` starts with `customer` (no
+// migration); the amount is never taken from the customer. The returns admin marks such a return: a label in
+// the list, a source row in the detail, and its first history entry.
 // An OAuth sign-in can only be finished in the browser that started it: `/api/auth/oauth/<id>/start` sets a
 // short-lived cookie holding a hash of the `state` (`src/lib/oauth-flow-cookie.ts`; one per sign-in, HttpOnly,
 // Secure, SameSite=Lax, limited to the OAuth API path), the callback checks it before doing anything else, and
@@ -1685,6 +1693,11 @@
 // `listPromosByCodes`, and so `byCodes` of the `commerce:promos` catalog, reads only a promo table that does not
 // exist yet as empty. Any other database error is thrown, so the asker no longer takes a failed read for a code
 // that does not exist.
+// Proving an order by order number and email counts wrong guesses only (`startOrderEmailProof` and
+// `ORDER_EMAIL_PROOF_LIMITS` in `customer-order.ts`): 10 per order number and client address in 15 minutes, and
+// 60 per order number over all addresses. A customer's own lookups cost nothing, and someone guessing with a
+// known order number locks out their own address, not the customer. A plugin's own guest lookup shares the
+// budget by calling `startOrderEmailProof`; `refundRateLimit` (`src/lib/rate-limit.ts`) gives one hit back.
 // The placeholder address of a new account without a proven email carries 16 hex characters of the hash of the
 // provider's subject, not 8 (`src/lib/login-accounts.ts`). With 8, two people of one provider could get the same
 // address and the second could not sign in. Existing accounts keep theirs; `isPlaceholderEmail` reads both.

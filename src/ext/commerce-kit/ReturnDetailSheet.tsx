@@ -10,7 +10,7 @@ import { useDateFormatter } from "@/components/DateTimeProvider";
 import { useSiteCurrency } from "@/components/CurrencyProvider";
 import { useT } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n";
-import { REFUND_METHODS, RETURN_STATUS_SET, refundCap, type ReturnEvent, type ShopReturn } from "./returns";
+import { REFUND_METHODS, RETURN_STATUS_SET, askedByCustomer, isCustomerActor, refundCap, type ReturnEvent, type ShopReturn } from "./returns";
 import {
   RETURN_ACTIONS,
   callReturns,
@@ -37,11 +37,15 @@ function eventDetail(t: Translate, e: ReturnEvent, currency: string): string {
   return parts.join(" · ");
 }
 
-function toTimeline(t: Translate, events: ReturnEvent[], currency: string): TimelineItem[] {
+/** 處理紀錄。客人自己申請的那一筆寫「客人申請退貨」,不是「建立退貨」。(export 給渲染測試用) */
+export function toTimeline(t: Translate, events: ReturnEvent[], currency: string): TimelineItem[] {
   return events.map((e) => ({
     id: e.id,
     at: e.at,
-    title: t(`returns.event.${e.action}` as MessageKey),
+    title:
+      e.action === "created" && isCustomerActor(e.actorId)
+        ? t("returns.event.createdByCustomer")
+        : t(`returns.event.${e.action}` as MessageKey),
     detail: eventDetail(t, e, currency) || undefined,
     actor: e.actorName,
   }));
@@ -74,6 +78,12 @@ export function Summary({ detail, ordersPage }: { detail: ReturnDetail; ordersPa
         </ul>
       </div>
       <dl className={cls.dl}>
+        {askedByCustomer(r) ? (
+          <>
+            <dt className={cls.dt}>{t("returns.field.source")}</dt>
+            <dd className={cls.dd}>{t("returns.source.customer")}</dd>
+          </>
+        ) : null}
         <dt className={cls.dt}>{t("returns.field.customer")}</dt>
         <dd className={cls.dd}>
           {r.customerName}

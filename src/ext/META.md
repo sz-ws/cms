@@ -73,6 +73,20 @@
     signed-in owner or an admin). `legacy-ownership.ts` (old `<table>_managed` check),
     `legacy-storefront.ts` (`guestCheckout()` fallback) and `managed.ts` (`ManagedCommerceProvider`
     alias) are removed in 2.0.
+  - `commerce-kit/customer-order.ts`: `resolveCustomerOrder` answers "is this caller the customer of this
+    order" for public routes where customers act on their own orders. A managed order asks the manager's
+    optional `customerOrder()` (member by session, guest by order number + email; it also says when the
+    order shipped); core's own orders go by order number + the order's email. Not theirs and not found
+    are the same answer. Email proofs are rate limited here, before anything is looked up
+    (`startOrderEmailProof`, `ORDER_EMAIL_PROOF_LIMITS`): only wrong guesses count (the attempt is given
+    back once the caller is proven), 10 per order number and client address and 60 per order number over
+    all addresses in 15 minutes, so guessing with someone's order number cannot lock that customer out.
+    A manager must not limit inside `customerOrder()` and shares the budget by calling
+    `startOrderEmailProof` in its own lookup. First user: `commerce-kit/returns-customer.ts`, the public
+    `returns/customer` route where a customer asks for a return within N days of shipment (an extension
+    setting; 0 = off, and then the route answers everyone the same without looking anything up). The
+    request is an ordinary `requested` return whose `created_by` starts with `customer`; the amount is
+    never taken from the customer.
   - `commerce-kit/checkout-fields.ts` (1.63.0): plugin checkout fields on `commerce:checkout-fields`
     (`<providerId>.<key>`), `validateCheckoutFields` → order `meta` or 422 `field_invalid`;
     `checkout-prefill.ts` is the browser store (`checkout.prefill.v1`) other pages fill.

@@ -44,6 +44,22 @@ export interface TransferReportInput {
   email?: string;
 }
 
+/** core 的公開路由(客人自己動手的事,例如申請退貨)問接手的插件:這個人是不是這張訂單的客人。 */
+export interface CustomerOrderInput {
+  /** 完整的訂單編號。插件不要把它整理成另一個編號再回答:core 接下來動的是這個編號的訂單。 */
+  orderNo: string;
+  /** 訪客:下單的 Email(查單的憑證)。已登入的會員不帶。 */
+  email?: string;
+}
+
+/**
+ * 是這張訂單的客人:memberId 是登入的會員(訪客是 null),shippedAt 是出貨時間(epoch ms;還沒出貨或
+ * 不知道是 null)。不是:只有一個答案 —— 找不到、不是他的、Email 不對,都一樣,core 對客人回的也都是同一個 404。
+ */
+export type CustomerOrderAnswer =
+  | { ok: true; memberId: string | null; shippedAt: number | null }
+  | { ok: false };
+
 export interface OrderManager {
   /** 整筆結帳(商店的 POST checkout 交給它)。 */
   checkout(req: Request, ctx: ApiCtx): Promise<Response>;
@@ -53,6 +69,15 @@ export interface OrderManager {
   storefront?(): Promise<OrderStorefront>;
   /** 匯款回報:core 的 POST transfer-report 把它的訂單轉過來;插件自己看登入的人或訪客的 Email。 */
   reportTransfer?(input: TransferReportInput, req: Request, ctx: ApiCtx): Promise<Response>;
+  /**
+   * 這個人是不是這張訂單的客人:會員看登入的人,訪客看下單的 Email,和插件自己的訂單頁、查單同一套憑證
+   * (core 用 customer-order.ts 的 resolveCustomerOrder 問)。沒有這個函式 = 客人不能自己對它的訂單做事。
+   *
+   * 這裡面不要限速:core 問之前已經記過一次(customer-order.ts 的 startOrderEmailProof,對每個編號都一樣;
+   * 認到人由 core 還回去,只算猜錯的)。只有自己的訂單才記得到的額度,用掉沒有就看得出這個編號是不是它的訂單。
+   * 要和自己的查單共用額度,查單也用 startOrderEmailProof。
+   */
+  customerOrder?(input: CustomerOrderInput, req: Request, ctx: ApiCtx): Promise<CustomerOrderAnswer>;
 }
 
 /** 一筆訂單歸誰。 */

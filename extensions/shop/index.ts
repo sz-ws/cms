@@ -16,6 +16,7 @@ import {
   createTransferReportHandler,
   createTransferVerifyHandler,
   createReturnsApiRoutes,
+  createCustomerReturnRoutes,
   markOrderPaid,
   CATALOG_SETTINGS,
   ORDER_SEARCH_FIELDS,
@@ -29,7 +30,7 @@ import { ShopPromosPage } from "./admin-promos";
 import { ShopOrdersPage } from "./admin-orders";
 import { ShopVerifyPage } from "./admin-verify";
 import { ShopReturnsPage } from "./admin-returns";
-import { SHOP_RETURNS, SHOP_RETURNS_SEARCH } from "./returns-config";
+import { CUSTOMER_RETURN_DAYS_KEY, SHOP_RETURNS, SHOP_RETURNS_SEARCH, SHOP_RETURN_SETTINGS } from "./returns-config";
 import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 
 // 商店 extension —— commerce-kit 的薄接線層(引擎全部來自 @/ext/commerce-kit,
@@ -98,6 +99,9 @@ export const shop = defineExtension({
   // 分得出尚未開始、已過期、已用完。優惠碼表單上有一個插槽(core 的 AdminPromoFormFields),別的插件可以多放一格。
   // 商店以 commerce:promos 提供優惠碼目錄(別的插件問一個代碼現在的折扣、用量、開關與期限,不必讀 ext_shop_promos)。
   // 任何公開頁的網址帶 ?promo=代碼,瀏覽器記 30 天(PromoLinkCapture),結帳頁先帶入並試算,客人不用自己打。
+  // 同一版:客人可以在自己的訂單上申請退貨(returns/customer、ReturnRequest.tsx)。新設定 customerReturnDays
+  // (出貨後幾天內可以申請;預設 0 = 不開放,升級的店在打開之前什麼都不會多)。金額客人不填,照舊由店家登記退款時決定;
+  // 客人申請的在退貨管理標「客人申請」。沒有 migration。
   // 同一版:結帳頁帶入連結上的優惠碼時,試算回來之前客人已經自己用過優惠碼那一欄(打字、套用、移除)就不改他的;
   // 試算沒做成(太頻繁)時欄位空著、不顯示錯誤。
   version: "0.13.0",
@@ -123,7 +127,8 @@ export const shop = defineExtension({
   //
   // ^1.74.0(0.12.0):插槽(defineSlot、<Slot>)與商品目錄的 CATALOG_LIST_PATH。
   //
-  // ^1.76.0(0.13.0):優惠碼的期間、表單插槽 AdminPromoFormFields、優惠碼目錄(commerce:promos)與 ?promo= 連結。
+  // ^1.76.0(0.13.0):優惠碼的期間、表單插槽 AdminPromoFormFields、優惠碼目錄(commerce:promos)與 ?promo= 連結;
+  // 客人自己申請退貨(createCustomerReturnRoutes)。
   coreApi: "^1.76.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
@@ -150,6 +155,8 @@ export const shop = defineExtension({
     // 結帳頁開關(電話地址必填、結帳頁說明);定義與說明見
     // checkout-options.ts,README「設定」一節有整表。
     ...SHOP_CHECKOUT_SETTINGS,
+    // 客人自己申請退貨:出貨後幾天內可以申請(0 = 不開放,預設);定義在 returns-config.ts。
+    ...SHOP_RETURN_SETTINGS,
   ],
   migrations: shopMigrations,
   uninstall: [
@@ -274,6 +281,8 @@ export const shop = defineExtension({
     // 0.6.0:退貨(returns/…,只給 admin;路由表在 commerce-kit/returns-api.ts)。
     // 角色與權限跟著退貨管理頁。
     ...createReturnsApiRoutes(SHOP_RETURNS).map((route) => ({ ...route, accessAs: "shop/returns" })),
+    // 客人在自己的訂單上申請退貨(returns/customer,公開;誰能申請、期限、件數與限速在 commerce-kit/returns-customer.ts)。
+    ...createCustomerReturnRoutes(SHOP_RETURNS, { daysKey: CUSTOMER_RETURN_DAYS_KEY }),
   ],
   // 0.6.0:退貨狀態組 shop:returns(站台可用 filter:statusSets 改名)。
   statusSets: [RETURN_STATUS_SET],

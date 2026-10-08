@@ -117,3 +117,20 @@ export async function hitRateLimit(
   const count = await recordFailure(key, now, opts.windowMs);
   return count > opts.limit;
 }
+
+/**
+ * Give back one hit that `hitRateLimit` recorded for `id` under `namespace`
+ * (never below zero). For a limit that should count failed attempts only:
+ * record the hit before the attempt, so concurrent attempts cannot race past
+ * the limit, then give it back when the attempt turns out not to be a failure.
+ * Do not call it for an attempt that `hitRateLimit` rejected.
+ */
+export async function refundRateLimit(
+  id: string,
+  opts: Pick<RateLimitOptions, "namespace">,
+): Promise<void> {
+  await getDB()
+    .prepare(`UPDATE login_attempts SET count = count - 1 WHERE key = ?1 AND count > 0`)
+    .bind(`${opts.namespace}:${id}`)
+    .run();
+}

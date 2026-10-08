@@ -172,6 +172,76 @@ export interface ShopReturn {
   updatedAt: number;
 }
 
+// ---- 客人自己申請 ----
+//
+// 店家在設定裡開放「出貨後 N 天內」(N = 0 是不開放,也是預設)之後,客人可以在自己的訂單上申請:選哪幾項、
+// 各幾件、原因。金額不由客人填 —— 建立時帶「建議退款金額」(同後台「新增退貨」的預設),實際退多少照舊
+// 由店家在登記退款時決定。申請是一筆普通的「申請中」退貨,之後的每一步都和店家代建的一樣。
+//
+// 誰申請的記在 created_by:"customer"(用訂單編號 + 下單 Email 的訪客)或 "customer:<會員 id>"。這不是任何
+// 後台人員的 id,後台靠它分出這筆是客人申請的 —— 不必加欄位,也就不必等店家按「套用更新」。
+
+/** 客人申請的退貨,created_by 的開頭。 */
+export const CUSTOMER_ACTOR = "customer";
+
+const MEMBER_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
+
+/** 客人申請時寫進 created_by 的值;memberId 是登入的會員(訪客是 null)。不像 id 的不寫進去。 */
+export function customerActorId(memberId: string | null): string {
+  return memberId && MEMBER_ID_RE.test(memberId) ? `${CUSTOMER_ACTOR}:${memberId}` : CUSTOMER_ACTOR;
+}
+
+export function isCustomerActor(actorId: string): boolean {
+  return actorId === CUSTOMER_ACTOR || actorId.startsWith(`${CUSTOMER_ACTOR}:`);
+}
+
+/** 這筆退貨是客人自己申請的(不是店家代建的)。 */
+export function askedByCustomer(r: Pick<ShopReturn, "createdBy">): boolean {
+  return isCustomerActor(r.createdBy);
+}
+
+/** 「客人可以申請退貨的天數」最多一年;設定填更大的當一年。 */
+export const CUSTOMER_RETURN_MAX_DAYS = 365;
+
+const DAY_MS = 86_400_000;
+
+/** 設定值 → 天數。設定存的是任意數字:不是數字、負數當 0(不開放),小數捨去。 */
+export function customerReturnDays(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+  return Math.min(CUSTOMER_RETURN_MAX_DAYS, Math.max(0, Math.floor(raw)));
+}
+
+/** 客人申請的期限(epoch ms):出貨時間 + 天數。不開放、或不知道什麼時候出貨,就沒有期限(不能申請)。 */
+export function customerReturnDeadline(days: number, shippedAt: number | null): number | null {
+  return days > 0 && shippedAt !== null ? shippedAt + days * DAY_MS : null;
+}
+
+/** 客人在自己的訂單上看到的一筆退貨:沒有金額、沒有說明(店家代建時那是店家寫的)、沒有處理紀錄。 */
+export interface CustomerReturnSummary {
+  returnNo: string;
+  status: ReturnStatus;
+  lines: { name: string; qty: number }[];
+  createdAt: number;
+}
+
+/**
+ * 現在不能申請的原因:closed 店家沒開放(或算不出期限);not_returnable 訂單還沒出貨、或已取消;
+ * window_passed 過了期限;nothing_left 商品都已經在退貨裡。
+ */
+export type CustomerReturnBlock = "closed" | "not_returnable" | "window_passed" | "nothing_left";
+
+/** 客人的訂單頁要畫的:能不能申請、期限、還能退哪幾項、這張訂單的退貨。 */
+export interface CustomerReturnView {
+  open: boolean;
+  /** open 是 false 時才有。 */
+  blocked?: CustomerReturnBlock;
+  /** 申請期限(epoch ms);沒有期限是 null。 */
+  deadline: number | null;
+  /** 還能退的品項與件數;不能申請時是空的。 */
+  lines: { productId: string; name: string; returnable: number }[];
+  returns: CustomerReturnSummary[];
+}
+
 /** 處理紀錄的動作:建立,或轉到某個狀態。 */
 export type ReturnEventAction = "created" | Exclude<ReturnStatus, "requested">;
 
@@ -269,7 +339,11 @@ export type ReturnErrorCode =
   | "stock_untracked"
   | "stock_not_taken"
   | "changed"
-  | "not_ready";
+  | "not_ready"
+  // 客人自己申請(returns-customer.ts):店家沒開放、過了期限、太頻繁。
+  | "closed"
+  | "window_passed"
+  | "rate_limited";
 
 export class ReturnError extends Error {
   constructor(

@@ -8,12 +8,15 @@ import {
   RETURNABLE_ORDER_STATUSES,
   ReturnError,
   canTransitionReturn,
+  customerActorId,
+  isCustomerActor,
   isReturnStatus,
   newReturnNo,
   orderReturnBlock,
   orderStockReservationId,
   refundCap,
   returnTables,
+  suggestedRefund,
   RETURN_SEARCH_FIELDS,
   type RefundMethod,
   type RestockProvider,
@@ -86,6 +89,18 @@ export interface CreateReturnInput {
   reason: ReturnReason;
   note?: string;
   requestedAmount: number;
+}
+
+/** 客人自己申請(requestByCustomer):沒有金額。 */
+export interface CustomerReturnInput {
+  orderNo: string;
+  lines: { productId: string; qty: number }[];
+  reason: ReturnReason;
+  note?: string;
+  /** 登入的會員 id(寫進 created_by);訪客是 null。 */
+  memberId: string | null;
+  /** 申請期限(returns.ts 的 customerReturnDeadline);null = 不開放。 */
+  deadline: number | null;
 }
 
 export interface TransitionReturnInput {
@@ -274,7 +289,7 @@ export function createReturnsEngine(
 
   async function commit(id: string, actor: ReturnActor, reason: string, mutations: TransactionMutation[], ops: LedgerOperation[] = []) {
     await commitLedgerOperations(
-      { id, actor: { type: "user", id: actor.id }, reason },
+      { id, actor: { type: isCustomerActor(actor.id) ? "customer" : "user", id: actor.id }, reason },
       [prepareTransaction(db, config.prefix, mutations), ...ops],
     );
   }
@@ -368,16 +383,47 @@ export function createReturnsEngine(
       .map((order) => order.order_no);
   }
 
+  /** 店家代客人建立:金額由店家填(後台預設帶建議退款金額)。 */
   async function create(actor: ReturnActor, input: CreateReturnInput): Promise<ShopReturn> {
-    const wanted = [...mergeQty(input.lines)].filter(([, qty]) => qty > 0);
-    if (wanted.length === 0 || !isReason(input.reason)) throw new ReturnError(400, "invalid_input");
     if (!Number.isSafeInteger(input.requestedAmount) || input.requestedAmount < 0) {
       throw new ReturnError(400, "invalid_input");
     }
+    return insert(input, { actor: () => actor, amount: () => input.requestedAmount });
+  }
+
+  /**
+   * 客人自己申請:訂單狀態與可退件數和店家建立時同一套檢查,另外要在期限內。金額不由客人填,帶建議退款
+   * 金額(後台「新增退貨」預設的那個數字);處理紀錄上的人是訂單上的客人。
+   */
+  function requestByCustomer(input: CustomerReturnInput): Promise<ShopReturn> {
+    return insert(input, {
+      actor: (order) => ({ id: customerActorId(input.memberId), name: order.customerName }),
+      amount: suggestedRefund,
+      allow: () => {
+        if (input.deadline === null) throw new ReturnError(409, "closed");
+        if (Date.now() > input.deadline) throw new ReturnError(409, "window_passed");
+      },
+    });
+  }
+
+  /** 建立一筆「申請中」的退貨。誰建的、金額多少、要不要多一道檢查,由呼叫的那一邊說。 */
+  async function insert(
+    input: Pick<CreateReturnInput, "orderNo" | "lines" | "reason" | "note">,
+    by: {
+      actor: (order: ReturnableOrder) => ReturnActor;
+      amount: (order: ReturnableOrder, lines: readonly ReturnLine[]) => number;
+      /** 訂單找到、狀態也能退之後再看的條件;不行就丟 ReturnError。 */
+      allow?: (order: ReturnableOrder) => void;
+    },
+  ): Promise<ShopReturn> {
+    const wanted = [...mergeQty(input.lines)].filter(([, qty]) => qty > 0);
+    if (wanted.length === 0 || !isReason(input.reason)) throw new ReturnError(400, "invalid_input");
     const order = await lookupOrder(input.orderNo);
     if (!order) throw new ReturnError(404, "order_not_found");
     const block = orderReturnBlock(order.status);
     if (block) throw new ReturnError(409, block);
+    by.allow?.(order);
+    const actor = by.actor(order);
     const lines: ReturnLine[] = [];
     for (const [productId, qty] of wanted) {
       const line = order.lines.find((l) => l.productId === productId);
@@ -387,7 +433,8 @@ export function createReturnsEngine(
     }
     // 申請金額不超過退回這幾件的商品金額加運費,也不超過訂單還沒退的金額(refundCap;
     // 實際退款在「登記退款」時再擋一次,訂單合計另在 batch 內確認)。
-    if (input.requestedAmount > refundCap(order, lines)) throw new ReturnError(409, "amount_exceeds");
+    const requestedAmount = by.amount(order, lines);
+    if (requestedAmount > refundCap(order, lines)) throw new ReturnError(409, "amount_exceeds");
 
     const returnNo = newReturnNo();
     const now = Date.now();
@@ -420,7 +467,7 @@ export function createReturnsEngine(
           lines: JSON.stringify(lines),
           reason: input.reason,
           note,
-          requested_amount: input.requestedAmount,
+          requested_amount: requestedAmount,
           customer_name: order.customerName,
           customer_phone: order.customerPhone,
           created_by: actor.id,
@@ -575,6 +622,15 @@ export function createReturnsEngine(
     return rows.results.map(rowToReturn);
   }
 
+  /** 一張訂單的退貨,舊的在前(客人的訂單頁用)。 */
+  async function ofOrder(orderNo: string): Promise<ShopReturn[]> {
+    const rows = await db
+      .prepare(`SELECT ${RETURN_COLUMNS} FROM ${t.returns} WHERE order_no = ? ORDER BY created_at, return_no`)
+      .bind(orderNo)
+      .all<ReturnRow>();
+    return rows.results.map(rowToReturn);
+  }
+
   /** 各狀態筆數;有搜尋條件時只算符合的(和列表一致)。 */
   async function counts(search: RecordSearch = {}): Promise<Partial<Record<ReturnStatus, number>>> {
     const found = recordSearchClauses(RETURN_SEARCH_FIELDS, search);
@@ -618,7 +674,7 @@ export function createReturnsEngine(
     };
   }
 
-  return { get, lookupOrder, fullyReturned, create, transition, list, counts, events, stockFor };
+  return { get, lookupOrder, fullyReturned, create, requestByCustomer, transition, list, ofOrder, counts, events, stockFor };
 }
 
 export type ReturnsEngine = ReturnType<typeof createReturnsEngine>;

@@ -31,7 +31,7 @@ rebuild + deploy 後在 `/admin/extensions` 啟用,到設定頁填銀行帳戶�
 ## 設定
 
 全部在後台「設定 → 商店」;存 settings 表,key 為 `ext.shop.<key>`。定義在
-`index.ts`(收款)與 `checkout-options.ts`(結帳頁開關)。
+`index.ts`(收款)、`checkout-options.ts`(結帳頁開關)與 `returns-config.ts`(退貨)。
 
 | key | 類型 | 預設 | 作用 |
 |---|---|---|---|
@@ -41,6 +41,7 @@ rebuild + deploy 後在 `/admin/extensions` 啟用,到設定頁填銀行帳戶�
 | `shippingConfig` | (JSON) | `""` | 由 `/admin/ext/shop/shipping` 頁維護,不在設定頁手填。空 = 不啟用運費。 |
 | `requireContact` | boolean | `false` | 電話與收件地址必填(表單層)。訂單管理插件接手結帳時照它的 `storefront()`。 |
 | `checkoutNotice` | textarea | `""` | 結帳頁最上方的說明文字,保留換行。空 = 不顯示。 |
+| `customerReturnDays` | number | `0` | 客人可以申請退貨的天數(出貨後)。`0` = 不開放,客人的訂單頁不出現「申請退貨」。小數捨去,負數當 0,最多 365(見「退貨」的「客人自己申請」)。 |
 
 結帳頁開關的讀取順序:`public-pages.tsx` 在伺服器讀出原始值 →
 `resolveCheckoutOptions()` 正規化(壞值退回預設,絕不擋結帳)→ 交給 `CheckoutView`。
@@ -79,6 +80,10 @@ interface OrderManager {
   transition(orderNo, to, extras): Promise<boolean>; // 付款結算、後台與 AI 的狀態動作
   storefront?(): Promise<{ signIn: "required" | "optional"; requireContact: boolean; ordersHref: string | null }>;
   reportTransfer?(input: { orderNo; reference?; payerName?; email? }, req, ctx): Promise<Response>;
+  // 這個人是不是這張訂單的客人(客人自己申請退貨前商店先問);沒有 = 客人不能自己對它的訂單做事
+  customerOrder?(input: { orderNo; email? }, req, ctx): Promise<
+    { ok: true; memberId: string | null; shippedAt: number | null } | { ok: false }
+  >;
 }
 ```
 
@@ -179,6 +184,7 @@ core 看這一欄決定一筆訂單歸誰:
 | 動作 | 商店自己的訂單 | 訂單管理插件的訂單 |
 |---|---|---|
 | 客人回報匯款 | `POST /api/ext/shop/transfer-report` | 同一個端點,core 轉給 `reportTransfer()`;插件沒有它時回 409 `order_managed` |
+| 客人申請退貨 | `POST /api/ext/shop/returns/customer`,用下單的 Email 認人 | 同一個端點,core 先問 `customerOrder()` 這個人是不是訂單的客人;插件沒有它時回 404 `not_found` |
 | 標記已收款(paid) | 對帳佇列核可 → `settleManual` | 由插件處理;對帳佇列回 409 `order_managed` |
 | 出貨、完成、取消、退款 | 訂單頁 | 訂單頁與 agent tool 轉交 `transition()`,插件自己決定收不收 |
 
@@ -223,8 +229,8 @@ core 看這一欄決定一筆訂單歸誰:
 ## 退貨(0.6.0)
 
 後台 `/admin/ext/shop/returns`「退貨管理」。已出貨、已完成的訂單才能退貨;還沒出貨的訂單
-走取消(商店自己的訂單在訂單頁,訂單管理插件的訂單在它的頁面)。店家代客人建立,客人自己
-申請的表單還沒有。
+走取消(商店自己的訂單在訂單頁,訂單管理插件的訂單在它的頁面)。店家代客人建立;店家開放之後,
+客人也可以在自己的訂單上申請(見下面的「客人自己申請」)。
 
 ```
 申請中 → 已同意 → 已收到退貨 → 已退款 → 已完成
@@ -261,6 +267,44 @@ core 看這一欄決定一筆訂單歸誰:
   狀態組 `shop:returns`,站台可用 `filter:statusSets` 改名。
 - **從訂單開退貨**:訂單列表的「申請退貨」帶著訂單編號打開「新增退貨」(`?order=`)。只有能在
   退貨管理建立退貨的角色看得到;商品都已經申請退貨的訂單不給(0.7.0)。
+
+### 客人自己申請
+
+設定 `customerReturnDays`(客人可以申請退貨的天數,出貨後)不是 0 時,客人可以在自己的訂單上申請。
+預設 0 = 不開放:升級的店在打開之前什麼都不會多 —— 這時 API 對誰都是同一個回答(查看 = 沒有東西
+可畫,申請 = 409 `closed`),不認人、不查訂單也不查退貨。店家之後關掉也一樣:客人的訂單上不再有這一區
+(已經申請的退貨還在退貨管理,照常處理)。
+
+- **誰**:這張訂單的客人。訂單管理插件的訂單問它的 `customerOrder()`(會員看登入的人,訪客用它的
+  查單憑證:訂單編號 + 下單 Email);商店自己的訂單看訂單編號 + 下單的 Email(訂單上沒有記會員,
+  不看登入的人:帳號的 Email 不一定驗證過)。不是他的訂單和不存在的訂單是同一個 404 `not_found`,
+  而且先認人:訂單的狀態、過期了沒、退了什麼,只有訂單的客人問得到(`commerce-kit/customer-order.ts`)。
+- **什麼時候**:已出貨、已完成的訂單,出貨後 N 天內(N × 24 小時)。出貨時間由訂單管理插件給;
+  商店自己的訂單沒有另外記,用訂單最後一次異動的時間(已出貨 = 出貨那一刻,已完成 = 標記完成
+  那一刻)。不知道出貨時間就不開放。
+- **申請什麼**:哪幾項、各幾件、原因、說明。件數和店家代建同一條規則(訂購件數 − 未拒絕、
+  未取消的退貨已占用的),batch 內再算一次;同樣的商品不能申請第二次,店家拒絕後可以重新申請。
+- **金額客人不填**:請求帶了金額(或任何不認得的欄位)整個不收。建立時帶建議退款金額(後台「新增
+  退貨」預設的那個數字:退回件數的實付價格,不含運費),實際退多少照舊在登記退款時由店家決定。
+- **之後**:是一筆普通的「申請中」退貨,出現在退貨管理,每一步和店家代建的一樣。`created_by` 是
+  `customer`(訪客)或 `customer:<會員 id>`,不是後台人員的 id —— 列表標「客人申請」、明細多一行來源、
+  處理紀錄的第一筆寫「客人申請退貨」。不必加欄位,所以沒有 migration。
+- **客人看到的**:同一張訂單上列出它的退貨與進度(申請中、已同意、已拒絕、已退款…),店家代建的
+  也列(那也是他的退貨,而且占掉了可退件數)。沒有金額、沒有店家寫的說明。
+- **API**:`POST /api/ext/shop/returns/customer`(公開;`commerce-kit/returns-customer.ts`),body
+  `{ action: "status", orderNo, email? }` 或 `{ action: "request", orderNo, email?, lines, reason, note? }`。
+  用 POST 查看是因為 Email 是憑證,不放進網址。退貨表還沒建(還沒套用更新)時,查看當作沒有退貨、
+  申請回 503 `not_ready`。
+- **限速**:同一個 IP 15 分鐘 60 次;申請再照 IP 一小時 10 次。帶 Email 的(用訂單編號 + Email 認人)
+  另外有認人的額度(`customer-order.ts` 的 `ORDER_EMAIL_PROOF_LIMITS`),只算猜錯的:同一個訂單編號、同一個 IP
+  15 分鐘猜錯 10 次,所有 IP 合計 60 次。客人自己帶對的 Email 不用額度;別人拿他的訂單編號亂猜,鎖到的是
+  亂猜的那個 IP。在查任何東西之前就記(認到人再還回去),所以不管這個編號存不存在、歸誰,用掉的額度與
+  被擋下的 429 都一樣。訂單管理插件的 `customerOrder()` 裡不要再限速(只有它的訂單才記得到的額度,用掉
+  沒有就看得出一個編號是不是它的訂單);它自己的查單要共用額度,就用同一份(`startOrderEmailProof`)——
+  兩條路合計,不會多一條路就多猜幾次 Email。
+- **畫面**:`ReturnRequest.tsx`(送什麼、錯誤怎麼說在 `return-request.ts`)。畫訂單的頁面只要放
+  `<ReturnRequest orderNo status email? />`:該不該出現、能退什麼、期限都照伺服器回的畫;沒開放、
+  或這張訂單沒有東西可說時什麼都不畫。商店自己沒有客人的訂單頁,由訂單管理插件的訂單頁放它。
 
 表(migration `0004_returns`):`ext_shop_return_requests`(退貨)、`ext_shop_return_events`
 (處理紀錄)、`ext_shop_return_operations`(ledger-kit 交易收據)。
@@ -325,6 +369,8 @@ core 看這一欄決定一筆訂單歸誰:
     列表多一欄「期間」,狀態分得出尚未開始、已過期、已用完(見上面「運費與優惠碼」)。
   - 優惠碼的分享連結:任何公開頁的網址帶 `?promo=代碼`,瀏覽器記 30 天,結帳頁先帶入並試算。
   - 商店以 `commerce:promos` 提供優惠碼目錄;優惠碼表單裡有一個插槽(`AdminPromoFormFields`),別的插件可以多放一格。
+  - 客人可以在自己的訂單上申請退貨(見上面「客人自己申請」)。新設定 `customerReturnDays`,預設 `0` = 不開放:
+    升級的店在打開之前什麼都不會多。
   - 沒有 migration。
 - **0.12.0**(core 1.74.0):
   - 購物車頁與結帳頁的內容各是一個插槽(`slots.ts`),見上面「只換內容不換版面」。沒有人填時跟原本一樣。
