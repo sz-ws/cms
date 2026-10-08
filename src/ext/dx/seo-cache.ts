@@ -6,6 +6,8 @@ import { parseManifest } from "./manifest";
 import type { DeclarativeField } from "./manifest";
 import { displayValue, pickTitleField } from "./views/field-utils";
 import { detailPath } from "./route-matcher";
+import { SitemapPaths } from "../core-slots";
+import { isSitePath } from "../site-path";
 
 // SEO 基礎(robots.txt / sitemap.xml / feed.xml)共用的 isolate 內 TTL cache。
 // 三個公開端點都經 getSeoSnapshot() 讀資料:settings(core.seo.* / core.siteUrl /
@@ -25,6 +27,55 @@ const TTL_MS = 5 * 60 * 1000;
 /** sitemap 規格上限是 50,000 URLs / 50MB；10,000 留足 URL 與 XML 體積餘裕。 */
 export const SITEMAP_PAGE_SIZE = 10_000;
 const FEED_MAX = 50;
+/** 插槽 SitemapPaths 最多收幾個網址(站台自己寫的頁面不會多;擋住填壞的)。 */
+const EXTRA_PATHS_MAX = 500;
+/** 一個來源最多等多久;超過就當它沒有報(robots、sitemap、feed 共用這份快照,不能被一個來源卡住)。 */
+const SOURCE_TIMEOUT_MS = 3000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    work.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error: unknown) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/** 站內路徑 → sitemap 裡的寫法:非 ASCII 的字 percent-encode,# 之後拿掉。 */
+function sitemapPath(path: string): string {
+  const url = new URL(path, "https://site.invalid");
+  return `${url.pathname}${url.search}`;
+}
+
+/**
+ * 站台或插件另外報的公開網址(插槽 SitemapPaths,1.75.0)。只收站內路徑;一個來源丟錯、或整個插槽填壞了,
+ * 只少它報的那些,sitemap 照常。@/ext/loader 動態載入:這個檔會被 robots / sitemap / feed 的路由載入,
+ * 不必在載入時就把整套插件帶進來。
+ */
+async function extraSitemapPaths(): Promise<string[]> {
+  try {
+    const { getExtRuntime } = await import("@/ext/loader");
+    const sources: unknown = (await getExtRuntime()).slots.value(SitemapPaths, []);
+    if (!Array.isArray(sources)) return [];
+    const lists = await Promise.all(
+      sources.map(async (source: unknown): Promise<unknown[]> => {
+        if (typeof source !== "function") return [source];
+        try {
+          const reported: unknown = await withTimeout(Promise.resolve(source()), SOURCE_TIMEOUT_MS);
+          return Array.isArray(reported) ? reported : [];
+        } catch (error) {
+          console.error("[seo] a sitemap source failed", error instanceof Error ? error.name : "error");
+          return [];
+        }
+      }),
+    );
+    return lists.flat().filter(isSitePath).slice(0, EXTRA_PATHS_MAX).map(sitemapPath);
+  } catch (error) {
+    console.error("[seo] sitemap paths unavailable", error instanceof Error ? error.name : "error");
+    return [];
+  }
+}
 
 export interface SitemapUrl {
   /** 站內相對路徑(含開頭 "/",slug 段已 percent-encode)。絕對化交給呼叫端
@@ -222,9 +273,9 @@ async function computeSnapshot(): Promise<SeoSnapshot> {
   }
 
   // list route 本身也進 sitemap(不含 lastModified 語意,落 now)。首頁每個站都有
-  // ((public)/page.tsx 或站台自己的首頁),也一起列進去。
+  // ((public)/page.tsx 或站台自己的首頁),也一起列進去。最後是站台或插件另外報的頁面(1.75.0)。
   const now = Date.now();
-  for (const p of ["/", ...listPaths]) {
+  for (const p of ["/", ...listPaths, ...(await extraSitemapPaths())]) {
     if (sitemapPathSet.has(p)) continue;
     sitemapPathSet.add(p);
     sitemapUrls.push({ path: p, lastModified: now });

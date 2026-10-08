@@ -23,6 +23,14 @@ export const AdminSidebarItems = defineValueSlot<AdminMenuItem[]>("admin.sidebar
  */
 export const AdminStatusSets = defineValueSlot<ResolvedStatusSets>("admin.status-sets");
 
+/**
+ * sitemap 另外要列的公開網址(1.75.0)。內容型別的頁面與它們的列表頁、首頁,核心自己會列;站台或插件自己寫的頁面
+ * (核心不知道它們存在)從這裡報。一項是一個站內路徑,或回傳幾個路徑的函式(那一頁在不在要查設定才知道時用;
+ * 函式丟錯就當作它沒有報)。只收站內路徑,重複的只列一次(ext/dx/seo-cache.ts)。
+ */
+export type SitemapSource = string | (() => readonly string[] | Promise<readonly string[]>);
+export const SitemapPaths = defineValueSlot<SitemapSource[]>("seo.sitemap.paths");
+
 // ---- 後台的內容頁:每個內容型別各有一個插槽 ----
 // key 是完整的型別代號 `<extId>.<type>`(例如 "catalog.product")。預設內容是泛用的列表或編輯頁
 // (或 overrides.ts 登記的整頁替換);別的插件在它前後加一塊(例如商品列表上方的缺貨提醒、

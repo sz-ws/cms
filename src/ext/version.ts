@@ -1639,4 +1639,9 @@
 // 1.74.1: Wording (zh-Hant). The admin assistant is called 「AI 小幫手」 instead of 「助理」 in the sidebar, on its
 // page and activity log, in the script check prompts and in the note it leaves on an order it changed.
 // English stays "Assistant". Notes written before this keep the old wording.
-export const CORE_API_VERSION = "1.74.1";
+// 1.75.0: The sitemap lists pages a site or a plugin wrote itself. Core already lists every published entry of
+// a content type with a public route, each list page and the home page; a page that is plain code (a privacy
+// page, a landing page) was unknown to it. The value slot `SitemapPaths` (`core-slots.ts`) takes same-site paths,
+// or functions that return some (for a page that exists only when a setting is on; a function that throws only
+// loses what it would have reported). `seo-cache.ts` adds them after the list pages, once each.
+export const CORE_API_VERSION = "1.75.0";

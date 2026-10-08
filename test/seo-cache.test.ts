@@ -22,11 +22,25 @@ vi.mock("@/lib/settings", () => ({
   },
 }));
 
+// 1.75.0:sitemap 另外收站台或插件從插槽 SitemapPaths 報的網址;這裡給一個只有插槽的 runtime。
+const slotState = vi.hoisted(() => ({ sources: [] as unknown[], fail: false }));
+vi.mock("@/ext/loader", async () => {
+  const { SlotRegistry } = await import("../src/ext/slots");
+  return {
+    getExtRuntime: async () => {
+      if (slotState.fail) throw new Error("runtime unavailable");
+      return { slots: new SlotRegistry(slotState.sources as never) };
+    },
+  };
+});
+
 import {
   getSeoSnapshot,
   __clearSeoCache,
   SITEMAP_PAGE_SIZE,
 } from "../src/ext/dx/seo-cache";
+import { SitemapPaths, type SitemapSource } from "../src/ext/core-slots";
+import { fill } from "../src/ext/slots";
 import { escapeXml } from "../src/ext/dx/seo-xml";
 import { GET as sitemapIndex } from "../src/app/sitemap.xml/route";
 import { GET as sitemapChild } from "../src/app/sitemap/[page]/route";
@@ -50,6 +64,8 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM contents;");
   settingsStore.clear();
   getSettingCalls.count = 0;
+  slotState.sources = [];
+  slotState.fail = false;
   __clearSeoCache();
 });
 
@@ -369,5 +385,71 @@ describe("escapeXml", () => {
 
   it("leaves plain text untouched", () => {
     expect(escapeXml("Hello world")).toBe("Hello world");
+  });
+});
+
+// 1.75.0:內容型別的頁面核心自己會列;站台或插件自己寫的頁面(核心不知道它們存在)從插槽 SitemapPaths 報。
+describe("getSeoSnapshot — pages reported through the SitemapPaths slot", () => {
+  const site = (...sources: SitemapSource[]) => [{ extId: "site", layer: "site", fills: [fill(SitemapPaths, (paths) => [...paths, ...sources])] }];
+  const paths = async () => (await getSeoSnapshot()).sitemapUrls.map((u) => u.path);
+
+  it("lists reported paths after the home page and list routes, once each", async () => {
+    await insertDx("gallery", GALLERY_MANIFEST);
+    slotState.sources = site("/privacy", "/gallery", "/privacy", async () => ["/products/mix"], () => ["/about"]);
+    expect(await paths()).toEqual(["/", "/gallery", "/privacy", "/products/mix", "/about"]);
+  });
+
+  it("is unchanged when nothing is reported", async () => {
+    expect(await paths()).toEqual(["/"]);
+  });
+
+  it("only takes same-site paths, and writes them as valid URL paths", async () => {
+    slotState.sources = site(
+      "https://elsewhere.test/x",
+      "//elsewhere.test",
+      "/\\elsewhere.test",
+      "privacy",
+      42 as never,
+      "/關於?from=menu#top",
+      async () => ["/ok", "https://elsewhere.test/y", null as never],
+    );
+    expect(await paths()).toEqual(["/", "/%E9%97%9C%E6%96%BC?from=menu", "/ok"]);
+  });
+
+  it("a source that throws, or a fill that returns something else, loses only itself", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      slotState.sources = site("/privacy", async () => { throw new Error("settings down"); }, () => "not a list" as never);
+      expect(await paths()).toEqual(["/", "/privacy"]);
+      __clearSeoCache();
+      slotState.sources = [{ extId: "site", layer: "site", fills: [fill(SitemapPaths, () => "broken" as never)] }];
+      expect(await paths()).toEqual(["/"]);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("a source that never answers is dropped after a few seconds instead of blocking the sitemap", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      slotState.sources = site("/privacy", () => new Promise<string[]>(() => {}));
+      const pending = paths();
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(await pending).toEqual(["/", "/privacy"]);
+    } finally {
+      vi.useRealTimers();
+      logged.mockRestore();
+    }
+  });
+
+  it("still builds the sitemap when the plugin runtime cannot be loaded", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      slotState.fail = true;
+      expect(await paths()).toEqual(["/"]);
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
