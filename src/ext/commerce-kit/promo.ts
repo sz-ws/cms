@@ -3,6 +3,7 @@ import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
 import type { ApiCtx } from "../types";
 import type { CommerceDb } from "./orders";
+import { normalizePromoCode, PROMO_CODE_RE } from "./promo-code";
 
 // commerce-kit:優惠碼(Phase 4,docs/spec-commerce-kit.md)。
 //
@@ -34,12 +35,9 @@ function assertTable(table: string): void {
   }
 }
 
-/** 客人輸入 → 儲存形:去空白、大寫。空字串 = 沒有碼。 */
-export function normalizePromoCode(raw: string): string {
-  return raw.trim().toUpperCase();
-}
-
-const CODE_RE = /^[A-Z0-9][A-Z0-9_-]{1,39}$/;
+// 代碼的格式在 promo-code.ts(瀏覽器端也要用,這個檔是伺服器端的)。
+export { normalizePromoCode };
+const CODE_RE = PROMO_CODE_RE;
 
 export type PromoType = "percent" | "flat" | "freeship";
 
@@ -210,6 +208,45 @@ export async function listPromos(deps: CommerceDb, table: string): Promise<Promo
   }
 }
 
+/** 這張優惠碼表還沒建(migration 還沒套用)。D1 的錯誤可能直接丟出來,也可能包在 drizzle 的 cause 裡。 */
+function isMissingPromoTable(error: unknown, table: string): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 4; depth++) {
+    if (current.message.includes(`no such table: ${table}`)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+/**
+ * 這幾個代碼現在的資料(優惠碼目錄 promo-catalog.ts 用)。代碼要是儲存形(大寫);沒有的不回。
+ * 代碼整包當一個 JSON 參數送進去(D1 一個查詢最多綁 100 個參數),一次 200 個。表未建好 → 空陣列。
+ * 其他的錯誤(資料庫一時讀不到)照丟:回空陣列的話,問的一方分不出「沒有這個碼」和「沒讀到」,
+ * 會照沒有這個碼去回話(例如告訴店家找不到他剛建好的優惠碼)。
+ */
+export async function listPromosByCodes(
+  deps: CommerceDb,
+  table: string,
+  codes: readonly string[],
+): Promise<Promo[]> {
+  assertTable(table);
+  const wanted = [...new Set(codes)];
+  const found: Promo[] = [];
+  try {
+    for (let i = 0; i < wanted.length; i += 200) {
+      const rows = await deps.db.all<PromoRow>(sql`
+        SELECT ${ROW_COLUMNS} FROM ${sql.raw(table)}
+        WHERE code IN (SELECT value FROM json_each(${JSON.stringify(wanted.slice(i, i + 200))}))
+      `);
+      found.push(...rows.map(rowToPromo));
+    }
+  } catch (error) {
+    if (isMissingPromoTable(error, table)) return [];
+    throw error;
+  }
+  return found;
+}
+
 // ---- API handlers(extension 以 apiRoutes 掛上)----
 
 const quoteBodySchema = z
@@ -271,6 +308,9 @@ export function createPromoQuoteHandler(opts: PromoQuoteHandlerOptions) {
   };
 }
 
+/** 開始、結束時間的上限(西元 2286 年);擋掉把秒當毫秒、或隨手打的超大數字。 */
+const MAX_TIMESTAMP = 9_999_999_999_999;
+
 /** admin 儲存(upsert)body。 */
 const saveBodySchema = z
   .object({
@@ -281,6 +321,11 @@ const saveBodySchema = z
     minSubtotal: z.number().int().min(0).max(99_999_999).default(0),
     maxUses: z.number().int().min(1).max(9_999_999).nullable().default(null),
     enabled: z.boolean().default(true),
+    // 開始與結束(epoch ms;null = 不限)。表單照站台時區換算好才送(promo-window.ts)。
+    // 沒給 = 不動這一端:部署前就開著的後台分頁、腳本、AI 連線都不會送這兩個欄位,
+    // 當成 null 的話,改個名稱就把期限清掉了。新的代碼沒給就是不限。
+    startsAt: z.number().int().min(0).max(MAX_TIMESTAMP).nullable().optional(),
+    endsAt: z.number().int().min(0).max(MAX_TIMESTAMP).nullable().optional(),
   })
   .strict()
   .superRefine((body, ctx) => {
@@ -289,6 +334,10 @@ const saveBodySchema = z
     }
     if (body.type === "flat" && body.value < 1) {
       ctx.addIssue({ code: "custom", message: "flat value must be >= 1" });
+    }
+    // 只送一端時,另一端是存著的那個值:那一半在 upsert 的 WHERE 裡比(下面)。
+    if (typeof body.startsAt === "number" && typeof body.endsAt === "number" && body.endsAt <= body.startsAt) {
+      ctx.addIssue({ code: "custom", message: "endsAt must be after startsAt" });
     }
   });
 
@@ -315,19 +364,30 @@ export function createPromoSaveHandler(opts: PromoAdminHandlerOptions) {
     }
     assertTable(opts.table);
     const now = Date.now();
-    // upsert 不動 used —— 編輯條件不清用量;要重置就刪掉重建。
-    await ctx.services.db.run(sql`
+    // 沒給的那一端留著存著的值(DO UPDATE 裡不帶前綴的欄位名 = 原本那一列)。
+    const startsAt = body.startsAt === undefined ? sql.raw("starts_at") : sql`${body.startsAt}`;
+    const endsAt = body.endsAt === undefined ? sql.raw("ends_at") : sql`${body.endsAt}`;
+    // upsert 不動 used、created_at —— 編輯條件不清用量;要重置就刪掉重建。
+    // WHERE:留著的那一端加上這次送的那一端,結束還是要晚於開始;對不上就一欄都不改(RETURNING 沒有列)。
+    const rows = await ctx.services.db.all<{ code: string }>(sql`
       INSERT INTO ${sql.raw(opts.table)}
-        (code, label, type, value, min_subtotal, max_uses, enabled,
+        (code, label, type, value, min_subtotal, max_uses, starts_at, ends_at, enabled,
          created_at, updated_at)
       VALUES
         (${code}, ${body.label}, ${body.type}, ${body.value}, ${body.minSubtotal},
-         ${body.maxUses}, ${body.enabled ? 1 : 0}, ${now}, ${now})
+         ${body.maxUses}, ${body.startsAt ?? null}, ${body.endsAt ?? null}, ${body.enabled ? 1 : 0},
+         ${now}, ${now})
       ON CONFLICT(code) DO UPDATE SET
         label = ${body.label}, type = ${body.type}, value = ${body.value},
         min_subtotal = ${body.minSubtotal}, max_uses = ${body.maxUses},
+        starts_at = ${startsAt}, ends_at = ${endsAt},
         enabled = ${body.enabled ? 1 : 0}, updated_at = ${now}
+      WHERE (${startsAt}) IS NULL OR (${endsAt}) IS NULL OR (${endsAt}) > (${startsAt})
+      RETURNING code
     `);
+    if (rows.length === 0) {
+      return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
+    }
     return Response.json({ ok: true, code });
   };
 }

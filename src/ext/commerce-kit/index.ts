@@ -105,11 +105,15 @@ export {
   redeemPromo,
   restorePromoUse,
   listPromos,
+  listPromosByCodes,
   createPromoQuoteHandler,
   createPromoSaveHandler,
   createPromoDeleteHandler,
 } from "./promo";
 export type { Promo, PromoType, PromoQuote, PromoRejectReason } from "./promo";
+// 優惠碼目錄(capability commerce:promos):別的插件問一個代碼現在的樣子。
+export { PROMOS_CAPABILITY, createPromoCatalog, isPromoCatalog } from "./promo-catalog";
+export type { PromoCatalog } from "./promo-catalog";
 // 1.49.0:商品目錄(內建宣告式 manifest,開關掛在商店設定)。
 export { CATALOG_SETTINGS } from "./catalog";
 // 1.50.0:退貨(型別與狀態機、D1 引擎、API)。後台畫面在 returns-admin.tsx(server)與

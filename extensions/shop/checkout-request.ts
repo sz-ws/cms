@@ -55,6 +55,34 @@ export function explainPromoError(error: string, reason?: string): string {
   return (reason && PROMO_REASON[reason]) ?? ERROR_HINT[error] ?? "優惠碼無法使用。";
 }
 
+/** 優惠碼試算(POST promo-quote)的回覆裡,這裡用得到的部分。 */
+export type PromoQuoteReply = { ok: true } | { ok: false; error: string; reason?: string };
+
+/** 這幾種原因是這個碼以後也不能用了。 */
+const PROMO_GONE: ReadonlySet<string> = new Set(["not_found", "disabled", "expired", "exhausted"]);
+
+/**
+ * 連結帶來的優惠碼(commerce-kit promo-link)在結帳頁試算之後怎麼辦:
+ *   applied = 套用了;forget = 這個碼以後也不能用(不存在、停用、過期、用完),忘掉它,下次不再帶入;
+ *   keep    = 這次不能用但之後可能可以(還沒開始、沒到低消),或試算沒做成(太頻繁),留著。
+ */
+export function linkedPromoOutcome(reply: PromoQuoteReply): "applied" | "forget" | "keep" {
+  if (reply.ok) return "applied";
+  return reply.error === "promo_invalid" && PROMO_GONE.has(reply.reason ?? "") ? "forget" : "keep";
+}
+
+/**
+ * 連結帶來的優惠碼試算回來之後,表單上優惠碼那一欄要不要照它改(輸入框、套用的優惠碼、欄位下面那一句):
+ *   show  = 帶入這個碼:能用就套用,不能用把原因寫在欄位下面。
+ *   leave = 三樣都不動。touched:客人在等的這段時間已經自己用過那一欄(打了字、按了套用、拿掉一個碼),以他的為準,
+ *           晚到的試算不蓋掉。試算沒有做成(太頻繁、格式錯誤:不是這個碼的答案)也不動、不說話,和連不上一樣。
+ * 記下的碼要不要忘掉是另一件事(linkedPromoOutcome),不看客人有沒有用過那一欄。
+ */
+export function linkedPromoDisplay(reply: PromoQuoteReply, touched: boolean): "show" | "leave" {
+  if (touched) return "leave";
+  return reply.ok || reply.error === "promo_invalid" ? "show" : "leave";
+}
+
 export interface CheckoutDraft {
   items: readonly CartItem[];
   name: string;

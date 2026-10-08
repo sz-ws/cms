@@ -8,6 +8,7 @@ import { DEFAULT_TRANSFER_REPORT_SPEC, type TransferReportSpec } from "@/ext/pay
 import { formatMoney } from "@/ext/commerce-kit/money";
 import type { PublicCheckoutField } from "@/ext/commerce-kit/checkout-fields";
 import { forgetCheckoutValue, readCheckoutValue } from "@/ext/commerce-kit/checkout-prefill";
+import { forgetPromoLink, rememberedPromoCode } from "@/ext/commerce-kit/promo-link";
 import {
   computeShippingOptions,
   shippingRegions,
@@ -26,6 +27,8 @@ import {
   checkoutBody,
   explainCheckoutError,
   explainPromoError,
+  linkedPromoDisplay,
+  linkedPromoOutcome,
   needsSignIn,
   paymentDeadline,
   requestFor,
@@ -104,6 +107,24 @@ type CheckoutReply =
 
 /** 表單底下的錯誤;signIn = 旁邊放「登入」。 */
 type FormError = { text: string; signIn: boolean };
+
+type PromoQuote = ({ ok: true } & AppliedPromo) | { ok: false; error: string; reason?: string };
+
+/** 優惠碼試算(唯讀,不佔用量);真正核銷在結帳送出時。 */
+async function quotePromoCode(code: string, subtotal: number): Promise<PromoQuote> {
+  const res = await fetch("/api/ext/shop/promo-quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, subtotal }),
+  });
+  return (await res.json()) as PromoQuote;
+}
+
+/** 試算的回覆 → 表單上要畫的:套用的優惠碼,或不能用的原因。 */
+function quoteResult(data: PromoQuote): { promo: AppliedPromo | null; error: string | null } {
+  if (!data.ok) return { promo: null, error: explainPromoError(data.error, data.reason) };
+  return { promo: { code: data.code, label: data.label, discount: data.discount, freeShipping: data.freeShipping }, error: null };
+}
 
 /** 瀏覽器記下的結帳欄位值(微任務內讀,避開 effect 直接 setState 的 lint;已經填過的不蓋掉)。 */
 function usePrefilledFields(fields: readonly PublicCheckoutField[]) {
@@ -227,29 +248,44 @@ export function CheckoutView({
   const shippingFee = promo?.freeShipping ? 0 : (selectedShip?.fee ?? 0);
   const total = subtotal - (promo?.discount ?? 0) + shippingFee;
 
+  /** 客人自己用過優惠碼那一欄(打字、套用、拿掉):晚到的連結試算就不再改它(linkedPromoDisplay)。 */
+  const promoTouched = useRef(false);
+
   async function applyPromo() {
     const code = promoInput.trim().toUpperCase();
     if (!code || busy) return;
+    promoTouched.current = true;
     setPromoError(null);
     try {
-      const res = await fetch("/api/ext/shop/promo-quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, subtotal }),
-      });
-      const data = (await res.json()) as
-        | ({ ok: true } & AppliedPromo)
-        | { ok: false; error: string; reason?: string };
-      if (!data.ok) {
-        setPromo(null);
-        setPromoError(explainPromoError(data.error, data.reason));
-        return;
-      }
-      setPromo({ code: data.code, label: data.label, discount: data.discount, freeShipping: data.freeShipping });
+      const shown = quoteResult(await quotePromoCode(code, subtotal));
+      setPromo(shown.promo);
+      setPromoError(shown.error);
     } catch {
       setPromoError(NETWORK_ERROR);
     }
   }
+
+  // 連結帶來的優惠碼(?promo=,PromoLinkCapture 記下的):購物車有東西時先帶入並試算一次,客人不用自己打。
+  // 這個碼以後也不能用(不存在、停用、過期、用完)就忘掉,下次不再帶入;這次的原因照樣寫在欄位下面。
+  // 連不上、或試算沒做成(太頻繁)就算了:欄位空著、不說話,客人照樣可以自己輸入。
+  // 試算回來之前客人已經自己用過那一欄:不動他的(輸入框、套用的優惠碼、那一句錯誤),只照樣決定要不要忘掉。
+  const linkedTried = useRef(false);
+  useEffect(() => {
+    if (!promoEnabled || subtotal <= 0 || linkedTried.current) return;
+    linkedTried.current = true;
+    const code = rememberedPromoCode();
+    if (!code) return;
+    quotePromoCode(code, subtotal)
+      .then((data) => {
+        if (linkedPromoOutcome(data) === "forget") forgetPromoLink(code);
+        if (linkedPromoDisplay(data, promoTouched.current) === "leave") return;
+        const shown = quoteResult(data);
+        setPromoInput(code);
+        setPromo(shown.promo);
+        setPromoError(shown.error);
+      })
+      .catch(() => undefined);
+  }, [promoEnabled, subtotal]);
 
   /** 伺服器拒絕一個結帳欄位:忘掉瀏覽器記下的那個值;hidden 的沒有地方讓客人改,一併清掉、請他再送一次。 */
   function rejectField(field: string, message: string | undefined) {
@@ -478,13 +514,17 @@ export function CheckoutView({
             error={promoError}
             busy={busy}
             onInput={(value) => {
+              promoTouched.current = true;
               setPromoInput(value);
               setPromoError(null);
             }}
             onApply={() => void applyPromo()}
             onRemove={() => {
+              promoTouched.current = true;
               setPromo(null);
               setPromoInput("");
+              // 客人自己拿掉的:連結記下的那一個也忘掉,下次不再帶入。
+              forgetPromoLink();
             }}
             money={money}
           />

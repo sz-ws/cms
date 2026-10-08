@@ -1644,7 +1644,7 @@
 // page, a landing page) was unknown to it. The value slot `SitemapPaths` (`core-slots.ts`) takes same-site paths,
 // or functions that return some (for a page that exists only when a setting is on; a function that throws only
 // loses what it would have reported). `seo-cache.ts` adds them after the list pages, once each.
-// 1.76.0: Sign-in.
+// 1.76.0: Sign-in and promo codes.
 // Sign-in with LINE on the web works. LINE signs a web sign-in ID token with HS256 and the channel secret (its
 // discovery document lists only ES256, which is what its app SDK and LIFF use); `verifyJwt` (`src/lib/oidc-jwt.ts`)
 // refused HS256, so every LINE web sign-in ended in `oauth_failed`. It now accepts HS256 only when the caller
@@ -1659,6 +1659,13 @@
 // `/api/auth/continue` sends a member to the first same-site path a step returns, with the original destination
 // in `?next=`. Staff are never detoured. A missing fill, a broken one, or one that does not answer within two
 // seconds leaves sign-in as it was.
+// Promo codes (commerce-kit) have a start and an end, each a date plus an optional time of day in the site's
+// time zone (`promo-window.ts`; the save API takes `startsAt` and `endsAt`), and the list tells not started,
+// expired and used up apart. The promo form has a view slot, `AdminPromoFormFields` (`core-slots.ts`), where
+// another plugin adds a field and reads the form with `usePromoForm()` (`promo-form.tsx`). The capability
+// `commerce:promos` (`promo-catalog.ts`, `PromoCatalog`) answers what a code looks like now, so the asker does
+// not read the promo table. `promo-link.ts` builds and reads a `?promo=CODE` link; the plugin that owns the
+// promo codes remembers the code in the browser for 30 days and applies it at checkout.
 // An OAuth sign-in can only be finished in the browser that started it: `/api/auth/oauth/<id>/start` sets a
 // short-lived cookie holding a hash of the `state` (`src/lib/oauth-flow-cookie.ts`; one per sign-in, HttpOnly,
 // Secure, SameSite=Lax, limited to the OAuth API path), the callback checks it before doing anything else, and
@@ -1672,6 +1679,12 @@
 // A failed sign-in is never sent off the site: `loginErrorLocation` (`src/lib/oidc.ts`) checks the `back` path
 // again after normalising it, because `/..//other.example` passed the first check and then collapsed into
 // `//other.example`, which a browser reads as another site.
+// The promo save API leaves a code's start or end as stored when the request does not carry that key (`null`
+// still clears it), so a save from an admin tab opened before this version, a script or an AI connection no
+// longer removes the period. The end must still come after the start, counting the end that was kept.
+// `listPromosByCodes`, and so `byCodes` of the `commerce:promos` catalog, reads only a promo table that does not
+// exist yet as empty. Any other database error is thrown, so the asker no longer takes a failed read for a code
+// that does not exist.
 // The placeholder address of a new account without a proven email carries 16 hex characters of the hash of the
 // provider's subject, not 8 (`src/lib/login-accounts.ts`). With 8, two people of one provider could get the same
 // address and the second could not sign in. Existing accounts keep theirs; `isPlaceholderEmail` reads both.

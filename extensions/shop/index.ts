@@ -8,6 +8,7 @@ import {
   createCommerceAgentTools,
   createCommerceCheckoutHandler,
   createOrderStatusHandler,
+  createPromoCatalog,
   createPromoDeleteHandler,
   createPromoQuoteHandler,
   createPromoSaveHandler,
@@ -18,9 +19,11 @@ import {
   markOrderPaid,
   CATALOG_SETTINGS,
   ORDER_SEARCH_FIELDS,
+  PROMOS_CAPABILITY,
   RETURN_STATUS_SET,
   parseShippingConfig,
 } from "@/ext/commerce-kit";
+import { PromoLinkWidget } from "./promo-link-widget";
 import { ShopShippingPage } from "./admin-shipping";
 import { ShopPromosPage } from "./admin-promos";
 import { ShopOrdersPage } from "./admin-orders";
@@ -57,6 +60,8 @@ import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
 
 const ORDERS_TABLE = "ext_shop_orders";
 const PROMOS_TABLE = "ext_shop_promos";
+/** 後台的優惠碼頁(下面 adminPages 的 promos)。 */
+const PROMOS_ADMIN_PATH = "/admin/ext/shop/promos";
 const SHIPPING_KEY = "ext.shop.shippingConfig";
 // ScopedSettings 收**完整** key(ext.<extId>.<key>)—— 只給區域名會 throw。
 const CARD_PROVIDER_KEY = "ext.shop.cardProvider";
@@ -89,7 +94,13 @@ export const shop = defineExtension({
   // 0.11.1:CheckoutView 的 contact 多收 phone、address(站台已經知道的,例如會員存的),先帶入、照樣能改。
   // 0.12.0(core 1.74.0):購物車頁與結帳頁的內容各是一個插槽(slots.ts 的 ShopCart、ShopCheckout),別的插件或
   // 站台用 wrap 包起來,不必另開路由檔重組這一頁。「繼續購物」沒指定時,商品目錄開著就連它的列表頁(原本一律回首頁)。
-  version: "0.12.0",
+  // 0.13.0(core 1.76.0):優惠碼有開始與結束,各是日期加時間(照站台時區;只選日期 = 整天),列表多一欄「期間」,
+  // 分得出尚未開始、已過期、已用完。優惠碼表單上有一個插槽(core 的 AdminPromoFormFields),別的插件可以多放一格。
+  // 商店以 commerce:promos 提供優惠碼目錄(別的插件問一個代碼現在的折扣、用量、開關與期限,不必讀 ext_shop_promos)。
+  // 任何公開頁的網址帶 ?promo=代碼,瀏覽器記 30 天(PromoLinkCapture),結帳頁先帶入並試算,客人不用自己打。
+  // 同一版:結帳頁帶入連結上的優惠碼時,試算回來之前客人已經自己用過優惠碼那一欄(打字、套用、移除)就不改他的;
+  // 試算沒做成(太頻繁)時欄位空著、不顯示錯誤。
+  version: "0.13.0",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到
@@ -111,7 +122,9 @@ export const shop = defineExtension({
   // CurrencyProvider。
   //
   // ^1.74.0(0.12.0):插槽(defineSlot、<Slot>)與商品目錄的 CATALOG_LIST_PATH。
-  coreApi: "^1.74.0",
+  //
+  // ^1.76.0(0.13.0):優惠碼的期間、表單插槽 AdminPromoFormFields、優惠碼目錄(commerce:promos)與 ?promo= 連結。
+  coreApi: "^1.76.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",
@@ -298,5 +311,16 @@ export const shop = defineExtension({
     "payment:succeeded": async (payload: unknown) => {
       await markOrderPaid({ db: db() }, ORDERS_TABLE, payload);
     },
+    // 優惠碼的分享連結:每一個公開頁都記網址上的 ?promo=代碼(PromoLinkCapture),結帳頁先帶入並套用。
+    // 照約定 append;前一個 handler 交出來的不是陣列時,自己的照樣放上去。
+    "filter:publicWidgets": (widgets: unknown) => [...(Array.isArray(widgets) ? widgets : []), PromoLinkWidget],
   },
+  // 優惠碼目錄(commerce-kit promo-catalog):別的插件問一個優惠碼現在的樣子(折扣、用量、期限),不必知道這張表。
+  provides: [
+    {
+      capability: PROMOS_CAPABILITY,
+      id: "shop",
+      create: (services) => createPromoCatalog(services, PROMOS_TABLE, { adminHref: PROMOS_ADMIN_PATH }),
+    },
+  ],
 });

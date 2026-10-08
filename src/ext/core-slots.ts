@@ -32,6 +32,16 @@ export const AdminStatusSets = defineValueSlot<ResolvedStatusSets>("admin.status
 export type SitemapSource = string | (() => readonly string[] | Promise<readonly string[]>);
 export const SitemapPaths = defineValueSlot<SitemapSource[]>("seo.sitemap.paths");
 
+/**
+ * 後台優惠碼表單(commerce-kit 的 PromosAdmin)裡,核心欄位之後、「啟用」之前的位置(1.76.0)。預設什麼都沒有;別的插件在這裡
+ * 多放一格跟這個優惠碼有關的欄位(例如把代碼指定給某個人)。
+ *
+ * 這個位置在 client 元件裡:畫優惠碼頁的那一方(伺服器元件)先 `await slotParts(AdminPromoFormFields, {})`,當作
+ * PromosAdmin 的 formFields 傳進去。填的元件是 client 元件,用 commerce-kit/promo-form.tsx 的 usePromoForm() 知道
+ * 表單上是哪個代碼,並登記「這個代碼存好之後要一起做的事」。
+ */
+export const AdminPromoFormFields = defineSlot("admin.promo-form.fields");
+
 // ---- 後台的內容頁:每個內容型別各有一個插槽 ----
 // key 是完整的型別代號 `<extId>.<type>`(例如 "catalog.product")。預設內容是泛用的列表或編輯頁
 // (或 overrides.ts 登記的整頁替換);別的插件在它前後加一塊(例如商品列表上方的缺貨提醒、

@@ -37,6 +37,14 @@ vi.mock("@/lib/settings", () => ({
 }));
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
 vi.mock("@/lib/cf", () => ({ getDB: () => ({}) }));
+// 優惠碼表單的插槽(core-slots.ts 的 AdminPromoFormFields):這次請求裡有一個別的插件往裡面填了一格。
+vi.mock("@/ext/loader", async () => {
+  const { SlotRegistry, fill } = await import("../src/ext/slots");
+  const { AdminPromoFormFields } = await import("../src/ext/core-slots");
+  const { createElement: h } = await import("react");
+  const ExtraField = () => h("span", { "data-extra-field": "" }, "別的插件填的欄位");
+  return { getExtRuntime: async () => ({ slots: new SlotRegistry([{ extId: "partner", fills: [fill(AdminPromoFormFields, { after: ExtraField })] }]) }) };
+});
 // 1.63.0: the verify page names what customers report (the transfer method's reportSpec).
 vi.mock("../extensions/shop/shop-providers", () => ({
   loadTransferReportSpec: async () => ({ ask: "reference", reference: { label: "帳號末五碼", digits: 5 } }),
@@ -187,6 +195,11 @@ describe.each(ROLES)("$role", ({ canEdit, levels }) => {
     expect(out.includes("建立優惠碼")).toBe(canEdit);
     expect(hasButton(out, "刪除")).toBe(canEdit);
     expect(hasButton(out, "編輯")).toBe(canEdit);
+    // 表單裡的插槽:別的插件填的欄位跟著表單出現,而且在表單裡面(「啟用」之前)。
+    expect(out.includes("別的插件填的欄位")).toBe(canEdit);
+    if (canEdit) expect(out.indexOf("data-extra-field")).toBeLessThan(out.indexOf("啟用</label>"));
+    // 列表有期間那一欄(這一筆沒有設期間)。
+    expect(out).toContain(">期間</th>");
   });
 
   it("退貨管理:能改才有新增退貨;?order= 不會替只能看的角色打開新增表單", async () => {
