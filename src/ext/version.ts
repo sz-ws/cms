@@ -1706,4 +1706,22 @@
 // otherwise start a link in a signed-in person's browser. Requests without that header and sign-in starts are
 // unchanged.
 // A plugin that uses any of these declares coreApi "^1.76.0".
-export const CORE_API_VERSION = "1.76.0";
+// 1.77.0: The admin sidebar marks the pages that have something waiting. A plugin whose admin page collects
+// things for the owner to handle (a reported bank transfer waiting to be checked, an application waiting for an
+// answer) appends `{ href, count() }` to the value slot `AdminAttention` (`admin.sidebar.attention`,
+// `src/ext/admin-attention.ts`): `href` is that page as it appears in the sidebar, `count` says how many are
+// waiting now and may read the database. The sidebar asks `GET /api/admin/attention` when it loads, on every
+// page change, when the tab comes back to the front and every two minutes while the tab is visible, and draws a
+// small static dot on each row whose count is above zero: a dot only, never a number. A closed folder and a
+// collapsed section show the dot for the pages inside them; on the icon-only rail it sits on the icon's corner.
+// The count itself is in the row's screen-reader text and, on the rail, in its tooltip. A page calls
+// `refreshAdminAttention()` (`src/components/admin/attention.tsx`) right after the owner handled something, and
+// the dot follows at once.
+// Sources are asked only about pages the signed-in person can open (`sessionCanOpen` in `admin-access.ts`, the
+// same decision the sidebar's menu uses; a member with no admin role gets an empty answer), in parallel, two
+// seconds each. One that answers with something that is not a number counts as zero. One that throws or hangs
+// is logged and its page comes back as `unknown`: the sidebar keeps that page's dot as it was. The others are
+// unaffected. At most 50 sources are asked, a count is capped at 9999, and several sources for one page are
+// added up. `count` runs every time the sidebar asks, so keep it to one cheap query.
+// A plugin that uses this declares coreApi "^1.77.0".
+export const CORE_API_VERSION = "1.77.0";

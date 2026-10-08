@@ -15,16 +15,34 @@
   - `slots.ts` (1.74.0): slots — the one way an upper layer changes a lower one. `defineValueSlot` /
     `defineSlot` declare a named place, a plugin's `fills` fill it (`fill(slot, …)`), and the request's
     `ExtRuntime.slots` resolves it. Order follows `Extension.layer`: plain plugins, then "agency", then
-    "site"; a layer is on when compiled in, without being enabled. `account-entries.ts` is the slot for the entries of a signed-in person's account area (plus how to read them), `after-sign-in.ts` is the slot through which a plugin asks a member for one more step right after sign-in (read by `/api/auth/continue`; staff are never detoured), `site-path.ts` checks a supplied address; `core-slots.ts` holds core's own slots
+    "site"; a layer is on when compiled in, without being enabled. `account-entries.ts` is the slot for the entries of a signed-in person's account area (plus how to read them), `after-sign-in.ts` is the slot through which a plugin asks a member for one more step right after sign-in (read by `/api/auth/continue`; staff are never detoured), `admin-attention.ts` is the slot through which a plugin says which admin pages have something waiting (the dot in the sidebar; see its own entry below), `site-path.ts` checks a supplied address; `core-slots.ts` holds core's own slots
     (admin sidebar sections and items, admin status sets, and one slot per admin content list and edit
     page); UI slots are placed with `components/Slot.tsx` (server) and `components/SlotRegion.tsx`
     (client). `services.slots` is the same registry for jobs and API handlers; `slots.explain(slot)` says
     who filled what. Slots are for changing a lower layer; services (payment, stock, checkout fields)
     stay capabilities. `CMS_LAYER_FILLS=off` (Worker variable) skips the fills of both layers.
+  - `admin-attention.ts` (1.77.0): the value slot `AdminAttention` (`admin.sidebar.attention`) — which admin
+    pages have something waiting for the owner. A plugin appends `{ href, count() }` in its `fills`:
+    `fill(AdminAttention, (sources) => [...sources, { href: "/admin/ext/my-plugin", count: () => countWaiting() }])`.
+    `href` is the page as it appears in the sidebar; `count` answers how many are waiting now (a number or a
+    promise of one) and runs every time the sidebar asks, so keep it to one cheap query. The sidebar asks
+    `GET /api/admin/attention` (`askAdminAttention`) and draws a small static dot where the count is above
+    zero: on the page's row, on a closed folder or a collapsed section that holds it, and on the icon's corner
+    when the sidebar is docked. It never shows a number; the count is in the row's screen-reader text. Only
+    pages the signed-in person can open are asked (`sessionCanOpen` in `admin-access.ts`, the decision the
+    sidebar's menu uses; a role it does not know opens nothing). Sources run in parallel with 2 s each. One
+    that answers with a non-number counts as zero. One that throws or hangs is logged and its page is listed
+    as `unknown` in the answer: the sidebar keeps that page's dot as it was, so a busy database does not make
+    a dot disappear. At most 50 sources, a count is capped at 9999, several sources for one page are added up. Right after the owner handles something, the page calls
+    `refreshAdminAttention()` (`components/admin/attention.tsx`, a client module) and the dot follows at once;
+    without it the sidebar asks again on the next page change, when the tab comes back, and every 120 s.
+    Requires coreApi `^1.77.0`.
   - `semver.ts`: coreApi ↔ CORE_API_VERSION range comparison.
   - `version.ts`: CORE_API_VERSION constant.
   - `admin-menu.ts`: sidebar data model; `admin-access.ts` (1.50.0): custom-role rules —
-    grantable pages, levels, `accessAs`, the roles matrix derived from the sidebar.
+    grantable pages, levels, `accessAs`, the roles matrix derived from the sidebar. `sessionCanOpen`
+    (1.77.0) says which admin pages a signed-in person can open; the sidebar menu and
+    `/api/admin/attention` both ask it.
   - `mcp-server.ts` (1.59.0): the MCP JSON-RPC handler for AI connections — the agent tool
     registry over `/api/mcp`; writes only on connections allowed to change things, audited as
     source "mcp" with the app's name.

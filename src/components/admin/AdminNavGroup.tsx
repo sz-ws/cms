@@ -3,6 +3,7 @@
 import { useId, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AttentionDot } from "./attention";
 
 // A collapsible folder group in the admin sidebar (mock's `.grp`). The header
 // is a real <button>; the chevron rotates. Group labels are small, sentence-case,
@@ -23,6 +24,11 @@ interface AdminNavGroupProps {
   prominent?: boolean;
   /** 目前頁面在這一區裡;收合時標題加深,側欄仍看得出你在哪。 */
   holdsActive?: boolean;
+  /**
+   * 1.77.0:這一區裡有幾件事在等人處理。收合時標題旁畫一個點(attention.tsx)—— 分區平常收著的站,
+   * 不這樣點就藏在看不到的列上;展開之後由各列自己標。
+   */
+  attention?: number;
   children: ReactNode;
 }
 
@@ -32,9 +38,11 @@ export function AdminNavGroup({
   onToggle,
   prominent = false,
   holdsActive = false,
+  attention = 0,
   children,
 }: AdminNavGroupProps) {
   const panelId = useId();
+  const marked = !open && attention > 0;
 
   return (
     <div className="mt-1.5 first:mt-0" data-slot="admin-nav-group">
@@ -57,6 +65,9 @@ export function AdminNavGroup({
         )}
       >
         <span>{label}</span>
+        {/* The dot goes to the end of the row, just before the chevron (which then
+            gives up its own auto margin). */}
+        <AttentionDot count={marked ? attention : 0} className="ml-auto" />
         {/* The chevron is an affordance, not a label: on always-open groups it
             shows on hover/focus (and stays while a group is collapsed, so the
             folded state is visible). Four permanent chevrons down the rail is the
@@ -66,6 +77,7 @@ export function AdminNavGroup({
           aria-hidden
           className={cn(
             "ml-auto size-3 transition-[opacity,transform] duration-150 ease-out",
+            marked && "ml-0",
             !open && "-rotate-90",
             prominent || !open
               ? "opacity-55"

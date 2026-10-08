@@ -726,6 +726,7 @@ export const en = {
   "sidebar.logOut": "Log out",
   "sidebar.signingOut": "Signing out…",
   "sidebar.accountMenu": "Account menu",
+  "sidebar.attention": "{count} waiting",
 
   // SetupForm
   "setup.title": "Set up your CMS",

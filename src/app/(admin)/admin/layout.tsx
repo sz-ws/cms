@@ -16,11 +16,7 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { RegistryNoticeDialog } from "@/components/admin/RegistryNoticeDialog";
 import type { AdminMenuItem } from "@/ext/admin-menu";
 import { AdminStatusSets } from "@/ext/core-slots";
-import {
-  customRoleCanOpen,
-  editorCanOpen,
-  filterAdminMenu,
-} from "@/ext/admin-access";
+import { filterAdminMenu, sessionCanOpen } from "@/ext/admin-access";
 import {
   buildAdminMenu,
   buildAdminSections,
@@ -128,12 +124,13 @@ export default async function AdminLayout({
   // - guest:只有帳戶(路徑 gate 在上方 redirect;這裡是視覺對齊)。
   // - editor:儀表板與帳戶 —— 其餘頁是 requireAuth("admin"),點了只會被擋。
   // - 1.50.0 自訂角色:檢視以上的頁(規則在 ext/admin-access.ts)。
+  // 1.77.0:誰打得開哪一頁由 sessionCanOpen 決定(管理員是 null,不過濾);側欄上「有事在等」的提示
+  // (/api/admin/attention)問的是同一個函式。
+  const canOpen = sessionCanOpen(session);
   if (user.role === "guest") {
     menu = menu.filter((item) => item.href === "/admin/account");
-  } else if (access) {
-    menu = filterAdminMenu(menu, customRoleCanOpen(access));
-  } else if (user.role === "editor") {
-    menu = filterAdminMenu(menu, editorCanOpen);
+  } else if (canOpen) {
+    menu = filterAdminMenu(menu, canOpen);
   }
 
   // 1.40.0:側欄分區也過 filter —— 站台可以改名、加區、排序、改收合方式,

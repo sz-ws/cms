@@ -14,6 +14,7 @@ import {
   openablePageCount,
   presetAccess,
   sanitizeAccess,
+  sessionCanOpen,
   type AccessMap,
 } from "../src/ext/admin-access";
 import {
@@ -211,6 +212,54 @@ describe("sidebar filtering", () => {
       "/admin/ext/order-desk",
     );
     expect(firstOpenablePath(GROUPS, customRoleCanOpen({}))).toBeNull();
+  });
+});
+
+// 1.77.0: one decision for "which admin pages can this signed-in person open", shared by the
+// sidebar menu (admin/layout.tsx) and the sidebar's attention dots (/api/admin/attention).
+describe("sessionCanOpen", () => {
+  const person = (role: "admin" | "editor" | "guest", access: AccessMap | null = null) => ({
+    user: { role },
+    access,
+  });
+
+  it("a full admin opens everything: null, nothing to filter", () => {
+    expect(sessionCanOpen(person("admin"))).toBeNull();
+  });
+
+  it("a role it does not know opens nothing (only a real admin is unfiltered)", () => {
+    const canOpen = sessionCanOpen(person("owner" as never));
+    expect(canOpen).not.toBeNull();
+    expect(canOpen!("/admin")).toBe(false);
+    expect(canOpen!("/admin/ext/order-desk")).toBe(false);
+  });
+
+  it("an editor opens the dashboard only, exactly as editorCanOpen says", () => {
+    const canOpen = sessionCanOpen(person("editor"))!;
+    expect(canOpen("/admin")).toBe(true);
+    expect(canOpen("/admin/ext/order-desk")).toBe(false);
+    expect(filterAdminMenu(MENU, canOpen)).toEqual(filterAdminMenu(MENU, editorCanOpen));
+  });
+
+  it("a custom role opens the pages it can at least view, exactly as customRoleCanOpen says", () => {
+    const access: AccessMap = { "/admin/ext/shop/promos": "edit", "/admin/media": "view" };
+    const canOpen = sessionCanOpen(person("editor", access))!;
+    expect(canOpen("/admin/media")).toBe(true);
+    expect(canOpen("/admin/ext/shop/promos")).toBe(true);
+    expect(canOpen("/admin/ext/order-desk")).toBe(false);
+    expect(canOpen("/admin")).toBe(false);
+    expect(filterAdminMenu(MENU, canOpen)).toEqual(filterAdminMenu(MENU, customRoleCanOpen(access)));
+  });
+
+  it("a custom role with nothing granted opens nothing, not the editor's dashboard", () => {
+    expect(sessionCanOpen(person("editor", {}))!("/admin")).toBe(false);
+  });
+
+  it("a guest opens their own account page and nothing else", () => {
+    const canOpen = sessionCanOpen(person("guest"))!;
+    expect(canOpen("/admin/account")).toBe(true);
+    expect(canOpen("/admin")).toBe(false);
+    expect(canOpen("/admin/ext/order-desk")).toBe(false);
   });
 });
 

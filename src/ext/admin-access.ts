@@ -317,6 +317,31 @@ export function editorCanOpen(key: string): boolean {
   return key === DASHBOARD_PATH;
 }
 
+/** 訪客(一般會員)在後台打得開的頁:只有自己的帳戶。 */
+function guestCanOpen(key: string): boolean {
+  return key === "/admin/account";
+}
+
+/**
+ * 這個登入的人打得開哪些後台頁。側欄(admin/layout.tsx)與側欄上「有事在等」的提示(/api/admin/attention,1.77.0)
+ * 共用這一個判斷,兩邊不會各說各的。參數是 getSessionAccess() 的結果(授權範圍外的身分):
+ *   - guest:只有自己的帳戶頁;
+ *   - 自訂角色(有 access):檢視以上的頁;
+ *   - editor:儀表板;
+ *   - 預設的管理員:全部 —— 回 null,呼叫端不用過濾;
+ *   - 其他(不認得的角色):什麼都打不開。
+ */
+export function sessionCanOpen(session: {
+  user: { role: PresetRole };
+  access: AccessMap | null;
+}): ((key: string) => boolean) | null {
+  if (session.user.role === "guest") return guestCanOpen;
+  if (session.access) return customRoleCanOpen(session.access);
+  if (session.user.role === "editor") return editorCanOpen;
+  // 只有真的管理員不過濾;不認得的角色(資料壞了)什麼都打不開,不當成管理員。
+  return session.user.role === "admin" ? null : () => false;
+}
+
 /** 側欄順序裡第一個打得開的頁(自訂角色沒有儀表板時,登入後落在這裡)。 */
 export function firstOpenablePath(
   groups: readonly NavGroupLike[],

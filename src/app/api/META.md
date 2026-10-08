@@ -1,6 +1,8 @@
 # api META
 
 - All server-side endpoints.
+- `admin/attention`: which admin pages have something waiting, for the dot in the sidebar; any
+  signed-in person, only for pages they can open (1.77.0).
 - `auth/*`: session login/logout.
 - `callback/*`: provider callback ingress (payment/extraction/...).
 - `ext/[extId]/*`: extension API dispatch (auto-CRUD for declarative content).

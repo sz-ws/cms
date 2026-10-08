@@ -32,6 +32,7 @@ import { clearAllStoredTranscripts } from "./agent/persist-keys";
 import { AdminNavGroup } from "./AdminNavGroup";
 import { AdminNavLink } from "./AdminNavLink";
 import { NavIcon } from "./adminNavIcons";
+import { AttentionDot, attentionAt, useAdminAttention } from "./attention";
 import { pickActiveHref } from "./nav-active";
 import { roleLabel } from "./role-label";
 import type { AdminNavGroupData, AdminNavItem, AdminNavKind } from "./nav-groups";
@@ -107,6 +108,12 @@ function childItemClasses(active: boolean): string {
   return cn(navItemClasses(active), "h-7 ps-9");
 }
 
+// 1.77.0: on the icon-only rail the "something is waiting" dot (attention.tsx) sits
+// on the icon's top-right corner. The row is `relative` with 10px padding and a 16px
+// icon centred in its 32px height, so that corner is at (26px, 8px); the 6px dot is
+// centred on it.
+const DOCKED_DOT = "absolute start-[23px] top-[5px]";
+
 /** 這一頁上使用者自己點開、收起的分區與資料夾(id → 是否展開);沒點過的照預設。 */
 interface NavToggles {
   groups: Readonly<Record<string, boolean>>;
@@ -173,6 +180,18 @@ export function AdminSidebar({
     pending && pending.from === routeKey ? pending.href : resolvedHref;
   const markPending = (href: string) => setPending({ href, from: routeKey });
 
+  // 1.77.0:哪幾頁現在有事在等(插件從插槽 AdminAttention 報的,見 ext/admin-attention.ts)。換頁時再問一次。
+  // 有事的那一列畫一個點;收著的資料夾與分區替裡面的頁說話,不然點會藏在看不到的列上。
+  const attention = useAdminAttention(pathname, user.role !== "guest");
+  /** 這一項有幾件事在等;資料夾是裡面各頁加起來。 */
+  const waitingAt = (item: AdminNavItem): number =>
+    item.children?.length
+      ? item.children.reduce((sum, child) => sum + attentionAt(attention, child.href), 0)
+      : attentionAt(attention, item.href);
+  /** 收成圖示列時的提示:名稱,有事在等再加上幾件(那裡沒有地方放報讀文字)。 */
+  const tooltipFor = (title: string, waiting: number): string =>
+    waiting > 0 ? `${title} · ${t("sidebar.attention", { count: waiting })}` : title;
+
   async function onLogout() {
     if (signingOut) return;
     setSigningOut(true);
@@ -195,12 +214,13 @@ export function AdminSidebar({
   function renderItem(item: AdminNavItem) {
     if (item.children?.length) return renderFolder(item, item.children);
     const active = item.href === activeHref;
+    const waiting = waitingAt(item);
     return (
       <AdminNavLink
         key={item.href}
         href={item.href}
         active={active}
-        tooltip={item.title}
+        tooltip={tooltipFor(item.title, waiting)}
         className={navItemClasses(active)}
         onNavigateStart={markPending}
       >
@@ -209,12 +229,14 @@ export function AdminSidebar({
             together on hover. */}
         <NavIcon item={item} className={iconClasses(active)} />
         {!docked && <span className="min-w-0 flex-1 truncate">{item.title}</span>}
+        <AttentionDot count={waiting} className={docked ? DOCKED_DOT : undefined} silent={docked} />
       </AdminNavLink>
     );
   }
 
   function renderFolder(item: AdminNavItem, children: AdminNavItem[]) {
     const holdsActive = children.some((child) => child.href === activeHref);
+    const waiting = waitingAt(item);
 
     // Icon-only rail: there is no room to expand, so the folder is a link to its
     // first page with the folder name as tooltip.
@@ -224,11 +246,12 @@ export function AdminSidebar({
           key={`folder:${item.href}`}
           href={children[0].href}
           active={holdsActive}
-          tooltip={item.title}
+          tooltip={tooltipFor(item.title, waiting)}
           className={navItemClasses(holdsActive)}
           onNavigateStart={markPending}
         >
           <NavIcon item={item} className={iconClasses(holdsActive)} />
+          <AttentionDot count={waiting} className={DOCKED_DOT} silent />
         </AdminNavLink>
       );
     }
@@ -252,6 +275,8 @@ export function AdminSidebar({
         >
           <NavIcon item={item} className={iconClasses(holdsActive)} />
           <span className="min-w-0 flex-1 truncate">{item.title}</span>
+          {/* Closed: the folder speaks for its pages. Open: each row carries its own dot. */}
+          <AttentionDot count={open ? 0 : waiting} />
           <ChevronRight
             aria-hidden
             className={cn(
@@ -272,6 +297,7 @@ export function AdminSidebar({
                 onNavigateStart={markPending}
               >
                 <span className="min-w-0 flex-1 truncate">{child.title}</span>
+                <AttentionDot count={attentionAt(attention, child.href)} />
               </AdminNavLink>
             );
           })}
@@ -334,6 +360,7 @@ export function AdminSidebar({
                 onToggle={() => toggle("groups", group.id, !open)}
                 prominent={accordion}
                 holdsActive={holdsActive}
+                attention={group.items.reduce((sum, item) => sum + waitingAt(item), 0)}
               >
                 {group.items.map(renderItem)}
               </AdminNavGroup>

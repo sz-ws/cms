@@ -706,6 +706,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "sidebar.logOut": "登出",
   "sidebar.signingOut": "登出中…",
   "sidebar.accountMenu": "帳戶選單",
+  "sidebar.attention": "{count} 件待處理",
 
   // SetupForm
   "setup.title": "設定你的 CMS",
