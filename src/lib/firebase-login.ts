@@ -103,7 +103,8 @@ export async function completeFirebaseLogin(
   const firebase = payload.firebase as { sign_in_provider?: unknown } | undefined;
   if (firebase?.sign_in_provider !== signIn) return { kind: "error", code: "oauth_failed" };
 
-  // 明確「未驗證」的 email 視同沒有(同 OIDC)。
+  // 明確「未驗證」的 email 連登入方式的名字(display)都不用(同 OIDC)。帳號的 Email 只認
+  // email_verified === true 的,規則在 login-accounts.ts,兩條登入路共用。
   if (claims.email_verified === false) claims.email = undefined;
   const display = claims.email ?? claims.name ?? null;
 

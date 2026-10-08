@@ -8,6 +8,8 @@ import { isPlaceholderEmail, PLACEHOLDER_EMAIL_SUFFIX } from "../src/lib/auth";
 describe("isPlaceholderEmail", () => {
   it("matches synthesized placeholder addresses (case-insensitive)", () => {
     expect(isPlaceholderEmail("oauth-line-login-ab12cd34@placeholder.invalid")).toBe(true);
+    // 1.76.0 起新帳號的那一段是 16 個字(以前 8 個);舊帳號的地址不會改,兩種都要認得。
+    expect(isPlaceholderEmail("oauth-line-login-ab12cd340f1e2d3c@placeholder.invalid")).toBe(true);
     expect(isPlaceholderEmail("OAUTH-GOOGLE-DEADBEEF@PLACEHOLDER.INVALID")).toBe(true);
     expect(PLACEHOLDER_EMAIL_SUFFIX).toBe("@placeholder.invalid");
   });

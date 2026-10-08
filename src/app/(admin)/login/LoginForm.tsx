@@ -15,6 +15,7 @@ import { FaceIdIcon } from "@/components/ui/face-id-icon";
 import { FirebaseSignInButton } from "@/components/auth/FirebaseSignInButton";
 import { signInWithPasskey } from "@/components/auth/passkey-sign-in";
 import type { FirebaseWebConfig } from "@/lib/oidc";
+import { oauthErrorKey } from "@/lib/oauth-error-keys";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { Field, PrimaryButton, TextButton } from "./LoginField";
 import { ResetPasswordForm } from "./ResetPasswordForm";
@@ -70,25 +71,7 @@ export interface LoginProviderButton {
   firebase?: FirebaseWebConfig;
 }
 
-// OAuth callback 以 /login?error=<code> 帶回機器可讀錯誤;未知 code 一律泛化。
-function oauthErrorKey(code: string) {
-  switch (code) {
-    case "oauth_denied":
-      return "login.error.oauthDenied" as const;
-    case "oauth_state":
-    case "oauth_stale":
-      return "login.error.oauthState" as const;
-    case "popup_blocked":
-      return "login.error.popupBlocked" as const;
-    case "not_linked":
-      return "login.error.notLinked" as const;
-    case "email_exists":
-      return "login.error.emailExists" as const;
-    default:
-      return "login.error.oauthFailed" as const;
-  }
-}
-
+// OAuth callback 以 /login?error=<code> 帶回機器可讀錯誤(oauthError);對到哪一句見 @/lib/oauth-error-keys。
 export function LoginForm({
   next,
   siteTitle,

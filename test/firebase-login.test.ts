@@ -208,6 +208,29 @@ describe("completeFirebaseLogin", () => {
     expect(outcome).toEqual({ kind: "session", userId: "u-member", location: "/", emailVerified: true });
   });
 
+  // 和 OIDC 同一條規則(login-accounts.ts):對方沒有明講「已驗證」的 email 不會變成帳號的 Email。
+  it.each([
+    ["no email_verified claim", { email_verified: undefined }],
+    ["email_verified: false", { email_verified: false }],
+  ])("gives a new member no email on file when the token's email is not verified (%s)", async (_name, overrides) => {
+    const outcome = await completeFirebaseLogin({ providerId: PROVIDER, idToken: await signToken(overrides), mode: "login", next: "/" });
+    expect(outcome).toMatchObject({ kind: "session", emailVerified: false });
+    if (outcome.kind !== "session") return;
+    const row = await d1().prepare("SELECT email, email_verified_at FROM users WHERE id = ?1").bind(outcome.userId).first<{ email: string; email_verified_at: number | null }>();
+    expect(row?.email).toMatch(/@placeholder\.invalid$/);
+    expect(row?.email_verified_at).toBeNull();
+    expect(await d1().prepare("SELECT id FROM users WHERE email = 'buyer@test.com'").first()).toBeNull();
+  });
+
+  it("does not sign an unverified email into the member who owns that address", async () => {
+    await seedUser("u-member", "buyer@test.com", "guest", true);
+    const outcome = await completeFirebaseLogin({ providerId: PROVIDER, idToken: await signToken({ email_verified: undefined }), mode: "login", next: "/" });
+    expect(outcome).toMatchObject({ kind: "session", emailVerified: false });
+    if (outcome.kind !== "session") return;
+    expect(outcome.userId).not.toBe("u-member");
+    expect(await listUserIdentities("u-member")).toHaveLength(0);
+  });
+
   it("refuses a token for another project", async () => {
     const outcome = await completeFirebaseLogin({
       providerId: PROVIDER,
@@ -240,6 +263,18 @@ describe("completeFirebaseLogin", () => {
     const [h, , s] = token.split(".");
     const forged = `${h}.${b64urlStr(JSON.stringify({ sub: "attacker" }))}.${s}`;
     const outcome = await completeFirebaseLogin({ providerId: PROVIDER, idToken: forged, mode: "login" });
+    expect(outcome).toEqual({ kind: "error", code: "oauth_failed" });
+  });
+
+  // 這條路的 token 是瀏覽器送來的(攻擊者可以自己做一張),所以只信 Google 公開的金鑰:
+  // HS256(拿任何字串當金鑰簽的)一律不收,拿站台存的 API key、project id 當金鑰簽也一樣。
+  it.each([["the API key", "AIza-test"], ["the project id", PROJECT], ["an empty key", ""]])("refuses an HS256 token signed with %s", async (_name, secret) => {
+    const now = Math.floor(Date.now() / 1000);
+    const header = b64urlStr(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+    const payload = b64urlStr(JSON.stringify({ iss: `https://securetoken.google.com/${PROJECT}`, aud: PROJECT, iat: now, exp: now + 3600, auth_time: now, sub: "attacker", email: "buyer@test.com", email_verified: true, firebase: { sign_in_provider: "google.com", identities: {} } }));
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret || "x"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${header}.${payload}`)));
+    const outcome = await completeFirebaseLogin({ providerId: PROVIDER, idToken: `${header}.${payload}.${b64url(sig)}`, mode: "login" });
     expect(outcome).toEqual({ kind: "error", code: "oauth_failed" });
   });
 

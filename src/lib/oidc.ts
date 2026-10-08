@@ -4,6 +4,8 @@ import { getDB } from "./cf";
 import { declarativeExtensions as dxTable, userIdentities } from "./schema";
 import { getSetting, extSetting } from "./settings";
 import { linkIdentity, signInWithIdentity, SENTINEL_PASSWORD_HASH } from "./login-accounts";
+import { OAUTH_STATE_TTL_MS, isOAuthState } from "./oauth-flow-cookie";
+import { OidcError, bytes, encUtf8, normalizeIssuer, verifyJwt, type Jwk } from "./oidc-jwt";
 import {
   FIREBASE_SETTING_KEYS,
   parseManifest,
@@ -11,13 +13,20 @@ import {
 } from "@/ext/dx/manifest";
 
 // spec-login-providers.md §5:core OIDC 引擎(role-agnostic;第三方身分只對應 user
-// 列,role/permission 全走既有機制)。Google(RS256)/ LINE(ES256)皆標準 OIDC
+// 列,role/permission 全走既有機制)。Google(RS256)/ LINE(網頁登入 HS256,App 與 LIFF 是 ES256)皆標準 OIDC
 // authorization code flow + discovery,簽章驗證由 WebCrypto 原生做。
 //
 // 安全硬需求:
 //   - 錯誤訊息永不含 clientSecret;外部 fetch 一律 https + SSRF host guard + timeout。
 //   - id_token 完整驗證(alg allowlist、JWKS 簽章、iss/aud/exp/nonce)。
 //   - state 一次性(callback 條件式 DELETE,防重放);email 撞既有 user 不自動綁。
+//   - 1.76.0:state 綁在開始登入的那個瀏覽器上(oauth-flow-cookie.ts)。callback route 先確認瀏覽器帶著
+//     這一次的 cookie 才呼叫 completeOAuth;對不上就交給 refuseUnboundCallback,什麼都不完成、state 不取用。
+//     連結模式再多一道:完成時這個瀏覽器要登入著開始連結的那個帳號。
+//
+// id_token 的驗證(verifyJwt)在 oidc-jwt.ts;這裡重新匯出,別的地方照舊從這個檔 import。
+
+export { verifyJwt };
 
 // ---- 型別 ----
 
@@ -76,35 +85,14 @@ interface Discovery {
   userinfo_endpoint?: string;
 }
 
-interface Jwk {
-  kid?: string;
-  kty: string;
-  alg?: string;
-  use?: string;
-  [k: string]: unknown;
-}
-
-/** 引擎內部錯誤:message 為機器可讀 code(絕不含 secret / 上游 body 全文)。 */
-class OidcError extends Error {}
-
-const STATE_TTL_MS = 10 * 60 * 1000; // 10 分鐘
 const FETCH_TIMEOUT_MS = 10_000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000; // 1h(isolate 內 in-memory)
 const DEFAULT_SCOPES = ["openid", "profile", "email"];
 
-// ---- base64url / bytes helpers ----
+// ---- base64url / bytes helpers(bytes、encUtf8 與解碼在 oidc-jwt.ts)----
 
-function bytes(len: number): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(new ArrayBuffer(len));
-}
 function randomBytes(len: number): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(bytes(len));
-}
-function encUtf8(s: string): Uint8Array<ArrayBuffer> {
-  const src = new TextEncoder().encode(s);
-  const out = bytes(src.length);
-  out.set(src);
-  return out;
 }
 const toHex = (u8: Uint8Array): string =>
   Array.from(u8)
@@ -115,17 +103,6 @@ function b64urlEncode(u8: Uint8Array): string {
   let bin = "";
   for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-function b64urlDecode(s: string): Uint8Array<ArrayBuffer> {
-  const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + pad;
-  const bin = atob(b64);
-  const out = bytes(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-function b64urlDecodeToString(s: string): string {
-  return new TextDecoder().decode(b64urlDecode(s));
 }
 
 // ---- SSRF guard(spec §5:issuer 必須 https 且非 private/loopback host)----
@@ -265,10 +242,6 @@ async function fetchBearerJson(url: string, accessToken: string): Promise<unknow
 const discoveryCache = new Map<string, { at: number; value: Discovery }>();
 const jwksCache = new Map<string, { at: number; value: Jwk[] }>();
 
-function normalizeIssuer(issuer: string): string {
-  return issuer.replace(/\/+$/, "");
-}
-
 async function getDiscovery(issuer: string): Promise<Discovery> {
   assertPublicHttpsUrl(issuer);
   const key = normalizeIssuer(issuer);
@@ -318,108 +291,6 @@ export async function getJwks(jwksUri: string): Promise<Jwk[]> {
 export function __clearOidcCaches(): void {
   discoveryCache.clear();
   jwksCache.clear();
-}
-
-// ---- id_token 驗證(alg allowlist + JWKS 簽章 + claims)----
-
-interface IdTokenClaims {
-  sub: string;
-  email?: string;
-  email_verified?: boolean;
-  name?: string;
-  picture?: string;
-}
-
-const VERIFY_ALG: Record<string, { import: EcKeyImportParams | RsaHashedImportParams; verify: EcdsaParams | AlgorithmIdentifier }> = {
-  RS256: {
-    import: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    verify: { name: "RSASSA-PKCS1-v1_5" },
-  },
-  ES256: {
-    import: { name: "ECDSA", namedCurve: "P-256" },
-    verify: { name: "ECDSA", hash: "SHA-256" },
-  },
-};
-
-/**
- * 驗 JWT:alg allowlist、JWKS 簽章、iss、aud、exp;給了 nonce 就一併比對(OIDC 一定給;
- * Firebase 的 ID token 沒有 nonce,freshness 由 firebase-login.ts 看 auth_time)。
- * 回傳整理過的 claims 與原始 payload(呼叫端要再看其他 claim 時用)。
- */
-export async function verifyJwt(
-  idToken: string,
-  jwks: Jwk[],
-  expected: { issuer: string; audience: string; nonce?: string },
-): Promise<{ claims: IdTokenClaims; payload: Record<string, unknown> }> {
-  const parts = idToken.split(".");
-  if (parts.length !== 3) throw new OidcError("idtoken_malformed");
-  const [headerB64, payloadB64, sigB64] = parts;
-
-  let header: { alg?: string; kid?: string };
-  let payload: Record<string, unknown>;
-  try {
-    header = JSON.parse(b64urlDecodeToString(headerB64));
-    payload = JSON.parse(b64urlDecodeToString(payloadB64));
-  } catch {
-    throw new OidcError("idtoken_malformed");
-  }
-
-  const algName = header.alg ?? "";
-  const alg = VERIFY_ALG[algName];
-  if (!alg) throw new OidcError("unsupported_alg");
-
-  // 依 kid 選 key(無 kid 時取第一把符合 kty 的);import → verify 簽章。
-  const wantKty = algName === "RS256" ? "RSA" : "EC";
-  const candidates = jwks.filter(
-    (k) => k.kty === wantKty && (header.kid ? k.kid === header.kid : true),
-  );
-  if (candidates.length === 0) throw new OidcError("jwks_no_matching_key");
-
-  const signed = encUtf8(`${headerB64}.${payloadB64}`);
-  const sig = b64urlDecode(sigB64);
-  let verified = false;
-  for (const jwk of candidates) {
-    try {
-      const key = await crypto.subtle.importKey("jwk", jwk, alg.import, false, [
-        "verify",
-      ]);
-      if (await crypto.subtle.verify(alg.verify, key, sig, signed)) {
-        verified = true;
-        break;
-      }
-    } catch {
-      // 這把 key import/verify 失敗 → 試下一把。
-    }
-  }
-  if (!verified) throw new OidcError("idtoken_bad_signature");
-
-  // claims 驗證:iss 一致、aud === audience、exp > now-60s、nonce 相符。
-  if (normalizeIssuer(String(payload.iss ?? "")) !== normalizeIssuer(expected.issuer)) {
-    throw new OidcError("idtoken_bad_iss");
-  }
-  const aud = payload.aud;
-  const audOk = Array.isArray(aud)
-    ? aud.includes(expected.audience)
-    : aud === expected.audience;
-  if (!audOk) throw new OidcError("idtoken_bad_aud");
-  const exp = typeof payload.exp === "number" ? payload.exp : 0;
-  if (exp * 1000 <= Date.now() - 60_000) throw new OidcError("idtoken_expired");
-  if (expected.nonce !== undefined && payload.nonce !== expected.nonce) {
-    throw new OidcError("idtoken_bad_nonce");
-  }
-
-  const sub = payload.sub;
-  if (typeof sub !== "string" || sub.length === 0) throw new OidcError("idtoken_no_sub");
-
-  const claims: IdTokenClaims = {
-    sub,
-    email: typeof payload.email === "string" ? payload.email : undefined,
-    email_verified:
-      typeof payload.email_verified === "boolean" ? payload.email_verified : undefined,
-    name: typeof payload.name === "string" ? payload.name : undefined,
-    picture: typeof payload.picture === "string" ? payload.picture : undefined,
-  };
-  return { claims, payload };
 }
 
 // ---- provider 載入(manifest loginProvider + settings clientId/secret)----
@@ -508,7 +379,8 @@ export async function loadFirebaseConfig(
 // ---- state 表存取(一次性,照 webauthn_challenges precedent)----
 
 async function insertState(id: string, payload: StatePayload): Promise<void> {
-  const expiresAt = Date.now() + STATE_TTL_MS;
+  // 10 分鐘;綁定瀏覽器的 cookie 用同一個數字當 Max-Age。
+  const expiresAt = Date.now() + OAUTH_STATE_TTL_MS;
   await getDB()
     .prepare("INSERT INTO oauth_states (id, payload, expires_at) VALUES (?1, ?2, ?3)")
     .bind(id, JSON.stringify(payload), expiresAt)
@@ -532,8 +404,21 @@ async function consumeState(id: string): Promise<StatePayload | null> {
     .bind(id, now)
     .run();
   if ((res.meta?.changes ?? 0) === 0) return null; // 競態下已被取走 → 拒絕(防重放)
+  return parseStatePayload(found.payload);
+}
+
+/** 只看不取:state 還在、沒過期就回它的內容(refuseUnboundCallback 用)。 */
+async function peekState(id: string): Promise<StatePayload | null> {
+  const found = await getDB()
+    .prepare("SELECT payload FROM oauth_states WHERE id = ?1 AND expires_at > ?2")
+    .bind(id, Date.now())
+    .first<{ payload: string }>();
+  return found ? parseStatePayload(found.payload) : null;
+}
+
+function parseStatePayload(raw: string): StatePayload | null {
   try {
-    return JSON.parse(found.payload) as StatePayload;
+    return JSON.parse(raw) as StatePayload;
   } catch {
     return null;
   }
@@ -570,11 +455,14 @@ export function safeNext(next: string | null | undefined): string {
 
 /** 失敗時去哪:有 back 就回那一頁(帶 login_error),否則後台登入頁(帶 error)。 */
 export function loginErrorLocation(code: string, back?: string | null): string {
+  const fallback = `/login?error=${encodeURIComponent(code)}`;
   const path = sitePath(back);
-  if (!path) return `/login?error=${encodeURIComponent(code)}`;
+  if (!path) return fallback;
   const url = new URL(path, "https://site.invalid");
   url.searchParams.set("login_error", code);
-  return `${url.pathname}${url.search}${url.hash}`;
+  // 化簡完再驗一次:"/..//evil.test" 過得了上面的檢查,化簡之後卻是 "//evil.test",
+  // 瀏覽器(和 route 的 new URL)會把它當成別的網站。
+  return sitePath(`${url.pathname}${url.search}${url.hash}`) ?? fallback;
 }
 
 function redirectUriFor(origin: string, providerId: string): string {
@@ -599,10 +487,13 @@ export interface BeginOptions {
   req: Request;
 }
 
-/** 產生 state/nonce/PKCE、寫 oauth_states、回 authorization URL。失敗回 error code。 */
+/**
+ * 產生 state/nonce/PKCE、寫 oauth_states、回 authorization URL。失敗回 error code。
+ * state 一起交出來:/start 用它在瀏覽器放綁定的 cookie(oauth-flow-cookie.ts)。
+ */
 export async function beginOAuth(
   opts: BeginOptions,
-): Promise<{ location: string } | { error: string }> {
+): Promise<{ location: string; state: string } | { error: string }> {
   const provider = await loadProvider(opts.providerId);
   if (!provider) return { error: "provider_unavailable" };
 
@@ -640,7 +531,7 @@ export async function beginOAuth(
   authUrl.searchParams.set("nonce", nonce);
   authUrl.searchParams.set("code_challenge", challenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
-  return { location: authUrl.toString() };
+  return { location: authUrl.toString(), state };
 }
 
 // ---- complete(callback route 用)----
@@ -651,12 +542,20 @@ export interface CompleteOptions {
   state: string | null;
   error?: string | null;
   req: Request;
+  /**
+   * 1.76.0:這個瀏覽器現在登入的是誰(沒登入是 null)。只有連結模式會問:完成連結的人要是開始的那個帳號。
+   * 函式而不是值:登入模式不必為了它多查一次 session。
+   */
+  sessionUserId: () => Promise<string | null>;
 }
 
 /**
  * callback 主流程。回傳 OAuthOutcome —— route 依 kind 設 cookie / redirect。
  * 所有錯誤都轉為帶機器可讀 error code 的 redirect:有 back 就回那一頁(?login_error=),
  * 否則後台登入頁(?error=);連結模式回帳號頁。
+ *
+ * 呼叫前 route 要先確認瀏覽器帶著這一次登入的 cookie(takeOAuthFlow);這裡不看 cookie。
+ * 連結模式另外要求這個瀏覽器登入著開始連結的那個帳號(sessionUserId)。
  */
 export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome> {
   const redirect = (location: string): OAuthOutcome => ({ kind: "redirect", location });
@@ -678,6 +577,15 @@ export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome
     isLink ? accountRedirect(`error=${code}`) : redirect(loginErrorLocation(code, payload.back));
   if (opts.error) return fail(isLink ? "oauth_failed" : "oauth_denied");
   if (!opts.code) return fail("oauth_state");
+
+  // 連結模式:身分要掛到「開始的那個帳號」上,所以完成的這個瀏覽器也要登入著同一個帳號。
+  // 綁定的 cookie 是 state 的雜湊,知道 state 的人(例如看得到授權網址)做得出來;他在自己的瀏覽器
+  // 用自己在對方那邊的身分走完,少了這一步,他的身分就掛上去了(之後能用它登入這個帳號)。
+  // 同一台電腦換了人登入也一樣擋。
+  if (isLink && (!payload.userId || (await opts.sessionUserId()) !== payload.userId)) {
+    console.error("[oidc] sign-in refused", opts.providerId, "link_other_account");
+    return fail("oauth_browser");
+  }
 
   try {
     const provider = await loadProvider(opts.providerId);
@@ -702,9 +610,10 @@ export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome
       issuer: provider.loginProvider.issuer,
       audience: provider.clientId,
       nonce: payload.nonce,
+      clientSecret: provider.clientSecret,
     });
-    // 明確標記「未驗證」的 email 視同沒有 email(走 placeholder)—— 防止用未驗證
-    // email 佔用/撞既有帳號的 email 檢查。缺 email_verified claim(如 LINE)不受影響。
+    // 明確標記「未驗證」的 email 連這個登入方式的名字(display)都不用。帳號的 Email 另有規則(login-accounts.ts):
+    // 只認 email_verified === true 的;缺這個 claim 的(如 LINE)一樣不算,不會變成新帳號的 Email、也不比對既有帳號。
     if (claims.email_verified === false) claims.email = undefined;
 
     // name 缺 → 打 userinfo 補(LINE 的 profile)。best-effort,失敗不阻斷。
@@ -742,10 +651,40 @@ export async function completeOAuth(opts: CompleteOptions): Promise<OAuthOutcome
       location: safeNext(payload.next),
       emailVerified: result.emailVerified,
     };
-  } catch {
-    // 任何引擎錯誤(discovery/token/簽章/DB)→ 帶 oauth_failed 導回。訊息不外洩。
+  } catch (error) {
+    // 任何引擎錯誤(discovery/token/簽章/DB)→ 帶 oauth_failed 導回。訊息不外洩給使用者;
+    // 1.76.0 起在伺服器記一行是哪一步(只有我們自己的代號,例如 unsupported_alg、token_http_400,沒有 token 或 secret),
+    // 不然站長只看得到「登入失敗」,查不出原因。
+    console.error("[oidc] sign-in failed", opts.providerId, error instanceof OidcError ? error.message : "unexpected");
     return fail("oauth_failed");
   }
+}
+
+/**
+ * 1.76.0:callback 到了不是開始登入的那個瀏覽器(route 發現綁定的 cookie 沒帶或對不上)。
+ * 什麼都不完成,只決定把人送去哪:
+ *   - state 還在:回開始的那一頁(沒有就登入頁;連結模式回帳號頁),帶 oauth_browser。手機上很常見
+ *     (對方的 App 把人送回另一個瀏覽器),頁面請他在這裡再登入一次。對方回的是錯誤(例如按了取消)
+ *     就照舊說取消。
+ *   - state 不在(等太久、用過、亂填、別的登入方式的):跟 completeOAuth 一樣是 oauth_state。
+ * state 只看不取用:取用了,任何拿得到 callback 網址的人都能把正在登入的那個人的這一次作廢。
+ */
+export async function refuseUnboundCallback(opts: {
+  providerId: string;
+  state: string | null;
+  error?: string | null;
+}): Promise<OAuthOutcome> {
+  const redirect = (location: string): OAuthOutcome => ({ kind: "redirect", location });
+  const payload = isOAuthState(opts.state) ? await peekState(opts.state) : null;
+  if (!payload || payload.provider !== opts.providerId) {
+    return redirect(loginErrorLocation(opts.error ? "oauth_denied" : "oauth_state"));
+  }
+  // 伺服器記一行(只有我們自己的代號):站長看得出「登入失敗」裡有多少是換了瀏覽器。
+  if (!opts.error) console.error("[oidc] sign-in refused", opts.providerId, "browser_mismatch");
+  if (payload.mode === "link") {
+    return redirect(`/admin/account?error=${opts.error ? "oauth_failed" : "oauth_browser"}`);
+  }
+  return redirect(loginErrorLocation(opts.error ? "oauth_denied" : "oauth_browser", payload.back));
 }
 
 // ---- 帳號頁 identities API 用的資料存取 ----

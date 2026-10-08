@@ -1644,4 +1644,40 @@
 // page, a landing page) was unknown to it. The value slot `SitemapPaths` (`core-slots.ts`) takes same-site paths,
 // or functions that return some (for a page that exists only when a setting is on; a function that throws only
 // loses what it would have reported). `seo-cache.ts` adds them after the list pages, once each.
-export const CORE_API_VERSION = "1.75.0";
+// 1.76.0: Sign-in.
+// Sign-in with LINE on the web works. LINE signs a web sign-in ID token with HS256 and the channel secret (its
+// discovery document lists only ES256, which is what its app SDK and LIFF use); `verifyJwt` (`src/lib/oidc-jwt.ts`)
+// refused HS256, so every LINE web sign-in ended in `oauth_failed`. It now accepts HS256 only when the caller
+// passes the client secret (the authorization-code flow does; the Firebase path does not) and never uses a
+// published key as the HMAC secret. A failed OIDC callback logs one line with the internal reason code.
+// A sign-in provider's email becomes the account's email only when the provider says it is verified
+// (`email_verified === true`; `src/lib/login-accounts.ts`, OIDC and Firebase alike). Anything else counts as no
+// email: the new account gets the placeholder address, and the address is not matched against existing
+// accounts. Before, an unverified address (LINE sends no such claim) went onto the new account, so someone could
+// open an account under another person's address. Linking from the account page is unchanged.
+// Value slot `AfterSignIn` (`src/ext/after-sign-in.ts`): a plugin appends `{ key, path(person) }`, and
+// `/api/auth/continue` sends a member to the first same-site path a step returns, with the original destination
+// in `?next=`. Staff are never detoured. A missing fill, a broken one, or one that does not answer within two
+// seconds leaves sign-in as it was.
+// An OAuth sign-in can only be finished in the browser that started it: `/api/auth/oauth/<id>/start` sets a
+// short-lived cookie holding a hash of the `state` (`src/lib/oauth-flow-cookie.ts`; one per sign-in, HttpOnly,
+// Secure, SameSite=Lax, limited to the OAuth API path), the callback checks it before doing anything else, and
+// linking a provider from the account page also needs that same account to be signed in when the browser comes
+// back (`completeOAuth` takes `sessionUserId`). Before, the `state` was only looked up in the database, so a
+// callback link made in one browser signed in whoever opened it as the person who made the link (login CSRF),
+// and someone who got hold of a link flow's `state` could attach their own identity to the account. A callback
+// without the cookie completes nothing, leaves the `state` usable and sends the person back with the code
+// `oauth_browser`; the sign-in and account pages show it as an instruction to sign in again in this browser,
+// because a phone app that hands the callback to a different browser ends up here too.
+// A failed sign-in is never sent off the site: `loginErrorLocation` (`src/lib/oidc.ts`) checks the `back` path
+// again after normalising it, because `/..//other.example` passed the first check and then collapsed into
+// `//other.example`, which a browser reads as another site.
+// The placeholder address of a new account without a proven email carries 16 hex characters of the hash of the
+// provider's subject, not 8 (`src/lib/login-accounts.ts`). With 8, two people of one provider could get the same
+// address and the second could not sign in. Existing accounts keep theirs; `isPlaceholderEmail` reads both.
+// `/api/auth/oauth/<id>/start?mode=link` starts nothing when the browser says the request came from another site
+// (`Sec-Fetch-Site: cross-site`) and sends the person to the account page with `oauth_browser`; another site could
+// otherwise start a link in a signed-in person's browser. Requests without that header and sign-in starts are
+// unchanged.
+// A plugin that uses any of these declares coreApi "^1.76.0".
+export const CORE_API_VERSION = "1.76.0";

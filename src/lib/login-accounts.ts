@@ -17,11 +17,21 @@ import { PLACEHOLDER_EMAIL_SUFFIX } from "./placeholder-email";
 //   - 沒有 email_verified(如 LINE)也不自動綁。
 // 以已驗證 Email 建立的新帳號會記下 email_verified_at。
 //
+// 對方沒有明講「已驗證」的 email(email_verified 不是 true:沒有這個 claim、false、不是布林)在這裡一律當作
+// 沒給(provenEmail):不會變成帳號的 Email、不拿來比對既有帳號。LINE 的 ID token 有 email 但沒有
+// email_verified,文件也沒說那個地址驗證過;以前這種 email 直接成為新帳號的 Email,等於讓人用別人的地址
+// 開帳號 —— 信箱的主人之後用驗證碼登入,會進到一個對方的身分也進得來的帳號(預先劫持)。現在這種登入
+// 拿到的是沒有 Email 的帳號(代用地址,見 createGuestUser);要補 Email 是插件的事(例如會員插件用驗證碼
+// 證明信箱之後才寫進帳號),core 只提供登入後多走一步的插槽(src/ext/after-sign-in.ts)。
+//
 // 1.56.0:登入結果多帶 emailVerified —— 這一次登入本身有沒有證明帳號的 Email 是本人的
 // (IdP 說 email_verified === true,而且那個 Email 就是帳號的 Email)。core 把它放進
 // auth:signed-in hook(src/lib/signed-in.ts),插件據此做「證明過信箱才做的事」。
 
 export const SENTINEL_PASSWORD_HASH = "!oauth-only"; // 非 pbkdf2 格式 → verifyPassword 恆 false
+
+/** 代用地址(placeholder email)裡 SHA-256(sub) 取幾碼 hex。16 碼 = 64 bit,兩個人撞在一起的機會可以不計。 */
+const PLACEHOLDER_SUB_HEX = 16;
 
 export interface LoginClaims {
   sub: string;
@@ -66,14 +76,16 @@ async function insertIdentity(
   });
 }
 
+/** IdP 證明過的 email(小寫);沒說驗證過、說沒有、或根本沒給都是 null。帳號的 Email 只認這個。 */
+function provenEmail(claims: LoginClaims): string | null {
+  return claims.email_verified === true && typeof claims.email === "string" && claims.email.length > 0
+    ? claims.email.toLowerCase()
+    : null;
+}
+
 /** IdP 證明了 email,而且它就是帳號的 Email(大小寫不計)。 */
 function provesEmail(claims: LoginClaims, accountEmail: string): boolean {
-  return (
-    claims.email_verified === true &&
-    typeof claims.email === "string" &&
-    claims.email.length > 0 &&
-    claims.email.toLowerCase() === accountEmail.toLowerCase()
-  );
+  return provenEmail(claims) === accountEmail.toLowerCase();
 }
 
 async function accountEmail(userId: string): Promise<string | null> {
@@ -93,24 +105,25 @@ async function findIdentity(
   return rows[0];
 }
 
-/** 建立第三方登入的新帳號(role=guest、sentinel 密碼、真實或 placeholder email)。 */
+/**
+ * 建立第三方登入的新帳號(role=guest、sentinel 密碼)。Email:IdP 證明過的才用;其他一律是 placeholder
+ * (isPlaceholderEmail 認得的代用地址),也就是「這個帳號沒有留 Email」。
+ */
 async function createGuestUser(
   providerId: string,
   claims: LoginClaims,
   fallbackName: string,
 ): Promise<string> {
   const id = crypto.randomUUID();
-  // placeholder email(spec §2):`.invalid` TLD 保證不可寄達;sub 前 8 碼 hex 由
-  // SHA-256(sub) 取(sub 本身未必是 hex,雜湊後取前 8 hex 保證格式且穩定)。
+  // placeholder email(spec §2):`.invalid` TLD 保證不可寄達;中間那一段是 SHA-256(sub) 的前 16 碼 hex
+  // (sub 本身未必是 hex,雜湊後取保證格式且穩定)。1.76.0 以前只取 8 碼:同一個登入方式下兩個人撞在一起的話,
+  // 第二個人建帳號時撞上 email 的 UNIQUE,登入就失敗。舊帳號的地址不改;認代用地址只看結尾(isPlaceholderEmail)。
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(claims.sub));
-  const subHex = toHex(new Uint8Array(digest)).slice(0, 8);
-  const email =
-    claims.email && claims.email.length > 0
-      ? claims.email.toLowerCase()
-      : `oauth-${providerId}-${subHex}${PLACEHOLDER_EMAIL_SUFFIX}`;
+  const subHex = toHex(new Uint8Array(digest)).slice(0, PLACEHOLDER_SUB_HEX);
+  const proven = provenEmail(claims);
+  const email = proven ?? `oauth-${providerId}-${subHex}${PLACEHOLDER_EMAIL_SUFFIX}`;
   const name = claims.name && claims.name.length > 0 ? claims.name : fallbackName;
   const now = Date.now();
-  const verified = Boolean(claims.email) && claims.email_verified === true;
   await db().insert(users).values({
     id,
     email,
@@ -118,7 +131,7 @@ async function createGuestUser(
     name,
     role: "guest",
     createdAt: now,
-    emailVerifiedAt: verified ? now : null,
+    emailVerifiedAt: proven ? now : null,
   });
   return id;
 }
@@ -136,7 +149,7 @@ export async function markEmailVerified(userId: string): Promise<void> {
 
 /**
  * 登入:已綁的身分直接登入;沒綁 → 依註冊 policy 建新帳號,或(email 已驗證的一般會員)
- * 綁上既有帳號。呼叫端要先把「未驗證」的 email 拿掉(email_verified === false)。
+ * 綁上既有帳號。IdP 沒有證明過的 email 在這裡不算數(provenEmail),呼叫端不必先拿掉。
  */
 export async function signInWithIdentity(
   providerId: string,
@@ -154,7 +167,8 @@ export async function signInWithIdentity(
   const policy = await getSetting<string>("core.auth.oauthRegistration", "guest");
   if (policy !== "guest") return { ok: false, code: "not_linked" };
 
-  if (claims.email) {
+  const vouched = provenEmail(claims);
+  if (vouched) {
     const clash = await db()
       .select({
         id: users.id,
@@ -163,15 +177,13 @@ export async function signInWithIdentity(
         emailVerifiedAt: users.emailVerifiedAt,
       })
       .from(users)
-      .where(eq(users.email, claims.email.toLowerCase()))
+      .where(eq(users.email, vouched))
       .limit(1);
     const existing = clash[0];
     if (existing) {
       const member = existing.role === "guest" && existing.staffRoleId === null;
       const proven = existing.emailVerifiedAt !== null;
-      if (!member || !proven || claims.email_verified !== true) {
-        return { ok: false, code: "email_exists" };
-      }
+      if (!member || !proven) return { ok: false, code: "email_exists" };
       await insertIdentity(existing.id, providerId, claims.sub, display);
       return { ok: true, userId: existing.id, emailVerified: true };
     }
@@ -179,9 +191,8 @@ export async function signInWithIdentity(
 
   const userId = await createGuestUser(providerId, claims, fallbackName);
   await insertIdentity(userId, providerId, claims.sub, display);
-  // 新帳號的 Email 就是 claims.email(有的話),所以已驗證 = 有 email 且 IdP 說驗證過。
-  const emailVerified = Boolean(claims.email) && claims.email_verified === true;
-  return { ok: true, userId, emailVerified };
+  // 新帳號的 Email 就是 IdP 證明過的那個(有的話);沒有就是沒留 Email,這次登入也就沒證明什麼。
+  return { ok: true, userId, emailVerified: vouched !== null };
 }
 
 /** 帳號頁的「連結」:把身分綁到已登入的 user;已綁在別人身上就拒絕。 */

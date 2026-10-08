@@ -42,6 +42,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "login.orContinueWith": "或以下列方式繼續",
   "login.error.oauthDenied": "登入已取消或遭拒絕。",
   "login.error.oauthState": "登入流程已逾時，請再試一次。",
+  "login.error.oauthBrowser": "登入要在同一個瀏覽器完成。請在這裡再按一次登入。",
   "login.error.oauthFailed": "第三方登入失敗，請再試一次。",
   "login.error.popupBlocked": "瀏覽器擋下了登入視窗。請允許這個網站開啟彈出式視窗，再試一次。",
   "login.error.notLinked": "此帳號尚未連結。請先以密碼登入，再到帳戶頁連結。",
@@ -346,6 +347,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "account.identityLinked": "已連結帳號。",
   "account.identityDisconnected": "已解除連結。",
   "account.error.identityTaken": "這個帳號已被其他使用者連結。",
+  "account.error.identityBrowser": "連結要在同一個瀏覽器完成。請在這裡再按一次「連結」。",
   "account.error.identityLastMethod": "這是你唯一的登入方式，請先設定密碼或新增 Passkey。",
   "account.error.identityGeneric": "發生錯誤，請再試一次。",
 

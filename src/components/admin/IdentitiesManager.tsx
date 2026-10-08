@@ -7,6 +7,7 @@ import { StackedList } from "@/components/ui/stacked-list";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { FirebaseSignInButton } from "@/components/auth/FirebaseSignInButton";
 import type { FirebaseWebConfig } from "@/lib/oidc";
+import { identityErrorKey } from "@/lib/oauth-error-keys";
 
 // 帳號頁「已連結帳號」區(spec-login-providers §6/§7)。資料由 server
 // (admin/account/page.tsx)備好:identities 直接查 user_identities,providers 走
@@ -38,15 +39,6 @@ interface IdentitiesManagerProps {
   linked?: boolean;
   /** OAuth link 回跳的 ?error=<code>。 */
   errorCode?: string;
-}
-
-function urlErrorKey(code: string) {
-  switch (code) {
-    case "identity_taken":
-      return "account.error.identityTaken" as const;
-    default:
-      return "account.error.identityGeneric" as const;
-  }
 }
 
 function ProviderMark({ provider }: { provider?: IdentityProviderOption }) {
@@ -82,7 +74,7 @@ export function IdentitiesManager({
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   // URL 帶回的 flash 只當初始值;之後的錯誤/成功由本地互動接手。
   const [error, setError] = useState<string | null>(() =>
-    errorCode ? t(urlErrorKey(errorCode)) : null,
+    errorCode ? t(identityErrorKey(errorCode)) : null,
   );
   const [notice, setNotice] = useState<string | null>(() =>
     linked ? t("account.identityLinked") : null,
@@ -238,7 +230,7 @@ export function IdentitiesManager({
                   style={style}
                   onError={(code) => {
                     setNotice(null);
-                    setError(code ? t(urlErrorKey(code)) : null);
+                    setError(code ? t(identityErrorKey(code)) : null);
                   }}
                 >
                   {content}

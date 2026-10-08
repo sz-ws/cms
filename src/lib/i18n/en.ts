@@ -41,6 +41,8 @@ export const en = {
   "login.orContinueWith": "or continue with",
   "login.error.oauthDenied": "Sign-in was cancelled or denied.",
   "login.error.oauthState": "Sign-in session expired. Please try again.",
+  "login.error.oauthBrowser":
+    "Sign-in needs to finish in the browser where it started. Please sign in again here.",
   "login.error.oauthFailed": "Third-party sign-in failed. Please try again.",
   "login.error.popupBlocked": "Your browser blocked the sign-in window. Allow pop-ups for this site and try again.",
   "login.error.notLinked":
@@ -354,6 +356,8 @@ export const en = {
   "account.identityLinked": "Account linked.",
   "account.identityDisconnected": "Account disconnected.",
   "account.error.identityTaken": "That account is already linked to another user.",
+  "account.error.identityBrowser":
+    "Linking needs to finish in the browser where it started. Press “Link” again here.",
   "account.error.identityLastMethod":
     "This is your only way to sign in — set a password or add a passkey first.",
   "account.error.identityGeneric": "Something went wrong. Try again.",
