@@ -97,6 +97,39 @@ export function setQty(productId: string, qty: number): void {
 
 export function clearCart(): void {
   writeCart([]);
+  forgetLeftCheckout();
+}
+
+// 去刷卡(跳轉金流)時記下的那次送出:指紋與 requestId(sessionStorage,這個分頁)。客人從付款頁按上一頁、
+// 或重新整理回到結帳頁,內容沒改就再送同一個 requestId,伺服器認得是同一筆訂單、給一份新的付款表單,
+// 不會多出一張佔著庫存與優惠碼的訂單。購物車清空(付款完成、改匯款下單)時一起忘掉。
+const LEFT_KEY = "shop.checkout.left";
+
+export type LeftCheckout = { fingerprint: string; id: string };
+
+export function rememberLeftCheckout(request: LeftCheckout): void {
+  try {
+    sessionStorage.setItem(LEFT_KEY, JSON.stringify(request));
+  } catch {
+    // 無痕視窗、儲存被擋:沒記下就照以前,再送是新的一筆。
+  }
+}
+
+export function leftCheckout(): LeftCheckout | null {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(LEFT_KEY) ?? "null") as Partial<LeftCheckout> | null;
+    return parsed && typeof parsed.fingerprint === "string" && typeof parsed.id === "string" ? { fingerprint: parsed.fingerprint, id: parsed.id } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function forgetLeftCheckout(): void {
+  try {
+    sessionStorage.removeItem(LEFT_KEY);
+  } catch {
+    // 同上。
+  }
 }
 
 export function cartSubtotal(items: CartItem[]): number {

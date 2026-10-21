@@ -17,6 +17,9 @@ import {
 import {
   cartSubtotal,
   clearCart,
+  forgetLeftCheckout,
+  leftCheckout,
+  rememberLeftCheckout,
   getCartServerSnapshot,
   getCartSnapshot,
   subscribeCart,
@@ -231,6 +234,15 @@ export function CheckoutView({
   const [error, setError] = useState<FormError | null>(null);
   const [manual, setManual] = useState<ManualOrder | null>(null);
   const request = useRef<{ fingerprint: string; id: string } | null>(null);
+  // request 是上一次去刷卡的那筆(cart-store.ts 的 leftCheckout):同一份內容再送是重送那張訂單。
+  const left = useRef(false);
+  useEffect(() => {
+    const kept = leftCheckout();
+    if (kept && !request.current) {
+      request.current = kept;
+      left.current = true;
+    }
+  }, []);
   const noMethods = !cardEnabled && !transferEnabled;
 
   const subtotal = cartSubtotal(items);
@@ -308,7 +320,7 @@ export function CheckoutView({
     }
     if (session.kind === "form-post") {
       submitToGateway(session.gatewayUrl, session.fields);
-      return; // 離頁;購物車保留,付款失敗回來還在。
+      return; // 離頁;購物車保留,付款失敗回來還在(付款完成時訂單頁清掉它)。
     }
     if (session.kind === "redirect") {
       window.location.href = session.url;
@@ -332,19 +344,39 @@ export function CheckoutView({
         method,
         fields: fieldValues,
       };
-      request.current = requestFor(request.current, draft, () => crypto.randomUUID());
-      const res = await fetch(CHECKOUT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(checkoutBody(draft, request.current.id)),
-      });
-      const data = (await res.json()) as CheckoutReply;
+      const send = async (id: string) => {
+        const res = await fetch(CHECKOUT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(checkoutBody(draft, id)),
+        });
+        return (await res.json()) as CheckoutReply;
+      };
+      const next = requestFor(request.current, draft, () => crypto.randomUUID());
+      const replay = left.current && next === request.current;
+      request.current = next;
+      let data = await send(next.id);
+      if (!data.ok && replay) {
+        // 上次去刷卡的那張訂單已經不能再付(取消了、過了付款期限、已經付款):當成新的一筆再送一次。
+        left.current = false;
+        forgetLeftCheckout();
+        request.current = { fingerprint: next.fingerprint, id: crypto.randomUUID() };
+        data = await send(request.current.id);
+      }
       if (!data.ok) {
         if (data.error === "field_invalid" && data.field) rejectField(data.field, data.message);
         else failWith(data.error);
         return;
       }
-      request.current = null;
+      if (data.session.ok && data.session.kind !== "manual") {
+        // 要離開去付款:記著這一筆,按上一頁回來再送是同一張訂單。
+        left.current = true;
+        rememberLeftCheckout(request.current);
+      } else {
+        request.current = null;
+        left.current = false;
+        forgetLeftCheckout();
+      }
       showSession(data.orderNo, data.session, paymentDeadline(data.expiresAt));
     } catch {
       setError({ text: NETWORK_ERROR, signIn: false });
