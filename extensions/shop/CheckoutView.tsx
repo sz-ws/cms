@@ -199,7 +199,7 @@ export function CheckoutView({
   requireContact?: boolean;
   /** 結帳頁最上方的說明(設定 ext.shop.checkoutNotice);空 = 不顯示。 */
   notice?: string;
-  /** 0.7.0:表單一開始帶入的姓名與 Email(已登入的人,見 checkoutContact)。 */
+  /** 0.7.0:表單一開始帶入的姓名與 Email(已登入的人,見 checkoutContact);電話、地址、地區由別的插件補(會員)。 */
   contact?: CheckoutContact;
   /**
    * 0.11.0:Email 已經由頁面確認過(例如先驗證過信箱),照 contact.email 送出、不能在這裡改。
@@ -223,7 +223,9 @@ export function CheckoutView({
   const [email, setEmail] = useState(contact.email ?? "");
   const [phone, setPhone] = useState(contact.phone ?? "");
   const [address, setAddress] = useState(contact.address ?? "");
-  const [region, setRegion] = useState("");
+  const [region, setRegion] = useState(() =>
+    contact.region && shippingConfig && shippingRegions(shippingConfig).includes(contact.region) ? contact.region : "",
+  );
   const [shipChoice, setShipChoice] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
   const [promo, setPromo] = useState<AppliedPromo | null>(null);

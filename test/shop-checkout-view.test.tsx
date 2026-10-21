@@ -160,6 +160,14 @@ describe("CheckoutView switches", () => {
     expect(tagOf(html, "shop-address")).toContain('autoComplete="street-address"');
   });
 
+  it("0.14.0: a known delivery region starts selected; one the shipping settings no longer list does not", () => {
+    const shippingConfig = { methods: [{ id: "home", name: "宅配", base: 100, enabled: true }], rules: [], regions: ["北部", "離島"] };
+    const selected = (html: string) => html.match(/<option[^>]*selected[^>]*>([^<]*)<\/option>/)?.[1] ?? null;
+    expect(selected(render({ shippingConfig, contact: { region: "離島" } }))).toBe("離島");
+    expect(selected(render({ shippingConfig, contact: { region: "南部" } }))).toBe("請選擇");
+    expect(selected(render({ shippingConfig }))).toBe("請選擇");
+  });
+
   it("0.11.0: the form carries the page heading and the way back to the cart", () => {
     const html = render({});
     expect(html).toMatch(/<h1[^>]*>結帳<\/h1>/);

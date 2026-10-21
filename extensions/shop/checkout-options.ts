@@ -83,6 +83,8 @@ export interface CheckoutContact {
   /** 0.11.1:站台已經知道的電話與收件地址(例如會員存的),先帶入、照樣能改。 */
   phone?: string;
   address?: string;
+  /** 0.14.0:收件地區;不在運費設定的地區裡(例如店家改過地區)就不帶。 */
+  region?: string;
 }
 
 /**
