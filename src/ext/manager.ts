@@ -19,6 +19,7 @@ import {
   extMigrations,
   settings,
   heartbeats,
+  userFields,
   declarativeExtensions,
   contents,
 } from "@/lib/schema";
@@ -304,6 +305,15 @@ export async function uninstallExtension(extId: string): Promise<void> {
       .where(like(heartbeats.key, `ext.${extId}.%`));
   } catch (e) {
     console.error("[ext] heartbeat cleanup failed", extId, e);
+  }
+  // 1.81.0:插件記在會員身上的資料(user_fields 的 `<extId>.*`,src/lib/user-fields.ts)一併刪,插件不用自己寫。
+  // 同心跳,best-effort。
+  try {
+    await db()
+      .delete(userFields)
+      .where(like(userFields.key, `${extId}.%`));
+  } catch (e) {
+    console.error("[ext] user fields cleanup failed", extId, e);
   }
   await db().delete(extensions).where(eq(extensions.id, extId));
 

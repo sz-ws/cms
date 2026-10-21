@@ -127,3 +127,24 @@ describe("相依", () => {
     expect(await d1().prepare("SELECT enabled FROM extensions WHERE id = 'shop'").first()).toEqual({ enabled: 1 });
   });
 });
+
+describe("移除插件時,core 一併刪掉它記在會員身上的資料(1.81.0)", () => {
+  it("只刪這個插件那一段,名稱開頭相同的別的插件不動", async () => {
+    await d1().exec(
+      "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY);" +
+        "CREATE TABLE IF NOT EXISTS user_fields (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, key TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, key));" +
+        "CREATE TABLE IF NOT EXISTS heartbeats (key TEXT PRIMARY KEY, at INTEGER NOT NULL);",
+    );
+    await d1().exec("DELETE FROM user_fields; DELETE FROM users; INSERT INTO users (id) VALUES ('u1');");
+    const { userFields } = await import("../src/lib/user-fields");
+    await userFields(d1(), "notes").set("u1", { phone: "1", region: "某縣" });
+    await userFields(d1(), "notes-extra").set("u1", { phone: "2" });
+    deployed.extensions = [plugin("notes"), plugin("notes-extra")];
+    await enabledRow("notes");
+
+    await uninstallExtension("notes");
+
+    const keys = await d1().prepare("SELECT key FROM user_fields ORDER BY key").all<{ key: string }>();
+    expect(keys.results.map((row) => row.key)).toEqual(["notes-extra.phone"]);
+  });
+});

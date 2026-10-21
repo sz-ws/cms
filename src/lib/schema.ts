@@ -487,6 +487,21 @@ export const registryNoticeSeen = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.source, t.noticeId] })],
 );
 
+// migrations/0026_user_fields.sql:會員自訂資料(插件記在這個人身上的東西,`<插件 id>.<欄位>` → JSON)。
+// 執行期契約:src/lib/user-fields.ts。
+export const userFields = sqliteTable(
+  "user_fields",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
+);
+
 // migrations/0025_mcp_connections.sql:AI 連線(外部 AI App 經 MCP 操作後台)的授權資料。
 // 碼、權杖、client secret 一律只存 SHA-256 hex;四張表各自的壽命與取捨寫在 migration 檔頭,
 // 執行期契約見 src/lib/mcp/。

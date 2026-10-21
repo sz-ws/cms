@@ -1761,4 +1761,12 @@
 // job regardless of its `run_at`, then clears the due mark (`clearWake`); `every` becomes the safety interval, not
 // the latency. The lazy sweep now treats the cron as healthy for 35 minutes after its last full tick (was 2).
 // A plugin that uses `wakeOn` declares coreApi "^1.80.0".
-export const CORE_API_VERSION = "1.80.0";
+// 1.81.0: Per-user plugin data (`src/lib/user-fields.ts`, table `user_fields` from migrations/0026). A plugin keeps
+// what it knows about a person (a phone number, a delivery region, a preference) without a table and migration of
+// its own: `userFields(db, "<plugin id>")` gives `get(userId, fields)` and `set(userId, values, now?)` for that
+// plugin's own names only, stored as `<plugin id>.<field>`. Values are JSON, at most 4,000 characters each;
+// `null`/`undefined` deletes a field; at most 50 fields per call. The rows go when the user is deleted (foreign
+// key) and when the plugin is uninstalled (`uninstallExtension`). Not for secrets: nothing here is encrypted.
+// Who may write for whom (members only, not staff) stays the caller's decision.
+// A plugin that uses `userFields` declares coreApi "^1.81.0".
+export const CORE_API_VERSION = "1.81.0";
