@@ -3,7 +3,7 @@ import {
   createPaymentProvider,
   createCheckoutHandler,
 } from "@/ext/payment-kit";
-import { createNewebPayAdapter } from "./adapter";
+import { createNewebPayAdapter, ORDERS_TABLE } from "./adapter";
 import { NewebPayAdminPage } from "./admin-page";
 
 // 藍新金流(NewebPay)extension —— capability "payment" 的第一個 provider,
@@ -19,37 +19,37 @@ import { NewebPayAdminPage } from "./admin-page";
 //   payment/newebpay-return → ReturnURL(使用者瀏覽器,回 HTML 結果頁)
 // 藍新對兩個 URL POST 的 payload 格式相同,驗簽邏輯共用。
 
-const ORDERS_TABLE = "ext_newebpay_orders";
-
 export const newebpay = defineExtension({
   id: "newebpay",
   name: "藍新金流",
-  version: "0.1.2",
+  // 0.2.0:同一張訂單再去付款時換一個送藍新的商店訂單編號(adapter.ts 檔頭),只開信用卡;
+  // 後台頁與設定欄位照藍新商店後台的叫法(商店代號、HashKey、HashIV),不寫實作細節。
+  version: "0.2.0",
   coreApi: "^1.14.0",
   description:
-    "NewebPay MPG 2.0 收款：提供 payment capability（createCheckout）、訂單記錄與付款回呼處理。",
+    "線上刷卡收款：客人在藍新付款成功後，訂單會自動改成已付款。",
   icon: "credit-card",
   menu: { section: "commerce", parent: "shop" },
   settings: [
     {
       key: "merchantId",
-      label: "Merchant ID",
-      description: "藍新商店代號（MS 開頭）。",
+      label: "商店代號",
+      description: "藍新商店後台的商店代號（MS 開頭）。",
       type: "text",
       default: "",
     },
     {
       key: "hashKey",
-      label: "Hash Key",
-      description: "商店後台核發，固定 32 字元。",
+      label: "HashKey",
+      description: "到藍新商店後台的「API 串接金鑰」複製 HashKey（32 碼）。",
       type: "text",
       secret: true, // → ext.newebpay.hashKey,自動走 AES-GCM 加密管線。
       default: "",
     },
     {
       key: "hashIv",
-      label: "Hash IV",
-      description: "商店後台核發，固定 16 字元。",
+      label: "HashIV",
+      description: "同樣在「API 串接金鑰」裡（16 碼）。",
       type: "text",
       secret: true,
       default: "",
@@ -57,7 +57,7 @@ export const newebpay = defineExtension({
     {
       key: "env",
       label: "環境",
-      description: "測試機（ccore）或正式機（core）。",
+      description: "正式收款選正式機。測試機不會真的扣款，要搭配藍新測試平台的商店代號與金鑰。",
       type: "select",
       options: [
         { value: "test", label: "測試機" },

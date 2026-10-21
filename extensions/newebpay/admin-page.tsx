@@ -10,6 +10,7 @@ import {
   loadRecentOrders,
 } from "@/ext/payment-kit/admin";
 import { CheckoutTestForm } from "@/ext/payment-kit/CheckoutTestForm";
+import { HASH_IV_LENGTH, HASH_KEY_LENGTH } from "./crypto";
 
 // 藍新金流 adminPage —— 設定狀態、測試付款、訂單一覽。
 // 版面積木來自 @/ext/payment-kit/admin;本檔只剩藍新專屬的狀態列組合。
@@ -23,8 +24,10 @@ export async function NewebPayAdminPage() {
     getSetting<string>("core.siteUrl", ""),
     loadRecentOrders("ext_newebpay_orders"),
   ]);
-  const configured = Boolean(merchantId && hashKey && hashIv);
-  const notifyUrl = `${siteUrl.replace(/\/+$/, "")}/api/callback/payment/newebpay`;
+  // 長度不對的金鑰,付款時和沒填一樣(adapter 的 loadConfig):多貼一個空白、少複製一個字,這裡就要看得出來。
+  const keysFilled = Boolean(hashKey.trim() && hashIv.trim());
+  const keysValid = hashKey.trim().length === HASH_KEY_LENGTH && hashIv.trim().length === HASH_IV_LENGTH;
+  const configured = Boolean(merchantId.trim()) && keysValid;
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
@@ -33,20 +36,17 @@ export async function NewebPayAdminPage() {
           藍新金流
         </h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink/55">
-          NewebPay MPG 2.0 收款。這個 extension 提供 payment
-          capability（其他模組可透過 provider registry
-          建立結帳）、付款回呼驗簽處理與訂單記錄。商店金鑰到設定頁的
-          Extensions 區填寫。
+          線上刷卡收款：客人在結帳頁選「線上刷卡」就會到藍新付款，付款成功後訂單會自動改成已付款。商店代號與金鑰在設定頁填寫。
         </p>
       </header>
 
-      {/* 狀態:金鑰在否 + 環境 + 回呼 URL。 */}
+      {/* 狀態:金鑰在否 + 環境;網站網址沒設定時,付款結果傳不回來。 */}
       <section className={CARD}>
         <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.01em] text-ink/85">
           狀態
         </h2>
         <div className="flex flex-col gap-2.5">
-          <Row label="Merchant ID">
+          <Row label="商店代號">
             {merchantId ? (
               <>
                 <ConfiguredPill configured />
@@ -58,31 +58,30 @@ export async function NewebPayAdminPage() {
               <ConfiguredPill configured={false} />
             )}
           </Row>
-          <Row label="Hash Key / IV">
-            <ConfiguredPill configured={Boolean(hashKey && hashIv)} />
-            {!configured && (
-              <span className="text-ink/50">
-                三項皆填妥前，付款入口關閉（fail-closed，拒收所有回呼）。
+          <Row label="HashKey／HashIV">
+            <ConfiguredPill configured={keysValid} />
+            {keysFilled && !keysValid ? (
+              <span className="text-amber-700">
+                長度不對：HashKey 要 {HASH_KEY_LENGTH} 碼、HashIV 要 {HASH_IV_LENGTH} 碼，請到設定頁重新貼上。
               </span>
-            )}
+            ) : !configured ? (
+              <span className="text-ink/50">
+                三項都填好之前，客人沒辦法線上刷卡。
+              </span>
+            ) : null}
           </Row>
           <Row label="環境">
             <span className={`${PILL} ${env === "prod" ? PILL_GREEN : PILL_NEUTRAL}`}>
               {env === "prod" ? "正式機" : "測試機"}
             </span>
           </Row>
-          <Row label="Notify URL">
-            {siteUrl ? (
-              <code className="break-all font-mono text-[12px] text-ink/60">
-                {notifyUrl}
-              </code>
-            ) : (
+          {siteUrl ? null : (
+            <Row label="付款結果">
               <span className="text-amber-700">
-                尚未設定 Site URL（設定頁 General 區）—— 藍新收不到付款通知，
-                訂單會停在「待付款」。
+                網站網址還沒設定（設定頁的「一般」）。沒有它，客人付了款，訂單也會停在待付款。
               </span>
-            )}
-          </Row>
+            </Row>
+          )}
         </div>
       </section>
 
@@ -92,8 +91,7 @@ export async function NewebPayAdminPage() {
           測試付款
         </h2>
         <p className="mb-4 text-[13px] leading-relaxed text-ink/55">
-          建立一筆訂單並跳轉到藍新付款頁（依上方環境設定）。測試機用藍新提供的
-          測試卡號；付款結果由 Notify 回呼寫回下方訂單表。
+          環境是測試機時，用藍新的測試卡號 4000-2211-1111-1111，有效期限填未來的月年、末三碼任意，不會真的扣款。環境是正式機時會真的扣款。
         </p>
         <CheckoutTestForm
           endpoint="/api/ext/newebpay/checkout"

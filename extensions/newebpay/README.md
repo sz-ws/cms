@@ -10,13 +10,16 @@ NewebPay MPG 2.0 收款。提供 `payment` capability(`createCheckout`)、付款
    要裝的話跑 `npx @sz.ws/cms add newebpay`,或自己補那兩行。
 2. Admin → Extensions → 藍新金流 → 啟用(`kind:"code"`;enable 時自動跑 migration
    建 `ext_newebpay_orders` 表)。
-3. 設定頁 Extensions 區填:
-   - **Merchant ID**(MS 開頭商店代號)
-   - **Hash Key**(32 字元,加密儲存)
-   - **Hash IV**(16 字元,加密儲存)
-   - **環境**:測試機(ccore.newebpay.com)/ 正式機(core.newebpay.com)
-4. 設定頁 General 區的 **Site URL** 必填 —— 用來組回呼 URL。未設定時仍可跳轉
-   付款頁,但收不到付款結果,訂單停在「待付款」。
+3. 設定頁「擴充功能 → 藍新金流」填(欄位名稱照藍新商店後台的叫法):
+   - **商店代號**(MS 開頭)
+   - **HashKey**(32 字元,加密儲存;藍新後台「API 串接金鑰」)
+   - **HashIV**(16 字元,加密儲存;同上)
+   - **環境**:測試機(ccore.newebpay.com)/ 正式機(core.newebpay.com)。測試機
+     要用藍新測試平台(cwww)的商店與金鑰,正式機用正式平台的,兩邊不通用。
+4. 設定頁「一般」的 **網站網址**(`core.siteUrl`)必填 —— 用來組回呼 URL。未設定時
+   仍可跳轉付款頁,但收不到付款結果,訂單停在「待付款」。
+5. 要讓商店結帳頁出現「線上刷卡」:設定頁「擴充功能 → 商店」的「信用卡付款」填
+   `newebpay`(`ext.shop.cardProvider`)。
 
 ## 回呼 URL(藍新後台不用填 —— 每筆交易動態帶入)
 
@@ -27,6 +30,23 @@ NewebPay MPG 2.0 收款。提供 `payment` capability(`createCheckout`)、付款
 兩者皆走 core 的 unified callback ingress,驗證 = 重算 TradeSha 並 constant-time
 比對(fail-closed:金鑰未設定一律拒收)。本機開發時藍新打不進 localhost —— 要測
 完整回呼流程需 tunnel(如 `cloudflared tunnel`)並把 Site URL 暫時指向 tunnel。
+
+## 同一張訂單再付一次(0.2.0)
+
+藍新同一商店的商店訂單編號(MerchantOrderNo)不能重複,一送到付款頁就算用過(重新整理付款頁都會回
+MPG03008)。所以同一張訂單第二次以後去付款(我的訂單的「繼續付款」、刷卡失敗再試、從付款頁按上一頁回來
+再送)送的是新號碼:訂單編號前 21 字 + `_` + 秒數(36 進位)+ 2 個亂數,≤30 字。回呼帶回那個號碼,
+adapter 對回原本的訂單(先找完全相同的,再找開頭相同的唯一一筆)。叫用的一方每次都要重新
+`createCheckout`,不能把上次的表單存起來再送 —— 表單裡還有當時的 TimeStamp。
+
+只開信用卡(`CREDIT=1`):結帳頁寫的是「線上刷卡」;ATM、超商代碼是先取號、幾天後才付,可能付在訂單
+過了付款期限、被取消之後。
+
+## 付款之後客人回到哪裡
+
+ReturnURL 與 ClientBackURL(付款頁的「返回商店」)預設是 kit 的結果頁與首頁。認得這張訂單的插件填 core
+1.78.0 的 `PaymentReturn` 插槽(`@/ext/payment-kit`)時,改成 303 轉去它給的站內頁(例如商城營運的
+`/shop/orders?order=…&payment=paid|failed|back`)。
 
 ## 其他模組怎麼收款
 
