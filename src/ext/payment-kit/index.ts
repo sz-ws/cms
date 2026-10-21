@@ -13,7 +13,7 @@ export type {
 } from "./types";
 export { createPaymentProvider } from "./provider";
 export type { PaymentProviderOptions } from "./provider";
-export { createCheckoutHandler } from "./checkout-route";
+export { createCheckoutHandler, isTestOrderNo, TEST_ORDER_PREFIX } from "./checkout-route";
 export { settlePayment } from "./settle";
 // 1.78.0:付款之後客人回到哪一頁(插槽)。
 export { PaymentReturn, paymentReturnPath } from "./return-page";

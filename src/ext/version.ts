@@ -1742,4 +1742,12 @@
 // customer 「交易未成功，未收取任何款項」: the money may already be taken. The browser return shows 「付款結果確認中」
 // and asks them not to pay again; the server-to-server notice answers 500 instead of `{ ok: true }`, so an unread
 // notice is not acknowledged as received. Both still log `[payment-kit:<id>] verified callback but payload undecodable`.
-export const CORE_API_VERSION = "1.78.1";
+// 1.79.0: The payment result page the kit answers itself (a gateway's browser return that no plugin claims through
+// `PaymentReturn`) has the shop's name and logo (`core.siteTitle`, `core.brandLogo`: https or a site path only), a
+// summary of the payment (order number, amount in the site currency, payment method; transaction number and payment
+// time when paid) and a 「返回網站」 button (`src/ext/payment-kit/result-page.ts`, `renderResultPage`). The words for
+// paid / failed / unknown are unchanged. `isTestOrderNo(orderNo)` and `TEST_ORDER_PREFIX` ("SK", exported from
+// `@/ext/payment-kit`) recognise the order numbers of the admin test payment (`createCheckoutHandler`), so a payment
+// plugin can claim its own test orders in `PaymentReturn` and send the owner back to its admin page.
+// A plugin that uses `isTestOrderNo` declares coreApi "^1.79.0".
+export const CORE_API_VERSION = "1.79.0";

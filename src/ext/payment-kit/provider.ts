@@ -10,6 +10,8 @@ import type { CoreServices } from "../services";
 import type { GatewayUrls, PaymentGatewayAdapter } from "./types";
 import { settlePayment, TABLE_RE } from "./settle";
 import { paymentReturnPath } from "./return-page";
+import { renderResultPage, type ResultOutcome } from "./result-page";
+import { formatMoney } from "../commerce-kit/money";
 
 // payment-kit 引擎:所有金流共用的 PaymentProvider + CallbackReceiver 實作。
 // 會變的部分(加密/驗簽/組包/解包)全部委派給 adapter;這裡只做:
@@ -29,15 +31,6 @@ export interface PaymentProviderOptions {
   table: string;
   /** notify = server-to-server(回 {ok:true});return = 瀏覽器導回(回 HTML)。 */
   mode: "notify" | "return";
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
@@ -105,7 +98,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
         `[payment-kit:${this.opts.providerId}] verified callback but payload undecodable`,
       );
       return this.opts.mode === "return"
-        ? this.resultPage("unknown", "", await this.siteUrl())
+        ? this.resultPage("unknown", await this.siteUrl())
         : Response.json({ ok: false, error: "undecodable" }, { status: 500 });
     }
 
@@ -139,61 +132,40 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
       const page = site ? await paymentReturnPath(this.opts.services.slots, parsed.orderNo, parsed.succeeded ? "paid" : "failed") : null;
       // 303:金流是 POST 回來的,轉去的頁用 GET 打開(登入的 cookie 是 Lax,頂層 GET 會帶)。
       if (page) return Response.redirect(`${site}${page}`, 303);
-      return this.resultPage(parsed.succeeded ? "paid" : "failed", parsed.orderNo, site);
+      return this.resultPage(parsed.succeeded ? "paid" : "failed", site, parsed);
     }
     // notify:回 undefined → ingress 維持既有 {ok:true}(gateway 以 HTTP 200 判定收到)。
   }
 
-  /** ReturnURL 的瀏覽器結果頁 —— 純靜態 HTML,白底單一焦點,無外部資源。 */
-  private resultPage(
-    outcome: "paid" | "failed" | "unknown",
-    orderNo: string,
+  /**
+   * ReturnURL 的瀏覽器結果頁(沒有插件認得這筆訂單時;版面在 result-page.ts)。1.79.0:店名與標誌、
+   * 這筆付款的摘要(訂單編號、金額照站台幣別、付款方式,付款完成時再加交易序號與付款時間)。
+   */
+  private async resultPage(
+    outcome: ResultOutcome,
     siteUrl: string,
-  ): Response {
-    const title = { paid: "付款完成", failed: "付款未完成", unknown: "付款結果確認中" }[outcome];
-    const detail = {
-      paid: "我們已收到您的款項。",
-      failed: "交易未成功，未收取任何款項。",
-      unknown: "還沒收到這筆付款的結果，請先不要重新付款。稍後查看訂單，或聯絡店家確認。",
-    }[outcome];
-    const mark = { paid: "✓", failed: "✕", unknown: "…" }[outcome];
-    const orderLine = orderNo
-      ? `<p class="order">訂單編號 ${escapeHtml(orderNo)}</p>`
-      : "";
-    const backLink = siteUrl
-      ? `<a class="back" href="${escapeHtml(siteUrl)}">返回網站</a>`
-      : "";
-    const html = `<!doctype html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>${title}</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #fff; color: rgba(0,0,0,.85);
-         font-family: system-ui, -apple-system, "Chiron Hei HK", sans-serif;
-         -webkit-font-smoothing: antialiased; }
-  main { text-align: center; padding: 24px; }
-  .mark { font-size: 40px; line-height: 1; }
-  h1 { margin: 16px 0 8px; font-size: 22px; letter-spacing: -0.02em; }
-  p { margin: 0; font-size: 14px; color: rgba(0,0,0,.55); }
-  .order { margin-top: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .back { display: inline-block; margin-top: 24px; font-size: 14px;
-          color: rgba(0,0,0,.85); text-underline-offset: 4px; }
-</style>
-</head>
-<body>
-<main>
-  <div class="mark">${mark}</div>
-  <h1>${title}</h1>
-  <p>${detail}</p>
-  ${orderLine}
-  ${backLink}
-</main>
-</body>
-</html>`;
+    parsed?: { orderNo: string; tradeNo?: string; paymentType?: string; payTime?: string },
+  ): Promise<Response> {
+    const [siteName, logoUrl, currency] = await Promise.all([
+      getSetting<string>("core.siteTitle", ""),
+      getSetting<string>("core.brandLogo", ""),
+      getSetting<string>("core.currency", ""),
+    ]);
+    const orderNo = parsed?.orderNo ?? "";
+    const row = orderNo
+      ? await this.opts.services.db.get<{ amount: number }>(sql`SELECT amount FROM ${sql.raw(this.opts.table)} WHERE order_no = ${orderNo}`)
+      : null;
+    const html = renderResultPage({
+      outcome,
+      siteUrl,
+      siteName: typeof siteName === "string" ? siteName : "",
+      logoUrl: typeof logoUrl === "string" ? logoUrl : "",
+      orderNo: orderNo || undefined,
+      amount: row ? formatMoney(row.amount, typeof currency === "string" && currency ? currency : undefined) : undefined,
+      paymentType: parsed?.paymentType,
+      tradeNo: parsed?.tradeNo,
+      payTime: parsed?.payTime,
+    });
     return new Response(html, {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },

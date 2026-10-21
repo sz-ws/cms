@@ -19,11 +19,19 @@ const bodySchema = z
   })
   .strict();
 
+/** 1.79.0:後台「測試付款」的訂單編號開頭(這支 handler 預設產生的;商店的是 SO / SM)。 */
+export const TEST_ORDER_PREFIX = "SK";
+
+/** 這個訂單編號是後台測試付款產生的(金流插件用它在 PaymentReturn 認領自己的測試訂單)。 */
+export function isTestOrderNo(orderNo: string): boolean {
+  return orderNo.startsWith(TEST_ORDER_PREFIX);
+}
+
 /** 預設訂單編號:英數(base36 大寫),≤30 字元 —— 各家 gateway 的交集字元集。 */
 function defaultOrderNo(): string {
   const time = Date.now().toString(36).toUpperCase();
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `SK${time}${rand}`;
+  return `${TEST_ORDER_PREFIX}${time}${rand}`;
 }
 
 export function createCheckoutHandler(
