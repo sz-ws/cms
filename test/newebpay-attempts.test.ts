@@ -91,22 +91,22 @@ async function merchantOrderNoOf(orderNo: string): Promise<string> {
   return new URLSearchParams(plain ?? "").get("MerchantOrderNo") ?? "";
 }
 
-async function callbackBody(merchantOrderNo: string, status: "SUCCESS" | "MPG03009"): Promise<string> {
+async function callbackBody(merchantOrderNo: string, status: "SUCCESS" | "MPG03009", result: Record<string, unknown> = {}): Promise<string> {
   const payload = {
     Status: status,
     Message: status === "SUCCESS" ? "授權成功" : "交易失敗",
-    Result: { MerchantOrderNo: merchantOrderNo, TradeNo: "26102012345678", PaymentType: "CREDIT", PayTime: "2026-10-20 18:00:00", Amt: 1950 },
+    Result: { MerchantOrderNo: merchantOrderNo, TradeNo: "26102012345678", PaymentType: "CREDIT", PayTime: "2026-10-20 18:00:00", Amt: 1950, ...result },
   };
   const tradeInfo = await encryptTradeInfo(JSON.stringify(payload), HASH_KEY, HASH_IV);
   return new URLSearchParams({ Status: status, MerchantID: MERCHANT_ID, Version: "2.0", TradeInfo: tradeInfo, TradeSha: await tradeSha(tradeInfo, HASH_KEY, HASH_IV) }).toString();
 }
 
-async function callback(merchantOrderNo: string, status: "SUCCESS" | "MPG03009"): Promise<Response> {
+async function callback(merchantOrderNo: string, status: "SUCCESS" | "MPG03009", result: Record<string, unknown> = {}): Promise<Response> {
   return POST(
     new Request("https://cms.test/api/callback/payment/newebpay", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: await callbackBody(merchantOrderNo, status),
+      body: await callbackBody(merchantOrderNo, status, result),
     }),
     { params: Promise.resolve({ capability: "payment", providerId: "newebpay" }) },
   );
@@ -269,5 +269,35 @@ describe("a signed callback whose content cannot be read (core 1.78.1)", () => {
     const res = await provider("notify").handleCallback(await unreadableBody());
     expect(res).toBeInstanceOf(Response);
     expect((res as Response).status).toBe(500);
+  });
+});
+
+describe("a success only counts with the order's amount and a payment time (0.2.2, as NewebPay's own plugin checks)", () => {
+  // 對不上時錢可能已經扣了:不算已付款、也不算失敗(失敗頁會說「未收取任何款項」),訂單維持待付款,
+  // 客人看到「付款結果確認中」,server-to-server 回 500。
+  it("the amount NewebPay reports differs from the order: still pending, no hook, the notice is not acknowledged", async () => {
+    await merchantOrderNoOf(ORDER_NO); // 訂單金額 1950
+    expect((await callback(ORDER_NO, "SUCCESS", { Amt: 19 })).status).toBe(500);
+    expect(await status(ORDER_NO)).toBe("pending");
+    expect(hookEvents.events).toHaveLength(0);
+  });
+
+  it("no payment time: still pending, and the customer is asked not to pay again", async () => {
+    await merchantOrderNoOf(ORDER_NO);
+    expect((await callback(ORDER_NO, "SUCCESS", { PayTime: "" })).status).toBe(500);
+    expect(await status(ORDER_NO)).toBe("pending");
+    const page = (await provider("return").handleCallback(await callbackBody(ORDER_NO, "SUCCESS", { PayTime: "" }))) as Response;
+    const html = await page.text();
+    expect(html).toContain("付款結果確認中");
+    expect(html).not.toContain("未收取任何款項");
+    expect(hookEvents.events).toHaveLength(0);
+  });
+
+  it("the amount as a string, or on a retry number, still matches and pays", async () => {
+    await merchantOrderNoOf(ORDER_NO);
+    const retry = await merchantOrderNoOf(ORDER_NO);
+    await callback(retry, "SUCCESS", { Amt: "1950" });
+    expect(await status(ORDER_NO)).toBe("paid");
+    expect(hookEvents.events).toHaveLength(1);
   });
 });

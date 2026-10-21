@@ -42,6 +42,15 @@ adapter 對回原本的訂單(先找完全相同的,再找開頭相同的唯一�
 只開信用卡(`CREDIT=1`):結帳頁寫的是「線上刷卡」;ATM、超商代碼是先取號、幾天後才付,可能付在訂單
 過了付款期限、被取消之後。
 
+## 什麼時候算付清(0.2.2)
+
+回呼的簽章對、解得開,而且藍新說 `SUCCESS` 之外,還要有付款時間(`PayTime`)、金額(`Amt`)跟這張訂單一樣,
+才把訂單結算成已付款(藍新官方 WooCommerce 外掛也這樣查)。對不上時錢可能已經扣了,不算失敗:客人看到
+「付款結果確認中」,server-to-server 通知回 500,訂單維持待付款,錯誤紀錄寫著藍新交易序號與兩邊的金額。
+
+藍新回呼的 TradeInfo 是 32 bytes 一塊補齊的 PKCS7(官方範例 `addpadding($string, $blocksize = 32)`),
+`crypto.ts` 的 `decryptTradeInfo` 自己去填充,不交給 WebCrypto 檢查(0.2.1)。
+
 ## 付款之後客人回到哪裡
 
 ReturnURL 與 ClientBackURL(付款頁的「返回商店」)預設是 kit 的結果頁與首頁。認得這張訂單的插件填 core

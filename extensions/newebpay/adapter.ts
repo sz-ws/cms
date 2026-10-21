@@ -63,7 +63,7 @@ interface NewebPayResult {
     TradeNo?: string;
     PaymentType?: string;
     PayTime?: string;
-    Amt?: number;
+    Amt?: number | string;
   };
 }
 
@@ -179,6 +179,28 @@ class NewebPayAdapter implements PaymentGatewayAdapter {
     return rows.length === 1 ? rows[0].orderNo : merchantOrderNo;
   }
 
+  /**
+   * 0.2.2:藍新說成功之外,還要有付款時間、金額跟這張訂單一樣,才算付清(藍新官方 WooCommerce 外掛也這樣查)。
+   * 簽章已經擋掉偽造,這是多一層:號碼對錯訂單、或金流端的金額跟我們送出的不同時,不會把訂單翻成已付款。
+   * 查不到這張訂單時交給 kit(當作查無此單)。不符合的寫一行錯誤紀錄(含藍新交易序號,店家到藍新後台查)。
+   */
+  private async paidInFull(orderNo: string, result: NewebPayResult): Promise<boolean> {
+    if (!String(result.Result?.PayTime ?? "").trim()) {
+      console.error(`[newebpay] callback for ${orderNo} (trade ${result.Result?.TradeNo ?? "?"}) says SUCCESS without a PayTime; not counted as paid`);
+      return false;
+    }
+    const row = await this.services.db.get<{ amount: number }>(
+      sql`SELECT amount FROM ${sql.raw(ORDERS_TABLE)} WHERE order_no = ${orderNo}`,
+    );
+    if (!row) return true;
+    const reported = Number(result.Result?.Amt);
+    if (reported !== row.amount) {
+      console.error(`[newebpay] callback for ${orderNo} (trade ${result.Result?.TradeNo ?? "?"}) reports amount ${String(result.Result?.Amt)}, the order is ${row.amount}; not counted as paid`);
+      return false;
+    }
+    return true;
+  }
+
   async verifyCallback(rawBody: string): Promise<boolean> {
     const config = await this.loadConfig();
     if (!config) return false; // fail closed:未設定不放行任何回呼。
@@ -212,8 +234,12 @@ class NewebPayAdapter implements PaymentGatewayAdapter {
       return null;
     }
 
+    const orderNo = await this.orderNoFor(parsed.Result?.MerchantOrderNo ?? "");
+    // 說成功卻對不上(paidInFull):錢可能已經扣了,不能照「交易未成功、未收取任何款項」結算。交回 null =
+    // kit 的「付款結果確認中」(請客人先不要重新付款、聯絡店家),server-to-server 回 500,訂單維持待付款。
+    if (parsed.Status === "SUCCESS" && !(await this.paidInFull(orderNo, parsed))) return null;
     return {
-      orderNo: await this.orderNoFor(parsed.Result?.MerchantOrderNo ?? ""),
+      orderNo,
       succeeded: parsed.Status === "SUCCESS",
       tradeNo: parsed.Result?.TradeNo,
       paymentType: parsed.Result?.PaymentType,

@@ -26,7 +26,9 @@ export const newebpay = defineExtension({
   // 後台頁與設定欄位照藍新商店後台的叫法(商店代號、HashKey、HashIV),不寫實作細節。
   // 0.2.1:藍新回呼的 TradeInfo 是 32 bytes 一塊補齊的,WebCrypto 只認 16 bytes 一塊,補了 17–32 個 byte 的那一半
   // 回呼解不開、付款沒記到訂單上(2026-10-21 正式站第一筆就是這樣)。crypto.ts 的 decryptTradeInfo 自己去填充。
-  version: "0.2.1",
+  // 0.2.2:藍新說成功之外,還要有付款時間、金額跟訂單一樣才算付清(藍新官方 WooCommerce 外掛也這樣查;adapter.ts 的
+  // paidInFull)。對不上時錢可能已經扣了,所以不算失敗:交給 kit 當作結果無法確認(「付款結果確認中」、通知回 500)。
+  version: "0.2.2",
   coreApi: "^1.14.0",
   description:
     "線上刷卡收款：客人在藍新付款成功後，訂單會自動改成已付款。",
