@@ -1738,4 +1738,8 @@
 // fields used to look filled in before anyone had pasted a key. Saving an empty secret field still leaves the
 // stored value as it is.
 // A plugin that uses `PaymentReturn` declares coreApi "^1.78.0".
-export const CORE_API_VERSION = "1.78.0";
+// 1.78.1: A gateway callback whose signature checks out but whose content cannot be read no longer tells the
+// customer 「交易未成功，未收取任何款項」: the money may already be taken. The browser return shows 「付款結果確認中」
+// and asks them not to pay again; the server-to-server notice answers 500 instead of `{ ok: true }`, so an unread
+// notice is not acknowledged as received. Both still log `[payment-kit:<id>] verified callback but payload undecodable`.
+export const CORE_API_VERSION = "1.78.1";

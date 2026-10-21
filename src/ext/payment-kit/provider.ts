@@ -99,13 +99,14 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     // verify 已通過才會到這裡(ingress 契約:先驗後處理)。
     const parsed = await this.opts.adapter.parseCallback(rawBody);
     if (!parsed) {
-      // 簽章對但解不開:不應發生(同一組金鑰),記錄後以失敗頁回應。
+      // 簽章對但解不開:不知道付了沒有(1.78.1 以前這裡寫「交易未成功，未收取任何款項」,但錢可能已經扣了)。
+      // 瀏覽器那頁說結果確認中、不要重複付款;server-to-server 回 500,不把沒讀到的通知當成收到了。
       console.error(
         `[payment-kit:${this.opts.providerId}] verified callback but payload undecodable`,
       );
       return this.opts.mode === "return"
-        ? this.resultPage(false, "", await this.siteUrl())
-        : undefined;
+        ? this.resultPage("unknown", "", await this.siteUrl())
+        : Response.json({ ok: false, error: "undecodable" }, { status: 500 });
     }
 
     if (parsed.orderNo) {
@@ -138,21 +139,24 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
       const page = site ? await paymentReturnPath(this.opts.services.slots, parsed.orderNo, parsed.succeeded ? "paid" : "failed") : null;
       // 303:金流是 POST 回來的,轉去的頁用 GET 打開(登入的 cookie 是 Lax,頂層 GET 會帶)。
       if (page) return Response.redirect(`${site}${page}`, 303);
-      return this.resultPage(parsed.succeeded, parsed.orderNo, site);
+      return this.resultPage(parsed.succeeded ? "paid" : "failed", parsed.orderNo, site);
     }
     // notify:回 undefined → ingress 維持既有 {ok:true}(gateway 以 HTTP 200 判定收到)。
   }
 
   /** ReturnURL 的瀏覽器結果頁 —— 純靜態 HTML,白底單一焦點,無外部資源。 */
   private resultPage(
-    succeeded: boolean,
+    outcome: "paid" | "failed" | "unknown",
     orderNo: string,
     siteUrl: string,
   ): Response {
-    const title = succeeded ? "付款完成" : "付款未完成";
-    const detail = succeeded
-      ? "我們已收到您的款項。"
-      : "交易未成功，未收取任何款項。";
+    const title = { paid: "付款完成", failed: "付款未完成", unknown: "付款結果確認中" }[outcome];
+    const detail = {
+      paid: "我們已收到您的款項。",
+      failed: "交易未成功，未收取任何款項。",
+      unknown: "還沒收到這筆付款的結果，請先不要重新付款。稍後查看訂單，或聯絡店家確認。",
+    }[outcome];
+    const mark = { paid: "✓", failed: "✕", unknown: "…" }[outcome];
     const orderLine = orderNo
       ? `<p class="order">訂單編號 ${escapeHtml(orderNo)}</p>`
       : "";
@@ -182,7 +186,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
 </head>
 <body>
 <main>
-  <div class="mark">${succeeded ? "✓" : "✕"}</div>
+  <div class="mark">${mark}</div>
   <h1>${title}</h1>
   <p>${detail}</p>
   ${orderLine}
