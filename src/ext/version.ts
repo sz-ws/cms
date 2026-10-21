@@ -1724,4 +1724,18 @@
 // unaffected. At most 50 sources are asked, a count is capped at 9999, and several sources for one page are
 // added up. `count` runs every time the sidebar asks, so keep it to one cheap query.
 // A plugin that uses this declares coreApi "^1.77.0".
-export const CORE_API_VERSION = "1.77.0";
+// 1.78.0: Where the customer lands after paying through a gateway. `PaymentReturn` (`site.payment.return`,
+// `src/ext/payment-kit/return-page.ts`, exported from `@/ext/payment-kit`) is a value slot of
+// `{ path(orderNo, outcome) }`; outcome is "paid", "failed" or "back" (left the gateway's page without paying).
+// A plugin that owns the order answers a site path (`isSitePath`), anyone else answers null; `path` may read the
+// database. The payment-kit engine asks in order and the first site path wins: the browser return (ReturnURL)
+// answers 303 to `core.siteUrl` + that path instead of the plain result page, and the gateway's "back to shop"
+// link (ClientBackURL) points there instead of the home page. With no answer, a throw or an off-site value it is
+// as before. Fills append (`[...pages, mine]`).
+// Same version: the settings page no longer says 「已設定，輸入新值即可取代」 under a secret field that was never
+// filled in. `maskSecrets` (`src/lib/settings.ts`) gives "" for a secret whose stored value is empty or missing and
+// "•••" only for one that holds a value. Enabling a plugin stores its secret fields as empty strings, so its key
+// fields used to look filled in before anyone had pasted a key. Saving an empty secret field still leaves the
+// stored value as it is.
+// A plugin that uses `PaymentReturn` declares coreApi "^1.78.0".
+export const CORE_API_VERSION = "1.78.0";

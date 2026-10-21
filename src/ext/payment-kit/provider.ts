@@ -9,6 +9,7 @@ import type {
 import type { CoreServices } from "../services";
 import type { GatewayUrls, PaymentGatewayAdapter } from "./types";
 import { settlePayment, TABLE_RE } from "./settle";
+import { paymentReturnPath } from "./return-page";
 
 // payment-kit 引擎:所有金流共用的 PaymentProvider + CallbackReceiver 實作。
 // 會變的部分(加密/驗簽/組包/解包)全部委派給 adapter;這裡只做:
@@ -16,7 +17,8 @@ import { settlePayment, TABLE_RE } from "./settle";
 //   - verifyCallback:委派 adapter(fail closed)
 //   - handleCallback:adapter.parseCallback → 訂單結算(settle.ts,與人工核帳
 //     共用的冪等結算 + payment:succeeded hook)→ return 模式回 HTML 結果頁
-//     (CORE_API 1.14.0 的 Response 透傳)
+//     (CORE_API 1.14.0 的 Response 透傳)。1.78.0:有插件認得這筆訂單(PaymentReturn
+//     插槽,return-page.ts)時,改成 303 轉去它給的站內頁;「返回商店」也連去那裡。
 
 export interface PaymentProviderOptions {
   services: CoreServices;
@@ -51,14 +53,15 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
       .replace(/\/+$/, "");
   }
 
-  /** 依 core.siteUrl 組回呼 URL;未設定 → 全空字串(adapter 決定省略欄位)。 */
-  private async buildUrls(): Promise<GatewayUrls> {
+  /** 依 core.siteUrl 組回呼 URL;未設定 → 全空字串(adapter 決定省略欄位)。返回商店:認得這筆的插件給的頁,沒有就首頁。 */
+  private async buildUrls(orderNo: string): Promise<GatewayUrls> {
     const site = await this.siteUrl();
     if (!site) return { notifyUrl: "", returnUrl: "", clientBackUrl: "" };
+    const back = await paymentReturnPath(this.opts.services.slots, orderNo, "back");
     return {
       notifyUrl: `${site}/api/callback/payment/${this.opts.providerId}`,
       returnUrl: `${site}/api/callback/payment/${this.opts.providerId}-return`,
-      clientBackUrl: site,
+      clientBackUrl: back ? `${site}${back}` : site,
     };
   }
 
@@ -68,7 +71,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
   }
 
   async createCheckout(req: CheckoutRequest): Promise<CheckoutSession> {
-    const urls = await this.buildUrls();
+    const urls = await this.buildUrls(req.orderNo);
     const session = await this.opts.adapter.buildCheckout(req, urls);
     if (!session.ok) return session;
 
@@ -131,11 +134,11 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     }
 
     if (this.opts.mode === "return") {
-      return this.resultPage(
-        parsed.succeeded,
-        parsed.orderNo,
-        await this.siteUrl(),
-      );
+      const site = await this.siteUrl();
+      const page = site ? await paymentReturnPath(this.opts.services.slots, parsed.orderNo, parsed.succeeded ? "paid" : "failed") : null;
+      // 303:金流是 POST 回來的,轉去的頁用 GET 打開(登入的 cookie 是 Lax,頂層 GET 會帶)。
+      if (page) return Response.redirect(`${site}${page}`, 303);
+      return this.resultPage(parsed.succeeded, parsed.orderNo, site);
     }
     // notify:回 undefined → ingress 維持既有 {ok:true}(gateway 以 HTTP 200 判定收到)。
   }

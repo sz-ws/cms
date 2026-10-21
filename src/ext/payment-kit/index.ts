@@ -15,6 +15,9 @@ export { createPaymentProvider } from "./provider";
 export type { PaymentProviderOptions } from "./provider";
 export { createCheckoutHandler } from "./checkout-route";
 export { settlePayment } from "./settle";
+// 1.78.0:付款之後客人回到哪一頁(插槽)。
+export { PaymentReturn, paymentReturnPath } from "./return-page";
+export type { PaymentReturnOutcome, PaymentReturnPage } from "./return-page";
 export type { SettleInput, SettleOutcome } from "./settle";
 export {
   createManualPaymentProvider,

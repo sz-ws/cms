@@ -1014,8 +1014,10 @@ export function isValidRegistrySources(value: unknown): boolean {
 }
 
 /**
- * 讀取面:把一份 key→明文值 map 轉為「可外洩」形式(secret key 一律 "•••")。
+ * 讀取面:把一份 key→明文值 map 轉為「可外洩」形式(存過值的 secret key 一律 "•••")。
  * 供 settings 頁 initial props 與 GET settings 回應使用(05 §4)。
+ * 沒存過的 secret(空字串、null)給 "" —— 設定頁看到 "•••" 會寫「已設定」,空的寫成
+ * 已設定會讓人以為金鑰填好了(啟用插件時預設值就是一列空字串)。
  */
 export async function maskSecrets(
   values: Record<string, unknown>,
@@ -1023,7 +1025,8 @@ export async function maskSecrets(
   const masked: Record<string, unknown> = {};
   const secretKeys = await secretKeySetAsync();
   for (const [k, v] of Object.entries(values)) {
-    masked[k] = secretKeys.has(k) ? SECRET_MASK : v;
+    if (!secretKeys.has(k)) masked[k] = v;
+    else masked[k] = v === "" || v === null || v === undefined ? "" : SECRET_MASK;
   }
   return masked;
 }
