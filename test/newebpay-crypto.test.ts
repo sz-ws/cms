@@ -16,6 +16,21 @@ import {
 const KEY = "abcdefghijklmnopqrstuvwxyz123456"; // 32 chars
 const IV = "1234567890123456"; // 16 chars
 
+/**
+ * 照藍新的作法加密:PKCS7 以 32 bytes 為一塊。WebCrypto 只會補 16 bytes 一塊的,所以先自己補到 32 的倍數,
+ * 加密之後切掉 WebCrypto 多補的那一塊(CBC 前面的密文不受影響)。
+ */
+async function newebpayStyleCipher(plain: string): Promise<{ hex: string; pad: number }> {
+  const bytes = new TextEncoder().encode(plain);
+  const pad = 32 - (bytes.length % 32);
+  const padded = new Uint8Array(bytes.length + pad);
+  padded.set(bytes);
+  padded.fill(pad, bytes.length);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(KEY), { name: "AES-CBC" }, false, ["encrypt"]);
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-CBC", iv: new TextEncoder().encode(IV) }, key, padded));
+  return { hex: bytesToHex(sealed.slice(0, padded.length)), pad };
+}
+
 describe("newebpay crypto — AES-256-CBC TradeInfo", () => {
   it("encrypt → decrypt roundtrips (querystring payload)", async () => {
     const plain =
@@ -39,6 +54,25 @@ describe("newebpay crypto — AES-256-CBC TradeInfo", () => {
     ).toBeNull();
     expect(await decryptTradeInfo("zz-not-hex", KEY, IV)).toBeNull();
     expect(await decryptTradeInfo("abcd", KEY, IV)).toBeNull(); // 非 block 對齊
+  });
+
+  // 0.2.1:藍新回呼的 TradeInfo 是以 32 bytes 為一塊補齊的 PKCS7(官方 PHP 範例 addpadding 的
+  // blocksize = 32),最後補 1–32 個 byte。WebCrypto 只認 16 bytes 一塊的(最多 16 個),所以補了
+  // 17–32 個的那一半回呼以前解不開(2026-10-21 正式站第一筆測試就是這樣)。
+  it("decrypts NewebPay's callbacks, padded to 32-byte blocks with 1 to 32 bytes", async () => {
+    const pads = new Set<number>();
+    for (let extra = 0; extra < 32; extra += 1) {
+      const plain = JSON.stringify({ Status: "SUCCESS", Message: "授權成功", Result: { MerchantOrderNo: "SKTEST1", Amt: 5 } }) + " ".repeat(extra);
+      const { hex, pad } = await newebpayStyleCipher(plain);
+      pads.add(pad);
+      expect(await decryptTradeInfo(hex, KEY, IV)).toBe(plain);
+    }
+    expect([...pads].sort((a, b) => a - b)).toEqual(Array.from({ length: 32 }, (_, i) => i + 1));
+  });
+
+  it("a NewebPay-style payload under the wrong key is still null", async () => {
+    const { hex } = await newebpayStyleCipher(JSON.stringify({ Status: "SUCCESS" }) + "x".repeat(20));
+    expect(await decryptTradeInfo(hex, "wrongwrongwrongwrongwrongwrong12", IV)).toBeNull();
   });
 
   it("rejects malformed HashKey/HashIV lengths loudly", async () => {

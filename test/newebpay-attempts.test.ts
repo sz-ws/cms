@@ -177,6 +177,25 @@ describe("NewebPay: every attempt at paying an order has its own MerchantOrderNo
     for (const other of ["VACC", "CVS", "BARCODE", "WEBATM"]) expect(plain.get(other)).toBeNull();
   });
 
+  it("a callback padded the way NewebPay pads (32-byte blocks) settles the order", async () => {
+    await merchantOrderNoOf(ORDER_NO);
+    for (const [orderNo, extra] of [[ORDER_NO, 0], [ORDER_NO, 9]] as const) {
+      const payload = JSON.stringify({ Status: "SUCCESS", Message: "授權成功", Result: { MerchantOrderNo: orderNo, TradeNo: "26102112345678", PaymentType: "CREDIT", PayTime: "2026-10-21 20:08:18", Amt: 1950 } }) + " ".repeat(extra);
+      const bytes = new TextEncoder().encode(payload);
+      const pad = 32 - (bytes.length % 32);
+      const padded = new Uint8Array(bytes.length + pad);
+      padded.set(bytes);
+      padded.fill(pad, bytes.length);
+      const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(HASH_KEY), { name: "AES-CBC" }, false, ["encrypt"]);
+      const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-CBC", iv: new TextEncoder().encode(HASH_IV) }, key, padded)).slice(0, padded.length);
+      const tradeInfo = Array.from(sealed, (b) => b.toString(16).padStart(2, "0")).join("");
+      const body = new URLSearchParams({ Status: "SUCCESS", MerchantID: MERCHANT_ID, Version: "2.0", TradeInfo: tradeInfo, TradeSha: await tradeSha(tradeInfo, HASH_KEY, HASH_IV) }).toString();
+      const res = await POST(new Request("https://cms.test/api/callback/payment/newebpay", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }), { params: Promise.resolve({ capability: "payment", providerId: "newebpay" }) });
+      expect(res.status).toBe(200);
+    }
+    expect(await status(ORDER_NO)).toBe("paid");
+  });
+
   it("keys pasted with spaces around them still work", async () => {
     settingsStore.values["ext.newebpay.hashKey"] = ` ${HASH_KEY} `;
     settingsStore.values["ext.newebpay.merchantId"] = `${MERCHANT_ID}\n`;
@@ -228,5 +247,27 @@ describe("where the customer lands after NewebPay (core 1.78.0 PaymentReturn)", 
     };
     expect(await back(shopClaims(ours))).toBe(`https://shop.example/shop/orders?order=${ORDER_NO}&payment=back`);
     expect(await back()).toBe("https://shop.example");
+  });
+});
+
+describe("a signed callback whose content cannot be read (core 1.78.1)", () => {
+  // TradeSha 是對密文算的:簽章對、內容解不開(例如以前 32 bytes 一塊的填充)時,我們不知道付了沒有。
+  async function unreadableBody(): Promise<string> {
+    const tradeInfo = "00".repeat(32);
+    return new URLSearchParams({ Status: "SUCCESS", MerchantID: MERCHANT_ID, Version: "2.0", TradeInfo: tradeInfo, TradeSha: await tradeSha(tradeInfo, HASH_KEY, HASH_IV) }).toString();
+  }
+
+  it("the browser page does not say no money was taken; it says the result is being checked", async () => {
+    const res = (await provider("return").handleCallback(await unreadableBody())) as Response;
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("未收取任何款項");
+    expect(html).toContain("付款結果確認中");
+  });
+
+  it("the server-to-server notice answers 500, so the failure is not acknowledged as received", async () => {
+    const res = await provider("notify").handleCallback(await unreadableBody());
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(500);
   });
 });

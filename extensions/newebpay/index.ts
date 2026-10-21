@@ -24,7 +24,9 @@ export const newebpay = defineExtension({
   name: "藍新金流",
   // 0.2.0:同一張訂單再去付款時換一個送藍新的商店訂單編號(adapter.ts 檔頭),只開信用卡;
   // 後台頁與設定欄位照藍新商店後台的叫法(商店代號、HashKey、HashIV),不寫實作細節。
-  version: "0.2.0",
+  // 0.2.1:藍新回呼的 TradeInfo 是 32 bytes 一塊補齊的,WebCrypto 只認 16 bytes 一塊,補了 17–32 個 byte 的那一半
+  // 回呼解不開、付款沒記到訂單上(2026-10-21 正式站第一筆就是這樣)。crypto.ts 的 decryptTradeInfo 自己去填充。
+  version: "0.2.1",
   coreApi: "^1.14.0",
   description:
     "線上刷卡收款：客人在藍新付款成功後，訂單會自動改成已付款。",
