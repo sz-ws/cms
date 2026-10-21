@@ -57,6 +57,10 @@ ReturnURL 與 ClientBackURL(付款頁的「返回商店」)預設是 kit 的結�
 1.78.0 的 `PaymentReturn` 插槽(`@/ext/payment-kit`)時,改成 303 轉去它給的站內頁(例如商城營運的
 `/shop/orders?order=…&payment=paid|failed|back`)。
 
+後台的「測試付款」(訂單編號 SK 開頭,`isTestOrderNo`)由本插件自己認領(0.3.0):付完、失敗或在藍新按
+返回商店,都回到 `/admin/ext/newebpay?order=…&payment=…`,頁面上方寫這次的結果。沒有插件認領的訂單(例如
+經銷的運費)落在 kit 的結果頁(core 1.79.0:店名與標誌、付款摘要、返回網站)。
+
 ## 其他模組怎麼收款
 
 ```ts

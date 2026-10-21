@@ -52,7 +52,7 @@ import { POST } from "../src/app/api/callback/[capability]/[providerId]/route";
 import { db } from "../src/lib/db";
 import { HookBus } from "../src/ext/hooks";
 import { createPaymentProvider, PaymentReturn } from "../src/ext/payment-kit";
-import { fill, SlotRegistry } from "../src/ext/slots";
+import { fill, SlotRegistry, slotSources } from "../src/ext/slots";
 import { createNewebPayAdapter } from "../extensions/newebpay/adapter";
 import type { CoreServices } from "../src/ext/services";
 
@@ -299,5 +299,31 @@ describe("a success only counts with the order's amount and a payment time (0.2.
     await callback(retry, "SUCCESS", { Amt: "1950" });
     expect(await status(ORDER_NO)).toBe("paid");
     expect(hookEvents.events).toHaveLength(1);
+  });
+});
+
+describe("a test payment from the admin page lands back on the NewebPay admin page (0.3.0)", () => {
+  const TEST_ORDER = "SKMVI5HAXF5JI3";
+  async function newebpaySlots() {
+    const { newebpay } = await import("../extensions/newebpay");
+    return new SlotRegistry(slotSources([newebpay]));
+  }
+
+  it("paid: a 303 to /admin/ext/newebpay with the order and the result", async () => {
+    await provider().createCheckout({ orderNo: TEST_ORDER, amount: 5, description: "測試訂單" });
+    const body = await callbackBody(TEST_ORDER, "SUCCESS", { Amt: 5 });
+    const res = (await provider("return", await newebpaySlots()).handleCallback(body)) as Response;
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`https://shop.example/admin/ext/newebpay?order=${TEST_ORDER}&payment=paid`);
+    expect(await status(TEST_ORDER)).toBe("paid");
+  });
+
+  it("a shop's order is not claimed by NewebPay: the result page (or the shop's own page) as before", async () => {
+    await merchantOrderNoOf(ORDER_NO);
+    const res = (await provider("return", await newebpaySlots()).handleCallback(await callbackBody(ORDER_NO, "SUCCESS"))) as Response;
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("付款完成");
+    expect(html).toContain("NT$");
   });
 });

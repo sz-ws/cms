@@ -15,7 +15,16 @@ import { HASH_IV_LENGTH, HASH_KEY_LENGTH } from "./crypto";
 // 藍新金流 adminPage —— 設定狀態、測試付款、訂單一覽。
 // 版面積木來自 @/ext/payment-kit/admin;本檔只剩藍新專屬的狀態列組合。
 
-export async function NewebPayAdminPage() {
+// 0.3.0:測試付款付完回到這一頁(index.ts 的 PaymentReturn),網址帶著 ?order=…&payment=…。
+const TEST_RESULT: Record<string, { text: string; tone: string }> = {
+  paid: { text: "測試付款完成，已經記成已付款（見下方訂單）。這是真的扣款，記得到藍新商店後台退款。", tone: "border-emerald-600/20 bg-emerald-600/[0.06] text-emerald-900" },
+  failed: { text: "這次測試付款沒有成功，沒有扣款。", tone: "border-red-600/20 bg-red-600/[0.06] text-red-900" },
+  back: { text: "測試付款沒有完成，沒有扣款。", tone: "border-ink/10 bg-ink/[0.03] text-ink/70" },
+};
+
+export async function NewebPayAdminPage({ searchParams }: { searchParams?: Record<string, string> } = {}) {
+  const result = searchParams?.payment ? TEST_RESULT[searchParams.payment] : undefined;
+  const resultOrder = /^[A-Za-z0-9_]{1,30}$/.test(searchParams?.order ?? "") ? searchParams?.order : undefined;
   const [merchantId, hashKey, hashIv, env, siteUrl, orders] = await Promise.all([
     getSetting<string>("ext.newebpay.merchantId", ""),
     getSetting<string>("ext.newebpay.hashKey", ""),
@@ -39,6 +48,14 @@ export async function NewebPayAdminPage() {
           線上刷卡收款：客人在結帳頁選「線上刷卡」就會到藍新付款，付款成功後訂單會自動改成已付款。商店代號與金鑰在設定頁填寫。
         </p>
       </header>
+
+      {result ? (
+        <p role="status" className={`rounded-[10px] border px-4 py-3 text-[13.5px] leading-relaxed ${result.tone}`}>
+          {resultOrder ? <span className="font-mono">{resultOrder}</span> : null}
+          {resultOrder ? "：" : null}
+          {result.text}
+        </p>
+      ) : null}
 
       {/* 狀態:金鑰在否 + 環境;網站網址沒設定時,付款結果傳不回來。 */}
       <section className={CARD}>

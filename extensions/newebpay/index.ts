@@ -2,7 +2,10 @@ import { defineExtension } from "@/ext/types";
 import {
   createPaymentProvider,
   createCheckoutHandler,
+  isTestOrderNo,
+  PaymentReturn,
 } from "@/ext/payment-kit";
+import { fill } from "@/ext/slots";
 import { createNewebPayAdapter, ORDERS_TABLE } from "./adapter";
 import { NewebPayAdminPage } from "./admin-page";
 
@@ -28,8 +31,10 @@ export const newebpay = defineExtension({
   // 回呼解不開、付款沒記到訂單上(2026-10-21 正式站第一筆就是這樣)。crypto.ts 的 decryptTradeInfo 自己去填充。
   // 0.2.2:藍新說成功之外,還要有付款時間、金額跟訂單一樣才算付清(藍新官方 WooCommerce 外掛也這樣查;adapter.ts 的
   // paidInFull)。對不上時錢可能已經扣了,所以不算失敗:交給 kit 當作結果無法確認(「付款結果確認中」、通知回 500)。
-  version: "0.2.2",
-  coreApi: "^1.14.0",
+  // 0.3.0(core 1.79.0):後台「測試付款」付完(或在藍新按返回商店)回到這個插件的後台頁,上面寫這次的結果
+  // (PaymentReturn 只認領測試訂單,isTestOrderNo;商店訂單照舊由訂單管理插件認領)。
+  version: "0.3.0",
+  coreApi: "^1.79.0",
   description:
     "線上刷卡收款：客人在藍新付款成功後，訂單會自動改成已付款。",
   icon: "credit-card",
@@ -100,6 +105,12 @@ export const newebpay = defineExtension({
         DROP TABLE IF EXISTS ext_newebpay_orders
       `,
     },
+  ],
+  fills: [
+    fill(PaymentReturn, (pages) => [
+      ...pages,
+      { path: (orderNo, outcome) => (isTestOrderNo(orderNo) ? `/admin/ext/newebpay?${new URLSearchParams({ order: orderNo, payment: outcome })}` : null) },
+    ]),
   ],
   adminPages: [
     {
