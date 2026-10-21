@@ -25,6 +25,7 @@ import {
 import { getRequestStamps, publishRequestStamps } from "@/lib/request-stamps";
 import { dropColdSnapshot, takeColdRuntimeRows } from "@/lib/cold-snapshot";
 import { getPlainSetting } from "@/lib/settings";
+import { setWakeTables } from "@/lib/wake";
 import type { Extension, HookName } from "./types";
 
 // manifest.migrations 兜底已成功套用的 extId(install route 是主要套用點;這裡
@@ -392,6 +393,9 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
 
   // 以下每 request 重建(memo 只存 DB 衍生陣列,不存 HookBus/ExtRuntime)。
   const enabled = [...codeEnabled, ...dxEnabled];
+
+  // 1.80.0:啟用的插件說「這些表有新資料就叫醒排程」(jobs[].wakeOn);ledger-kit 的交易照這份設記號。
+  setWakeTables(enabled.flatMap((ext) => (ext.jobs ?? []).flatMap((job) => job.wakeOn ?? [])));
 
   const hooks = new HookBus();
   for (const ext of enabled)

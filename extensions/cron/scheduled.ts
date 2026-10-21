@@ -1,4 +1,5 @@
 import { decryptSecretWithKey } from "../../src/lib/secret-envelope";
+import { shouldTick, TICK_DUE_SQL, type TickDue } from "../../src/lib/wake";
 
 // cron extension 的「錶」—— 由 custom-worker.ts 的 `scheduled` handler 呼叫。
 //
@@ -14,7 +15,10 @@ import { decryptSecretWithKey } from "../../src/lib/secret-envelope";
 //   - 定案不變:core 本身永遠只有 lazy sweep;secret 與 tick 入口都屬於 cron extension。
 //     這個檔案住在 extensions/cron/ 就是這個意思。
 //
-// 硬規則:本檔只能 import ../../src/lib/secret-envelope(純 Web Crypto)。任何
+// 1.80.0:先問一句「有沒有理由醒」(../../src/lib/wake.ts),沒有就不打完整 tick —— 一次完整 tick 約 500 毫秒 CPU,
+// 這一句只要幾毫秒。有新資料要處理、有工作到時間、或上次完整 tick 超過 30 分鐘才打。
+//
+// 硬規則:本檔只能 import ../../src/lib/secret-envelope(純 Web Crypto)與 ../../src/lib/wake(只用 D1)。任何
 // `@/` 別名 / next/* / drizzle / lib/db 都會把整個 Next module graph 拖進 worker
 // 入口的 bundle —— 那是這條路線唯一會致命的失誤。D1 一律用原生 prepare/bind。
 
@@ -114,6 +118,14 @@ export async function runCronTick(
   const { DB, SECRETS_KEY, WORKER_SELF_REFERENCE } = env;
   // 少任何一個 binding 都不是這裡該修的問題,安靜跳過(fetch handler 自會抱怨)。
   if (!DB || !SECRETS_KEY || !WORKER_SELF_REFERENCE) return;
+
+  // 沒有理由醒 → 這一分鐘到此為止。查不到(表還沒建好、D1 出錯)就照以前打完整 tick:壞掉的方向是多跑一次。
+  try {
+    const due = await DB.prepare(`SELECT ${TICK_DUE_SQL}`).first<TickDue>();
+    if (due && !shouldTick(due, Date.now())) return;
+  } catch (e) {
+    console.error("[cron] wake check failed; ticking anyway", e);
+  }
 
   let row: TickRow | null;
   try {

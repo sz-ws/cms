@@ -1750,4 +1750,15 @@
 // `@/ext/payment-kit`) recognise the order numbers of the admin test payment (`createCheckoutHandler`), so a payment
 // plugin can claim its own test orders in `PaymentReturn` and send the owner back to its admin page.
 // A plugin that uses `isTestOrderNo` declares coreApi "^1.79.0".
-export const CORE_API_VERSION = "1.79.0";
+// 1.80.0: The cron only does a full tick when there is a reason to (`src/lib/wake.ts`). Every minute the scheduled
+// handler (`extensions/cron/scheduled.ts`) asks one query: is the wake mark (`heartbeats` key `core.jobs.wakeAt`)
+// due, is a job in `ext_jobs` due, is scheduled content due, or was the last full tick 30 minutes ago or more
+// (`SAFETY_INTERVAL_MS`). Only then does it call `/api/callback/cron:tick/cron`. When that query fails it ticks as
+// before. A full tick used to run every minute at about 500 ms of CPU.
+// A recurring job declares `wakeOn: ["ext_…"]` (`ExtJobRegistration`, up to 10 table names): a ledger-kit
+// transaction (`prepareTransaction` / `commitLedgerOperations`) that inserts into one of those tables also sets the
+// mark, in the same batch. Writes outside ledger-kit call `requestWake(db, at?)`. A woken tick runs every recurring
+// job regardless of its `run_at`, then clears the due mark (`clearWake`); `every` becomes the safety interval, not
+// the latency. The lazy sweep now treats the cron as healthy for 35 minutes after its last full tick (was 2).
+// A plugin that uses `wakeOn` declares coreApi "^1.80.0".
+export const CORE_API_VERSION = "1.80.0";

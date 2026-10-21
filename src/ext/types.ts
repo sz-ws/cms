@@ -168,6 +168,12 @@ export interface ProviderRegistration {
 export interface ExtJobRegistration {
   id: string; // ^[a-z][a-z0-9-]{0,30}$,同 extension 內唯一
   every?: number; // 分鐘,整數 ≥1;有 = 週期性;無 = 純 handler
+  /**
+   * 1.80.0:有新資料插入這些表(經 ledger-kit 的交易)時,下一分鐘就叫醒排程,這一輪所有週期性工作都跑
+   * (src/lib/wake.ts)。沒有新資料時排程不醒,週期性工作照 every 跑;`every` 是保險,不是即時性。
+   * 例:寄信的工作 `every: 30, wakeOn: ["ext_shop_events"]` —— 訂單一有事件,一分鐘內寄出。
+   */
+  wakeOn?: string[];
   run: (services: CoreServices, payload: unknown, now: number) => Promise<void>;
 }
 
@@ -653,6 +659,8 @@ const JOB_ID_RE = /^[a-z][a-z0-9-]{0,30}$/;
 const extJobSchema = z.object({
   id: z.string().regex(JOB_ID_RE, "invalid job id"),
   every: z.number().int().min(1).optional(),
+  // 1.80.0:表名(插件自己或它讀的別的插件的表),跟 ledger-kit 的表名同一套字元。
+  wakeOn: z.array(z.string().regex(/^[a-z][a-z0-9_]{2,60}$/, "invalid table name")).max(10).optional(),
   run: fn,
 });
 // 同 extension 內 id 重複 → fail-loud(同 registry 重複 provider 慣例)。

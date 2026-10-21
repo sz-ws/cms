@@ -1,5 +1,6 @@
 import { prepareOperation } from "./operations";
 import { ledgerTables } from "./schema";
+import { WAKE_KEY, wakesOnInsert } from "../../lib/wake";
 
 export type TransactionValue = string | number | null;
 type Predicate = { sql: string; args: readonly TransactionValue[] };
@@ -38,6 +39,11 @@ export function prepareTransaction(db: D1Database, prefix: string, mutations: re
 export function appendTransaction(db: D1Database, statements: D1PreparedStatement[], prefix: string, mutations: readonly TransactionMutation[], id: string, claim: string) {
   const receipt = ledgerTables(prefix).operations;
   const active = `EXISTS (SELECT 1 FROM ${receipt} WHERE id = ? AND claim = ?)`;
+  // 1.80.0:插入了某個插件說「有新資料就叫醒排程」的表(jobs[].wakeOn,src/lib/wake.ts)時,同一批多一句設記號,
+  // 跟這筆交易同生共死;重送(replay)的交易沒有 claim,這句也就不寫。一筆交易最多一句。
+  if (mutations.some((mutation) => mutation.kind === "insert" && wakesOnInsert(mutation.table))) {
+    statements.push(db.prepare(`INSERT INTO heartbeats (key, at) SELECT ?, ? WHERE ${active} ON CONFLICT(key) DO UPDATE SET at = MIN(heartbeats.at, excluded.at)`).bind(WAKE_KEY, Date.now(), id, claim));
+  }
   for (const mutation of mutations) {
     if (mutation.kind === "guard") {
       statements.push(db.prepare(`UPDATE ${receipt} SET valid = CASE WHEN (${mutation.condition.sql}) THEN 1 ELSE 0 END WHERE id = ? AND claim = ?`).bind(...mutation.condition.args, id, claim));

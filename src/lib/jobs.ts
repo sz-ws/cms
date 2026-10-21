@@ -4,6 +4,7 @@ import { getDB } from "./cf";
 import { contents, extJobs, storageHistory } from "./schema";
 import { getHeartbeats, setHeartbeats } from "./heartbeats";
 import { runInRequestScope } from "./request-scope";
+import { clearWake, SAFETY_INTERVAL_MS, wokenAt } from "./wake";
 import { indexContentEntry } from "./search";
 import { revalidateContent } from "@/ext/dx/cache-invalidate";
 
@@ -84,15 +85,13 @@ const LAST_SWEEP_KEY = "core.jobs.lastSweep";
  */
 const LAST_CRON_TICK_KEY = "ext.cron.lastTick";
 /**
- * 容忍一次 cron jitter；超過兩個排程週期沒 heartbeat 才啟動 fallback。
+ * cron 健康的判斷窗:最近一次完整 tick 在這段時間內就不跑 lazy sweep。
  *
- * 這裡的「兩個週期」= 2 分鐘,前提是 cron trigger 至少每 2 分鐘觸發一次 ——
- * wrangler.jsonc 出貨的 `triggers.crons` 是每分鐘一次的 `* * * * *`,成立。改成
- * 每 5 分鐘一次(該檔註解裡「要更省可調成」的那個值)之後,每 5 分鐘裡有 3 分鐘
- * heartbeat 是過期的,這道 gate 大多數時間形同不存在:lazy sweep 會照它自己的
- * 60 秒節流繼續跑。要放寬排程頻率就要連這個窗一起放大。
+ * 1.80.0 起 cron 沒事不跑完整 tick(src/lib/wake.ts),兩次完整 tick 最多隔 SAFETY_INTERVAL_MS(30 分鐘),
+ * 所以窗是它再加 5 分鐘的 jitter。以前是每分鐘一次 tick,窗是 2 分鐘。cron 真的停了,lazy sweep 最晚 35 分鐘
+ * 後接手。
  */
-const CRON_HEALTH_WINDOW_MS = SWEEP_INTERVAL_MS * 2;
+const CRON_HEALTH_WINDOW_MS = SAFETY_INTERVAL_MS + 5 * 60_000;
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -324,6 +323,9 @@ const extJobsJob: CoreJob = {
     }
 
     // ---- 2 + 3. Claim + 執行 ----
+    // 1.80.0:被叫醒的這一輪(有新資料寫進插件宣告的 wakeOn 表,src/lib/wake.ts),週期性工作不管 run_at 都跑一次:
+    // 叫醒就是為了讓它們馬上處理那筆新資料。記號在 runJobs 跑完後清掉。讀不到記號 = 照 run_at(fail-safe)。
+    const woken = await wokenAt(getDB(), now).catch(() => false);
     const due: ExtJobRow[] = await db()
       .select({
         id: extJobs.id,
@@ -344,7 +346,7 @@ const extJobsJob: CoreJob = {
             lte(extJobs.runAt, now),
             and(
               eq(extJobs.kind, "recurring"),
-              lte(extJobs.runAt, now + RECURRING_DUE_TOLERANCE_MS),
+              woken ? sql`1 = 1` : lte(extJobs.runAt, now + RECURRING_DUE_TOLERANCE_MS),
             ),
           ),
         ),
@@ -600,6 +602,12 @@ async function runJobs(now: number): Promise<JobRunReport[]> {
     await setHeartbeats(bookkeeping);
   } catch (e) {
     console.error("[jobs] lastRun bookkeeping failed", e);
+  }
+  // 1.80.0:這一輪處理過了,到時間的「該醒了」記號清掉(跑的途中新設的比 now 晚,留給下一分鐘)。
+  try {
+    await clearWake(getDB(), now);
+  } catch (e) {
+    console.error("[jobs] clearing the wake mark failed", e);
   }
   return reports;
 }

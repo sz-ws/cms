@@ -30,11 +30,15 @@ interface TickRowShape {
   enabled: number | null;
 }
 
-/** 假 D1:只支援 prepare().bind().first(),回傳固定的一列。 */
-function fakeDB(row: TickRowShape | null): D1Database {
+/** 1.80.0「要不要醒」那一句的回答。預設 null = 查不到,照以前每分鐘打。 */
+type DueShape = { wake_at: number | null; last_tick: number | null; next_job: number | null; next_publish: number | null } | null;
+
+/** 假 D1:tick 那一句(prepare().bind().first())回固定的一列;「要不要醒」那一句(prepare().first())回 due。 */
+function fakeDB(row: TickRowShape | null, due: DueShape = null): D1Database {
   return {
     prepare: () => ({
       bind: () => ({ first: async () => row }),
+      first: async () => due,
     }),
   } as unknown as D1Database;
 }
@@ -69,9 +73,10 @@ async function envWith(
   row: TickRowShape | null,
   captured: CapturedRequest[],
   status = 200,
+  due: DueShape = null,
 ): Promise<CronScheduledEnv> {
   return {
-    DB: fakeDB(row),
+    DB: fakeDB(row, due),
     SECRETS_KEY,
     WORKER_SELF_REFERENCE: fakeFetcher(captured, status),
   };
@@ -403,5 +408,42 @@ describe("runCronTick — 失敗回報(onError sink)", () => {
       runCronTick(throwing, (_e, stage) => reported.push(stage)),
     ).resolves.toBeUndefined();
     expect(reported).toEqual(["dispatch"]);
+  });
+});
+
+describe("runCronTick — 有事才醒(core 1.80.0)", () => {
+  const now = Date.now();
+  const enabledRow = async () => ({ secret: await storedSecret(SECRET), site_url: JSON.stringify("https://shop.example"), enabled: 1 });
+  const quiet = { wake_at: null, last_tick: now - 60_000, next_job: now + 20 * 60_000, next_publish: null };
+
+  it("沒有記號、沒有到時間的工作、上次完整 tick 在 30 分鐘內 → 不打", async () => {
+    const captured: CapturedRequest[] = [];
+    await runCronTick(await envWith(await enabledRow(), captured, 200, quiet));
+    expect(captured).toHaveLength(0);
+  });
+
+  it.each([
+    ["有新資料的記號到時間了", { ...quiet, wake_at: now - 1_000 }],
+    ["一個工作到時間了", { ...quiet, next_job: now - 1_000 }],
+    ["排程發佈的內容到時間了", { ...quiet, next_publish: now - 1_000 }],
+    ["上次完整 tick 超過 30 分鐘", { ...quiet, last_tick: now - 31 * 60_000 }],
+    ["從沒跑過完整 tick", { ...quiet, last_tick: null }],
+  ])("%s → 打", async (_label, due) => {
+    const captured: CapturedRequest[] = [];
+    await runCronTick(await envWith(await enabledRow(), captured, 200, due));
+    expect(captured).toHaveLength(1);
+  });
+
+  it("「要不要醒」查詢失敗 → 照以前打(壞掉的方向是多跑一次)", async () => {
+    const captured: CapturedRequest[] = [];
+    const env = await envWith(await enabledRow(), captured);
+    const broken = {
+      prepare: (sql: string) => ({
+        bind: (env.DB as D1Database).prepare(sql).bind,
+        first: async () => { throw new Error("no such table: ext_jobs"); },
+      }),
+    } as unknown as D1Database;
+    await runCronTick({ ...env, DB: broken });
+    expect(captured).toHaveLength(1);
   });
 });
