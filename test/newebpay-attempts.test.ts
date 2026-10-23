@@ -23,6 +23,8 @@ const settingsStore = vi.hoisted(() => ({ values: {} as Record<string, unknown> 
 vi.mock("@/lib/settings", () => ({
   getSetting: async (key: string, fallback?: unknown) =>
     key in settingsStore.values ? settingsStore.values[key] : fallback,
+  getPlainSetting: async (key: string, fallback?: unknown) =>
+    key in settingsStore.values ? settingsStore.values[key] : fallback,
   setSettings: async (entries: Record<string, unknown>) => {
     Object.assign(settingsStore.values, entries);
   },

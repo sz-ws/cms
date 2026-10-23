@@ -161,6 +161,7 @@ export const EXPORTABLE_SETTING_KEYS: readonly string[] = [
   "core.siteTitle",
   "core.siteDescription",
   "core.siteUrl",
+  "core.shareUrl",
   "core.locale",
   "core.seo.robots",
   "core.seo.sitemap",

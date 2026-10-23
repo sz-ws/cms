@@ -1769,4 +1769,14 @@
 // key) and when the plugin is uninstalled (`uninstallExtension`). Not for secrets: nothing here is encrypted.
 // Who may write for whom (members only, not staff) stays the caller's decision.
 // A plugin that uses `userFields` declares coreApi "^1.81.0".
-export const CORE_API_VERSION = "1.81.0";
+// 1.82.0: A second address for the same site. New setting `core.shareUrl` (網站設定 → 分享用網址), for example a
+// short domain attached to the same Worker. `src/lib/site-origins.ts` gives `siteOrigins()` (site URL and share
+// address), `shareOrigin()` (share address, else site URL; "" when neither is set), `ownOrigin(urlOrHost, origins)`
+// and `visitorOrigin()` (which of the site's own addresses the current request is on; "" outside a request or on
+// any other host such as workers.dev). The cart and the sign-in cookie belong to one address, so a visitor stays on
+// the address they came in on: OAuth sign-in (`lib/oidc.ts`) sends the provider back to that address (the provider
+// must allow its callback URL), and payment-kit builds the browser return and "back to shop" URLs from it, while
+// the server-to-server notify URL stays on the site URL. Canonical links, the sitemap, robots.txt and email links
+// keep using the site URL, so search engines see one address. A plugin that builds links for sharing uses
+// `shareOrigin()` and declares coreApi "^1.82.0".
+export const CORE_API_VERSION = "1.82.0";

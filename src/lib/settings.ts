@@ -142,6 +142,18 @@ export const CORE_SETTINGS: SettingField[] = [
     default: "",
   },
   {
+    // 1.82.0:第二個打開同一份網站的網址。誰讀它、怎麼判斷客人在哪個網址,見 src/lib/site-origins.ts。
+    key: "core.shareUrl",
+    group: "general",
+    label: { en: "Share address", "zh-Hant": "分享用網址" },
+    description: {
+      en: "Another address that opens the site, such as a short domain. Shared links start with it, and visitors who come in through it stay on it through sign-in and payment. Search engines still go by the site URL, and third-party sign-in such as Google or LINE must allow this address too. Leave empty to use the site URL only.",
+      "zh-Hant": "能連到網站的另一個網址（例如好記的短網址）。分享連結會以它開頭，客人點進來後，登入與付款也都會回到這裡。搜尋引擎仍以網站網址為主，Google、LINE 等第三方登入也要允許此網址。沒填就只用網站網址。",
+    },
+    type: "text",
+    default: "",
+  },
+  {
     key: "core.siteDescription",
     group: "general",
     label: { en: "Site description", "zh-Hant": "網站介紹" },

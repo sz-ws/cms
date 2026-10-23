@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getSetting } from "@/lib/settings";
+import { ownOrigin, siteOrigins, visitorOrigin } from "@/lib/site-origins";
 import type {
   CallbackReceiver,
   CheckoutRequest,
@@ -21,6 +22,8 @@ import { formatMoney } from "../commerce-kit/money";
 //     共用的冪等結算 + payment:succeeded hook)→ return 模式回 HTML 結果頁
 //     (CORE_API 1.14.0 的 Response 透傳)。1.78.0:有插件認得這筆訂單(PaymentReturn
 //     插槽,return-page.ts)時,改成 303 轉去它給的站內頁;「返回商店」也連去那裡。
+//     1.82.0:客人從網站的另一個網址(分享用網址,src/lib/site-origins.ts)結帳時,付款完回到那個網址 ——
+//     購物車與登入只屬於一個網址。server-to-server 的 notify 照舊用網站網址。
 
 export interface PaymentProviderOptions {
   services: CoreServices;
@@ -46,16 +49,26 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
       .replace(/\/+$/, "");
   }
 
-  /** 依 core.siteUrl 組回呼 URL;未設定 → 全空字串(adapter 決定省略欄位)。返回商店:認得這筆的插件給的頁,沒有就首頁。 */
+  /**
+   * 依 core.siteUrl 組回呼 URL;未設定 → 全空字串(adapter 決定省略欄位)。返回商店:認得這筆的插件給的頁,沒有就首頁。
+   * 瀏覽器回來的兩個(return、返回商店)用客人結帳時的網址(網站自己的網址之一,不在請求裡就是網站網址)。
+   */
   private async buildUrls(orderNo: string): Promise<GatewayUrls> {
     const site = await this.siteUrl();
     if (!site) return { notifyUrl: "", returnUrl: "", clientBackUrl: "" };
-    const back = await paymentReturnPath(this.opts.services.slots, orderNo, "back");
+    const [back, visitor] = await Promise.all([paymentReturnPath(this.opts.services.slots, orderNo, "back"), visitorOrigin()]);
+    const browser = visitor || site;
     return {
       notifyUrl: `${site}/api/callback/payment/${this.opts.providerId}`,
-      returnUrl: `${site}/api/callback/payment/${this.opts.providerId}-return`,
-      clientBackUrl: back ? `${site}${back}` : site,
+      returnUrl: `${browser}/api/callback/payment/${this.opts.providerId}-return`,
+      clientBackUrl: back ? `${browser}${back}` : browser,
     };
+  }
+
+  /** 瀏覽器回來的這個請求在網站的哪個網址上(Host 標頭);不是網站自己的網址就是網站網址。 */
+  private async browserSite(headers: Headers): Promise<string> {
+    const [site, origins] = await Promise.all([this.siteUrl(), siteOrigins()]);
+    return site ? ownOrigin(headers.get("host"), origins) || site : "";
   }
 
   async getStatus(orderNo: string) {
@@ -88,7 +101,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     return this.opts.adapter.verifyCallback(rawBody);
   }
 
-  async handleCallback(rawBody: string): Promise<void | Response> {
+  async handleCallback(rawBody: string, headers: Headers = new Headers()): Promise<void | Response> {
     // verify 已通過才會到這裡(ingress 契約:先驗後處理)。
     const parsed = await this.opts.adapter.parseCallback(rawBody);
     if (!parsed) {
@@ -98,7 +111,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
         `[payment-kit:${this.opts.providerId}] verified callback but payload undecodable`,
       );
       return this.opts.mode === "return"
-        ? this.resultPage("unknown", await this.siteUrl())
+        ? this.resultPage("unknown", await this.browserSite(headers))
         : Response.json({ ok: false, error: "undecodable" }, { status: 500 });
     }
 
@@ -128,7 +141,7 @@ class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
     }
 
     if (this.opts.mode === "return") {
-      const site = await this.siteUrl();
+      const site = await this.browserSite(headers);
       const page = site ? await paymentReturnPath(this.opts.services.slots, parsed.orderNo, parsed.succeeded ? "paid" : "failed") : null;
       // 303:金流是 POST 回來的,轉去的頁用 GET 打開(登入的 cookie 是 Lax,頂層 GET 會帶)。
       if (page) return Response.redirect(`${site}${page}`, 303);

@@ -3,6 +3,7 @@ import { db } from "./db";
 import { getDB } from "./cf";
 import { declarativeExtensions as dxTable, userIdentities } from "./schema";
 import { getSetting, extSetting } from "./settings";
+import { ownOrigin, siteOrigins } from "./site-origins";
 import { linkIdentity, signInWithIdentity, SENTINEL_PASSWORD_HASH } from "./login-accounts";
 import { OAUTH_STATE_TTL_MS, isOAuthState } from "./oauth-flow-cookie";
 import { OidcError, bytes, encUtf8, normalizeIssuer, verifyJwt, type Jwk } from "./oidc-jwt";
@@ -426,8 +427,13 @@ function parseStatePayload(raw: string): StatePayload | null {
 
 // ---- origin / next helpers ----
 
-/** redirect_uri 的 origin:優先 core.siteUrl(https),否則 request origin。 */
+/**
+ * redirect_uri 的 origin:請求是從網站自己的 https 網址來的(網站網址或 1.82.0 的分享用網址)就回那裡 ——
+ * 綁定瀏覽器的 cookie 放在開始登入的網址上,回呼換了網址就讀不到;否則 core.siteUrl(https),再否則 request origin。
+ */
 async function resolveOrigin(req: Request): Promise<string> {
+  const own = ownOrigin(req.url, await siteOrigins());
+  if (own.startsWith("https://")) return own;
   const site = await getSetting<string>("core.siteUrl", "");
   if (site) {
     try {

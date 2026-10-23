@@ -18,6 +18,8 @@ const settingsStore = vi.hoisted(() => new Map<string, string>());
 vi.mock("@/lib/settings", () => ({
   getSetting: async <T>(key: string, fallback?: T): Promise<T> =>
     (settingsStore.has(key) ? (settingsStore.get(key) as unknown as T) : (fallback as T)),
+  getPlainSetting: async <T>(key: string, fallback?: T): Promise<T> =>
+    (settingsStore.has(key) ? (settingsStore.get(key) as unknown as T) : (fallback as T)),
   extSetting: (extId: string, key: string): string => `ext.${extId}.${key}`,
 }));
 
@@ -315,6 +317,25 @@ describe("beginOAuth", () => {
     settingsStore.delete(`ext.${PROVIDER}.clientId`);
     const begin = await beginOAuth({ providerId: PROVIDER, mode: "login", req: req() });
     expect(begin).toEqual({ error: "provider_unavailable" });
+  });
+
+  // 1.82.0:從分享用網址開始登入,回呼回到分享用網址(綁定瀏覽器的 cookie 在那裡);別的網址照舊回網站網址。
+  it("sends the provider back to the share address when sign-in starts there", async () => {
+    settingsStore.set("core.siteUrl", "https://www.shop.test");
+    settingsStore.set("core.shareUrl", "https://short.test");
+    try {
+      const at = async (origin: string) => {
+        const begin = await beginOAuth({ providerId: PROVIDER, mode: "login", req: new Request(`${origin}/api/auth/oauth/${PROVIDER}/start`) });
+        if (!("location" in begin)) throw new Error("beginOAuth failed");
+        return new URL(begin.location).searchParams.get("redirect_uri");
+      };
+      expect(await at("https://short.test")).toBe(`https://short.test/api/auth/oauth/${PROVIDER}/callback`);
+      expect(await at("https://www.shop.test")).toBe(`https://www.shop.test/api/auth/oauth/${PROVIDER}/callback`);
+      expect(await at("https://cms-preview.workers.dev")).toBe(`https://www.shop.test/api/auth/oauth/${PROVIDER}/callback`);
+    } finally {
+      settingsStore.delete("core.siteUrl");
+      settingsStore.delete("core.shareUrl");
+    }
   });
 
   // 1.76.0:/start 要把 state 綁在瀏覽器上(cookie),所以引擎把 state 一起交出來。

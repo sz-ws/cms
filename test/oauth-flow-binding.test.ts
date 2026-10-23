@@ -18,6 +18,8 @@ const settingsStore = vi.hoisted(() => new Map<string, string>());
 vi.mock("@/lib/settings", () => ({
   getSetting: async <T>(key: string, fallback?: T): Promise<T> =>
     (settingsStore.has(key) ? (settingsStore.get(key) as unknown as T) : (fallback as T)),
+  getPlainSetting: async <T>(key: string, fallback?: T): Promise<T> =>
+    (settingsStore.has(key) ? (settingsStore.get(key) as unknown as T) : (fallback as T)),
   extSetting: (extId: string, key: string): string => `ext.${extId}.${key}`,
 }));
 

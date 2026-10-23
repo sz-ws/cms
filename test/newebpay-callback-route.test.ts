@@ -30,12 +30,25 @@ const settingsStore = vi.hoisted(() => ({
 vi.mock("@/lib/settings", () => ({
   getSetting: async (key: string, fallback?: unknown) =>
     key in settingsStore.values ? settingsStore.values[key] : fallback,
+  getPlainSetting: async (key: string, fallback?: unknown) =>
+    key in settingsStore.values ? settingsStore.values[key] : fallback,
   setSettings: async (entries: Record<string, unknown>) => {
     Object.assign(settingsStore.values, entries);
   },
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ hitRateLimit: async () => false }));
+
+// 1.82.0:createCheckout 從這個請求的 Host 知道客人在網站的哪個網址;null = 不在請求裡(cron、測試的預設)。
+const requestHost = vi.hoisted(() => ({ host: null as string | null }));
+// next/navigation 在 workers 測試池裡載不起來;site-origins 只用它的 unstable_rethrow。
+vi.mock("next/navigation", () => ({ unstable_rethrow: () => {} }));
+vi.mock("next/headers", () => ({
+  headers: async () => {
+    if (!requestHost.host) throw new Error("`headers` was called outside a request scope");
+    return new Headers({ host: requestHost.host });
+  },
+}));
 
 // loader:enabled runtime 只含真實 newebpay extension;並在 bus 上掛觀測者,
 // 捕捉 payment:succeeded 的觸發(hoisted 陣列)。
@@ -66,11 +79,11 @@ function ctx(providerId: string) {
   return { params: Promise.resolve({ capability: "payment", providerId }) };
 }
 
-function post(providerId: string, body: string): Promise<Response> {
+function post(providerId: string, body: string, host?: string): Promise<Response> {
   return POST(
-    new Request(`https://cms.test/api/callback/payment/${providerId}`, {
+    new Request(`https://${host ?? "cms.test"}/api/callback/payment/${providerId}`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...(host ? { host } : {}) },
       body,
     }),
     ctx(providerId),
@@ -124,6 +137,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  requestHost.host = null;
   await d1().exec("DELETE FROM ext_newebpay_orders;");
   await d1()
     .prepare(
@@ -240,6 +254,17 @@ describe("callback ingress — return(瀏覽器導回,1.14.0 Response 透傳)", 
     expect(hookEvents.events).toHaveLength(1);
   });
 
+  // 1.82.0:客人在分享用網址結帳,藍新把瀏覽器送回分享用網址;結果頁的「返回網站」也留在那裡。
+  it("keeps a buyer who paid from the share address on that address", async () => {
+    settingsStore.values["core.shareUrl"] = "https://short.example";
+    const res = await post("newebpay-return", await callbackBody(successPayload()), "short.example");
+    const html = new TextDecoder().decode(await res.arrayBuffer());
+    expect(html).toContain('href="https://short.example"');
+    expect(html).not.toContain('href="https://shop.example"');
+    const other = await post("newebpay-return", await callbackBody(successPayload()), "cms-preview.workers.dev");
+    expect(new TextDecoder().decode(await other.arrayBuffer())).toContain('href="https://shop.example"');
+  });
+
   it("return after notify: HTML page, hook not re-fired", async () => {
     await post("newebpay", await callbackBody(successPayload()));
     const res = await post(
@@ -335,6 +360,20 @@ describe("provider — createCheckout", () => {
     );
 
     expect((await orderRow("SKNEW2"))?.status).toBe("pending");
+  });
+
+  // 1.82.0:瀏覽器回來的 ReturnURL 與 ClientBackURL 用客人結帳時的網址;server-to-server 的 NotifyURL 照舊是網站網址。
+  it("returns the browser to the share address when checkout starts there", async () => {
+    settingsStore.values["core.shareUrl"] = "https://short.example";
+    requestHost.host = "short.example";
+    const provider = await makeProvider();
+    const session = await provider.createCheckout({ orderNo: "SKNEW3", amount: 120, description: "分享用網址" });
+    if (!session.ok || session.kind !== "form-post") throw new Error("shape");
+    const { decryptTradeInfo } = await import("../extensions/newebpay/crypto");
+    const params = new URLSearchParams((await decryptTradeInfo(session.fields.TradeInfo, HASH_KEY, HASH_IV)) as string);
+    expect(params.get("NotifyURL")).toBe("https://shop.example/api/callback/payment/newebpay");
+    expect(params.get("ReturnURL")).toBe("https://short.example/api/callback/payment/newebpay-return");
+    expect(params.get("ClientBackURL")).toBe("https://short.example");
   });
 
   it("rejects illegal orderNo / amount / description without touching db", async () => {
