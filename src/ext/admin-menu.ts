@@ -3,6 +3,7 @@ import type { LocalizedString } from "@/lib/i18n/localized";
 import { validateSvg } from "./dx/svg-guard";
 import { isInlineSvgIcon } from "./admin-icon";
 import type { AdminPage } from "./types";
+import { lazySchema } from "../lib/lazy-schema";
 
 // 1.39.0:admin 側欄的資料模型 —— 分區、巢狀、自訂圖示。
 //
@@ -169,13 +170,13 @@ export function normalizeAdminMenu(value: unknown, fallback: AdminMenuItem[]): A
 const EXT_ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const DEFAULT_ORDER = 100;
 
-export const extensionMenuSchema = z
+export const extensionMenuSchema = lazySchema(() => z
   .object({
     section: z.enum(ADMIN_MENU_SECTIONS).optional(),
     parent: z.string().regex(EXT_ID_RE, "invalid parent extension id").optional(),
     order: z.number().int().min(0).max(1000).optional(),
   })
-  .strict();
+  .strict());
 
 /**
  * icon 欄位的驗證訊息;合法回 null。代號不在這裡擋 —— 不認得的代號本來就退回

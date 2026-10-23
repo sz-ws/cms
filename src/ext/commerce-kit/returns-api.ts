@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getDB } from "@/lib/cf";
+import { lazySchema } from "@/lib/lazy-schema";
 import type { ApiCtx, ApiRoute } from "../types";
 import {
   REFUND_METHODS,
@@ -31,29 +32,30 @@ import {
 
 export const RETURNS_ROLE = "admin";
 
-const orderNo = z.string().trim().min(1).max(60).regex(/^[A-Za-z0-9_-]+$/);
-const returnNo = z.string().regex(/^RT[A-Z0-9]{4,30}$/);
-const productId = z.string().min(1).max(100);
+// body 與路徑參數的規則:第一次收到請求才建(lazySchema,前台頁面載入時用不到)。
+const orderNo = lazySchema(() => z.string().trim().min(1).max(60).regex(/^[A-Za-z0-9_-]+$/));
+const returnNo = lazySchema(() => z.string().regex(/^RT[A-Z0-9]{4,30}$/));
+const productId = lazySchema(() => z.string().min(1).max(100));
 
-const createSchema = z
+const createSchema = lazySchema(() => z
   .object({
-    orderNo,
+    orderNo: orderNo(),
     lines: z
-      .array(z.object({ productId, qty: z.number().int().min(1).max(999) }).strict())
+      .array(z.object({ productId: productId(), qty: z.number().int().min(1).max(999) }).strict())
       .min(1)
       .max(50),
     reason: z.enum(RETURN_REASONS),
     note: z.string().trim().max(500).optional(),
     requestedAmount: z.number().int().min(0).max(99_999_999),
   })
-  .strict();
+  .strict());
 
-const transitionSchema = z
+const transitionSchema = lazySchema(() => z
   .object({
     to: z.enum(["approved", "rejected", "received", "refunded", "completed", "cancelled"]),
     note: z.string().trim().max(500).optional(),
     restock: z
-      .array(z.object({ productId, qty: z.number().int().min(0).max(999) }).strict())
+      .array(z.object({ productId: productId(), qty: z.number().int().min(0).max(999) }).strict())
       .max(50)
       .optional(),
     refund: z
@@ -65,7 +67,7 @@ const transitionSchema = z
       .strict()
       .optional(),
   })
-  .strict();
+  .strict());
 
 function fail(status: number, error: string): Response {
   return Response.json({ ok: false, error }, { status });
@@ -121,7 +123,7 @@ export function createReturnsApiRoutes(config: ReturnsConfig): ApiRoute[] {
       method: "GET",
       path: "returns/order/:orderNo",
       handler: guarded(async (_req, params, ctx) => {
-        const parsed = orderNo.safeParse(params.orderNo ?? "");
+        const parsed = orderNo().safeParse(params.orderNo ?? "");
         if (!parsed.success) return fail(400, "invalid_input");
         const returns = engine(ctx);
         const order = await returns.lookupOrder(parsed.data);
@@ -134,7 +136,7 @@ export function createReturnsApiRoutes(config: ReturnsConfig): ApiRoute[] {
       method: "GET",
       path: "returns/:returnNo",
       handler: guarded(async (_req, params, ctx) => {
-        const parsed = returnNo.safeParse(params.returnNo ?? "");
+        const parsed = returnNo().safeParse(params.returnNo ?? "");
         if (!parsed.success) return fail(400, "invalid_input");
         const returns = engine(ctx);
         const found = await returns.get(parsed.data);
@@ -159,7 +161,7 @@ export function createReturnsApiRoutes(config: ReturnsConfig): ApiRoute[] {
       method: "POST",
       path: "returns",
       handler: guarded(async (req, _params, ctx) => {
-        const parsed = createSchema.safeParse(await readJson(req));
+        const parsed = createSchema().safeParse(await readJson(req));
         if (!parsed.success) return fail(400, "invalid_input");
         const created = await engine(ctx).create(actorOf(ctx), parsed.data);
         return Response.json({ ok: true, return: created });
@@ -169,8 +171,8 @@ export function createReturnsApiRoutes(config: ReturnsConfig): ApiRoute[] {
       method: "POST",
       path: "returns/:returnNo/status",
       handler: guarded(async (req, params, ctx) => {
-        const no = returnNo.safeParse(params.returnNo ?? "");
-        const parsed = transitionSchema.safeParse(await readJson(req));
+        const no = returnNo().safeParse(params.returnNo ?? "");
+        const parsed = transitionSchema().safeParse(await readJson(req));
         if (!no.success || !parsed.success) return fail(400, "invalid_input");
         const updated = await engine(ctx).transition(actorOf(ctx), no.data, parsed.data);
         return Response.json({ ok: true, return: updated });

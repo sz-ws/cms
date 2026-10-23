@@ -27,6 +27,7 @@ import { isSubmissionTypeName } from "./submission";
 import { GALLERY_MAX } from "./media-key";
 import { IDENTITY_MAX, IDENTITY_RE, type PluginRequirement } from "../plugin-ref";
 import { CATEGORIES_SINCE_1_58, STORE_CATEGORIES, type StoreCategory } from "../store-categories";
+import { lazySchema } from "../../lib/lazy-schema";
 
 // core-v2 §3.2:declarative manifest v1 的 zod schema。
 // 為 registry/schema/manifest.schema.json 的權威對應版本(spec §5:install 與 interpret
@@ -48,12 +49,12 @@ const ROUTE_PATTERN_RE = /^(\/[a-z0-9-]+|\/:[a-zA-Z][a-zA-Z0-9]*)+$/;
 // 於是 "..", "\\", 開頭 "/", "C:" 全都不可能通過(下面的 refine 再擋掉 ".." 段本身,
 // 因為 "a/../b" 的每個字元都在白名單裡)。
 const REL_PATH_RE = /^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/;
-const safeRelativePath = z
+const safeRelativePath = lazySchema(() => z
   .string()
   .min(1)
   .max(120)
   .regex(REL_PATH_RE, "invalid file path")
-  .refine((p) => !p.split("/").includes(".."), "path must not traverse upward");
+  .refine((p) => !p.split("/").includes(".."), "path must not traverse upward"));
 const DECLARATIVE_HOOK_NAMES = [
   "ext:enabled",
   "ext:disabled",
@@ -80,7 +81,7 @@ const RELATION_TO_RE = /^[a-z][a-z0-9-]{1,30}\.[a-z][a-z0-9-]{0,30}$/;
 // localized(base?) 產生 union:第一分支保留呼叫端指定的「原本 string schema」
 // (保留 min/max 等既有約束 → 純字串 manifest 一字不改全過),第二分支是物件形式。
 // gen-manifest-schema.mts 會把重複的 object 分支 factor 成一個 $defs/localizedString。
-const localizedObjectSchema = z
+const localizedObjectSchema = lazySchema(() => z
   .object({
     en: z.string().optional(),
     "zh-Hant": z.string().optional(),
@@ -88,10 +89,10 @@ const localizedObjectSchema = z
   .strict()
   .refine((v) => v.en !== undefined || v["zh-Hant"] !== undefined, {
     message: "localized string requires at least one locale (en / zh-Hant)",
-  });
+  }));
 
 function localized(base: z.ZodString = z.string()) {
-  return z.union([base, localizedObjectSchema]);
+  return z.union([base, localizedObjectSchema()]);
 }
 
 // 1.58.0:商店詳情頁的純文字(highlights / details)。localized() 只限制字串分支;這裡
@@ -162,7 +163,7 @@ const RELATION_TYPES = new Set<(typeof LEAF_FIELD_TYPES)[number]>([
 // leaf refine(select 需 options、relation/relations 需 to、其餘禁 to)。top-level
 // leaf 欄位與 nested(group/repeater/blocks 的子欄位)共用同一個 leafFieldSchema。
 
-const leafFieldSchema = z
+const leafFieldSchema = lazySchema(() => z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.enum(LEAF_FIELD_TYPES),
@@ -201,75 +202,75 @@ const leafFieldSchema = z
   .refine((f) => f.max === undefined || f.type === "gallery", {
     message: "`max` is only valid on gallery fields",
     path: ["max"],
-  });
+  }));
 
 // leaf 子欄位陣列(group/repeater/blocks 的 nested fields)。v1 限制:只允許 leaf
 // 型別 —— 結構欄位「不可」再嵌結構欄位(一層 nesting 上限,見 core-v2 §3.2 v1 note)。
-const leafFieldsSchema = z.array(leafFieldSchema).min(1);
+const leafFieldsSchema = lazySchema(() => z.array(leafFieldSchema()).min(1));
 
 // ---- structural fields(Tier 2 v1.2)----
 // z.lazy 非必要(v1 只一層 nesting,fields 一律 leaf),但仍用明確的 leaf-bound
 // 陣列,把「不可再嵌結構欄位」這條規則寫進 schema 本身(而非只在 UI/validation 靠
 // 慣例維持)。JSON Schema 端以 #/$defs/leafField 對應此界。
 
-const groupFieldSchema = z
+const groupFieldSchema = lazySchema(() => z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.literal("group"),
     label: localized().optional(),
     required: z.boolean().optional(),
-    fields: leafFieldsSchema, // nested leaf 子欄位(≥1)
+    fields: leafFieldsSchema(), // nested leaf 子欄位(≥1)
   })
-  .strict();
+  .strict());
 
-const repeaterFieldSchema = z
+const repeaterFieldSchema = lazySchema(() => z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.literal("repeater"),
     label: localized().optional(),
     required: z.boolean().optional(),
-    fields: leafFieldsSchema, // 每個 row 的 leaf 子欄位(≥1)
+    fields: leafFieldsSchema(), // 每個 row 的 leaf 子欄位(≥1)
     max: z.number().int().positive().optional(), // 可選:row 數上限
   })
-  .strict();
+  .strict());
 
-const blockDefSchema = z
+const blockDefSchema = lazySchema(() => z
   .object({
     name: z.string().regex(TYPE_NAME_RE, "invalid block name"),
     label: localized().optional(),
-    fields: leafFieldsSchema, // 該 block 的 leaf 子欄位(≥1)
+    fields: leafFieldsSchema(), // 該 block 的 leaf 子欄位(≥1)
   })
-  .strict();
+  .strict());
 
-const blocksFieldSchema = z
+const blocksFieldSchema = lazySchema(() => z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid field key"),
     type: z.literal("blocks"),
     label: localized().optional(),
     required: z.boolean().optional(),
-    blocks: z.array(blockDefSchema).min(1), // 宣告的具名 block 形狀(≥1)
+    blocks: z.array(blockDefSchema()).min(1), // 宣告的具名 block 形狀(≥1)
     max: z.number().int().positive().optional(), // 可選:block 數上限
   })
-  .strict();
+  .strict());
 
 // ---- field(top-level:leaf | structural)----
 // discriminated-ish union:top-level 欄位可為任一 leaf 型別或任一結構型別。
 // leaf refine 已內建於 leafFieldSchema;結構 schema 自帶 nested 界。
-const fieldSchema = z.union([
-  leafFieldSchema,
-  groupFieldSchema,
-  repeaterFieldSchema,
-  blocksFieldSchema,
-]);
+const fieldSchema = lazySchema(() => z.union([
+  leafFieldSchema(),
+  groupFieldSchema(),
+  repeaterFieldSchema(),
+  blocksFieldSchema(),
+]));
 
-const formLayoutColumnSchema = z
+const formLayoutColumnSchema = lazySchema(() => z
   .object({
     fields: z.array(z.string().min(1)).min(1),
     fullWidth: z.boolean().optional(),
   })
-  .strict();
+  .strict());
 
-const formLayoutSchema = z
+const formLayoutSchema = lazySchema(() => z
   .object({
     // "auto2col" = declarative baseline (full-row tall fields, paired short fields).
     // "single"   = single column stack.
@@ -277,7 +278,7 @@ const formLayoutSchema = z
     kind: z.enum(["auto2col", "single", "manual"]),
     // Only valid when kind = "manual". Each group's fields render in the listed order;
     // a group's fields all share the same row alignment.
-    groups: z.array(formLayoutColumnSchema).optional(),
+    groups: z.array(formLayoutColumnSchema()).optional(),
     // Default wide keys in manual mode — these fields always take the full row width.
     wide: z.array(z.string().min(1)).optional(),
   })
@@ -287,14 +288,14 @@ const formLayoutSchema = z
       l.kind !== "manual" ||
       (Array.isArray(l.groups) && l.groups.length >= 1),
     { message: 'layout "manual" requires at least one group', path: ["groups"] },
-  );
+  ));
 
-const contentTypeSchema = z
+const contentTypeSchema = lazySchema(() => z
   .object({
     name: z.string().regex(TYPE_NAME_RE, "invalid content type name"),
     label: localized().optional(),
     slugField: z.string().optional(),
-    fields: z.array(fieldSchema).min(1),
+    fields: z.array(fieldSchema()).min(1),
     // Alpha 升級:宣告此 type 為 public(免登入可 POST 建立新 entry)。
     // dispatch(/api/ext/...)看到 POST + 對應 type public:true → 跳 requireAuth。
     // Origin check / 防護層仍由 dispatch 統一做(不繞)。
@@ -313,22 +314,22 @@ const contentTypeSchema = z
     kind: z.enum(["content", "submission"]).optional(),
     // Progressive form layout:extensions 可以選擇 baseline(auto2col / single)或
     // 宣告 manual 來自定欄位順序與寬度。沒寫 → 跑 auto2col 的舊邏輯。
-    layout: formLayoutSchema.optional(),
+    layout: formLayoutSchema().optional(),
   })
-  .strict();
+  .strict());
 
 // ---- settings(與 code extension SettingField 同形狀)----
 
-const settingOptionSchema = z
+const settingOptionSchema = lazySchema(() => z
   .object({
     value: z.string(),
     // settings select 的 option 已是 value/label 分離(不同於 content-type select
     // 的 value=label 糾纏),故 label 可乾淨 localize(spec §1 #11)。
     label: localized(),
   })
-  .strict();
+  .strict());
 
-const settingFieldSchema = z
+const settingFieldSchema = lazySchema(() => z
   .object({
     key: z.string().regex(FIELD_KEY_RE, "invalid setting key"),
     label: localized(),
@@ -337,7 +338,7 @@ const settingFieldSchema = z
     required: z.boolean().optional(),
     secret: z.boolean().optional(),
     type: z.enum(["text", "textarea", "number", "boolean", "select"]),
-    options: z.array(settingOptionSchema).optional(),
+    options: z.array(settingOptionSchema()).optional(),
   })
   .strict()
   .refine((s) => s.type !== "select" || (s.options?.length ?? 0) >= 1, {
@@ -377,7 +378,7 @@ const settingFieldSchema = z
         path: ["default"],
       });
     }
-  });
+  }));
 
 // ---- admin / public / hooks ----
 
@@ -388,7 +389,7 @@ const settingFieldSchema = z
 const LAYOUT_VALUES = ["table", "grid", "stacked"] as const;
 export type ListLayout = (typeof LAYOUT_VALUES)[number];
 
-const adminPageSchema = z
+const adminPageSchema = lazySchema(() => z
   .object({
     slug: z.string(), // "" = extension 主頁
     title: localized(),
@@ -396,23 +397,23 @@ const adminPageSchema = z
     contentType: z.string(),
     layout: z.enum(LAYOUT_VALUES).optional(), // 缺省 → "table"
   })
-  .strict();
+  .strict());
 
 // ---- forms(提交成功回饋,被 publicRoute view:"form" 引用,須在 publicRoute 之前宣告)----
-const formSuccessSchema = z
+const formSuccessSchema = lazySchema(() => z
   .object({
     message: localized().optional(),
   })
-  .strict();
+  .strict());
 
-const publicRouteSchema = z
+const publicRouteSchema = lazySchema(() => z
   .object({
     pattern: z.string().regex(ROUTE_PATTERN_RE, "invalid route pattern"),
     view: z.enum(["list", "detail", "form"]), // Alpha:form = 公開匿名表單(走 contentType + public:true)
     contentType: z.string(),
     layout: z.enum(LAYOUT_VALUES).optional(), // list 專用;缺省 → "table"
     // form view 專用:提交成功回饋
-    success: formSuccessSchema.optional(),
+    success: formSuccessSchema().optional(),
     // 1.7.0:form view 專用。content type 有 ≥4 個「公開可渲染」欄位時,把表單拆成
     // vendored Stepper 的多步(每步 ≤3 欄,最後一步送出)——見 PublicFormView(FormView
     // public mode)。只在 view:"form" 合法(refine 見下);其餘 view 帶此欄位一律拒絕。
@@ -430,15 +431,15 @@ const publicRouteSchema = z
   .refine((r) => r.stepped === undefined || r.view === "form", {
     message: '`stepped` is only valid when view is "form"',
     path: ["stepped"],
-  });
+  }));
 
-const hookActionSchema = z
+const hookActionSchema = lazySchema(() => z
   .object({
     action: z.literal("webhook"),
     url: z.string().regex(/^https:\/\//, "webhook url must be https"),
     secretSetting: z.string().optional(),
   })
-  .strict();
+  .strict());
 
 // ---- dashboard cards(roadmap #16:extension 貢獻的 dashboard 卡)----
 // 每張卡引用一個「本 extension 已宣告」的 contentTypes[].name(交叉檢查在 top-level
@@ -448,7 +449,7 @@ const hookActionSchema = z
 // 陣列上限 4 張(.max(4)),object 一律 .strict()。加入此欄位為 CORE_API minor bump
 // (1.5.0 → 1.6.0):schema 為 .strict(),舊 core 會整包拒絕帶此欄位的 manifest,故
 // 使用者其 coreApi 必須宣告 "^1.6.0"。
-const dashboardCardSchema = z
+const dashboardCardSchema = lazySchema(() => z
   .object({
     kind: z.enum(["stat", "recent"]),
     // 須對應某個 contentTypes[].name(superRefine 交叉驗;schema 端不做 pattern 綁定)。
@@ -468,7 +469,7 @@ const dashboardCardSchema = z
   .refine((c) => c.kind === "recent" || c.limit === undefined, {
     message: "`limit` is only valid on recent cards",
     path: ["limit"],
-  });
+  }));
 
 // ---- forms(core-v2 forms §:撤掉,改用 contentType+public:true+view:"form")----
 // 原本這裡有 formSchema;現已撤除。
@@ -485,35 +486,35 @@ const THEME_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|(oklch|rgb|hsl)\([0-9a-zA-Z .,%/-]*\
 const THEME_RADIUS_RE = /^\d+(\.\d+)?(px|rem)$/;
 const THEME_INJECTION_RE = /[;{}<>"']/;
 
-const themeColorSchema = z
+const themeColorSchema = lazySchema(() => z
   .string()
   .regex(THEME_COLOR_RE, "invalid color (expect hex or oklch/rgb/hsl(...))")
   .refine((v) => !THEME_INJECTION_RE.test(v), {
     message: "color must not contain ; { } < > \" '",
-  });
+  }));
 
-const themeRadiusSchema = z
+const themeRadiusSchema = lazySchema(() => z
   .string()
   .regex(THEME_RADIUS_RE, "invalid radius (expect <number>px or <number>rem)")
   .refine((v) => !THEME_INJECTION_RE.test(v), {
     message: "radius must not contain ; { } < > \" '",
-  });
+  }));
 
-const themeSchema = z
+const themeSchema = lazySchema(() => z
   .object({
-    accent: themeColorSchema.optional(),
-    background: themeColorSchema.optional(),
-    muted: themeColorSchema.optional(),
-    radius: themeRadiusSchema.optional(),
+    accent: themeColorSchema().optional(),
+    background: themeColorSchema().optional(),
+    muted: themeColorSchema().optional(),
+    radius: themeRadiusSchema().optional(),
   })
-  .strict();
+  .strict());
 
 // ---- appearances(1.57.0:插件提供的後台預設風格)----
 // 出現在設定 → 風格 →「從一款風格開始」,排在內建預設之後。theme 直接用後台風格自己的
 // adminThemeSchema(同一份對比檢查、字體白名單、圓角/層次 enum),accent 只收 #rrggbb。
 // 與上面的 `theme`(public 頁 tokens)是兩回事:這裡只影響後台,也不收任何 CSS。
 // 陣列 ≤ ADMIN_APPEARANCES_MAX,id 陣列內唯一(superRefine)。
-const appearanceSchema = z
+const appearanceSchema = lazySchema(() => z
   .object({
     id: z.string().regex(ADMIN_APPEARANCE_ID_RE, "invalid appearance id"),
     name: localized(z.string().min(1).max(40)),
@@ -521,7 +522,7 @@ const appearanceSchema = z
     theme: adminThemeSchema,
     accent: adminAccentSchema.optional(),
   })
-  .strict();
+  .strict());
 
 // ---- schedule(B:docs/spec-declarative-notify-schedule.md —— 宣告式排程動作,騎在
 // ext-jobs 表面上(docs/spec-extension-jobs.md),v1 只有一個 op:deleteOlderThan)----
@@ -533,36 +534,36 @@ const appearanceSchema = z
 const SCHEDULE_ID_RE = /^[a-z][a-z0-9-]{0,30}$/;
 const SCHEDULE_MAX_ITEMS = 8;
 
-const scheduleActionSchema = z
+const scheduleActionSchema = lazySchema(() => z
   .object({
     op: z.literal("deleteOlderThan"),
     contentType: z.string().min(1),
     days: z.number().int().min(1),
   })
-  .strict();
+  .strict());
 
-const scheduleItemSchema = z
+const scheduleItemSchema = lazySchema(() => z
   .object({
     id: z.string().regex(SCHEDULE_ID_RE, "invalid schedule id"),
     every: z.number().int().min(1),
-    action: scheduleActionSchema,
+    action: scheduleActionSchema(),
   })
-  .strict();
+  .strict());
 
-const scheduleSchema = z
-  .array(scheduleItemSchema)
+const scheduleSchema = lazySchema(() => z
+  .array(scheduleItemSchema())
   .max(SCHEDULE_MAX_ITEMS)
   .refine((items) => new Set(items.map((i) => i.id)).size === items.length, {
     message: "duplicate schedule id",
   })
-  .optional();
+  .optional());
 
 // ---- loginProvider(spec-login-providers.md §4:CORE_API 1.16.0)----
 // declarative 第三方 OIDC 登入宣告。會變的部分全是資料:issuer(discovery 由引擎抓)、
 // scopes、登入按鈕外觀。client id/secret 走既有 settings[](secret:true)慣例,不在此宣告。
 // button.svg 經 svg-guard 驗證(allowlist;驗證失敗 = manifest 驗證失敗,fail-loud);
 // background/foreground 沿用既有 themeColorSchema(注入安全同 theme tokens)。
-const loginProviderButtonSchema = z
+const loginProviderButtonSchema = lazySchema(() => z
   .object({
     label: z.string().min(1).max(40), // 如 "使用 Google 繼續"
     svg: z
@@ -579,10 +580,10 @@ const loginProviderButtonSchema = z
         }
       })
       .optional(),
-    background: themeColorSchema.optional(),
-    foreground: themeColorSchema.optional(),
+    background: themeColorSchema().optional(),
+    foreground: themeColorSchema().optional(),
   })
-  .strict();
+  .strict());
 
 // 1.54.0:Firebase Authentication。瀏覽器用 Firebase SDK 彈出登入視窗,伺服器驗
 // Firebase 簽的 ID token(src/lib/firebase-login.ts)。signIn 是 Firebase 的
@@ -590,21 +591,21 @@ const loginProviderButtonSchema = z
 const FIREBASE_SIGN_IN_METHODS = ["google.com"] as const;
 export const FIREBASE_SETTING_KEYS = ["apiKey", "authDomain", "projectId"] as const;
 
-const loginProviderFirebaseSchema = z
+const loginProviderFirebaseSchema = lazySchema(() => z
   .object({
     signIn: z.enum(FIREBASE_SIGN_IN_METHODS),
   })
-  .strict();
+  .strict());
 
 // 兩種接法:issuer(標準 OIDC,引擎走 authorization code 導轉)與 firebase,至少一種。
 // 1.57.0 起可以兩種都宣告(例:Google 登入可接 Google OAuth,也可接 Firebase 專案):
 // 站台填了哪一組設定就用哪一種,兩組都填時用 Firebase(src/lib/oidc.ts listLoginProviders)。
-const loginProviderSchema = z
+const loginProviderSchema = lazySchema(() => z
   .object({
     issuer: z.string().regex(/^https:\/\//, "issuer must be https").optional(), // OIDC issuer,discovery 由引擎抓
     scopes: z.array(z.string().min(1)).max(8).optional(), // 預設 ["openid","profile","email"]
-    firebase: loginProviderFirebaseSchema.optional(),
-    button: loginProviderButtonSchema,
+    firebase: loginProviderFirebaseSchema().optional(),
+    button: loginProviderButtonSchema(),
   })
   .strict()
   .superRefine((lp, ctx) => {
@@ -614,7 +615,7 @@ const loginProviderSchema = z
     if (lp.issuer === undefined && lp.scopes !== undefined) {
       ctx.addIssue({ code: "custom", message: "loginProvider scopes only apply to issuer", path: ["scopes"] });
     }
-  });
+  }));
 
 // ---- top-level manifest ----
 
@@ -634,7 +635,7 @@ function usesGallery(types: readonly { fields: readonly FieldTree[] }[]): boolea
   );
 }
 
-export const manifestSchema = z
+export const manifestSchema = lazySchema(() => z
   .object({
     kind: z.literal("declarative"),
     id: z.string().regex(ID_RE, "invalid extension id"),
@@ -657,7 +658,7 @@ export const manifestSchema = z
       })
       .optional(),
     // 1.39.0:側欄分區與巢狀(section / parent / order)。
-    menu: extensionMenuSchema.optional(),
+    menu: extensionMenuSchema().optional(),
     // PNG icon relative path in registry (e.g. "icon.png" under extensions/<id>/)
     iconUrl: z.string().optional(),
     // Top banner image relative path (e.g. "banner.png")
@@ -680,7 +681,7 @@ export const manifestSchema = z
     // 路徑是相對於 registry 的 extensions/<id>/files/,會被 CLI 寫進本機檔案系統,
     // 所以這裡就把逃逸形狀擋掉(絕對路徑、..、反斜線、開頭斜線)。CLI 端另有一道
     // 同樣的檢查 —— 兩道互相獨立,因為這份 manifest 也可能來自不受信任的 registry。
-    files: z.array(safeRelativePath).max(64).optional(),
+    files: z.array(safeRelativePath()).max(64).optional(),
     // 安裝時需要 prompt user 輸入的欄位（線上商店會顯示表單）
     installPrompts: z
       .array(
@@ -797,17 +798,17 @@ export const manifestSchema = z
       })
       .optional(),
     // 1.8.0:optional design tokens。渲染進 public 頁面 inline style;admin 無視。
-    theme: themeSchema.optional(),
+    theme: themeSchema().optional(),
     // 1.8.0:optional co-located stylesheet。v1 固定檔名 "style.css"(literal —— 不收
     // 任意路徑,杜絕 path traversal / 抓取任意資產)。install 時 fetch
     // `<source>/extensions/<id>/style.css`,經 validateStylesheet(stylesheet-guard.ts)
     // 通過才存進 declarative_extensions.stylesheet 欄位;render 時只注入該 extension
     // 自己的 public 頁面(scoped 於 [data-ext="<id>"])。manifest 不寫 → 欄位清 NULL。
     stylesheet: z.literal("style.css").optional(),
-    contentTypes: z.array(contentTypeSchema).optional(),
-    settings: z.array(settingFieldSchema).optional(),
-    adminPages: z.array(adminPageSchema).optional(),
-    publicRoutes: z.array(publicRouteSchema).optional(),
+    contentTypes: z.array(contentTypeSchema()).optional(),
+    settings: z.array(settingFieldSchema()).optional(),
+    adminPages: z.array(adminPageSchema()).optional(),
+    publicRoutes: z.array(publicRouteSchema()).optional(),
     // 可選 OG image 設定:宣告 public route 的 Open Graph preview 走哪個核心
     // og-template(template 名對應到 src/components/og/<slug>.tsx)。
     og: z
@@ -849,7 +850,7 @@ export const manifestSchema = z
       .optional(),
     // hook 名 -> action 綁定陣列。v1 僅 webhook。
     on: z
-      .record(z.string(), z.array(hookActionSchema))
+      .record(z.string(), z.array(hookActionSchema()))
       .superRefine((hooks, ctx) => {
         const allowed = new Set<string>(DECLARATIVE_HOOK_NAMES);
         for (const name of Object.keys(hooks)) {
@@ -865,22 +866,22 @@ export const manifestSchema = z
       .optional(),
     // roadmap #16:extension 貢獻的 dashboard 卡(≤4;contentType 須引用已宣告的
     // contentTypes[].name,交叉檢查見下方 superRefine)。
-    dashboardCards: z.array(dashboardCardSchema).max(4).optional(),
+    dashboardCards: z.array(dashboardCardSchema()).max(4).optional(),
     // B(1.11.0):宣告式排程動作(≤8),interpret 層轉為 Extension.jobs,騎在
     // ext-jobs 引擎上執行(見上方 schedule 區塊的定義)。
-    schedule: scheduleSchema,
+    schedule: scheduleSchema(),
     // spec-login-providers.md §4(1.16.0):declarative 第三方 OIDC 登入宣告。
     // issuer/scopes/button;client 憑證走 settings[](secret:true)慣例。manifestSchema
     // 是 .strict() —— 宣告 loginProvider 的 manifest 在 <1.16.0 的 core 會整包驗證失敗,
     // 故其 coreApi 必須宣告 "^1.16.0";用 firebase 的必須宣告 "^1.54.0";issuer 與 firebase
     // 都宣告的必須宣告 "^1.57.0"(舊 core 會拒絕兩者並存)。
-    loginProvider: loginProviderSchema.optional(),
+    loginProvider: loginProviderSchema().optional(),
     // 1.48.0:公開頁插入 script。安裝前要管理員核准,核准綁內容 hash(見 ./scripts.ts)。
-    scripts: scriptsSchema.optional(),
+    scripts: scriptsSchema().optional(),
     // 1.57.0:後台預設風格(見上方 appearanceSchema)。manifestSchema 是 .strict() ——
     // 宣告 appearances 的 manifest 在 <1.57.0 的 core 會整包驗證失敗,故其 coreApi 必須
     // 宣告 "^1.57.0"。
-    appearances: z.array(appearanceSchema).min(1).max(ADMIN_APPEARANCES_MAX).optional(),
+    appearances: z.array(appearanceSchema()).min(1).max(ADMIN_APPEARANCES_MAX).optional(),
   })
   .strict()
   .superRefine((m, ctx) => {
@@ -1233,13 +1234,13 @@ export const manifestSchema = z
         }
       });
     }
-  });
+  }));
 
 // leaf-only 欄位型別(group/repeater/blocks 的 nested 子欄位一律為此形狀)。
-export type DeclarativeLeafField = z.infer<typeof leafFieldSchema>;
+export type DeclarativeLeafField = z.infer<ReturnType<typeof leafFieldSchema>>;
 
 // blocks 的具名 block 宣告(name + leaf 子欄位)。
-export type DeclarativeBlockDef = z.infer<typeof blockDefSchema>;
+export type DeclarativeBlockDef = z.infer<ReturnType<typeof blockDefSchema>>;
 
 // DeclarativeField:top-level 欄位型別。validation 走上方的 discriminated union
 // (fieldSchema — 嚴格分辨 leaf vs group/repeater/blocks 各自的必填 nested defs);
@@ -1294,18 +1295,18 @@ export interface DeclarativeContentType {
 }
 
 // 1.8.0:public 頁面 design tokens(全部 optional;注入安全由 themeSchema regex + refine 保證)。
-export type DeclarativeTheme = z.infer<typeof themeSchema>;
-export type DeclarativeSettingField = z.infer<typeof settingFieldSchema>;
-export type DeclarativeAdminPage = z.infer<typeof adminPageSchema>;
-export type DeclarativePublicRoute = z.infer<typeof publicRouteSchema>;
-export type DeclarativeHookAction = z.infer<typeof hookActionSchema>;
+export type DeclarativeTheme = z.infer<ReturnType<typeof themeSchema>>;
+export type DeclarativeSettingField = z.infer<ReturnType<typeof settingFieldSchema>>;
+export type DeclarativeAdminPage = z.infer<ReturnType<typeof adminPageSchema>>;
+export type DeclarativePublicRoute = z.infer<ReturnType<typeof publicRouteSchema>>;
+export type DeclarativeHookAction = z.infer<ReturnType<typeof hookActionSchema>>;
 // roadmap #16:單張 dashboard 卡(stat/recent)。refine 不改變推斷型別,故此 infer
 // 與消費端(interpret / dashboard-cards)所需的 flat 形狀一致。
-export type DeclarativeDashboardCard = z.infer<typeof dashboardCardSchema>;
+export type DeclarativeDashboardCard = z.infer<ReturnType<typeof dashboardCardSchema>>;
 // B(1.11.0):單一宣告式排程項目(id/every + deleteOlderThan action)。
-export type DeclarativeScheduleItem = z.infer<typeof scheduleItemSchema>;
+export type DeclarativeScheduleItem = z.infer<ReturnType<typeof scheduleItemSchema>>;
 // spec-login-providers.md §4(1.16.0):declarative 第三方 OIDC 登入宣告。
-export type DeclarativeLoginProvider = z.infer<typeof loginProviderSchema>;
+export type DeclarativeLoginProvider = z.infer<ReturnType<typeof loginProviderSchema>>;
 
 // DeclarativeManifest:攤平 contentTypes 為 DeclarativeContentType[](fields 用
 // flat DeclarativeField)。其餘欄位沿用 zod 推斷型別。runtime 值仍由 manifestSchema
@@ -1435,7 +1436,7 @@ export interface ParseResult {
  * 失敗回傳可讀 error 字串(不 throw —— 呼叫端可選擇 skip+log 或回 400)。
  */
 export function parseManifest(json: unknown): ParseResult {
-  const result = manifestSchema.safeParse(json);
+  const result = manifestSchema().safeParse(json);
   if (!result.success) {
     const issues = result.error.issues
       .map((i) => `${i.path.join(".")}: ${i.message}`)

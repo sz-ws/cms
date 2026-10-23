@@ -164,7 +164,7 @@ function collectMetrics(exts: readonly Extension[], locale: Locale): Metrics {
   for (const ext of exts) {
     const own = new Map<string, boolean>();
     for (const decl of [...(ext.metrics ?? []), ...legacyRevenueMetrics(ext)]) {
-      const parsed = metricDeclSchema.safeParse(decl);
+      const parsed = metricDeclSchema().safeParse(decl);
       if (!parsed.success) {
         log(ext.id, `metric ${JSON.stringify((decl as { key?: unknown }).key ?? null)} is not valid (${parsed.error.issues[0]?.message}); skipped`);
         continue;
@@ -197,7 +197,7 @@ function widgetRequests(ext: Extension, metrics: Metrics, opts: DashboardWidgetO
   const ownMetrics = metrics.byExt.get(ext.id);
   const seen = new Set<string>();
   return sources.slice(0, MAX_DASHBOARD_WIDGETS).flatMap((source, index): WidgetRequest[] => {
-    const parsed = dashboardWidgetDeclSchema.safeParse(source.decl);
+    const parsed = dashboardWidgetDeclSchema().safeParse(source.decl);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       log(ext.id, `widget[${index}] ${issue?.path.join(".") ?? ""}: ${issue?.message ?? "is not valid"}; skipped`);

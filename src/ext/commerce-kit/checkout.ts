@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
+import { lazySchema } from "@/lib/lazy-schema";
 import type { ApiCtx } from "../types";
 import type {
   CheckoutSession,
@@ -41,7 +42,8 @@ import {
 
 const MAX_ITEMS = 50;
 
-const bodySchema = z
+// 第一次收到結帳請求才建(lazySchema,前台頁面載入時用不到)。
+const bodySchema = lazySchema(() => z
   .object({
     items: z
       .array(
@@ -74,7 +76,7 @@ const bodySchema = z
      */
     requestId: z.string().uuid().optional(),
   })
-  .strict();
+  .strict());
 
 const BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -190,9 +192,9 @@ export function createCommerceCheckoutHandler(opts: CommerceCheckoutOptions) {
       return Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
     }
 
-    let body: z.infer<typeof bodySchema>;
+    let body: z.infer<ReturnType<typeof bodySchema>>;
     try {
-      body = bodySchema.parse(await req.json());
+      body = bodySchema().parse(await req.json());
     } catch {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { OrderManagedError, customerOrderManagedResponse, orderManagedResponse, resolveOrderOwner } from "./order-manager";
 import { hitRateLimit } from "@/lib/rate-limit";
+import { lazySchema } from "@/lib/lazy-schema";
 import { timingSafeEqualString } from "@/lib/security";
 import { isManualPaymentProvider, transferReportSpec } from "../payment-kit/manual";
 import { checkTransferReport, type TransferReportSpec } from "../payment-kit/report-spec";
@@ -24,7 +25,8 @@ import { isOrderStatus, type OrderStatus } from "./types";
 //      對不到 → settleManual(false) 記帳 + 訂單退回 pending_payment(客人可補匯重報)。
 //   3. 出貨/完成/取消(admin):純狀態機轉移。
 
-const reportSchema = z
+// 三份 body 的規則都在第一次收到請求時才建(lazySchema,前台頁面載入時用不到)。
+const reportSchema = lazySchema(() => z
   .object({
     orderNo: z.string().regex(/^[A-Z0-9]{4,30}$/),
     /** 付款人回報的參考碼(格式照 reportSpec 檢查)。 */
@@ -39,7 +41,7 @@ const reportSchema = z
     /** @deprecated 1.63.0 — remove in 2.0. The old name of `reference`. */
     last5: z.string().max(60).optional(),
   })
-  .strict();
+  .strict());
 
 type TransferProviderResolver = (ctx: ApiCtx) => Promise<string>;
 
@@ -91,9 +93,9 @@ export function createTransferReportHandler(opts: {
       return Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
     }
 
-    let body: z.infer<typeof reportSchema>;
+    let body: z.infer<ReturnType<typeof reportSchema>>;
     try {
-      body = reportSchema.parse(await req.json());
+      body = reportSchema().parse(await req.json());
     } catch {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
@@ -167,12 +169,12 @@ export function createTransferReportHandler(opts: {
   };
 }
 
-const verifySchema = z
+const verifySchema = lazySchema(() => z
   .object({
     approve: z.boolean(),
     note: z.string().trim().max(200).optional(),
   })
-  .strict();
+  .strict());
 
 /** admin 核帳 handler(POST orders/:orderNo/verify,預設 auth:editor+)。 */
 export function createTransferVerifyHandler(opts: {
@@ -185,9 +187,9 @@ export function createTransferVerifyHandler(opts: {
     params: Record<string, string>,
     ctx: ApiCtx,
   ): Promise<Response> {
-    let body: z.infer<typeof verifySchema>;
+    let body: z.infer<ReturnType<typeof verifySchema>>;
     try {
-      body = verifySchema.parse(await req.json());
+      body = verifySchema().parse(await req.json());
     } catch {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
@@ -265,12 +267,12 @@ export function createTransferVerifyHandler(opts: {
 // 到得了。refunded 一度只存在於規則裡(paid → refunded 宣告合法、pill 顏色也備好
 // 了),但三個入口(這裡、agent tool、後台按鈕)全都沒有它,所以那個狀態實際上
 // 到不了、紅色 pill 是死程式碼。退款動作本身仍然刻意不做,這裡只負責記帳。
-const statusSchema = z
+const statusSchema = lazySchema(() => z
   .object({
     to: z.enum(["shipped", "completed", "cancelled", "refunded"]),
     note: z.string().trim().max(200).optional(),
   })
-  .strict();
+  .strict());
 
 /** admin 狀態動作 handler(POST orders/:orderNo/status,預設 auth:editor+)。 */
 export function createOrderStatusHandler(opts: { table: string }) {
@@ -279,9 +281,9 @@ export function createOrderStatusHandler(opts: { table: string }) {
     params: Record<string, string>,
     ctx: ApiCtx,
   ): Promise<Response> {
-    let body: z.infer<typeof statusSchema>;
+    let body: z.infer<ReturnType<typeof statusSchema>>;
     try {
-      body = statusSchema.parse(await req.json());
+      body = statusSchema().parse(await req.json());
     } catch {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }

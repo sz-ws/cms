@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineExtension } from "../src/ext/types";
 
 const base = {
@@ -137,5 +137,25 @@ describe("signInPage", () => {
     for (const signInPage of ["https://evil.test/", "//evil.test", "member", "/admin/login", "/login", "/api/x", "/setup", "/a?b=1"]) {
       expect(() => defineExtension({ ...base, signInPage })).toThrow();
     }
+  });
+});
+
+// 正式版不驗編進來的插件(理由見 defineExtension 上的註解);CMS_VALIDATE_MANIFESTS=1 照驗。
+describe("compiled manifests in a production build", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const invalid = { ...base, settings: [{ key: "enabled", label: "Enabled", type: "boolean" as const, default: "yes" }] };
+
+  it("returns the manifest unchecked", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(defineExtension(invalid)).toBe(invalid);
+  });
+
+  it("still validates when CMS_VALIDATE_MANIFESTS=1", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("CMS_VALIDATE_MANIFESTS", "1");
+    expect(() => defineExtension(invalid)).toThrow(/invalid default/);
   });
 });

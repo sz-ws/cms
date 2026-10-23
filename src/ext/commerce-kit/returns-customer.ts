@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getDB } from "@/lib/cf";
+import { lazySchema } from "@/lib/lazy-schema";
 import { readBoundedJsonObject } from "@/lib/body-limit";
 import { hitRateLimit } from "@/lib/rate-limit";
 import type { ApiCtx, ApiRoute } from "../types";
@@ -48,17 +49,18 @@ export const CUSTOMER_RETURN_LIMITS = {
 
 const MAX_BODY_BYTES = 8000;
 
-const credentials = {
+// body 的規則第一次收到請求才建(lazySchema,前台頁面載入時用不到)。
+const credentials = lazySchema(() => ({
   orderNo: z.string().min(1).max(60).regex(/^[A-Za-z0-9_-]+$/),
   email: z.string().trim().toLowerCase().max(200).email().optional(),
-};
+}));
 
-const bodySchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("status"), ...credentials }).strict(),
+const bodySchema = lazySchema(() => z.discriminatedUnion("action", [
+  z.object({ action: z.literal("status"), ...credentials() }).strict(),
   z
     .object({
       action: z.literal("request"),
-      ...credentials,
+      ...credentials(),
       lines: z
         .array(z.object({ productId: z.string().min(1).max(100), qty: z.number().int().min(1).max(999) }).strict())
         .min(1)
@@ -67,7 +69,7 @@ const bodySchema = z.discriminatedUnion("action", [
       note: z.string().trim().max(500).optional(),
     })
     .strict(),
-]);
+]));
 
 function fail(status: number, error: ReturnErrorCode): Response {
   return Response.json({ ok: false, error }, { status });
@@ -119,7 +121,7 @@ export function createCustomerReturnRoutes(config: ReturnsConfig, opts: Customer
     if (await hitRateLimit(ip, CUSTOMER_RETURN_LIMITS.perIp)) return fail(429, "rate_limited");
     const raw = await readBoundedJsonObject(req, MAX_BODY_BYTES, "returns-customer");
     if (!raw.ok) return fail(raw.reason === "too_large" ? 413 : 400, "invalid_input");
-    const parsed = bodySchema.safeParse(raw.value);
+    const parsed = bodySchema().safeParse(raw.value);
     if (!parsed.success) return fail(400, "invalid_input");
     const body = parsed.data;
 

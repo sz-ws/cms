@@ -3,6 +3,7 @@ import type { LocalizedString } from "@/lib/i18n/localized";
 import type { Locale } from "@/lib/i18n/index";
 import { isCurrencyCode, type Unit } from "@/lib/units";
 import { CONTROL_RE, isAdminHref } from "./dx/dashboard-hook";
+import { lazySchema } from "@/lib/lazy-schema";
 
 // 1.62.0:插件放在儀表板上的東西(Extension.dashboardWidgets 與 Extension.metrics)。
 //
@@ -149,7 +150,7 @@ export interface DashboardWidgetDecl {
 
 // ── 宣告的規則(defineExtension 與 dx/dashboard-widgets.ts 共用)────────────────────
 
-const fn = z.custom<(...a: never[]) => unknown>((v) => typeof v === "function", { message: "expected function" });
+const fn = lazySchema(() => z.custom<(...a: never[]) => unknown>((v) => typeof v === "function", { message: "expected function" }));
 
 /** 可在地化的短字:至少一種語言有字,每種語言最多 max 字,沒有控制字元。 */
 function localizedText(max: number) {
@@ -166,7 +167,7 @@ function localizedText(max: number) {
   ]);
 }
 
-export const unitSchema = z.discriminatedUnion("kind", [
+export const unitSchema = lazySchema(() => z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("count") }).strict(),
   z.object({ kind: z.literal("currency"), code: z.string().refine(isCurrencyCode, "code must be an ISO 4217 currency such as USD").optional() }).strict(),
   z
@@ -177,28 +178,28 @@ export const unitSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
   z.object({ kind: z.literal("percent") }).strict(),
-]);
+]));
 
-export const metricDeclSchema = z
+export const metricDeclSchema = lazySchema(() => z
   .object({
     key: z.string().regex(METRIC_KEY_RE, "metric key must be <namespace>.<name>, e.g. orders.count"),
     label: localizedText(METRIC_LABEL_MAX),
-    unit: unitSchema,
+    unit: unitSchema(),
     combine: z.enum(["sum", "overlay"]),
   })
-  .strict();
+  .strict());
 
-export const dashboardWidgetDeclSchema = z
+export const dashboardWidgetDeclSchema = lazySchema(() => z
   .object({
     id: z.string().regex(WIDGET_ID_RE, "invalid widget id"),
     kind: z.enum(WIDGET_KINDS),
     title: localizedText(WIDGET_TITLE_MAX).optional(),
     hint: localizedText(WIDGET_HINT_MAX).optional(),
     href: z.string().refine(isAdminHref, "href must be an admin path (/admin/...)").optional(),
-    unit: unitSchema.optional(),
+    unit: unitSchema().optional(),
     metric: z.string().regex(METRIC_KEY_RE, "invalid metric key").optional(),
     period: z.boolean().optional(),
-    load: fn,
+    load: fn(),
   })
   .strict()
   .superRefine((decl, ctx) => {
@@ -208,7 +209,7 @@ export const dashboardWidgetDeclSchema = z
     if (decl.metric !== undefined && decl.unit !== undefined) issue("a widget with a metric takes the metric's unit; leave unit out", "unit");
     if (decl.kind === "list" && (decl.metric !== undefined || decl.unit !== undefined)) issue("a list widget has no metric or unit", "kind");
     if (decl.kind === "timeseries" && decl.period !== true) issue("a timeseries widget needs period: true", "period");
-  });
+  }));
 
 function withUniqueKeys<T extends z.ZodType<Record<string, unknown>>>(item: T, key: string, max: number) {
   return z
@@ -225,6 +226,6 @@ function withUniqueKeys<T extends z.ZodType<Record<string, unknown>>>(item: T, k
 }
 
 /** Extension.dashboardWidgets:1–12 張,id 不重複。 */
-export const dashboardWidgetsSchema = withUniqueKeys(dashboardWidgetDeclSchema, "id", MAX_DASHBOARD_WIDGETS);
+export const dashboardWidgetsSchema = lazySchema(() => withUniqueKeys(dashboardWidgetDeclSchema(), "id", MAX_DASHBOARD_WIDGETS));
 /** Extension.metrics:1–8 個,key 不重複。 */
-export const metricsSchema = withUniqueKeys(metricDeclSchema, "key", MAX_METRICS);
+export const metricsSchema = lazySchema(() => withUniqueKeys(metricDeclSchema(), "key", MAX_METRICS));

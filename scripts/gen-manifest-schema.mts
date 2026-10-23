@@ -60,7 +60,8 @@ registerHooks({
   },
 });
 
-const { manifestSchema } = await import("../src/ext/dx/manifest.ts");
+// manifest.ts builds its schemas on first use (lazySchema); manifestSchema is the accessor.
+const manifestSchema = (await import("../src/ext/dx/manifest.ts")).manifestSchema();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CMS_ROOT = path.resolve(__dirname, "..");

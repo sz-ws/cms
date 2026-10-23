@@ -1779,4 +1779,13 @@
 // the server-to-server notify URL stays on the site URL. Canonical links, the sitemap, robots.txt and email links
 // keep using the site URL, so search engines see one address. A plugin that builds links for sharing uses
 // `shareOrigin()` and declares coreApi "^1.82.0".
-export const CORE_API_VERSION = "1.82.0";
+// 1.84.0: Core's zod schemas are built the first time they are used, not when their module loads
+// (`src/lib/lazy-schema.ts`: `lazySchema(() => z…)` returns an accessor that builds once and reuses the instance).
+// A cold isolate serving a storefront page no longer builds the manifest, dashboard widget, admin menu, scripts and
+// commerce-kit API body schemas it never touches. `defineExtension()` no longer re-validates compiled-in plugin
+// manifests when `NODE_ENV` is "production": they are static code and are still validated in tests and in dev; set
+// `CMS_VALIDATE_MANIFESTS=1` (for example on `next build`) to validate them in a production build too. Declarative
+// manifests from the database are still parsed in production. Core-internal exports that became accessors:
+// `manifestSchema` (dx/manifest.ts), the schemas in dashboard-widgets.ts, `extensionMenuSchema` and the dx/scripts.ts
+// schemas; nothing a plugin uses changed, so plugins keep their coreApi range.
+export const CORE_API_VERSION = "1.84.0";

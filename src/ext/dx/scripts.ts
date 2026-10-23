@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DOMAIN_RE, ORIGIN_RE } from "./scripts-core";
+import { lazySchema } from "../../lib/lazy-schema";
 
 // 純邏輯(hash、核准紀錄、主機)住在 ./scripts-core.ts(middleware 也用,不能帶 zod)。
 export {
@@ -59,7 +60,7 @@ const SRC_RE = /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d{1,5})?\/[^\s"'<>\\]
 // 不是為了防作者,是為了不讓一個手誤把整頁的 HTML 結構弄壞。
 const INLINE_FORBIDDEN_RE = /<\/script|<!--/i;
 
-export const scriptEntrySchema = z
+export const scriptEntrySchema = lazySchema(() => z
   .object({
     /** 外部 script 的網址(https)。會以 `<script async>` 載入。 */
     src: z
@@ -85,11 +86,11 @@ export const scriptEntrySchema = z
   .strict()
   .refine((s) => (s.src === undefined) !== (s.inline === undefined), {
     message: "a script needs exactly one of src or inline",
-  });
+  }));
 
-export const scriptsSchema = z.array(scriptEntrySchema).min(1).max(4);
+export const scriptsSchema = lazySchema(() => z.array(scriptEntrySchema()).min(1).max(4));
 
-export type DeclarativeScript = z.infer<typeof scriptEntrySchema>;
+export type DeclarativeScript = z.infer<ReturnType<typeof scriptEntrySchema>>;
 
 /** 一段 script 用到的代入符號(依出現順序、去重)。 */
 export function scriptRefs(text: string): ScriptRef[] {

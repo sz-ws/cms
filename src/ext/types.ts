@@ -20,6 +20,7 @@ import {
 } from "./record-status";
 import { validateSettingValue } from "../lib/setting-validation";
 import { normalizeHex } from "../lib/color";
+import { lazySchema } from "../lib/lazy-schema";
 import { rangeStartsAtOrAfter } from "./semver";
 import { IDENTITY_MAX, IDENTITY_RE } from "./plugin-ref";
 import {
@@ -451,15 +452,15 @@ const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 const RANGE_RE = /^(\^|~|>=)?\d+\.\d+\.\d+$/;
 
-const fn = z.custom<(...a: never[]) => unknown>(
+const fn = lazySchema(() => z.custom<(...a: never[]) => unknown>(
   (v) => typeof v === "function",
   { message: "expected function" },
-);
+));
 
 // 後台頁參照 "<extId>" / "<extId>/<slug>"(AdminPage.replaces、accessAs 共用的格式)。
 const PAGE_REF_RE = /^[a-z][a-z0-9-]{1,30}(\/[a-z0-9][a-z0-9-]*)*$/;
 
-const apiRouteSchema = z.object({
+const apiRouteSchema = lazySchema(() => z.object({
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
   // path:segment 字串,允許 :param;禁止 regex 特殊語意(僅 [a-z0-9:/-])。
   path: z
@@ -468,10 +469,10 @@ const apiRouteSchema = z.object({
     .regex(/^[a-z0-9:/-]+$/i, "invalid route path"),
   public: z.boolean().optional(), // 1.28.0:免登入端點(見 ApiRoute.public)
   accessAs: z.string().regex(PAGE_REF_RE, "accessAs must be <extId> or <extId>/<slug>").optional(), // 1.50.0
-  handler: fn,
-});
+  handler: fn(),
+}));
 
-const localizedStringSchema = z.union([
+const localizedStringSchema = lazySchema(() => z.union([
   z.string().min(1),
   z
     .object({
@@ -482,79 +483,79 @@ const localizedStringSchema = z.union([
     .refine((value) => value.en !== undefined || value["zh-Hant"] !== undefined, {
       message: "localized string requires at least one locale",
     }),
-]);
+]));
 
 // 1.40.0:後台頁的搜尋宣告(record-search.ts 的 AdminPageSearch)。欄位名會拼進
 // SQL,只收小寫識別字;⌘K 來源只開放 ext_ 開頭的表 —— core 的表(users、sessions…)
 // 不給翻。
-const sqlIdent = z.string().refine(isSqlIdentifier, "invalid SQL identifier");
-const adminPageSearchSchema = z
+const sqlIdent = lazySchema(() => z.string().refine(isSqlIdentifier, "invalid SQL identifier"));
+const adminPageSearchSchema = lazySchema(() => z
   .object({
-    placeholder: localizedStringSchema,
+    placeholder: localizedStringSchema(),
     fields: z
       .object({
-        text: z.array(sqlIdent).max(10),
-        phone: z.array(sqlIdent).max(5).optional(),
-        date: sqlIdent.optional(),
+        text: z.array(sqlIdent()).max(10),
+        phone: z.array(sqlIdent()).max(5).optional(),
+        date: sqlIdent().optional(),
       })
       .strict()
       .refine((fields) => fields.text.length + (fields.phone?.length ?? 0) > 0, "search needs a text or phone field"),
     global: z
       .object({
         id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, "invalid search source id"),
-        label: localizedStringSchema,
-        table: sqlIdent.refine((table) => table.startsWith("ext_"), "global search table must start with ext_"),
-        key: sqlIdent,
-        title: sqlIdent,
-        subtitle: z.array(sqlIdent).max(3).optional(),
+        label: localizedStringSchema(),
+        table: sqlIdent().refine((table) => table.startsWith("ext_"), "global search table must start with ext_"),
+        key: sqlIdent(),
+        title: sqlIdent(),
+        subtitle: z.array(sqlIdent()).max(3).optional(),
         replaces: z.string().regex(/^[a-z][a-z0-9-]{1,30}:[a-z][a-z0-9-]{0,39}$/, "replaces must be <extId>:<sourceId>").optional(),
       })
       .strict()
       .optional(),
   })
-  .strict();
+  .strict());
 
 // 1.40.0:狀態組(record-status.ts)。狀態值是插件寫進資料的字串,只收識別字。
-const statusSetSchema = z
+const statusSetSchema = lazySchema(() => z
   .object({
     id: z.string().regex(STATUS_SET_ID_RE, "invalid status set id"),
     statuses: z
       .record(
         z.string().regex(STATUS_KEY_RE, "invalid status key"),
-        z.object({ label: localizedStringSchema, tone: z.enum(STATUS_TONES).optional() }).strict(),
+        z.object({ label: localizedStringSchema(), tone: z.enum(STATUS_TONES).optional() }).strict(),
       )
       .refine((statuses) => Object.keys(statuses).length > 0, "status set needs at least one status"),
   })
-  .strict();
+  .strict());
 
 // name 是 admin 列表、settings 分頁標題、dashboard 卡署名唯一的人類可讀識別;
 // 空字串等於沒有名字(消費端只剩 `?? ext.id` 的機器 key 可退)。string 分支已由
 // localizedStringSchema 的 .min(1) 擋住 "",物件分支則只被 refine 過「至少一鍵」——
 // `{ "zh-Hant": "" }` 有鍵但沒有值,會安靜地變成沒有名字,所以在這裡補一道。
-const nonEmptyLocalizedString = localizedStringSchema.refine(
+const nonEmptyLocalizedString = lazySchema(() => localizedStringSchema().refine(
   (value) =>
     typeof value === "string" ||
     Object.values(value).some((v) => typeof v === "string" && v.length > 0),
   { message: "localized string requires at least one non-empty locale" },
-);
+));
 
 // ── 1.60.0:agentGuide ──────────────────────────────────────────────────────
 /** Extension.agentGuide 每種語言的字數上限。給 AI 的說明是有總量的,一個插件不該吃掉一大塊。 */
 export const AGENT_GUIDE_MAX_CHARS = 1_200;
-const agentGuideSchema = nonEmptyLocalizedString.refine(
+const agentGuideSchema = lazySchema(() => nonEmptyLocalizedString().refine(
   (value) =>
     (typeof value === "string" ? [value] : Object.values(value)).every(
       (text) => typeof text !== "string" || text.length <= AGENT_GUIDE_MAX_CHARS,
     ),
   { message: `agentGuide is limited to ${AGENT_GUIDE_MAX_CHARS} characters per language` },
-);
+));
 // ── end agentGuide ─────────────────────────────────────────────────────────
 
-const settingSchema = z
+const settingSchema = lazySchema(() => z
   .object({
     key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, "invalid setting key"),
-    label: localizedStringSchema,
-    description: localizedStringSchema.optional(),
+    label: localizedStringSchema(),
+    description: localizedStringSchema().optional(),
     default: z.unknown(),
     required: z.boolean().optional(),
     secret: z.boolean().optional(),
@@ -562,7 +563,7 @@ const settingSchema = z
     unit: z.enum(["minutes"]).optional(),
     options: z
       .array(
-        z.object({ value: z.string(), label: localizedStringSchema }).strict(),
+        z.object({ value: z.string(), label: localizedStringSchema() }).strict(),
       )
       .optional(),
     swatches: z
@@ -570,7 +571,7 @@ const settingSchema = z
         z
           .object({
             value: z.string().refine((value) => normalizeHex(value) === value, "swatch must be #rrggbb (lower-case)"),
-            label: localizedStringSchema,
+            label: localizedStringSchema(),
           })
           .strict(),
       )
@@ -633,73 +634,73 @@ const settingSchema = z
         path: ["default"],
       });
     }
-  });
+  }));
 
-const migrationSchema = z.object({
+const migrationSchema = lazySchema(() => z.object({
   id: z.string().min(1),
   sql: z.string().min(1),
-});
+}));
 
-const adminPageSchema = z.object({
+const adminPageSchema = lazySchema(() => z.object({
   slug: z.string(),
-  title: localizedStringSchema,
+  title: localizedStringSchema(),
   showInMenu: z.boolean().optional(),
   accessAs: z.string().regex(PAGE_REF_RE, "accessAs must be <extId> or <extId>/<slug>").optional(), // 1.50.0
-  search: adminPageSearchSchema.optional(),
-  component: fn,
-});
+  search: adminPageSearchSchema().optional(),
+  component: fn(),
+}));
 
-const publicRouteSchema = z.object({
-  match: fn,
-  component: fn,
-});
+const publicRouteSchema = lazySchema(() => z.object({
+  match: fn(),
+  component: fn(),
+}));
 
 // spec-extension-jobs.md:job id 規則比 extension id 寬(允許單字元)。
 const JOB_ID_RE = /^[a-z][a-z0-9-]{0,30}$/;
-const extJobSchema = z.object({
+const extJobSchema = lazySchema(() => z.object({
   id: z.string().regex(JOB_ID_RE, "invalid job id"),
   every: z.number().int().min(1).optional(),
   // 1.80.0:表名(插件自己或它讀的別的插件的表),跟 ledger-kit 的表名同一套字元。
   wakeOn: z.array(z.string().regex(/^[a-z][a-z0-9_]{2,60}$/, "invalid table name")).max(10).optional(),
-  run: fn,
-});
+  run: fn(),
+}));
 // 同 extension 內 id 重複 → fail-loud(同 registry 重複 provider 慣例)。
-const jobsSchema = z
-  .array(extJobSchema)
+const jobsSchema = lazySchema(() => z
+  .array(extJobSchema())
   .refine((jobs) => new Set(jobs.map((j) => j.id)).size === jobs.length, {
     message: "duplicate job id within extension",
   })
-  .optional();
+  .optional());
 
 // 1.30.0:agentTools 的**結構**驗證(欄位型別 / execute 是 function / schema 是 zod)。
 // 命名空間與重複名走 agentToolIssues(見上),因為那條規則 buildAgentToolRegistry 也要用。
 // schema 只確認「有 safeParse」,同 fn 只確認「是 function」的精神 —— 深驗一個 zod
 // 物件既做不到也沒必要,args 的真正把關在 invokeAgentTool。
-const zodSchemaLike = z.custom<z.ZodType>(
+const zodSchemaLike = lazySchema(() => z.custom<z.ZodType>(
   (v) =>
     typeof v === "object" &&
     v !== null &&
     typeof (v as { safeParse?: unknown }).safeParse === "function",
   { message: "expected a zod schema" },
-);
+));
 
-const agentToolSchema = z.object({
+const agentToolSchema = lazySchema(() => z.object({
   name: z.string().min(1),
   description: z.string().min(1),
   kind: z.enum(["read", "write"]),
-  schema: zodSchemaLike,
-  execute: fn,
+  schema: zodSchemaLike(),
+  execute: fn(),
   // 1.31.0:確認卡的人話摘要。列出來而不是靠 z.object() 預設放行未知鍵 —— 這份
   // schema 是「extension 宣告的 agentTools 長什麼樣」的單一來源,一個沒寫在這裡
   // 的欄位等於沒有人保證它的型別(寫成字串也照樣通過)。
-  summarize: fn.optional(),
+  summarize: fn().optional(),
   // 1.33.0:結果的卡片式呈現(AgentTool.display)。同 summarize 只驗「是 function」
   // —— 它的回傳值另有一道守門(agent-loop 對每次呼叫的產物跑 agentDisplaySchema),
   // 而那道守門才是真正決定畫不畫的地方。這裡只確保宣告的欄位不是一個字串。
-  display: fn.optional(),
-});
+  display: fn().optional(),
+}));
 
-const manifestSchema = z
+const manifestSchema = lazySchema(() => z
   .object({
     id: z.string().regex(ID_RE, "invalid extension id"),
     identity: z.string().max(IDENTITY_MAX).regex(IDENTITY_RE, "invalid identity (expect <publisher>/<name>)").optional(),
@@ -708,20 +709,20 @@ const manifestSchema = z
     // 純 z.string() —— 於是寫物件形式的 code extension 過得了 tsc、卻要等到
     // `next build` 的 collecting page data 才在一個看似無關的路由上炸開。驗證跟上
     // 型別,失敗點才會回到 defineExtension 本身。
-    name: nonEmptyLocalizedString,
+    name: nonEmptyLocalizedString(),
     version: z.string().regex(SEMVER_RE, "invalid version (expect x.y.z)"),
     coreApi: z.string().regex(RANGE_RE, "invalid coreApi range"),
-    description: localizedStringSchema.optional(),
+    description: localizedStringSchema().optional(),
     icon: z.string().max(16384).optional(),
-    menu: extensionMenuSchema.optional(),
+    menu: extensionMenuSchema().optional(),
     canUninstall: z.union([z.boolean(), z.object({ sql: z.string().min(1).refine((sql) => !/;|--|\/\*|\*\//.test(sql), "invalid uninstall predicate"), message: z.string().min(1).max(300) }).strict()]).optional(),
     requiresExtensions: z.array(z.string().regex(ID_RE)).max(20).optional(),
     canDisable: z.object({ sql: z.string().min(1).refine((sql) => !/;|--|\/\*|\*\//.test(sql), "invalid disable predicate"), message: z.string().min(1).max(300) }).strict().optional(),
-    migrations: z.array(migrationSchema).optional(),
-    uninstall: z.array(migrationSchema).optional(),
-    settings: z.array(settingSchema).optional(),
-    adminPages: z.array(adminPageSchema).optional(),
-    publicRoutes: z.array(publicRouteSchema).optional(),
+    migrations: z.array(migrationSchema()).optional(),
+    uninstall: z.array(migrationSchema()).optional(),
+    settings: z.array(settingSchema()).optional(),
+    adminPages: z.array(adminPageSchema()).optional(),
+    publicRoutes: z.array(publicRouteSchema()).optional(),
     // 站內絕對路徑,不能是後台、/login、/api(否則 /login 會轉回自己或轉進後台)。
     signInPage: z
       .string()
@@ -729,45 +730,45 @@ const manifestSchema = z
       .regex(/^\/[a-z0-9][a-z0-9/_-]*$/i, "signInPage must be a site path like /member/sign-in")
       .refine((p) => !/^\/(admin|login|setup|api)(\/|$)/i.test(p), "signInPage cannot be an admin, login, setup or api path")
       .optional(),
-    apiRoutes: z.array(apiRouteSchema).optional(),
+    apiRoutes: z.array(apiRouteSchema()).optional(),
     provides: z
       .array(
         z.object({
           capability: z.string().min(1),
           id: z.string().min(1),
-          create: fn,
+          create: fn(),
         }),
       )
       .optional(),
-    jobs: jobsSchema,
+    jobs: jobsSchema(),
     // 1.74.0:插槽。fill() 產生的物件;這裡只驗形狀,先後與名字的規則在 slots.ts。
     fills: z.array(z.object({ kind: z.enum(["value", "view"]), slotId: z.string().min(1) }).passthrough()).optional(),
     layer: z.enum(["agency", "site"]).optional(),
-    agentTools: z.array(agentToolSchema).optional(),
-    agentGuide: agentGuideSchema.optional(), // 1.60.0
-    statusSets: z.array(statusSetSchema).max(10).optional(),
+    agentTools: z.array(agentToolSchema()).optional(),
+    agentGuide: agentGuideSchema().optional(), // 1.60.0
+    statusSets: z.array(statusSetSchema()).max(10).optional(),
     publicFeeds: z
-      .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn)
+      .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9-]{0,40}$/, "invalid feed name"), fn())
       .optional(),
-    dashboardStats: fn.optional(), // deprecated 1.62.0
-    dashboardRevenue: fn.optional(), // 1.61.0; deprecated 1.62.0
-    dashboardWidgets: dashboardWidgetsSchema.optional(), // 1.62.0
-    metrics: metricsSchema.optional(), // 1.62.0
+    dashboardStats: fn().optional(), // deprecated 1.62.0
+    dashboardRevenue: fn().optional(), // 1.61.0; deprecated 1.62.0
+    dashboardWidgets: dashboardWidgetsSchema().optional(), // 1.62.0
+    metrics: metricsSchema().optional(), // 1.62.0
     // 1.60.0:成員頁的 facet(MemberFacet;讀取與驗證在 ./member-facets.ts)。
     memberFacets: z
       .array(
         z
           .object({
             id: z.string().regex(MEMBER_FACET_ID_RE, "invalid member facet id"),
-            label: nonEmptyLocalizedString,
-            read: fn,
+            label: nonEmptyLocalizedString(),
+            read: fn(),
             actions: z
               .array(
                 z
                   .object({
-                    label: nonEmptyLocalizedString,
+                    label: nonEmptyLocalizedString(),
                     when: z.enum(["has", "missing", "always"]),
-                    href: fn,
+                    href: fn(),
                   })
                   .strict(),
               )
@@ -784,8 +785,8 @@ const manifestSchema = z
         z
           .object({
             id: z.string().regex(ADMIN_APPEARANCE_ID_RE, "invalid appearance id"),
-            name: nonEmptyLocalizedString,
-            description: localizedStringSchema.optional(),
+            name: nonEmptyLocalizedString(),
+            description: localizedStringSchema().optional(),
             theme: adminThemeSchema,
             accent: adminAccentSchema.optional(),
           })
@@ -896,10 +897,23 @@ const manifestSchema = z
         ctx.addIssue({ code: "custom", message: `widget "${widget.id}" uses metric "${widget.metric}", which this plugin does not declare in metrics`, path: ["dashboardWidgets", index, "metric"] });
       }
     });
-  });
+  }));
+
+/**
+ * 正式版(NODE_ENV=production)不驗編進來的插件:它們是靜態程式碼,每一個都已在測試裡經過這裡
+ * (匯入 extensions/registry 的測試,例如 ext-runtime-safety,test 環境照驗),部署後不會再變;
+ * 正式站卻是每個冷的 isolate 都要載入全部插件,在那裡再驗一次只是讓每次冷啟動多付建 schema
+ * 加十幾次 parse 的 CPU。要在正式 build 裡照驗(例如查一個只在正式站出現的問題)就設
+ * CMS_VALIDATE_MANIFESTS=1。資料庫裡的宣告式 manifest 不走這裡(interpretManifest →
+ * parseManifest),正式站照驗。
+ */
+function validatesCompiledManifests(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.CMS_VALIDATE_MANIFESTS === "1";
+}
 
 export function defineExtension(ext: Extension): Extension {
-  const result = manifestSchema.safeParse(ext);
+  if (!validatesCompiledManifests()) return ext;
+  const result = manifestSchema().safeParse(ext);
   if (!result.success) {
     const issues = result.error.issues
       .map((i) => `${i.path.join(".")}: ${i.message}`)

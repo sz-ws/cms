@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { hitRateLimit } from "@/lib/rate-limit";
+import { lazySchema } from "@/lib/lazy-schema";
 import type { ApiCtx } from "../types";
 import type { CommerceDb } from "./orders";
 import { normalizePromoCode, PROMO_CODE_RE } from "./promo-code";
@@ -248,13 +249,14 @@ export async function listPromosByCodes(
 }
 
 // ---- API handlers(extension 以 apiRoutes 掛上)----
+// body 的規則第一次收到請求才建(lazySchema,前台頁面載入時用不到)。
 
-const quoteBodySchema = z
+const quoteBodySchema = lazySchema(() => z
   .object({
     code: z.string().min(1).max(60),
     subtotal: z.number().int().min(0).max(99_999_999),
   })
-  .strict();
+  .strict());
 
 export interface PromoQuoteHandlerOptions {
   /** 優惠碼表名(如 "ext_shop_promos")。 */
@@ -278,9 +280,9 @@ export function createPromoQuoteHandler(opts: PromoQuoteHandlerOptions) {
     ) {
       return Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
     }
-    let body: z.infer<typeof quoteBodySchema>;
+    let body: z.infer<ReturnType<typeof quoteBodySchema>>;
     try {
-      body = quoteBodySchema.parse(await req.json());
+      body = quoteBodySchema().parse(await req.json());
     } catch {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
@@ -312,7 +314,7 @@ export function createPromoQuoteHandler(opts: PromoQuoteHandlerOptions) {
 const MAX_TIMESTAMP = 9_999_999_999_999;
 
 /** admin 儲存(upsert)body。 */
-const saveBodySchema = z
+const saveBodySchema = lazySchema(() => z
   .object({
     code: z.string().min(1).max(60),
     label: z.string().trim().max(60).default(""),
@@ -339,7 +341,7 @@ const saveBodySchema = z
     if (typeof body.startsAt === "number" && typeof body.endsAt === "number" && body.endsAt <= body.startsAt) {
       ctx.addIssue({ code: "custom", message: "endsAt must be after startsAt" });
     }
-  });
+  }));
 
 export interface PromoAdminHandlerOptions {
   table: string;
@@ -352,9 +354,9 @@ export function createPromoSaveHandler(opts: PromoAdminHandlerOptions) {
     _params: Record<string, string>,
     ctx: ApiCtx,
   ): Promise<Response> {
-    let body: z.infer<typeof saveBodySchema>;
+    let body: z.infer<ReturnType<typeof saveBodySchema>>;
     try {
-      body = saveBodySchema.parse(await req.json());
+      body = saveBodySchema().parse(await req.json());
     } catch {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
