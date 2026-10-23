@@ -8,6 +8,8 @@
     "src/instrumentation.ts",
     "instrumentation-client.ts",
     "custom-worker.ts",
+    // 選用的 Worker 入口(worker/README.md);站台把 wrangler.jsonc 的 main 指到它時才會被打包。
+    "worker/eager-entry.ts",
     "open-next.config.ts",
     "next.config.ts",
     // code extension 由 extensions/registry.ts 以動態 import 掛入,knip 看不到那條線。

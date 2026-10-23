@@ -1779,6 +1779,14 @@
 // the server-to-server notify URL stays on the site URL. Canonical links, the sitemap, robots.txt and email links
 // keep using the site URL, so search engines see one address. A plugin that builds links for sharing uses
 // `shareOrigin()` and declares coreApi "^1.82.0".
+// 1.83.0: The Next server is built when the Worker isolate starts, not inside the first request. OpenNext's
+// `.open-next/worker.js` imports the server handler lazily from `fetch`, and that module's top level builds the
+// whole Next server, so on a cold isolate the first visitor's request paid for it on every route. The Worker entry
+// (`custom-worker.ts`) now loads `custom-worker-startup.mjs` as its last import: it applies the same `fetch` and
+// `Request` replacements OpenNext's per-isolate `init()` would apply on the first request, then awaits the server
+// module at startup, so the build is charged to no request. OpenNext's `init()` still runs on the first request
+// (build constants, origin values in `process.env`). Startup gets longer (Cloudflare's limit is 1 second; a Worker
+// over it fails `wrangler deploy` and nothing reaches production). No API change: plugins keep their coreApi range.
 // 1.84.0: Core's zod schemas are built the first time they are used, not when their module loads
 // (`src/lib/lazy-schema.ts`: `lazySchema(() => z…)` returns an accessor that builds once and reuses the instance).
 // A cold isolate serving a storefront page no longer builds the manifest, dashboard widget, admin menu, scripts and
@@ -1788,4 +1796,10 @@
 // manifests from the database are still parsed in production. Core-internal exports that became accessors:
 // `manifestSchema` (dx/manifest.ts), the schemas in dashboard-widgets.ts, `extensionMenuSchema` and the dx/scripts.ts
 // schemas; nothing a plugin uses changed, so plugins keep their coreApi range.
-export const CORE_API_VERSION = "1.84.0";
+// 1.85.0: Building the Next server at isolate startup (1.83.0) is now opt-in instead of the default. The Worker
+// entry `custom-worker.ts` is back to loading the server handler in the first request, as OpenNext does. The eager
+// entry lives in `worker/`: `worker/eager-entry.ts` loads `custom-worker` and then `worker/eager-startup.mjs`
+// (formerly `custom-worker-startup.mjs`), and re-exports everything from `custom-worker`, Durable Object classes
+// included. A site opts in by setting `main` in `wrangler.jsonc` to `worker/eager-entry.ts`; `worker/README.md`
+// says when that pays off and how to measure startup. No API change: plugins keep their coreApi range.
+export const CORE_API_VERSION = "1.85.0";
