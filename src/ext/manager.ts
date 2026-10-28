@@ -21,6 +21,7 @@ import {
   heartbeats,
   userFields,
   declarativeExtensions,
+  declarativePrevious,
   contents,
 } from "@/lib/schema";
 import { registry } from "@/../extensions/registry";
@@ -549,6 +550,8 @@ export async function uninstallDeclarative(
           notLike(extMigrations.id, `${extId}:install:%`),
         ),
       ),
+    // 被換掉的上一份(migrations/0027)跟著插件一起刪,重新安裝不會冒出舊的「回到上一版」。
+    db().delete(declarativePrevious).where(eq(declarativePrevious.id, extId)),
     db()
       .delete(declarativeExtensions)
       .where(eq(declarativeExtensions.id, extId)),

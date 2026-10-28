@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import {
   extensions as extTable,
   declarativeExtensions as dxTable,
+  declarativePrevious,
 } from "@/lib/schema";
 import { getExtRuntime } from "@/ext/loader";
 import { pendingCodeUpgrades } from "@/ext/manager";
@@ -65,6 +66,11 @@ export default async function ExtensionsPage() {
   // declarative extensions:name/description 取自 manifest(驗證後)。
   // 1.49.0:底座管的(商品目錄)不列 —— 它沒有版本、不能在這裡啟停,開關在商店設定。
   const dxDbRows = await db().select().from(dxTable);
+  const previousById = new Map(
+    (await db().select({ id: declarativePrevious.id, version: declarativePrevious.version }).from(declarativePrevious)).map(
+      (r) => [r.id, r.version],
+    ),
+  );
   const dxRows: ExtensionRow[] = await Promise.all(
     dxDbRows.filter((r) => !isBaseManaged(r.id, r.source)).map(async (r) => {
       const parsed = parseManifest(safeJson(r.manifest));
@@ -81,6 +87,7 @@ export default async function ExtensionsPage() {
         // 1.48.0 執行中 / 已停用;1.51.0 起多一個「已編進網站」。
         scripts: await installedScriptsState(r.id, dm, r.scriptsApproval),
         needs: needsOf("declarative", r.id),
+        previousVersion: previousById.get(r.id) ?? null,
       };
     }),
   );

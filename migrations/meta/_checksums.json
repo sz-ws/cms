@@ -27,6 +27,7 @@
     "0023_password_reset_codes.sql": "21ee748046451856c27749d021a7d2a82b547b535e95aa1988594480ee05f211",
     "0024_registry_notices.sql": "74ad9e80f8ad6f0d4e2ef1e5e325e617048e534cd70153d969388b6ee81579fe",
     "0025_mcp_connections.sql": "43b8b8d6ee3f0318dec45d2acb8c30f556955acd4b774fa24f2492307856dbb6",
-    "0026_user_fields.sql": "65c6443ef2bd4cff117ba0bb54a3b7cbc4bb793162ac4a085192235fd93cd90b"
+    "0026_user_fields.sql": "65c6443ef2bd4cff117ba0bb54a3b7cbc4bb793162ac4a085192235fd93cd90b",
+    "0027_declarative_previous.sql": "e2321c3c9cc61fe4fb51f84e059bbd510530c7009407a2b3425b2e05d254697c"
   }
 }

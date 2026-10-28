@@ -262,6 +262,18 @@ export const declarativeExtensions = sqliteTable("declarative_extensions", {
   scriptsApproval: text("scripts_approval"),
 });
 
+// migrations/0027:宣告式插件被更新換掉之前的那一份(一個插件一列),後台「回到上一版」用。
+// 寫入與讀取都在 api/registry/install/route.ts;移除插件時一起刪。
+export const declarativePrevious = sqliteTable("declarative_previous", {
+  id: text("id").primaryKey(),
+  manifest: text("manifest").notNull(),
+  version: text("version").notNull(),
+  source: text("source"),
+  stylesheet: text("stylesheet"),
+  scriptsApproval: text("scripts_approval"),
+  replacedAt: integer("replaced_at").notNull(),
+});
+
 // spec-extension-jobs.md:extension 貢獻的週期性 / 一次性任務(engine 見
 // src/lib/jobs.ts 的 `ext-jobs` core job)。手寫 migration(migrations/0007_ext_jobs.sql,
 // 照 0006 precedent,不動 drizzle journal/meta)。

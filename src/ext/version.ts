@@ -1826,4 +1826,12 @@
 // (`?version=` and `body.version`), and the install route refuses a fetched manifest whose version differs. The CLI
 // installs one with `cms add <id>@<x.y.z>` and, when the latest does not fit the local core, prints the kept version that
 // does. Registries without `versions` and older cores behave as before. No API change.
+// Unversioned (2026-10-29): switch a declarative plugin back to the version before its last update. New table
+// `declarative_previous` (migrations/0027, one row per plugin): when an install replaces a row whose manifest
+// differs, the install route saves the replaced row there in the same batch. `POST /api/registry/install` with
+// `{ id, rollback: true }` reinstalls that saved copy through the usual checks (identity, settings contract,
+// migration history, scripts approval) without fetching the registry; the version it replaces becomes the saved
+// one, so the admin can switch forward again. Uninstalling a declarative plugin deletes its saved copy. The
+// extension sheet on /admin/extensions shows the switch when a saved copy exists. Run `pnpm db:migrate:remote`
+// before deploying. No API change.
 export const CORE_API_VERSION = "1.85.0";

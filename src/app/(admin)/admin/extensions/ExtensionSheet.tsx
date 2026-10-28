@@ -19,6 +19,7 @@ import {
   type Action,
 } from "./ExtensionsManager";
 import { ExtensionScripts } from "./ExtensionScripts";
+import { ExtensionRollback } from "./ExtensionRollback";
 
 // /admin/extensions 的詳情 sidebar(core-native「設定從側邊滑出」體例,同 UserSheet)。
 // 殼常駐、open 由 request 是否為 null 驅動 —— 條件式 mount + open=true 會讓 base-ui
@@ -187,6 +188,8 @@ function ExtensionSheetBody({
             )}
           </div>
         )}
+
+        {ext.kind === "declarative" && ext.previousVersion && <ExtensionRollback ext={ext} />}
 
         {/* Danger zone(1.74.0:網站本身的一層沒有移除這件事) */}
         {ext.installed && !ext.layer && (

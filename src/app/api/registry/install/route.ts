@@ -42,6 +42,7 @@ import {
 import { db } from "@/lib/db";
 import {
   declarativeExtensions as dxTable,
+  declarativePrevious,
   extMigrations,
   extensions as extTable,
   settings,
@@ -90,11 +91,16 @@ const bodySchema = z
     confirmSource: z.string().min(1).max(2048).optional(),
     // registry 保留的舊版本(最新版這個站裝不了時,商店給的那一版)。不給 = 最新版。
     version: z.string().regex(REGISTRY_VERSION_RE).optional(),
+    // 回到上一版:拿 declarative_previous 存的那一份(migrations/0027),不抓 registry。
+    rollback: z.literal(true).optional(),
   })
   .strict()
   .refine(
-    (b) => (b.source === undefined) !== (b.manifest === undefined),
-    { message: "provide exactly one of `source` or `manifest`" },
+    (b) =>
+      b.rollback
+        ? b.source === undefined && b.manifest === undefined && b.version === undefined
+        : (b.source === undefined) !== (b.manifest === undefined),
+    { message: "provide exactly one of `source` or `manifest`, or `rollback` alone" },
   );
 
 export async function POST(req: Request): Promise<Response> {
@@ -134,8 +140,22 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const { id, source, promptValues, approveScripts, confirmSource, version } = parsed;
+  const { id, promptValues, approveScripts, version } = parsed;
   const inlineManifest = parsed.manifest;
+  let { source, confirmSource } = parsed;
+
+  // 回到上一版:來源、style.css、scripts 核准都用存下來的那一份;其餘檢查照一般更新走。
+  const rollbackRow = parsed.rollback
+    ? ((
+        await db().select().from(declarativePrevious).where(eq(declarativePrevious.id, id)).limit(1)
+      )[0] ?? null)
+    : null;
+  if (parsed.rollback && !rollbackRow) {
+    return Response.json({ error: "no_previous_version" }, { status: 404 });
+  }
+  if (rollbackRow) {
+    source = rollbackRow.source ?? undefined;
+  }
 
   if (inlineManifest !== undefined && !DEV_INSTALL) {
     // 正式 bundle 走不到這裡(整段會被 DCE 掉),留著是為了「萬一」——
@@ -145,7 +165,7 @@ export async function POST(req: Request): Promise<Response> {
 
   // SSRF guard(§5):source 必須完全等於已設定的 core.registrySources 其中一個,
   // 絕不接受 request body 內任意 URL。inline manifest 沒有遠端來源可抓,略過。
-  if (source !== undefined) {
+  if (source !== undefined && !rollbackRow) {
     try {
       await assertKnownRegistrySource(source);
     } catch (e) {
@@ -175,7 +195,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   let rawManifest: unknown;
-  if (inlineManifest !== undefined) {
+  if (rollbackRow) {
+    try {
+      rawManifest = JSON.parse(rollbackRow.manifest);
+    } catch {
+      return Response.json({ error: "previous_manifest_invalid" }, { status: 409 });
+    }
+  } else if (inlineManifest !== undefined) {
     rawManifest = inlineManifest;
   } else {
   try {
@@ -230,6 +256,7 @@ export async function POST(req: Request): Promise<Response> {
       updatedAt: dxTable.updatedAt,
       scriptsApproval: dxTable.scriptsApproval,
       source: dxTable.source,
+      stylesheet: dxTable.stylesheet,
     })
     .from(dxTable)
     .where(eq(dxTable.id, id))
@@ -253,6 +280,8 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
     previousManifest = previousResult.manifest;
+    // 回到上一版是管理員明確的動作:上一版若來自別的來源,當作已確認。
+    if (rollbackRow) confirmSource = existingRows[0].source ?? undefined;
     // 1.50.0:同 id 已經裝了東西 —— 先確定是同一個插件,再談版本相容。identity 一旦
     // 裝上就不能換;換來源要管理員確認(1.52.0 起不論有沒有 identity,見 installVerdict)。
     const verdict = installVerdict(
@@ -407,7 +436,7 @@ export async function POST(req: Request): Promise<Response> {
   // 上面兩道關都不適用;核准一律清掉(CSP 只看核准,見 @/ext/dx/scripts-compiled)。
   let scriptsApproval: string | null | undefined = null;
   if (manifest.scripts && !scriptsCompiledIn(id)) {
-    if (source !== undefined && !(await sourceAllowsScripts(source))) {
+    if (source !== undefined && !rollbackRow && !(await sourceAllowsScripts(source))) {
       return Response.json({ error: "scripts_not_allowed" }, { status: 403 });
     }
     const hash = await hashScripts(manifest.scripts);
@@ -415,6 +444,8 @@ export async function POST(req: Request): Promise<Response> {
       scriptsApproval = JSON.stringify({ hash, by: user.email, at: Date.now() });
     } else if (parseScriptsApproval(existingRows[0]?.scriptsApproval)?.hash === hash) {
       scriptsApproval = undefined;
+    } else if (rollbackRow && parseScriptsApproval(rollbackRow.scriptsApproval)?.hash === hash) {
+      scriptsApproval = rollbackRow.scriptsApproval;
     } else {
       return Response.json(
         {
@@ -435,7 +466,10 @@ export async function POST(req: Request): Promise<Response> {
   // (update 時清掉先前存的 sheet)。validateStylesheet 是 REJECT-not-rewrite:見
   // stylesheet-guard.ts;第三方 CSS 於本站同源執行,故所有逃逸向量都擋在安裝時。
   let validatedStylesheet: string | null = null;
-  if (manifest.stylesheet) {
+  if (manifest.stylesheet && rollbackRow) {
+    // 存下來的那一份當初已經驗證過。
+    validatedStylesheet = rollbackRow.stylesheet;
+  } else if (manifest.stylesheet) {
     if (source === undefined) {
       // inline manifest 沒有 registry 來源,style.css 無處可抓。明確拒絕,
       // 不要靜默裝成「沒有 stylesheet」——那會讓 extension 少一塊卻無聲無息。
@@ -567,6 +601,25 @@ export async function POST(req: Request): Promise<Response> {
         },
       }),
   );
+  // 內容真的換了:把被換掉的那一份存起來,給「回到上一版」(migrations/0027)。退回時也一樣,
+  // 所以可以再前進回去。
+  const replaced = existingRows[0];
+  if (replaced && replaced.manifest !== JSON.stringify(manifest)) {
+    const previous = {
+      manifest: replaced.manifest,
+      version: replaced.version,
+      source: replaced.source,
+      stylesheet: replaced.stylesheet,
+      scriptsApproval: replaced.scriptsApproval,
+      replacedAt: now,
+    };
+    batch.push(
+      db()
+        .insert(declarativePrevious)
+        .values({ id, ...previous })
+        .onConflictDoUpdate({ target: declarativePrevious.id, set: previous }),
+    );
+  }
   for (const [key, value] of Object.entries(preparedDefaults)) {
     batch.push(
       db()

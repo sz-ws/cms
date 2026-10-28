@@ -47,6 +47,8 @@ export interface ExtensionRow {
   needs?: { id: string; name: string; state: "missing" | "disabled" | "different" }[];
   /** 1.74.0:代理商那一層或站台自己那一層(Extension.layer)—— 網站本身的一部分,不能啟用、停用或移除。 */
   layer?: "agency" | "site" | null;
+  /** 宣告式插件被更新換掉的上一版(migrations/0027);沒有就不給。 */
+  previousVersion?: string | null;
 }
 
 /** 1.50.0:缺的必要插件,分成「要先安裝」與「要先啟用」兩句(列表與詳情共用)。 */

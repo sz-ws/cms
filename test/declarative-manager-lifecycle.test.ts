@@ -40,6 +40,7 @@ const d1 = () => (env as TestEnv).DB;
 beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);" +
+      "CREATE TABLE IF NOT EXISTS declarative_previous (id TEXT PRIMARY KEY NOT NULL, manifest TEXT NOT NULL, version TEXT NOT NULL, source TEXT, stylesheet TEXT, scripts_approval TEXT, replaced_at INTEGER NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS ext_migrations (id TEXT PRIMARY KEY, ext_id TEXT NOT NULL, applied_at INTEGER NOT NULL);" +
       // 1.50.0:停用前會查「誰需要它」,兩種插件都看。
       "CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, installed_at INTEGER NOT NULL);" +
@@ -95,6 +96,16 @@ describe("declarative manager revision lifecycle", () => {
       true,
     );
     expect(markers.results.length).toBeGreaterThan(0);
+  });
+
+  it("removes the saved previous version too, so a reinstall starts without one", async () => {
+    await d1()
+      .prepare(
+        "INSERT INTO declarative_previous (id,manifest,version,source,stylesheet,scripts_approval,replaced_at) VALUES ('demo','{}','0.9.0',NULL,NULL,NULL,1)",
+      )
+      .run();
+    await uninstallDeclarative("demo", false);
+    expect(await d1().prepare("SELECT id FROM declarative_previous WHERE id='demo'").first()).toBeNull();
   });
 });
 
