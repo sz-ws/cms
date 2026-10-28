@@ -1,4 +1,5 @@
 import { requireAuth, authErrorResponse } from "@/lib/auth";
+import { REGISTRY_VERSION_RE } from "@/lib/registry-versions";
 import { hitRateLimit } from "@/lib/rate-limit";
 import {
   assertKnownRegistrySource,
@@ -49,6 +50,10 @@ export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const source = url.searchParams.get("source");
   const id = url.searchParams.get("id");
+  const version = url.searchParams.get("version") ?? undefined;
+  if (version !== undefined && !REGISTRY_VERSION_RE.test(version)) {
+    return Response.json({ error: "invalid_input" }, { status: 400 });
+  }
   if (!source || !id) {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
@@ -64,7 +69,7 @@ export async function GET(req: Request): Promise<Response> {
 
   let rawManifest: unknown;
   try {
-    rawManifest = await fetchManifest(source, id);
+    rawManifest = await fetchManifest(source, id, version);
   } catch (e) {
     const known = registryErrorResponse(e);
     if (known) return known;

@@ -36,6 +36,33 @@ export interface IndexEntry {
   source: string;
   /** 付費插件:閘道依金鑰加上的開通狀態。沒有 = 免費;不是 granted 就不去抓檔。 */
   access?: RegistryAccess;
+  /** registry 保留的舊版本(相容性斷掉時才有),由新到舊。 */
+  versions?: VersionRef[];
+  /** 要裝的是舊版本時才有:檔案從 extensions/<id>/versions/<這個版本>/files/ 抓。 */
+  archivedVersion?: string;
+}
+
+export interface VersionRef {
+  version: string;
+  coreApi: string;
+  files?: string[];
+}
+
+export const VERSION_RE = /^\d+\.\d+\.\d+$/;
+
+function parseVersionRefs(raw: unknown): VersionRef[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const refs: VersionRef[] = [];
+  for (const item of raw.slice(0, 20) as { version?: unknown; coreApi?: unknown; files?: unknown }[]) {
+    if (typeof item?.version !== "string" || !VERSION_RE.test(item.version)) continue;
+    if (typeof item.coreApi !== "string" || item.coreApi.length === 0) continue;
+    refs.push({
+      version: item.version,
+      coreApi: sanitizeRegistryText(item.coreApi, 64),
+      files: Array.isArray(item.files) ? item.files.filter((f): f is string => typeof f === "string") : undefined,
+    });
+  }
+  return refs.length > 0 ? refs : undefined;
 }
 
 export interface SourceConfig {
@@ -235,6 +262,7 @@ interface RawEntry {
   coreApi?: unknown;
   files?: unknown;
   access?: unknown;
+  versions?: unknown;
 }
 
 function parseIndex(json: unknown, source: string): IndexEntry[] {
@@ -262,6 +290,7 @@ function parseIndex(json: unknown, source: string): IndexEntry[] {
           : undefined,
         source,
         access: ACCESS_STATES.includes(raw.access as RegistryAccess) ? (raw.access as RegistryAccess) : undefined,
+        versions: parseVersionRefs(raw.versions),
       });
     }
   }

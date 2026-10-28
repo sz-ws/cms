@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { REGISTRY_VERSION_RE } from "@/lib/registry-versions";
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
@@ -87,6 +88,8 @@ const bodySchema = z
     // 原樣送回(證明看過是誰被取代)。1.52.0 起 identity 相同也要確認(付費插件:第二個
     // registry 不能靜悄悄換掉已裝的插件)。見 @/ext/plugin-ref 的 installVerdict。
     confirmSource: z.string().min(1).max(2048).optional(),
+    // registry 保留的舊版本(最新版這個站裝不了時,商店給的那一版)。不給 = 最新版。
+    version: z.string().regex(REGISTRY_VERSION_RE).optional(),
   })
   .strict()
   .refine(
@@ -131,7 +134,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const { id, source, promptValues, approveScripts, confirmSource } = parsed;
+  const { id, source, promptValues, approveScripts, confirmSource, version } = parsed;
   const inlineManifest = parsed.manifest;
 
   if (inlineManifest !== undefined && !DEV_INSTALL) {
@@ -176,7 +179,7 @@ export async function POST(req: Request): Promise<Response> {
     rawManifest = inlineManifest;
   } else {
   try {
-    rawManifest = await fetchManifest(source as string, id);
+    rawManifest = await fetchManifest(source as string, id, version);
   } catch (e) {
     // 付費插件:這把金鑰沒開通 → 402 not_entitled;金鑰本身不能用 → 502 source_key_invalid。
     // 商店通常在按鈕之前就擋掉了(索引的 access),這裡接的是畫面資料過時、或直接打 API。
@@ -200,6 +203,14 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const manifest = result.manifest;
+
+  // 指定了舊版本:抓回來的 manifest 必須就是那一版。
+  if (version !== undefined && manifest.version !== version) {
+    return Response.json(
+      { error: "invalid_manifest", message: `manifest version "${manifest.version}" does not match requested version "${version}"` },
+      { status: 400 },
+    );
+  }
 
   // manifest.id must match the requested id (defense: registry entry and manifest agree).
   if (manifest.id !== id) {
@@ -439,7 +450,7 @@ export async function POST(req: Request): Promise<Response> {
     }
     let rawCss: string;
     try {
-      rawCss = await fetchExtensionAsset(source, id, manifest.stylesheet);
+      rawCss = await fetchExtensionAsset(source, id, manifest.stylesheet, version);
     } catch (e) {
       const known = registryErrorResponse(e);
       if (known) return known;

@@ -1,6 +1,6 @@
 import { requireAuth, authErrorResponse } from "@/lib/auth";
 import { fetchRegistryIndex, type RegistryIndexEntry } from "@/lib/registry-client";
-import { satisfies } from "@/ext/semver";
+import { pickInstallable } from "@/lib/registry-versions";
 import { CORE_API_VERSION } from "@/ext/version";
 import { availableServices } from "@/ext/service-requirements";
 import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
@@ -61,15 +61,22 @@ export async function GET(): Promise<Response> {
     const requiresExtensions =
       entry.requiresExtensions ??
       (entry.kind === "code" && match.installed && plugin && plugin.requires.length > 0 ? plugin.requires : undefined);
+    // 最新版不相容、但 registry 留著這個站能裝的舊版本:商店上這一筆就是那一版
+    // (版號、相容範圍、可更新都照它算),installVersion 讓預覽與安裝去抓那一版。
+    const pick = pickInstallable(entry, entry.versions, CORE_API_VERSION);
+    const archived = pick?.archived ? pick : null;
     return {
       ...entry,
       ...localizeEntryText(entry, locale),
+      ...(archived
+        ? { version: archived.version, coreApi: archived.coreApi, installVersion: archived.version, latestVersion: entry.version }
+        : {}),
       requiresExtensions,
       installed: match.installed,
       installedVersion: match.installed ? match.version : null,
       conflict: match.conflict,
       installedSource: match.conflict === "source" ? match.source : null,
-      compatible: satisfies(CORE_API_VERSION, entry.coreApi),
+      compatible: pick !== null,
       ...(entry.kind === "declarative" && scriptsCompiledIn(entry.id) ? { scriptsCompiled: true } : {}),
     };
   });

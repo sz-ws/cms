@@ -57,8 +57,24 @@ async function makeRegistry(withFiles: boolean): Promise<{ dir: string; url: str
     path.join(paidDir, "index.ts"),
     `export const paidext = defineExtension({ id: "paidext" });\n`,
   );
+  // 最新版要比本機新很多的 core,registry 為舊 core 留了 1.5.0(extensions/<id>/versions/1.5.0/)。
+  const oldLatestDir = path.join(dir, "extensions", "oldcoreext", "files");
+  await mkdir(oldLatestDir, { recursive: true });
+  await writeFile(path.join(oldLatestDir, "index.ts"), `export const oldcoreext = defineExtension({ id: "oldcoreext" }); // 2.0.0\n`);
+  const oldKeptDir = path.join(dir, "extensions", "oldcoreext", "versions", "1.5.0", "files");
+  await mkdir(oldKeptDir, { recursive: true });
+  await writeFile(path.join(oldKeptDir, "index.ts"), `export const oldcoreext = defineExtension({ id: "oldcoreext" }); // 1.5.0\n`);
   const registryJson = {
     extensions: [
+      {
+        id: "oldcoreext",
+        kind: "code",
+        name: "Kept for older cores",
+        version: "2.0.0",
+        coreApi: "^99.0.0",
+        files: ["index.ts"],
+        versions: [{ version: "1.5.0", coreApi: "^1.0.0", files: ["index.ts"] }],
+      },
       {
         id: "demoext",
         kind: "code",
@@ -762,5 +778,32 @@ describe("run add — paid extensions", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("run — add <id>@<version>:registry 為舊 core 留的版本", () => {
+  it("最新版不相容時,指出這個 core 能裝的那一版", async () => {
+    const code = await run(["add", "oldcoreext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.CORE_INCOMPATIBLE);
+    expect(errOut()).toContain("sz-ws-cms add oldcoreext@1.5.0");
+  });
+
+  it("指定那一版:從 versions/1.5.0/files 抓", async () => {
+    const code = await run(["add", "oldcoreext@1.5.0", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.OK);
+    const idx = await readFile(path.join(repoDir, "extensions", "oldcoreext", "index.ts"), "utf8");
+    expect(idx).toContain("// 1.5.0");
+  });
+
+  it("registry 沒有的版本:列出有哪些", async () => {
+    const code = await run(["add", "oldcoreext@9.9.9", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.NOT_FOUND);
+    expect(errOut()).toContain("available: 2.0.0, 1.5.0");
+  });
+
+  it("版本格式不對", async () => {
+    const code = await run(["add", "oldcoreext@latest", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.NOT_FOUND);
+    expect(errOut()).toContain("invalid version");
   });
 });

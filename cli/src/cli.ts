@@ -21,6 +21,7 @@ import {
   fetchIndex,
   isNotEntitled,
   type IndexEntry,
+  VERSION_RE,
   type SourceConfig,
 } from "./registry.js";
 import { sanitizeRegistryText } from "./registry-text.js";
@@ -68,7 +69,7 @@ Usage:
   cms deploy [options]          provision, build, migrate, deploy and verify this site
   cms secrets [options]         ensure SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN exist
                                 on the deployed Worker (run by the postdeploy hook)
-  cms add <id> [options]        install a code extension
+  cms add <id>[@<version>]      install a code extension (a version the registry kept for older cores)
   cms preflight [options]       list extension settings that are still unset
   cms help                      show this help
   cms version                   show version
@@ -507,7 +508,12 @@ function notEntitled(id: string, source: string, detail?: string): number {
 }
 
 async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
-  const id = args.id;
+  // `add <id>@<version>`:registry 為舊核心保留的版本。
+  const [id, requestedVersion] = (args.id ?? "").split("@", 2) as [string, string | undefined];
+  if (requestedVersion !== undefined && !VERSION_RE.test(requestedVersion)) {
+    err(`✗ invalid version: "${requestedVersion}" must look like 1.2.3.`);
+    return EXIT.NOT_FOUND;
+  }
   if (!id) {
     err("✗ missing <id>");
     err(USAGE);
@@ -584,8 +590,17 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
     return EXIT.NOT_FOUND;
   }
 
-  const entry: IndexEntry = matches[0];
+  let entry: IndexEntry = matches[0];
   const source = entry.source;
+  if (requestedVersion !== undefined && requestedVersion !== entry.version) {
+    const ref = entry.versions?.find((v) => v.version === requestedVersion);
+    if (!ref) {
+      const available = [entry.version, ...(entry.versions ?? []).map((v) => v.version)];
+      err(`✗ "${id}" has no version ${requestedVersion} in the registry. available: ${available.join(", ")}`);
+      return EXIT.NOT_FOUND;
+    }
+    entry = { ...entry, version: ref.version, coreApi: ref.coreApi, files: ref.files, archivedVersion: ref.version };
+  }
 
   // 付費插件:索引說這把金鑰沒開通(locked / requested / expired)→ 不去抓檔、不猜檔名。
   if (entry.access !== undefined && entry.access !== "granted") {
@@ -615,7 +630,8 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   // 沒有這關的話,不相容的 extension 會一路裝完 → rebuild → deploy,直到 admin 按
   // Enable 那刻才被 src/ext/manager.ts 的 enableExtension() 丟 CoreApiIncompatible。
   // 失敗點離錯誤來源太遠,所以提前到安裝當下。
-  const verdict = checkCoreApi(await readCoreApiVersion(cwd), entry.coreApi);
+  const localCore = await readCoreApiVersion(cwd);
+  const verdict = checkCoreApi(localCore, entry.coreApi);
   if (verdict.status === "unknown") {
     // 讀不到本機版號(版號檔搬家 / 形狀改了)→ 不擋。這是 CLI 讀不到資訊,不是使用者的錯;
     // 真不相容的話 Enable 那步仍有 core 把關。
@@ -641,6 +657,14 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
           "  this coreApi range format is not supported by core either (only 1.2.3 / ^1.2.3 / ~1.2.3 / >=1.2.3),",
         );
         err("  and core treats unsupported ranges as incompatible. please have the extension author fix the manifest.");
+      }
+      const older =
+        requestedVersion === undefined
+          ? entry.versions?.find((v) => checkCoreApi(localCore, v.coreApi).status === "ok")
+          : undefined;
+      if (older) {
+        err(`  the registry kept a version that works on this core:`);
+        err(`    sz-ws-cms add ${id}@${older.version}`);
       }
       err("  blocking now because after install, rebuild, and deploy, enable would fail anyway");
       err("  with CoreApiIncompatible from enableExtension() — fail fast instead.");

@@ -65,8 +65,10 @@ interface InstallTarget {
   installed: boolean;
   /** 已安裝版本(index route 附帶;未安裝為 null)。 */
   installedVersion?: string | null;
-  /** registry 上的最新版本。 */
+  /** registry 上的最新版本(有 installVersion 時是那一版)。 */
   version?: string;
+  /** 要抓 registry 保留的舊版本時才有,見 registry-types.ts。 */
+  installVersion?: string;
 }
 
 /** 已安裝但 registry 版本較新 → 按鈕該是可點的 "Update",不是鎖死的 "Installed"。 */
@@ -220,6 +222,7 @@ export function useInstallFlow(
             : {}),
           ...(approveScripts ? { approveScripts } : {}),
           ...(confirmSource ? { confirmSource } : {}),
+          ...(entry.installVersion ? { version: entry.installVersion } : {}),
         }),
       });
       if (res.ok) {
@@ -263,7 +266,8 @@ export function useInstallFlow(
     let res: Response;
     try {
       res = await fetch(
-        `/api/registry/manifest?source=${encodeURIComponent(entry.source)}&id=${encodeURIComponent(entry.id)}`,
+        `/api/registry/manifest?source=${encodeURIComponent(entry.source)}&id=${encodeURIComponent(entry.id)}` +
+          (entry.installVersion ? `&version=${encodeURIComponent(entry.installVersion)}` : ""),
       );
     } catch {
       setState("failed");

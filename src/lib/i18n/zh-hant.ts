@@ -781,6 +781,7 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "registryBrowser.detail.link.support": "支援",
   "registryBrowser.detail.compatibility": "相容性",
   "registryBrowser.detail.requiresCoreApi": "需要核心 API {core}",
+  "registryBrowser.detail.olderVersion": "最新版 {latest} 需要較新的核心,這個站裝的是 {version}。",
   "registryBrowser.detail.codeNote": "要由開發者加進網站、重新部署後才能使用。",
   "registryBrowser.detail.codeUpdateNote": "新版要由開發者更新網站、重新部署。",
   "registryBrowser.detail.version": "版本",

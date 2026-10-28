@@ -205,6 +205,32 @@ describe("GET /api/registry/index", () => {
     expect(Array.isArray(body.installedCode)).toBe(true);
   });
 
+  it("最新版這個站裝不了、registry 留著相容的舊版本:這一筆換成那一版", async () => {
+    authState.user = ADMIN;
+    registryState.entries = [
+      {
+        id: "pay",
+        kind: "declarative",
+        name: "Pay",
+        version: "0.3.0",
+        coreApi: "^99.0.0",
+        source: "https://example.test",
+        versions: [{ version: "0.2.2", coreApi: "^1.0.0" }],
+      },
+      { id: "future", kind: "declarative", name: "Future", version: "2.0.0", coreApi: "^99.0.0", source: "https://example.test" },
+    ];
+
+    const res = await GET();
+    const body = (await res.json()) as {
+      entries: { id: string; version: string; coreApi: string; compatible: boolean; installVersion?: string; latestVersion?: string }[];
+    };
+    const pay = body.entries.find((e) => e.id === "pay");
+    expect(pay).toMatchObject({ version: "0.2.2", coreApi: "^1.0.0", compatible: true, installVersion: "0.2.2", latestVersion: "0.3.0" });
+    const future = body.entries.find((e) => e.id === "future");
+    expect(future?.compatible).toBe(false);
+    expect(future?.installVersion).toBeUndefined();
+  });
+
   // 1.52.0:付費插件的 access / offer 與來源錯誤的狀態碼原樣帶給商店。
   it("passes access, offer and the source error status through", async () => {
     authState.user = ADMIN;

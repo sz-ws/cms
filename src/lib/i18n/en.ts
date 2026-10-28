@@ -801,6 +801,7 @@ export const en = {
   "registryBrowser.detail.link.support": "Support",
   "registryBrowser.detail.compatibility": "Compatibility",
   "registryBrowser.detail.requiresCoreApi": "Requires core API {core}",
+  "registryBrowser.detail.olderVersion": "The latest version, {latest}, needs a newer core. This site gets {version}.",
   "registryBrowser.detail.codeNote": "A developer adds this to your site and redeploys it before you can use it.",
   "registryBrowser.detail.codeUpdateNote": "A developer updates your site and redeploys it to get the new version.",
   "registryBrowser.detail.version": "Version",

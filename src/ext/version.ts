@@ -1817,4 +1817,13 @@
 // isolates applying the same migration at once no longer fail: the later batch finds the migration record and counts
 // it as skipped. Registry Browse shows Update only when the registry version is newer than the installed one
 // (`isNewerVersion` in semver.ts); an older registry copy shows Installed. No API change.
+// Unversioned (2026-10-29): versions a registry keeps for older cores. A registry may list them per extension as
+// `versions: [{ version, coreApi, files? }]` in registry.json, with the files under `extensions/<id>/versions/<x.y.z>/`;
+// it keeps one only when compatibility breaks (the registry READMEs describe the release step). `src/lib/registry-versions.ts`
+// parses the list and picks what this site can install: the latest when its coreApi fits, else the newest kept version
+// that fits. When that is a kept version, /api/registry/index returns the entry as that version (`version`, `coreApi`,
+// `compatible`) plus `installVersion` and `latestVersion`; the store's preview and install requests carry it
+// (`?version=` and `body.version`), and the install route refuses a fetched manifest whose version differs. The CLI
+// installs one with `cms add <id>@<x.y.z>` and, when the latest does not fit the local core, prints the kept version that
+// does. Registries without `versions` and older cores behave as before. No API change.
 export const CORE_API_VERSION = "1.85.0";

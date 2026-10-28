@@ -161,3 +161,29 @@ describe("offer and access in the index", () => {
     expect([bad.supportUrl, bad.supportEmail]).toEqual([undefined, undefined]);
   });
 });
+
+describe("registry 保留的舊版本", () => {
+  it("指定版本時抓 extensions/<id>/versions/<x.y.z>/manifest.json", async () => {
+    const source = "https://versions.example.com";
+    sourcesState.sources = [source];
+    const calls = serve(() => json(200, entry({ version: "0.0.9" })));
+    await fetchManifest(source, "session-replay", "0.0.9");
+    expect(calls[0].url).toContain("/extensions/session-replay/versions/0.0.9/manifest.json");
+  });
+
+  it("版本格式不對就不發請求", async () => {
+    const source = "https://versions-bad.example.com";
+    sourcesState.sources = [source];
+    const calls = serve(() => json(200, entry()));
+    await expect(fetchManifest(source, "session-replay", "../1.0.0")).rejects.toThrow("invalid extension version");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("索引的 versions 解析進 entry", async () => {
+    const source = "https://versions-index.example.com";
+    sourcesState.sources = [source];
+    serve(() => json(200, { extensions: [entry({ versions: [{ version: "0.0.9", coreApi: "^1.0.0" }, { version: "bad" }] })] }));
+    const { entries } = await fetchRegistryIndex();
+    expect(entries[0].versions).toEqual([{ version: "0.0.9", coreApi: "^1.0.0" }]);
+  });
+});

@@ -44,6 +44,10 @@ export interface RegistryEntry {
   /** conflict 為 source 時:目前那一個當初的來源。 */
   installedSource?: string | null;
   compatible: boolean;
+  /** 最新版這個站裝不了,商店給的是 registry 保留的這一版(version 已經是它)。 */
+  installVersion?: string;
+  /** 有 installVersion 時,registry 上真正的最新版(詳情頁說明用)。 */
+  latestVersion?: string;
   icon?: string;
   iconUrl?: string;
   banner?: string;

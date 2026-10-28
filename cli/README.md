@@ -135,7 +135,11 @@ Run in the CMS repo root:
 ```bash
 npx @sz.ws/cms add <id>                # Direct run, no install needed
 cms add <id>                            # If globally installed
+cms add <id>@<x.y.z>                    # A version the registry kept for older cores
 ```
+
+A registry keeps an older version only when a release needs a newer core (it lists it under `versions` in
+`registry.json`). When the latest does not fit your core, `add` names the kept version that does.
 
 | Flag | Meaning |
 |---|---|

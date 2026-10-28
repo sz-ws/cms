@@ -16,6 +16,7 @@ import { localizeEntryText } from "./registry-localize";
 import { getLocale } from "./i18n/server";
 import type { Locale } from "./i18n";
 import { REGISTRY_MESSAGE_MAX, sanitizeRegistryText } from "./registry-text";
+import { REGISTRY_VERSION_RE, extensionBasePath, parseVersionRefs, type RegistryVersionRef } from "./registry-versions";
 
 // core-v2 §3.4 / §5:registry client — 只信任 core.registrySources 白名單內的來源,
 // https only、1 MB response cap、8s timeout、單一來源失敗不得中斷其他來源。
@@ -74,6 +75,8 @@ export interface RegistryIndexEntry {
   offer?: RegistryOffer;
   /** 1.56.0:access 為 requested 時,閘道記下的申請日期(商店的「已申請 · 9/23」)。 */
   requestedAt?: string;
+  /** registry 保留的舊版本(相容性斷掉時才有),由新到舊。見 ./registry-versions.ts。 */
+  versions?: RegistryVersionRef[];
 }
 
 export interface SourceFetchError {
@@ -408,6 +411,7 @@ async function fetchFromVariants<T>(
 }
 
 interface RawIndexEntry {
+  versions?: unknown;
   id?: unknown;
   identity?: unknown;
   kind?: unknown;
@@ -623,6 +627,7 @@ function parseIndexEntries(json: unknown, source: string): RegistryIndexEntry[] 
         // 它寫的 offer 忽略、卡片照免費顯示 —— 不會出現「看起來要錢、按下去卻能裝」。
         offer: access ? parseOffer(raw.offer) : undefined,
         requestedAt: access === "requested" ? parseIsoDate(raw.requestedAt) : undefined,
+        versions: parseVersionRefs(raw.versions),
       });
     }
   }
@@ -727,25 +732,28 @@ export async function assertKnownRegistrySource(source: string): Promise<void> {
 // （如 "../../secret"）或注入額外路徑段。單一事實來源：registry-asset.ts。
 const ID_RE = EXTENSION_ID_RE;
 
-/** 在各種 raw URL 格式上找 manifest.json(見 fetchFromVariants)。 */
-async function tryFetchManifest(source: string, id: string, token?: string): Promise<string> {
+/** 在各種 raw URL 格式上找 manifest.json(見 fetchFromVariants)。version = registry 保留的舊版本。 */
+async function tryFetchManifest(source: string, id: string, token?: string, version?: string): Promise<string> {
   if (!isHttpsUrl(source)) {
     throw new Error("source must be an https URL");
   }
   if (!ID_RE.test(id)) {
     throw new Error("invalid extension id");
   }
+  if (version !== undefined && !REGISTRY_VERSION_RE.test(version)) {
+    throw new Error("invalid extension version");
+  }
 
-  return fetchFromVariants(source, `/extensions/${id}/manifest.json`, (url) => boundedFetchText(url, token));
+  return fetchFromVariants(source, `${extensionBasePath(id, version)}/manifest.json`, (url) => boundedFetchText(url, token));
 }
 
-export async function fetchManifest(source: string, id: string): Promise<unknown> {
+export async function fetchManifest(source: string, id: string, version?: string): Promise<unknown> {
   // 從已配置的來源中找出對應的 token（如果有）
   const sourceConfigs = await getRegistrySources();
   const config = sourceConfigs.find((c) => c.url === source);
   const token = config?.token;
 
-  const text = await tryFetchManifest(source, id, token);
+  const text = await tryFetchManifest(source, id, token, version);
   try {
     return JSON.parse(text);
   } catch {
@@ -770,6 +778,7 @@ export async function fetchExtensionAsset(
   source: string,
   id: string,
   filename: string,
+  version?: string,
 ): Promise<string> {
   if (!isHttpsUrl(source)) {
     throw new Error("source must be an https URL");
@@ -780,12 +789,15 @@ export async function fetchExtensionAsset(
   if (!ASSET_FILENAME_RE.test(filename) || filename.includes("..")) {
     throw new Error("invalid asset filename");
   }
+  if (version !== undefined && !REGISTRY_VERSION_RE.test(version)) {
+    throw new Error("invalid extension version");
+  }
 
   const sourceConfigs = await getRegistrySources();
   const config = sourceConfigs.find((c) => c.url === source);
   const token = config?.token;
 
-  return fetchFromVariants(source, `/extensions/${id}/${filename}`, (url) => boundedFetchText(url, token));
+  return fetchFromVariants(source, `${extensionBasePath(id, version)}/${filename}`, (url) => boundedFetchText(url, token));
 }
 
 /**

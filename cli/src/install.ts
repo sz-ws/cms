@@ -37,8 +37,9 @@ export function isSafeRelPath(rel: string): boolean {
   return true;
 }
 
-function fileUrl(source: string, id: string, rel: string): string {
-  return `${source}/extensions/${id}/files/${rel}`;
+function fileUrl(source: string, entry: IndexEntry, rel: string): string {
+  const base = entry.archivedVersion ? `extensions/${entry.id}/versions/${entry.archivedVersion}` : `extensions/${entry.id}`;
+  return `${source}/${base}/files/${rel}`;
 }
 
 export interface ResolveResult {
@@ -72,7 +73,7 @@ export async function resolveFiles(
   await Promise.all(
     HEURISTIC_FILENAMES.map(async (name) => {
       try {
-        await fetchText(fileUrl(source, entry.id, name), token);
+        await fetchText(fileUrl(source, entry, name), token);
         found.push(name);
       } catch (e) {
         // 402 不是「猜錯檔名」也不是抓檔失敗:這把金鑰沒開通這個插件。原樣往上丟,
@@ -148,7 +149,7 @@ export async function fetchAndWriteFiles(opts: {
     if (!isSafeRelPath(rel)) {
       throw new Error(`unsafe file path, refusing to write: ${rel}`);
     }
-    const content = await fetchText(fileUrl(source, entry.id, rel), token);
+    const content = await fetchText(fileUrl(source, entry, rel), token);
     if (!dryRun) {
       const dest = path.join(destDir, rel);
       await mkdir(path.dirname(dest), { recursive: true });

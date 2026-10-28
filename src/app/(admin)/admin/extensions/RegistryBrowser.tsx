@@ -1061,7 +1061,7 @@ function DevInstall({ entry, update }: { entry: RegistryEntry; update: boolean }
   const [copied, setCopied] = useState(false);
   const external = entry.source.replace(/\/+$/, "") !== PUBLIC_REGISTRY;
   const command = [
-    `npx @sz.ws/cms add ${entry.id}`,
+    `npx @sz.ws/cms add ${entry.id}${entry.installVersion ? `@${entry.installVersion}` : ""}`,
     external ? `--source ${entry.source}` : null,
     update ? "--force" : null,
   ]
@@ -1474,6 +1474,14 @@ export function ExtensionDetail({
                 <dt className="text-ink/45">{t("registryBrowser.detail.compatibility")}</dt>
                 <dd className="text-red-600/80">
                   {t("registryBrowser.detail.requiresCoreApi", { core: entry.coreApi })}
+                </dd>
+              </>
+            )}
+            {entry.latestVersion && (
+              <>
+                <dt className="text-ink/45">{t("registryBrowser.detail.compatibility")}</dt>
+                <dd className="text-ink/70">
+                  {t("registryBrowser.detail.olderVersion", { latest: entry.latestVersion, version: entry.version })}
                 </dd>
               </>
             )}
