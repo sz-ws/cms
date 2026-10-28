@@ -116,6 +116,7 @@ import { NextRequest } from "next/server";
 import { catalogManifest } from "../src/ext/commerce-kit/catalog";
 import { hashScripts } from "../src/ext/dx/scripts-core";
 import { readStampsRecordFromD1 } from "../src/lib/stamps";
+import { codeSignature } from "../src/ext/code-signature";
 
 const d1 = () => (env as { DB: D1Database }).DB;
 
@@ -191,7 +192,10 @@ async function seed(): Promise<void> {
   const ga = JSON.stringify({ kind: "declarative", id: "ga", name: "ga", version: "1.0.0", coreApi: "^1.48.0", scripts: GA });
   // 內建的商品目錄已經對齊過(與底座這份一字不差):穩定狀態下的冷啟動不會寫任何東西。
   const catalog = catalogManifest();
+  // 程式碼插件的更新也已經套用過(簽名與上面 mock 的 registry 相同)。
+  const signature = JSON.stringify(codeSignature([{ id: "shop", version: "1.0.0" }]));
   await d1().batch([
+    d1().prepare("INSERT INTO settings (key, value, updated_at) VALUES ('core.codeSignature', ?, 1700000000050)").bind(signature),
     d1().prepare("INSERT INTO settings (key, value, updated_at) VALUES ('core.siteTitle', '\"Example Shop\"', 1700000000100)"),
     d1().prepare("INSERT INTO extensions (id, enabled, version, installed_at, updated_at) VALUES ('shop', 1, '1.0.0', 1, 1700000000200)"),
     d1()
@@ -211,6 +215,7 @@ beforeAll(async () => {
   await d1().exec(
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, version TEXT NOT NULL, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);" +
+      "CREATE TABLE IF NOT EXISTS ext_migrations (id TEXT PRIMARY KEY, ext_id TEXT NOT NULL, applied_at INTEGER NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS declarative_extensions (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, version TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source TEXT, stylesheet TEXT, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, scripts_approval TEXT);" +
       "CREATE TABLE IF NOT EXISTS contents (id TEXT PRIMARY KEY, type TEXT NOT NULL, locale TEXT NOT NULL DEFAULT 'en', translation_group TEXT NOT NULL DEFAULT '', slug TEXT, status TEXT NOT NULL DEFAULT 'draft', publish_at INTEGER, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
   );
@@ -285,6 +290,26 @@ describe("a public page GET on a cold isolate", () => {
     const written = JSON.parse(kv.store.get("cms:request-stamps:v1") ?? "{}") as { hosts?: string[]; at: number };
     expect(written.hosts).toEqual(["www.googletagmanager.com"]);
     expect(Date.now() - written.at).toBeLessThan(60_000);
+  });
+});
+
+describe("right after a deploy that changed the code extensions", () => {
+  it("the first cold request records the new signature; the next cold isolate is back to one round trip per bundle", async () => {
+    await d1().prepare("UPDATE settings SET value = '\"old\"' WHERE key = 'core.codeSignature'").run();
+    bind(null);
+
+    const first = await publicPageGet(await coldIsolate());
+    expect(first.runtime.byId("shop")?.id).toBe("shop");
+    await settle();
+    const row = await d1()
+      .prepare("SELECT value FROM settings WHERE key = 'core.codeSignature'")
+      .first<{ value: string }>();
+    expect(row?.value).toBe(JSON.stringify(codeSignature([{ id: "shop", version: "1.0.0" }])));
+
+    trips.n = 0;
+    trips.log = [];
+    await publicPageGet(await coldIsolate());
+    expect(trips.log).toEqual(["batch(2)", "batch(4)"]);
   });
 });
 

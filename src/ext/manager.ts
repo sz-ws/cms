@@ -30,6 +30,7 @@ import { revalidateExt } from "./dx/cache-invalidate";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import type { Extension, ExtMigration } from "./types";
+import { CODE_SIGNATURE_KEY } from "./code-signature";
 import { buildInstallRevisionClaim, installRevisionClaimId } from "./dx/declarative-migrate";
 import { byId, listInstalledPlugins } from "./installed-plugins";
 import { requiredBy, unmetRequirements, type PluginRequirement } from "./plugin-ref";
@@ -159,8 +160,19 @@ async function applyMigration(extId: string, mig: ExtMigration): Promise<"applie
     db().run(sql.raw(stmt)),
   );
   items.push(db().insert(extMigrations).values({ id: migKey, extId, appliedAt: Date.now() }));
-  // batch 需要非空 tuple 型別。
-  await db().batch(items as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  try {
+    // batch 需要非空 tuple 型別。
+    await db().batch(items as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  } catch (e) {
+    // 幾個 isolate 同時套用同一個 migration 時,晚到的那一批會因主鍵衝突或 DDL 已存在而整批
+    // rollback;紀錄已經在了就代表別的 isolate 套用完了。
+    const raced = await db()
+      .select({ id: extMigrations.id })
+      .from(extMigrations)
+      .where(eq(extMigrations.id, migKey));
+    if (raced.length > 0) return "skipped";
+    throw e;
+  }
   return "applied";
 }
 
@@ -233,6 +245,49 @@ export async function enableStepRecord(extId: string): Promise<void> {
   // 剛啟用的 extension 收不到自己的 ext:enabled;其他原本 enabled 的收得到。
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
+}
+
+/**
+ * 部署後由 loader 在程式碼簽名(code-signature.ts)變了時呼叫。做的事同「套用更新」:跑還沒跑的
+ * migration、補設定預設值、記下新版號;不發 ext:enabled,不讀 runtime(呼叫端正在建 runtime,
+ * 讀了會等自己)。一個插件失敗不中斷其他插件,失敗的留在 /admin/extensions 由人重試。
+ */
+export async function applyPendingCodeUpgrades(): Promise<{ applied: string[]; failed: string[] }> {
+  const pending = await pendingCodeUpgrades();
+  const applied: string[] = [];
+  const failed: string[] = [];
+  for (const [extId, upgrade] of pending) {
+    try {
+      const ext = findManifest(extId);
+      if (!satisfies(CORE_API_VERSION, ext.coreApi)) {
+        throw new CoreApiIncompatible(extId, ext.coreApi);
+      }
+      for (const migrationId of upgrade.migrations) {
+        const mig = (ext.migrations ?? []).find((m) => m.id === migrationId);
+        if (mig) await applyMigration(extId, mig);
+      }
+      await enableStepSettings(extId);
+      // 站台的層沒有 extensions 列,版號不用記(pendingCodeUpgrades 對層只看 migration)。
+      if (!ext.layer) await writeCodeEnabled(getDB(), ext, registry, Date.now());
+      revalidateExt(extId);
+      applied.push(extId);
+    } catch (e) {
+      console.error(`[ext] auto-upgrade of "${extId}" failed`, e);
+      failed.push(extId);
+    }
+  }
+  return { applied, failed };
+}
+
+/** 記下「這一版程式碼的插件已經套用過」。之後的 isolate 簽名相同就不必再檢查。 */
+export async function recordCodeSignature(signature: string): Promise<void> {
+  const now = Date.now();
+  const value = JSON.stringify(signature);
+  await db()
+    .insert(settings)
+    .values({ key: CODE_SIGNATURE_KEY, value, updatedAt: now })
+    .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now } });
+  invalidateSettingsCache();
 }
 
 /** 一次跑完四步(安裝流程、agent tool 等不需要逐步顯示的呼叫端)。onStep 可旁聽每一步。 */

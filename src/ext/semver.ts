@@ -55,6 +55,17 @@ export function satisfies(version: string, range: string): boolean {
   return exact ? compare(v, exact) === 0 : false;
 }
 
+/**
+ * candidate 是否比 current 新。兩邊都是 x.y.z 才比大小;任一邊解析不了,就退回
+ * 「不相同就算新」的舊判斷,寫錯的版號不會把更新藏起來。
+ */
+export function isNewerVersion(candidate: string, current: string): boolean {
+  const a = parse(candidate);
+  const b = parse(current);
+  if (!a || !b) return candidate.trim() !== current.trim();
+  return compare(a, b) > 0;
+}
+
 /** Whether the minimum version named by a supported range is >= `minimum`. */
 export function rangeStartsAtOrAfter(range: string, minimum: string): boolean {
   const min = parse(minimum);

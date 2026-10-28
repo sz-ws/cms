@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { motion } from "motion/react";
+import { isNewerVersion } from "@/ext/semver";
 import {
   Search,
   Check,
@@ -230,12 +231,14 @@ export function cardBlockLabel(
 // code extension 的安裝狀態:index route 本來就回 installed/installedVersion
 // (extensions 表比對),UI 過去一律渲染死的「手動安裝」——這裡接上:
 // 未裝 → 灰「開發者安裝」(管理員自己裝不了,詳情頁底下再一句話說誰來做);
-// 已裝同版 → 綠「已安裝」;已裝舊版 → 琥珀「可更新」。
+// 已裝同版 → 綠「已安裝」;registry 上的版本比已裝的新 → 琥珀「可更新」。
+// registry 落後(已裝的比較新)也是「已安裝」:按下去只會換回舊程式。
 // 1.52.0:這把金鑰沒開通的付費插件,已裝的不論版本都是「已安裝」(拿不到新版)。
 type CodeState = "none" | "installed" | "update";
 function codeEntryState(entry: RegistryEntry): CodeState {
   if (!entry.installed) return "none";
-  return entry.installedVersion === entry.version || isLocked(entry) ? "installed" : "update";
+  if (isLocked(entry)) return "installed";
+  return isNewerVersion(entry.version, entry.installedVersion ?? "") ? "update" : "installed";
 }
 
 function CodeStateChip({

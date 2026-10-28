@@ -1,6 +1,10 @@
 // core-v2 §1:核心 API 版本。extension manifest 以 coreApi semver range 宣告相容範圍,
 // enable/install 時對此常數檢查。破壞性變更(ApiCtx/hook 簽名/provider 介面)→ major bump;
 // 新 hook/capability/field type → minor bump。
+//
+// 版號規則(2026-10-29 起):CORE_API_VERSION 只在插件能用的介面改變時升版;插件自己的 version
+// 只在行為、設定或 migration 改變時升版。修 bug、改字、註解、效能、後台介面都不升版,
+// 寫在檔尾不帶版號的條目(Unversioned)。
 // 1.1.0(§3.5):listing layout capability(adminPage/publicRoute 的 layout:"table"|"grid")。
 //   純新增、可選、缺省 = 舊 table 行為 → back-compat,coreApi "^1.0.0" 仍以 caret 相容。
 // 1.2.0(08 §1):relation/relations field types(content-to-content 關聯)。新 field
@@ -1802,4 +1806,15 @@
 // (formerly `custom-worker-startup.mjs`), and re-exports everything from `custom-worker`, Durable Object classes
 // included. A site opts in by setting `main` in `wrangler.jsonc` to `worker/eager-entry.ts`; `worker/README.md`
 // says when that pays off and how to measure startup. No API change: plugins keep their coreApi range.
+// Unversioned (2026-10-29): code plugin updates apply themselves after a deploy. The loader keeps a signature of the
+// compiled-in plugins (`code-signature.ts`: each id, version and migration id) in the setting `core.codeSignature`.
+// The first time an isolate builds the runtime and finds a different signature, it runs `applyPendingCodeUpgrades()`
+// (manager.ts) before reading the plugin rows: pending migrations, new setting defaults and the new version, without
+// firing `ext:enabled`, and then records the new signature, so later isolates compare one setting from the cold
+// read and query nothing more. A plugin that fails is still recorded: it stays on /admin/extensions under 套用更新
+// for a manual retry instead of being retried by every cold isolate. Only a failure to read the pending list leaves
+// the signature unrecorded. Sites with no compiled-in plugins skip the check. Two
+// isolates applying the same migration at once no longer fail: the later batch finds the migration record and counts
+// it as skipped. Registry Browse shows Update only when the registry version is newer than the installed one
+// (`isNewerVersion` in semver.ts); an older registry copy shows Installed. No API change.
 export const CORE_API_VERSION = "1.85.0";

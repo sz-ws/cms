@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n/I18nProvider";
 import type { DeclarativeScript } from "@/ext/dx/scripts";
 import { sourceLabel } from "./registry-types";
+import { isNewerVersion } from "@/ext/semver";
 
 // 共用 install 流程:FeaturedCard / StoreCard / ExtensionDetail 原本各自複製一份
 // install() fetch 邏輯(見 git history);抽出這支 hook 後三處都改成呼叫它,行為
@@ -74,7 +75,7 @@ function hasUpdate(entry: InstallTarget): boolean {
     entry.installed &&
     entry.installedVersion != null &&
     entry.version !== undefined &&
-    entry.installedVersion !== entry.version
+    isNewerVersion(entry.version, entry.installedVersion)
   );
 }
 

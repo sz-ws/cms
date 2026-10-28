@@ -25,6 +25,7 @@ import {
 import { getRequestStamps, publishRequestStamps } from "@/lib/request-stamps";
 import { dropColdSnapshot, takeColdRuntimeRows } from "@/lib/cold-snapshot";
 import { getPlainSetting } from "@/lib/settings";
+import { CODE_SIGNATURE_KEY, codeSignature } from "./code-signature";
 import { setWakeTables } from "@/lib/wake";
 import type { Extension, HookName } from "./types";
 
@@ -77,6 +78,44 @@ async function wantedBuiltins(
     console.error("[loader] reading built-in extension settings failed", e);
     return null;
   }
+}
+
+// 部署後自動套用程式碼插件的更新(manager.applyPendingCodeUpgrades)。每個 isolate 只檢查一次:
+// 簽名相同什麼都不做,不同才套用,套用過就記下新簽名。個別插件失敗也照記,留在 /admin/extensions
+// 給人重試,不然每個冷啟動都會重跑一次失敗的 migration。連待套用清單都讀不到時不記,交給下一個
+// isolate。同時進來的請求共用同一個 promise,確保 migration 先跑完。
+let codeUpgrade: Promise<boolean> | null = null;
+let codeUpgradeSettled = false;
+
+function ensureCodeUpgrades(): Promise<boolean> {
+  if (codeUpgradeSettled) return Promise.resolve(false);
+  codeUpgrade ??= runCodeUpgrades().finally(() => {
+    codeUpgradeSettled = true;
+  });
+  return codeUpgrade;
+}
+
+/** 回傳有沒有寫過資料庫:有的話這個請求開頭算的 stamp 已經過時,不能寫 memo。 */
+async function runCodeUpgrades(): Promise<boolean> {
+  // 沒有編進來的程式碼插件,就沒有東西要套用,也不必記簽名。
+  if (registry.length === 0) return false;
+  const current = codeSignature(registry);
+  try {
+    if ((await getPlainSetting<string | null>(CODE_SIGNATURE_KEY, null)) === current) return false;
+    const { applyPendingCodeUpgrades, recordCodeSignature } = await import("./manager");
+    await applyPendingCodeUpgrades();
+    await recordCodeSignature(current);
+    return true;
+  } catch (e) {
+    console.error("[loader] applying code extension upgrades failed", e);
+    return true;
+  }
+}
+
+/** 測試用:讓下一次載入重新檢查程式碼簽名。 */
+export function resetCodeUpgradeCheck(): void {
+  codeUpgrade = null;
+  codeUpgradeSettled = false;
 }
 
 /**
@@ -204,6 +243,12 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     dxEnabled = runtimeMemo.dxEnabled;
     unavailableById = runtimeMemo.unavailableById;
   } else {
+    // 部署後第一次載入:先把程式碼插件的更新套用完,再讀插件列(migration 要比插件的程式先跑)。
+    const upgradesWrote = runtimeMemo === null ? await ensureCodeUpgrades() : false;
+    if (upgradesWrote) {
+      dropColdSnapshot();
+      publishRequestStamps();
+    }
     // 未命中(或 stamp 失敗):完整載入。
     // memo 是空的(冷的 isolate):先看冷啟動的合併讀取(@/lib/cold-snapshot)—— 與整包設定
     // 同一趟 D1,戳對得上這個請求才會拿到。拿到的是整張 declarative_extensions,下面的
@@ -376,6 +421,7 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     // 命中「已排除」的快取而停止重試。其餘健康／不相容狀態仍可照常 memo。
     if (
       stamp !== null &&
+      !upgradesWrote &&
       !hasRetryableMigrationFailure &&
       builtinsSettled &&
       approvalsSettled &&
