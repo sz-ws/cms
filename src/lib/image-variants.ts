@@ -28,6 +28,15 @@ export type VariantFormat = (typeof VARIANT_FORMATS)[number];
 export const DEFAULT_VARIANT_FORMAT: VariantFormat = "webp";
 
 /**
+ * 轉出來的 webp / avif / jpeg 品質(1–100;png 不看這個值)。
+ *
+ * 不給的話轉換服務用接近無損的預設值:一張 1000×4601、3.5MB 的 JPEG 說明長圖,
+ * 960 寬的 webp 變體還有 3.6MB,比原檔大。80 是網頁照片常用的值,同一張圖
+ * 用 cwebp -q 80 壓,1000 寬約 570KB,照片與小字並排比對看不出差別。
+ */
+export const VARIANT_QUALITY = 80;
+
+/**
  * VariantFormat → 輸出 Content-Type(ImagesBinding 的 output() 收完整 MIME)。
  * 值刻意標成字面值型別,讓它直接對得上 ImageOutputOptions["format"],不必 cast。
  */

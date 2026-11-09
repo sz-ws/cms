@@ -2,6 +2,7 @@ import { getFile } from "@/lib/storage";
 import { getImages } from "@/lib/cf";
 import {
   FORMAT_CONTENT_TYPE,
+  VARIANT_QUALITY,
   isTransformableContentType,
   parseVariantRequest,
   variantEtag,
@@ -161,7 +162,7 @@ async function transformResponse(
       // fit: "scale-down" —— 只縮不放。原圖比 w 窄時原樣輸出,不會被拉糊。
       handle = handle.transform({ width: req.width, fit: "scale-down" });
     }
-    const result = await handle.output({ format: contentType });
+    const result = await handle.output({ format: contentType, quality: VARIANT_QUALITY });
     const body = result.response().body;
     if (!body) return null;
     return new Response(body, {

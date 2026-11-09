@@ -1834,4 +1834,8 @@
 // one, so the admin can switch forward again. Uninstalling a declarative plugin deletes its saved copy. The
 // extension sheet on /admin/extensions shows the switch when a saved copy exists. Run `pnpm db:migrate:remote`
 // before deploying. No API change.
-export const CORE_API_VERSION = "1.85.0";
+// 1.85.1: Image variants from `/api/files?w=` are encoded at quality 80 (`VARIANT_QUALITY` in
+// src/lib/image-variants.ts). Without it the transform used a near-lossless default, so a 960-wide webp of a
+// 3.5 MB photo was 3.6 MB, larger than the original. Variants already cached by browsers or the edge keep the old
+// bytes until they expire or are purged. No API change.
+export const CORE_API_VERSION = "1.85.1";

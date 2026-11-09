@@ -162,7 +162,7 @@ describe("transform applied", () => {
     expect(res.headers.get("Content-Type")).toBe("image/avif");
     expect(res.headers.get("X-Image-Transform")).toBe("applied");
     expect(calls.transform).toEqual([{ width: 640, fit: "scale-down" }]);
-    expect(calls.output).toEqual({ format: "image/avif" });
+    expect(calls.output).toEqual({ format: "image/avif", quality: 80 });
   });
 
   it("defaults to webp when only a width is given", async () => {
@@ -170,7 +170,7 @@ describe("transform applied", () => {
     cfState.images = binding;
     const res = await call(KEY, "?w=320");
     expect(res.headers.get("Content-Type")).toBe("image/webp");
-    expect(calls.output).toEqual({ format: "image/webp" });
+    expect(calls.output).toEqual({ format: "image/webp", quality: 80 });
   });
 
   it("snaps an arbitrary width into the closed tier list", async () => {
@@ -194,7 +194,7 @@ describe("transform applied", () => {
     cfState.images = binding;
     await call(KEY, "?f=webp");
     expect(calls.transform).toEqual([]); // 沒有 width → 不呼叫 transform()
-    expect(calls.output).toEqual({ format: "image/webp" });
+    expect(calls.output).toEqual({ format: "image/webp", quality: 80 });
   });
 });
 
