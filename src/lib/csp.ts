@@ -174,6 +174,31 @@ export function reportOnlyPolicy(input?: PublicPolicyInput): string {
   ].join("; ");
 }
 
+/**
+ * 2.0 公開頁的固定 CSP(enforce),由 next.config.ts 的 headers() 送,快取命中時一樣會送。
+ *
+ * 公開頁整頁存起來給每個訪客(見 (public)/[[...slug]]/page.tsx),逐請求的 nonce 放不進去;
+ * Next 自己的 hydration 與 RSC payload 又是 inline script,所以 script-src 只能是
+ * 'unsafe-inline'。核准過的宣告式 script 主機也不再逐站列出(https: 全部放行)。還守得住的是
+ * 不靠 nonce 的那幾條:不准 <object>、不准改 <base>、不准被別人放進框架。
+ * dev = `next dev`:React 的開發工具需要 eval。
+ */
+export function publicPolicy(dev = false): string {
+  return [
+    `script-src 'self' 'unsafe-inline' https:${dev ? " 'unsafe-eval'" : ""}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    `report-uri ${CSP_REPORT_URI}`,
+  ].join("; ");
+}
+
+/**
+ * next.config.ts headers() 的 source:REPORT_ONLY_PATHS 以外的每一條路徑(公開頁,以及
+ * robots.txt 這類檔案 —— 檔案多一個用不到的標頭沒有代價)。寫法是 Next 文件的負向前瞻範例。
+ */
+export const PUBLIC_PAGES_SOURCE = "/:path((?!admin$|admin/|login$|setup$|api/|_next/).*)";
+
 // 已知的檔案副檔名(robots.txt、sitemap.xml、icon.svg、manifest.webmanifest、public/
 // 底下的圖片字體等)。只認這張表,不是「最後一段有點就算檔案」:內容頁的網址可以帶點
 // (/blog/v1.2-release),把它當成檔案就等於那一頁沒有 CSP。反過來,一個沒列到的檔案

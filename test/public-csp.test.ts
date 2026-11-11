@@ -5,8 +5,8 @@ import { env } from "cloudflare:test";
 //   - policy 字串(lib/csp.ts):後台那份與 1.50.0 之前一字不差;公開頁只 enforce
 //     執行程式的指令;寫進標頭的主機值擋掉任何能多塞指令的形狀
 //   - 白名單(lib/public-csp.ts):只收啟用中、核准紀錄對得上內容的 scripts
-//   - middleware:nonce 同時進請求(給 Next 與 scripts-widget)與回應
-//   - scripts-widget:inline 帶 nonce,外部 script 不帶(由主機白名單放行)
+//   - 2.0:公開頁整頁存起來,middleware 不再產生 nonce;CSP 是 next.config.ts 的固定標頭
+//     (publicPolicy),scripts-widget 不讀請求標頭
 
 const cfState = vi.hoisted(() => ({ csp: undefined as string | undefined }));
 vi.mock("@opennextjs/cloudflare/cloudflare-context", () => ({
@@ -29,6 +29,7 @@ import {
   createNonce,
   enforcedPublicPolicy,
   isPublicPagePath,
+  publicPolicy,
   reportOnlyPolicy,
 } from "../src/lib/csp";
 import { approvedScriptHosts } from "../src/lib/public-csp";
@@ -188,32 +189,15 @@ describe("middleware", () => {
   const request = (path: string, init?: ConstructorParameters<typeof NextRequest>[1]) =>
     new NextRequest(`https://site.test${path}`, init);
 
-  it("sends an enforced policy with a fresh nonce and the approved hosts on public pages", async () => {
+  // 2.0:公開頁整頁存起來,CSP 改由 next.config.ts 送固定標頭(publicPolicy)。middleware
+  // 對公開頁原樣放行:不產生 nonce、不送 CSP、不把任何東西寫進請求標頭。
+  it("passes public pages through untouched: no nonce, no policy, no request headers", async () => {
     await insertDx("ga", GA, await approvalFor(GA));
     const res = await middleware(request("/products"));
-    const enforced = res.headers.get("content-security-policy") ?? "";
-    const nonce = enforced.match(/'nonce-([^']+)'/)?.[1];
-    expect(nonce).toBeTruthy();
-    expect(enforced).toContain("https://www.googletagmanager.com");
-    expect(enforced).toContain("https://*.doubleclick.net");
-    expect(res.headers.get("content-security-policy-report-only")).toContain(`'nonce-${nonce}'`);
-    // 請求標頭(Next 從這裡抓 nonce;scripts-widget 讀 x-nonce)。
-    expect(res.headers.get("x-middleware-request-x-nonce")).toBe(nonce);
-    expect(res.headers.get("x-middleware-request-content-security-policy")).toBe(enforced);
-
-    const again = await middleware(request("/products"));
-    expect(again.headers.get("x-middleware-request-x-nonce")).not.toBe(nonce);
-  });
-
-  it("ignores a nonce the browser tries to send itself", async () => {
-    const res = await middleware(
-      request("/", { headers: { "x-nonce": "attacker", "content-security-policy": "script-src 'nonce-attacker'" } }),
-    );
-    expect(res.headers.get("x-middleware-request-x-nonce")).not.toBe("attacker");
-    const rsc = await middleware(request("/", { headers: { rsc: "1", "x-nonce": "attacker" } }));
-    expect(rsc.headers.get("content-security-policy")).toBeNull();
-    // 被刪掉的請求標頭列在 override 清單外 = 不會送進渲染。
-    expect(rsc.headers.get("x-middleware-override-headers")?.split(",")).not.toContain("x-nonce");
+    expect(res.headers.get("content-security-policy")).toBeNull();
+    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(res.headers.get("x-middleware-request-x-nonce")).toBeNull();
+    expect(res.headers.get("x-middleware-override-headers")).toBeNull();
   });
 
   it("leaves admin and login to next.config's Report-Only policy", async () => {
@@ -225,50 +209,26 @@ describe("middleware", () => {
     expect(login.headers.get("content-security-policy-report-only")).toBeNull();
   });
 
-  it("files get the admin Report-Only policy, pages with a dot in the path get the enforced one", async () => {
+  it("files get the admin Report-Only policy, pages with a dot in the path pass through", async () => {
     const file = await middleware(request("/robots.txt"));
     expect(file.headers.get("content-security-policy")).toBeNull();
     expect(file.headers.get("content-security-policy-report-only")).toBe(PREVIOUS_POLICY);
     const page = await middleware(request("/blog/v1.2-release"));
-    expect(page.headers.get("content-security-policy")).toMatch(/'nonce-/);
-  });
-
-  it("reuses the allowlist until the plugin table changes", async () => {
-    await insertDx("ga", GA, await approvalFor(GA));
-    const hostsIn = async () => (await middleware(request("/products"))).headers.get("content-security-policy") ?? "";
-    expect(await hostsIn()).toContain("https://www.googletagmanager.com");
-    // 內容改了但版本戳沒動(沒有寫入路徑會這樣做):沿用上一次的結果。
-    await d1().prepare("UPDATE declarative_extensions SET scripts_approval = NULL WHERE id = 'ga'").run();
-    expect(await hostsIn()).toContain("https://www.googletagmanager.com");
-    // 撤銷核准的寫入會推進 updated_at:下一個請求就看得見。
-    await d1().prepare("UPDATE declarative_extensions SET updated_at = 2 WHERE id = 'ga'").run();
-    expect(await hostsIn()).not.toContain("https://www.googletagmanager.com");
-  });
-
-  it("CMS_CSP=report-only turns enforcement off but keeps reporting", async () => {
-    cfState.csp = "report-only";
-    const res = await middleware(request("/products"));
-    expect(res.headers.get("content-security-policy")).toBeNull();
-    expect(res.headers.get("content-security-policy-report-only")).toMatch(/'nonce-/);
-    expect(res.headers.get("x-middleware-request-content-security-policy-report-only")).toMatch(/'nonce-/);
-  });
-
-  it("still enforces (without third-party hosts) when the allowlist cannot be read", async () => {
-    await d1().exec("ALTER TABLE declarative_extensions RENAME TO declarative_extensions_away;");
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const res = await middleware(request("/products"));
-      // 測試環境不是 production,所以會多一個開發用的 'unsafe-eval';重點是沒有任何主機。
-      expect(res.headers.get("content-security-policy")).toMatch(/^script-src 'self' 'nonce-[^']+'( 'unsafe-eval')?; object-src/);
-    } finally {
-      errors.mockRestore();
-      await d1().exec("ALTER TABLE declarative_extensions_away RENAME TO declarative_extensions;");
-    }
+    expect(page.headers.get("content-security-policy")).toBeNull();
   });
 });
 
-describe("scripts widget nonce", () => {
-  it("puts the request nonce on inline scripts only", async () => {
+describe("static public policy (2.0)", () => {
+  it("allows inline scripts and https hosts, keeps object-src, base-uri and frame-ancestors", () => {
+    expect(publicPolicy()).toBe(
+      "script-src 'self' 'unsafe-inline' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; report-uri /api/csp-report",
+    );
+    expect(publicPolicy(true)).toMatch(/^script-src 'self' 'unsafe-inline' https: 'unsafe-eval';/);
+  });
+});
+
+describe("scripts widget (2.0)", () => {
+  it("renders scripts without a nonce and without reading request headers", async () => {
     headerState.nonce = "abcdefghijklmnopqrstuv==";
     const manifest = {
       kind: "declarative",
@@ -284,6 +244,6 @@ describe("scripts widget nonce", () => {
     const [external, inline] = out.props.children;
     expect(external.props.src).toBe("https://www.googletagmanager.com/gtag/js?id=G-1");
     expect(external.props.nonce).toBeUndefined();
-    expect(inline.props.nonce).toBe("abcdefghijklmnopqrstuv==");
+    expect(inline.props.nonce).toBeUndefined();
   });
 });

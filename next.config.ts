@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REPORT_ONLY_PATHS, reportOnlyPolicy } from "./src/lib/csp";
+import { PUBLIC_PAGES_SOURCE, REPORT_ONLY_PATHS, publicPolicy, reportOnlyPolicy } from "./src/lib/csp";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -54,13 +54,12 @@ const SECURITY_HEADERS = [
   },
 ];
 
-// CSP(1.50.0 起分兩種頁面,組法與理由都在 src/lib/csp.ts):
+// CSP(2.0 起兩種頁面都是固定標頭,組法與理由在 src/lib/csp.ts):
 //
-//   - 公開頁:middleware 逐請求產生 nonce,送 enforce 的 Content-Security-Policy
-//     (只管執行程式的指令:script-src 帶 nonce 與核准過的宣告式 script 主機)與完整的
-//     Report-Only。這裡**不能**再對公開頁送 CSP 標頭 —— OpenNext 合併標頭時
-//     next.config 的蓋過 middleware 的,`next dev` 則相反,同一份設定會在兩個環境
-//     送出不同的 policy。
+//   - 公開頁(PUBLIC_PAGES_SOURCE):enforce 的 Content-Security-Policy(publicPolicy:
+//     script-src 'self' 'unsafe-inline' https:,加上 object-src / base-uri / frame-ancestors)
+//     與完整的 Report-Only。公開頁整頁存起來給每個訪客,放不進逐請求的 nonce;這裡的標頭在
+//     OpenNext 快取命中時一樣會送(routingHandler 把 next.config 的標頭套在攔截的回應上)。
 //   - 後台、登入、首次設定、/api、Next 靜態檔:維持 Report-Only,由這裡送(路徑見
 //     REPORT_ONLY_PATHS)。後台有 QuickJS 沙盒('wasm-unsafe-eval')、後台字體與大量
 //     inline style;要 enforce,先看 /api/csp-report 的收件確認乾淨。
@@ -142,6 +141,13 @@ const nextConfig: NextConfig = {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },
       ...REPORT_ONLY_PATHS.map((source) => ({ source, headers: [CSP_REPORT_ONLY] })),
+      {
+        source: PUBLIC_PAGES_SOURCE,
+        headers: [
+          { key: "Content-Security-Policy", value: publicPolicy(process.env.NODE_ENV === "development") },
+          CSP_REPORT_ONLY,
+        ],
+      },
     ];
   },
   // Optional isolated build dir so a second dev server can run alongside the

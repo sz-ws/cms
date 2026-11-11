@@ -14,7 +14,7 @@ import type { HookBus } from "../hooks";
 import { isTiptapDoc, isValidRichtextDoc, normalizeRichtextImages, stringToDoc } from "./fields/richtext-schema";
 import { GALLERY_MAX, isMediaKey } from "./media-key";
 import { slugify } from "./slug";
-import { revalidateContent } from "./cache-invalidate";
+import { publicContentChanged } from "@/lib/public-cache";
 import { indexContentEntry, removeContentIndex } from "@/lib/search";
 import {
   DEFAULT_CONTENT_LOCALE,
@@ -496,7 +496,7 @@ export class CoreContentProvider implements ContentProvider {
     return db();
   }
 
-  // FTS5 全文索引維護(best-effort secondary index)。與 revalidateContent 同哲學:
+  // FTS5 全文索引維護(best-effort secondary index)。與 publicContentChanged 同哲學:
   // 索引失敗(如 migration 尚未套用、content_fts 不存在)絕不連累主要內容寫入 ——
   // 索引只是次級結構,失去一次同步可由 reindexAll/惰性 backfill 補回。故此處吞掉
   // 例外(不 throw),但主寫入的成功與否完全由上游的 insert/update/delete 決定。
@@ -665,8 +665,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: entry.data,
     });
-    // public content cache 精準失效(guard 於 revalidateContent 內,失敗不影響寫入)。
-    revalidateContent(type);
+    // 2.0:存起來的公開頁全部重算(publicContentChanged 永不 throw,失敗不影響寫入)。
+    publicContentChanged(`content:${type}`);
     return entry;
   }
 
@@ -811,8 +811,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: entry.data,
     });
-    // public content cache 精準失效(guard 於 revalidateContent 內,失敗不影響寫入)。
-    revalidateContent(type);
+    // 2.0:存起來的公開頁全部重算(publicContentChanged 永不 throw,失敗不影響寫入)。
+    publicContentChanged(`content:${type}`);
     return entry;
   }
 
@@ -833,8 +833,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: existing?.data ?? {},
     });
-    // public content cache 精準失效(guard 於 revalidateContent 內,失敗不影響刪除)。
-    revalidateContent(type);
+    // 2.0:存起來的公開頁全部重算(publicContentChanged 永不 throw,失敗不影響刪除)。
+    publicContentChanged(`content:${type}`);
   }
 
   async query(

@@ -14,7 +14,7 @@
 
 import { defineCloudflareConfig } from "@opennextjs/cloudflare";
 import r2IncrementalCache from "@opennextjs/cloudflare/overrides/incremental-cache/r2-incremental-cache";
-import d1NextTagCache from "@opennextjs/cloudflare/overrides/tag-cache/d1-next-tag-cache";
+import { pageCacheTagCache } from "./src/lib/page-cache-tags";
 
 // incrementalCache(既有):ISR/data cache 的實體 payload 存 R2(NEXT_INC_CACHE_R2_BUCKET)。
 // tagCache(1.8.0 新增):on-demand revalidateTag 的 tag→revalidatedAt 記錄存 D1
@@ -27,7 +27,16 @@ import d1NextTagCache from "@opennextjs/cloudflare/overrides/tag-cache/d1-next-t
 // wrangler.jsonc 的第二個 d1_databases 項。`revalidations` 表本身不需要手動建 ——
 // `opennextjs-cloudflare deploy` 會先跑 populate-cache,由它 CREATE TABLE IF NOT
 // EXISTS(該 schema 由 OpenNext 擁有,v1.19 加過 stale/expire 欄位)。見 DEPLOY.md。
+//
+// 2.0:公開頁整頁存在同一個 R2(見 src/app/(public)/[[...slug]]/page.tsx),失效靠
+// revalidatePath("/", "layout") 寫進同一張 D1 `revalidations`(src/lib/public-cache.ts)。
+// enableCacheInterception:存起來的頁面在 OpenNext 的路由階段就直接回應(讀一次 R2、查一次
+// D1 tag),不載入、不執行 Next server。
+// 不設 queue:沒有依時間重算,revalidatePath 不帶 profile 是立刻過期,用不到背景重算;預設的
+// dummy queue 從來不會被呼叫。不設 regional cache:要不要開等量測決定。
 export default defineCloudflareConfig({
   incrementalCache: r2IncrementalCache,
-  tagCache: d1NextTagCache,
+  // OpenNext 的 D1 tag 快取,讀寫失敗時多記一行 [page-cache] log(行為不變,見 src/lib/page-cache-tags.ts)。
+  tagCache: pageCacheTagCache,
+  enableCacheInterception: true,
 });

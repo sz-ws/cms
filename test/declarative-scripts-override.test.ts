@@ -14,9 +14,6 @@ vi.mock("@/lib/cf", () => ({
   getDB: () => (env as { DB: unknown }).DB,
   getStorage: () => (env as { STORAGE?: unknown }).STORAGE,
 }));
-vi.mock("next/headers", () => ({
-  headers: async () => new Headers({ "x-nonce": "abcdefghijklmnopqrstuv==" }),
-}));
 
 const settingsState = vi.hoisted(() => ({ values: new Map<string, unknown>() }));
 vi.mock("@/lib/settings", () => ({
@@ -267,7 +264,7 @@ describe("publicScriptsWidget", () => {
     const manifest = parsed(manifestFor(PLAIN));
     expect(publicScriptsWidget(PLAIN, manifest, null)).toBeNull();
     const { html, received } = await render(publicScriptsWidget(PLAIN, manifest, await approvalFor(manifest)));
-    expect(html).toContain('<script data-ext="plain" nonce="abcdefghijklmnopqrstuv==">x([');
+    expect(html).toContain('<script data-ext="plain">x([');
     expect(received).toBeNull();
   });
 

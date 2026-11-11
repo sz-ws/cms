@@ -4,7 +4,8 @@ import { normalizePublicWidgets } from "@/ext/public-widgets";
 import { getSiteNotice } from "@/lib/site-notice-server";
 import { SiteNoticeBar } from "./site-notice";
 
-export const dynamic = "force-dynamic";
+// 2.0:沒有路由設定 —— 公開頁的快取規則寫在 [[...slug]]/page.tsx(dynamic = "error" 等)。
+// 這裡渲染的東西會跟著頁面一起存起來,所以同樣不能讀 cookies()、headers()。
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [site-seam] 這裡是給站台外框用的接縫 —— 優先用 filter 提供,不得已才改這個檔。
