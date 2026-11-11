@@ -221,7 +221,9 @@ change it right away, set the Worker variable `CMS_CSP` to `report-only`
 - `next` and `@opennextjs/cloudflare` move **together**. Each OpenNext release
   declares the exact `next` range it was built against (via its `@opennextjs/aws`
   peer), and the range is narrow: `1.20.2` is the last release that accepts
-  `next@16.2.x`; `1.20.3+` requires `next@>=16.3.3`. `pnpm install` prints an
+  `next@16.2.x`; `1.20.3+` requires `next@>=16.3.3`, and `1.20.16` (used here
+  with `next@16.4.6`) requires `next@>=16.4.5` and `wrangler@^4.148.0`. Re-check the
+  eager startup entry (`worker/README.md`) after every bump of the pair. `pnpm install` prints an
   "unmet peer" line when the pair drifts — treat that as a build blocker, not a
   warning, and bump both or neither.
 - `pnpm exec wrangler deploy --dry-run` gives you a config and bundle preflight before the real deploy.

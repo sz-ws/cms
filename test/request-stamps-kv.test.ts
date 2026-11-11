@@ -63,9 +63,10 @@ vi.mock("next/headers", async (importActual) => {
   };
 });
 
-// next/navigation 的 client 版在 workers 測試池裡一載入就炸;換成 RSC 實際拿到的那一份。
+// next/navigation 的 client 版在 workers 測試池裡一載入就炸;換成 RSC 實際拿到的那一份
+// (Next 16.4 起是 unstable-rethrow.js,16.2 叫 unstable-rethrow.server.js)。
 vi.mock("next/navigation", async () => ({
-  unstable_rethrow: (await import("next/dist/client/components/unstable-rethrow.server")).unstable_rethrow,
+  unstable_rethrow: (await import("next/dist/client/components/unstable-rethrow")).unstable_rethrow,
 }));
 
 // loader 相依鏈的源頭(同 ext-runtime-safety.test.ts):registry 清空、interpret 不載 view。
