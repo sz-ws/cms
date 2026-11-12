@@ -168,6 +168,32 @@ describe("CheckoutView switches", () => {
     expect(selected(render({ shippingConfig }))).toBe("請選擇");
   });
 
+  // 2.0:包著結帳表單的元件(ShopCheckout 的 wrap)已經問過這位訪客是誰,把回答傳進來;表單照它畫、照它帶入,
+  // 不再自己問(一頁只問伺服器一次)。
+  it("2.0: a visitor answer passed in signs the form in and prefills every contact field", () => {
+    const shippingConfig = { methods: [{ id: "home", name: "宅配", base: 100, enabled: true }], rules: [], regions: ["北部", "離島"] };
+    const visitor = { signedIn: true, contact: { name: "王小明", email: "ming@example.com", phone: "0912-345-678", address: "某市某路 1 號", region: "離島" } };
+    const html = render({ managedOrders: true, shippingConfig, visitor });
+    expect(html).toContain("<form");
+    expect(html).not.toContain("請先登入會員");
+    expect(phoneInput(html)).toContain('value="0912-345-678"');
+    expect(addressInput(html)).toContain('value="某市某路 1 號"');
+    expect(html.match(/<option[^>]*selected[^>]*>([^<]*)<\/option>/)?.[1]).toBe("離島");
+    expect(tagOf(html, "shop-name")).toContain('value="王小明"');
+  });
+
+  it("2.0: the page's own contact wins over the answer; a locked email stays the page's", () => {
+    const visitor = { signedIn: true, contact: { name: "王小明", email: "ming@example.com", phone: "0912-345-678" } };
+    const html = render({ managedOrders: true, visitor, contact: { phone: "02-1234", email: "proved@example.com" }, emailLocked: true });
+    expect(phoneInput(html)).toContain('value="02-1234"');
+    expect(html).toContain("proved@example.com");
+    expect(html).not.toContain("ming@example.com");
+  });
+
+  it("2.0: a wrapper still asking (visitor null) gets the signed-out page", () => {
+    expect(render({ managedOrders: true, visitor: null })).toContain("請先登入會員");
+  });
+
   it("0.11.0: the form carries the page heading and the way back to the cart", () => {
     const html = render({});
     expect(html).toMatch(/<h1[^>]*>結帳<\/h1>/);

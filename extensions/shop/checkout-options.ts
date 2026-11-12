@@ -92,6 +92,34 @@ export interface CheckoutContact {
  * 拿不到真實 Email 的第三方登入(placeholder)不帶;姓名只是 Email @ 前面那段(帳號
  * 建立時沒填名字的預設值)也不帶 —— 那不是收件人的名字。
  */
+/** 結帳表單上可以先帶入的欄位(都是字串,空的 = 沒填)。 */
+export interface ContactFields {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  region: string;
+}
+
+/**
+ * 2.0:瀏覽器問到登入會員的資料之後,只填還空著的欄位 —— 客人在回應回來之前已經打了字,就照他打的。
+ * 地區只收 regions 裡的(運費設定現在的地區;不在裡面就不帶)。
+ */
+export function prefillFromVisitor(
+  typed: ContactFields,
+  contact: CheckoutContact,
+  regions: readonly string[],
+): ContactFields {
+  const region = contact.region && regions.includes(contact.region) ? contact.region : "";
+  return {
+    name: typed.name || contact.name || "",
+    email: typed.email || contact.email || "",
+    phone: typed.phone || contact.phone || "",
+    address: typed.address || contact.address || "",
+    region: typed.region || region,
+  };
+}
+
 export function checkoutContact(user: { email?: string | null; name?: string | null } | null): CheckoutContact {
   if (!user) return {};
   const rawEmail = (user.email ?? "").trim();

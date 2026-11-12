@@ -32,6 +32,7 @@ import { ShopVerifyPage } from "./admin-verify";
 import { ShopReturnsPage } from "./admin-returns";
 import { CUSTOMER_RETURN_DAYS_KEY, SHOP_RETURNS, SHOP_RETURNS_SEARCH, SHOP_RETURN_SETTINGS } from "./returns-config";
 import { ShopCartPage, ShopCheckoutPage } from "./public-pages";
+import { checkoutVisitorHandler } from "./checkout-visitor";
 
 // 商店 extension —— commerce-kit 的薄接線層(引擎全部來自 @/ext/commerce-kit,
 // 這裡只有:表名、settings、route 宣告、admin 頁組裝、payment:succeeded 綁定)。
@@ -234,6 +235,13 @@ export const shop = defineExtension({
         resolveShippingConfig: async (ctx) =>
           parseShippingConfig(await ctx.services.settings.get<string>(SHIPPING_KEY, "")),
       }),
+    },
+    {
+      // 2.0:結帳頁是存起來的公開頁,登入狀態與帶入的姓名、Email 由瀏覽器在這裡問(checkout-visitor.ts)。
+      method: "GET",
+      path: "checkout-visitor",
+      public: true,
+      handler: checkoutVisitorHandler,
     },
     {
       method: "POST",

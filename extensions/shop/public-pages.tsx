@@ -14,7 +14,6 @@ import { loadCheckoutFields, loadTransferReportSpec, shopProviders } from "./sho
 import {
   CHECKOUT_NOTICE_KEY,
   REQUIRE_CONTACT_KEY,
-  checkoutContact,
   resolveCheckoutOptions,
 } from "./checkout-options";
 
@@ -107,10 +106,10 @@ export async function loadShopCheckoutProps({ shopHref: givenShopHref }: { shopH
   ]);
   // 運費設定與結帳 handler 走同一個 parse(壞設定 → 未啟用,不擋結帳)。
   const shippingConfig = parseShippingConfig(shippingRaw);
-  const { getSessionUser } = await import("@/lib/auth");
   // 受管訂單:有插件以 `commerce:orders` 接手訂單表,結帳就交給它(commerce-kit 依 provider 判斷,
   // shop 端沒有開關 —— 理由見 checkout-options.ts 檔頭)。結帳頁照它的 storefront() 畫。
-  const user = await getSessionUser();
+  // 2.0:這裡不讀 session。結帳頁整頁存起來給每個訪客,登入狀態與帶入的姓名、Email 由 CheckoutView
+  // 在瀏覽器問 /api/ext/shop/checkout-visitor(checkout-visitor.ts)。
   const providers = await shopProviders();
   const manager = providers.getById<OrderManager>(ORDERS_CAPABILITY, ORDERS_TABLE);
   const [storefront, reportSpec, fields, signInHref] = await Promise.all([
@@ -121,7 +120,7 @@ export async function loadShopCheckoutProps({ shopHref: givenShopHref }: { shopH
   ]);
   const options = resolveCheckoutOptions({
     managedOrders: storefront !== null,
-    signedIn: storefront !== null && !!user,
+    signedIn: false,
     guestCheckout: storefront?.signIn === "optional",
     requireContact: storefront ? storefront.requireContact : requireContact,
     ordersHref: storefront?.ordersHref ?? null,
@@ -137,7 +136,7 @@ export async function loadShopCheckoutProps({ shopHref: givenShopHref }: { shopH
     fields,
     signInHref,
     shopHref,
-    contact: checkoutContact(user),
+    contact: {},
   };
 }
 

@@ -24,7 +24,8 @@ import {
   getCartSnapshot,
   subscribeCart,
 } from "./cart-store";
-import { resolveCheckoutOptions, type CheckoutContact } from "./checkout-options";
+import { prefillFromVisitor, resolveCheckoutOptions, type CheckoutContact, type ContactFields } from "./checkout-options";
+import type { CheckoutVisitor } from "./checkout-visitor";
 import {
   CHECKOUT_URL,
   checkoutBody,
@@ -101,6 +102,8 @@ function submitToGateway(gatewayUrl: string, fields: Record<string, string>): vo
 /** 沒給 signInHref 時的登入連結:/login 會轉到網站的登入頁,?next= 一起帶過去。 */
 const DEFAULT_SIGN_IN_HREF = "/login?next=%2Fshop%2Fcheckout";
 const CART_HREF = "/shop/cart";
+/** 2.0:問「這位訪客是誰」(checkout-visitor.ts)。 */
+const VISITOR_URL = "/api/ext/shop/checkout-visitor";
 const NETWORK_ERROR = "網路錯誤，請重試。";
 const INLINE_LINK = "ml-1 underline underline-offset-4";
 
@@ -168,6 +171,7 @@ export function CheckoutView({
   contact = {},
   emailLocked = false,
   onChangeEmail,
+  visitor: givenVisitor,
 }: {
   cardEnabled: boolean;
   transferEnabled: boolean;
@@ -207,10 +211,20 @@ export function CheckoutView({
    */
   emailLocked?: boolean;
   onChangeEmail?: () => void;
+  /**
+   * 2.0:包著結帳表單的元件(例如插槽 ShopCheckout 的 wrap)已經問過這位訪客是誰,就把回答傳進來;表單照它畫、
+   * 照它帶入,不再自己問(一頁只問伺服器一次)。null = 它還在問,先照還沒登入畫。沒給 = 表單自己問。
+   */
+  visitor?: CheckoutVisitor | null;
 }) {
+  // 2.0:結帳頁是存起來的公開頁,伺服器不知道訪客是誰。頁面出現之後問一次(checkout-visitor.ts):
+  // 登入了沒、要帶入的姓名、Email、電話、地址與地區。問到之前 visitor 是 null。
+  const [asked, setAsked] = useState<CheckoutVisitor | null>(null);
+  const supplied = givenVisitor !== undefined;
+  const visitor = supplied ? givenVisitor : asked;
   const options = resolveCheckoutOptions({
     managedOrders,
-    signedIn,
+    signedIn: signedIn || visitor?.signedIn === true,
     guestCheckout,
     requireContact,
     ordersHref,
@@ -219,19 +233,56 @@ export function CheckoutView({
   const items = useSyncExternalStore(subscribeCart, getCartSnapshot, getCartServerSnapshot);
   const currency = useSiteCurrency();
   const money = (amount: number) => formatMoney(amount, currency);
-  const [name, setName] = useState(contact.name ?? "");
-  const [email, setEmail] = useState(contact.email ?? "");
-  const [phone, setPhone] = useState(contact.phone ?? "");
-  const [address, setAddress] = useState(contact.address ?? "");
-  const [region, setRegion] = useState(() =>
-    contact.region && shippingConfig && shippingRegions(shippingConfig).includes(contact.region) ? contact.region : "",
-  );
+  // 一開始的值:頁面給的 contact 優先,傳進來的回答補空著的欄位;Email 被頁面鎖住時只用頁面的。
+  const [start] = useState<ContactFields>(() => {
+    const regions = shippingConfig ? shippingRegions(shippingConfig) : [];
+    const own = prefillFromVisitor({ name: "", email: "", phone: "", address: "", region: "" }, contact, regions);
+    const filled = prefillFromVisitor(own, visitor?.contact ?? {}, regions);
+    return emailLocked ? { ...filled, email: own.email } : filled;
+  });
+  const [name, setName] = useState(start.name);
+  const [email, setEmail] = useState(start.email);
+  const [phone, setPhone] = useState(start.phone);
+  const [address, setAddress] = useState(start.address);
+  const [region, setRegion] = useState(start.region);
   const [shipChoice, setShipChoice] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
   const [promo, setPromo] = useState<AppliedPromo | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [method, setMethod] = useState<"card" | "transfer">(cardEnabled ? "card" : "transfer");
   const [fieldValues, setFieldValues] = usePrefilledFields(fields);
+  useEffect(() => {
+    // 包著它的元件已經問過(或正在問):不再問一次。
+    if (supplied) return;
+    let live = true;
+    fetch(VISITOR_URL, { credentials: "same-origin", cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<CheckoutVisitor>) : null))
+      .then((found) => {
+        if (live) setAsked(found ?? { signedIn: false, contact: {} });
+      })
+      .catch(() => {
+        if (live) setAsked({ signedIn: false, contact: {} });
+      });
+    return () => {
+      live = false;
+    };
+  }, [emailLocked, supplied]);
+  // 問到(或傳進來)的回答:只填還空著的欄位 —— 回應回來之前客人已經打了字,就照他打的。Email 被頁面鎖住時不動。
+  // 回答一換就在這一次 render 裡補(React 的「依 props 調整 state」寫法),不在 effect 裡設 state。
+  const [filledFrom, setFilledFrom] = useState(visitor);
+  if (visitor !== filledFrom) {
+    setFilledFrom(visitor);
+    if (visitor) {
+      const regions = shippingConfig ? shippingRegions(shippingConfig) : [];
+      const fill = (field: keyof ContactFields) => (typed: string) =>
+        prefillFromVisitor({ name: "", email: "", phone: "", address: "", region: "", [field]: typed }, visitor.contact, regions)[field];
+      setName(fill("name"));
+      if (!emailLocked) setEmail(fill("email"));
+      setPhone(fill("phone"));
+      setAddress(fill("address"));
+      setRegion(fill("region"));
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<FormError | null>(null);
   const [manual, setManual] = useState<ManualOrder | null>(null);
@@ -390,6 +441,7 @@ export function CheckoutView({
   // 訪客下的受管訂單:沒有「我的訂單」,改用訂單編號查詢(0.7.0)。
   const asGuest = options.guestCheckout && !options.signedIn;
   // 0.11.0:要登入才能結帳、還沒登入 → 不畫表單,先登入(登入連結帶著回這一頁的 ?next=)。
+  // 2.0:存起來的 HTML 一律是「還沒登入」的樣子;已登入的會員在 visitor 問到之後換成表單。
   const signInFirst = options.managedOrders && !options.signedIn && !options.guestCheckout;
   const signIn = (className: string) =>
     onSignIn ? (
