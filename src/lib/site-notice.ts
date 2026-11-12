@@ -21,6 +21,12 @@ export interface SiteNotice {
   href?: string;
 }
 
+/** 2.0:公告加上它的時段(epoch ms,站台時區算好的);沒有就是不限。endsAt 不含。 */
+export interface SiteNoticeWindow extends SiteNotice {
+  startsAt?: number;
+  endsAt?: number;
+}
+
 /** 設定頁存下來的原始值(每一格都可能是 undefined 或壞值)。 */
 export interface SiteNoticeValues {
   enabled?: unknown;
@@ -73,15 +79,15 @@ function trimmed(value: unknown): string {
 }
 
 /**
- * 公告這個時間點要不要出現(出現的話長什麼樣)。日期以站台時區算:開始日當天 00:00
- * 起、結束日過完(隔天 00:00)為止。日期壞掉(只可能是繞過設定頁直接寫進資料庫)就不顯示 ——
- * 寧可少一則公告,也不要讓過期的活動一直掛著。
+ * 2.0:公告與它的時段,不看現在幾點。公開頁整頁存起來給每個訪客,存起來的 HTML 不能帶時鐘 ——
+ * 伺服器只把文字、連結與時段(epoch ms)放進頁面,出不出現由瀏覽器決定(noticeShownAt)。
+ * 日期以站台時區算:開始日當天 00:00 起、結束日過完(隔天 00:00,不含)為止。
+ * 設定壞掉(只可能是繞過設定頁直接寫進資料庫)就是 null —— 寧可少一則公告,也不要讓過期的活動一直掛著。
  */
-export function resolveSiteNotice(
+export function resolveSiteNoticeWindow(
   values: SiteNoticeValues,
-  now: number,
   timeZone: string,
-): SiteNotice | null {
+): SiteNoticeWindow | null {
   if (values.enabled !== true) return null;
   const text = trimmed(values.text);
   if (!text || !isPlainLine(text) || textLength(text) > SITE_NOTICE_MAX_LENGTH) return null;
@@ -89,15 +95,54 @@ export function resolveSiteNotice(
   const dates = createDateFormatter("en", timeZone);
   const startsOn = trimmed(values.startsOn);
   const endsOn = trimmed(values.endsOn);
+  let startsAt: number | undefined;
+  let endsAt: number | undefined;
   if (startsOn) {
-    const start = dates.dayStart(startsOn);
-    if (start === undefined || now < start) return null;
+    startsAt = dates.dayStart(startsOn);
+    if (startsAt === undefined) return null;
   }
   if (endsOn) {
-    const end = dates.dayStart(endsOn, true);
-    if (end === undefined || now >= end) return null;
+    endsAt = dates.dayStart(endsOn, true);
+    if (endsAt === undefined) return null;
   }
 
   const href = trimmed(values.href);
-  return href && isNoticeLink(href) ? { text, href } : { text };
+  return {
+    text,
+    ...(href && isNoticeLink(href) ? { href } : {}),
+    ...(startsAt !== undefined ? { startsAt } : {}),
+    ...(endsAt !== undefined ? { endsAt } : {}),
+  };
+}
+
+/** 這則公告在 now 這一刻要不要出現。 */
+export function noticeShownAt(notice: SiteNoticeWindow, now: number): boolean {
+  if (notice.startsAt !== undefined && now < notice.startsAt) return false;
+  if (notice.endsAt !== undefined && now >= notice.endsAt) return false;
+  return true;
+}
+
+/**
+ * 2.0:有時段的公告在存起來的 HTML 裡是 hidden,緊接在後面的這段 inline script 在瀏覽器畫出第一個
+ * 畫面之前,照訪客自己的時鐘決定要不要拿掉 hidden(不會先出現再消失,也不會晚一拍把頁面往下推)。
+ * 內容只有元素 id 與兩個數字,不含公告文字。公開頁的 CSP 允許 inline script('unsafe-inline')。
+ */
+export function noticeRevealScript(id: string, notice: Pick<SiteNoticeWindow, "startsAt" | "endsAt">): string {
+  const from = notice.startsAt ?? "-Infinity";
+  const until = notice.endsAt ?? "Infinity";
+  return `(function(){var n=Date.now(),e=document.getElementById(${JSON.stringify(id)});if(e&&n>=${from}&&n<${until})e.hidden=false})()`;
+}
+
+/**
+ * 公告這個時間點要不要出現(出現的話長什麼樣)。逐請求渲染的頁面(站台自己的動態頁)用它;
+ * 存起來的公開頁用 resolveSiteNoticeWindow,讓瀏覽器決定。
+ */
+export function resolveSiteNotice(
+  values: SiteNoticeValues,
+  now: number,
+  timeZone: string,
+): SiteNotice | null {
+  const notice = resolveSiteNoticeWindow(values, timeZone);
+  if (!notice || !noticeShownAt(notice, now)) return null;
+  return notice.href ? { text: notice.text, href: notice.href } : { text: notice.text };
 }

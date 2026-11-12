@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { getExtRuntime } from "@/ext/loader";
 import { normalizePublicWidgets } from "@/ext/public-widgets";
-import { getSiteNotice } from "@/lib/site-notice-server";
+import { getSiteNoticeWindow } from "@/lib/site-notice-server";
 import { SiteNoticeBar } from "./site-notice";
 
 // 2.0:沒有路由設定 —— 公開頁的快取規則寫在 [[...slug]]/page.tsx(dynamic = "error" 等)。
@@ -56,12 +56,13 @@ export default async function PublicLayout({
   // extension 約定寫 `(w) => [...w, MyWidget]`,所以多個浮層可以共存,且不受
   // 安裝順序影響。core 不替它們加任何容器 —— 每個 widget 自己決定角落與 z-index。
   //
-  // 1.56.0:網站公告(設定 → 網站公告)畫在最上方、頁首之前;沒開或不在日期內是 null。
+  // 1.56.0:網站公告(設定 → 網站公告)畫在最上方、頁首之前;沒開是 null。
+  // 2.0:有日期的公告由瀏覽器決定出不出現(存起來的頁面不能帶時鐘,見 site-notice.tsx)。
   const [header, footer, widgets, notice] = await Promise.all([
     rt.hooks.applyFilters<ComponentType | null>("filter:publicHeader", null),
     rt.hooks.applyFilters<ComponentType | null>("filter:publicFooter", null),
     rt.hooks.applyFilters<unknown>("filter:publicWidgets", []),
-    getSiteNotice(),
+    getSiteNoticeWindow(),
   ]);
 
   const Header = header;

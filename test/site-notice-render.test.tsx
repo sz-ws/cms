@@ -80,3 +80,21 @@ describe("SiteNoticeBar", () => {
     expect(html).not.toMatch(/animate-|marquee/);
   });
 });
+
+describe("SiteNoticeBar with a date window (2.0)", () => {
+  it("a notice without dates is plain HTML: shown, no script", () => {
+    const html = renderToStaticMarkup(createElement(SiteNoticeBar, { notice: { text: "今日公休" } }));
+    expect(html).not.toContain("hidden");
+    expect(html).not.toContain("<script");
+  });
+
+  it("a notice with dates is hidden in the stored HTML and revealed by the browser's clock", () => {
+    const html = renderToStaticMarkup(
+      createElement(SiteNoticeBar, { notice: { text: "中秋節公休", startsAt: 1_000, endsAt: 2_000 } }),
+    );
+    expect(html).toMatch(/<p[^>]*id="site-notice"[^>]*hidden=""/);
+    expect(html).toContain("<script>");
+    expect(html).toContain("1000");
+    expect(html).toContain("2000");
+  });
+});

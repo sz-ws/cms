@@ -3,7 +3,10 @@ import {
   isIsoDay,
   isNoticeLink,
   isPlainLine,
+  noticeRevealScript,
+  noticeShownAt,
   resolveSiteNotice,
+  resolveSiteNoticeWindow,
   SITE_NOTICE_KEYS,
   SITE_NOTICE_MAX_LENGTH,
 } from "../src/lib/site-notice";
@@ -169,5 +172,58 @@ describe("site notice settings", () => {
   it("leaves plain text settings without a format alone", () => {
     const title = field("core.siteTitle");
     expect(validateSettingValue(title, "<b>My</b>\nSite")).toBeNull();
+  });
+});
+
+// 2.0:公開頁整頁存起來給每個訪客,存起來的 HTML 不能帶「現在幾點」。伺服器只把公告與它的時段
+// (epoch ms)放進頁面,出不出現由瀏覽器依自己的時鐘決定。
+describe("resolveSiteNoticeWindow (2.0)", () => {
+  const base = { enabled: true, text: "  中秋節公休三天  " };
+
+  it("needs no clock: the same settings give the same window", () => {
+    const values = { ...base, href: "/blog", startsOn: "2026-10-01", endsOn: "2026-10-03" };
+    expect(resolveSiteNoticeWindow(values, TZ)).toEqual({
+      text: "中秋節公休三天",
+      href: "/blog",
+      startsAt: at(2026, 10, 1),
+      endsAt: at(2026, 10, 4),
+    });
+    expect(resolveSiteNoticeWindow(base, TZ)).toEqual({ text: "中秋節公休三天" });
+  });
+
+  it("is null for the same broken or switched-off settings as resolveSiteNotice", () => {
+    expect(resolveSiteNoticeWindow({ ...base, enabled: false }, TZ)).toBeNull();
+    expect(resolveSiteNoticeWindow({ enabled: true, text: "<b>x</b>" }, TZ)).toBeNull();
+    expect(resolveSiteNoticeWindow({ ...base, startsOn: "2026-02-31" }, TZ)).toBeNull();
+  });
+
+  it("noticeShownAt reproduces resolveSiteNotice at any moment", () => {
+    const values = { ...base, startsOn: "2026-10-01", endsOn: "2026-10-03" };
+    const window = resolveSiteNoticeWindow(values, TZ)!;
+    for (const now of [at(2026, 9, 30, 23, 59), at(2026, 10, 1), at(2026, 10, 3, 23, 59), at(2026, 10, 4)]) {
+      expect(noticeShownAt(window, now)).toBe(resolveSiteNotice(values, now, TZ) !== null);
+    }
+  });
+
+  it("the reveal script un-hides the bar only inside the window", () => {
+    const window = resolveSiteNoticeWindow({ ...base, startsOn: "2026-10-01", endsOn: "2026-10-03" }, TZ)!;
+    const run = (now: number) => {
+      const bar = { hidden: true };
+      new Function("document", "Date", noticeRevealScript("site-notice", window))(
+        { getElementById: (id: string) => (id === "site-notice" ? bar : null) },
+        { now: () => now },
+      );
+      return bar.hidden;
+    };
+    expect(run(at(2026, 9, 30, 12))).toBe(true);
+    expect(run(at(2026, 10, 2, 12))).toBe(false);
+    expect(run(at(2026, 10, 4, 0))).toBe(true);
+  });
+
+  it("the reveal script carries only numbers, never the notice text", () => {
+    const window = resolveSiteNoticeWindow({ ...base, text: "</script><script>alert(1)", startsOn: "2026-10-01" }, TZ);
+    expect(window).toBeNull(); // 文字本來就擋掉了
+    const ok = resolveSiteNoticeWindow({ ...base, startsOn: "2026-10-01" }, TZ)!;
+    expect(noticeRevealScript("site-notice", ok)).not.toContain("中秋");
   });
 });
