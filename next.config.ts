@@ -81,7 +81,8 @@ const nextConfig: NextConfig = {
   // 直接對照已知漏洞清單)。關掉它不影響任何功能。
   poweredByHeader: false,
   // 瀏覽器端的頁面快取:30 秒內切回同一頁直接用上次的畫面,不打伺服器、不出轉圈。
-  // 預設是 0 —— 整站 force-dynamic,每次換頁都重算一次 layout。
+  // 只影響逐請求渲染的頁面(後台,它們是 force-dynamic);預設是 0,後台每次換頁都重算一次
+  // layout。公開頁是存起來的整頁,不受這裡影響。
   //
   // 不會看到自己剛改的舊資料:存檔後會 router.refresh(),它清掉整個頁面快取
   // (Next 16 的 refresh-reducer 呼叫 invalidateBfCache)。別人改的東西最多晚 30 秒
