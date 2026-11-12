@@ -410,15 +410,35 @@ describe("restoreRevision", () => {
     expect(after?.data.note).toBeUndefined(); // merge 的話這裡會殘留 "junk"
   });
 
-  it("還原之後通知頁面快取一次,reason 帶內容型別(2.0)", async () => {
+  it("已發佈的內容還原之後通知頁面快取一次,reason 帶內容型別(2.0)", async () => {
     await setSettings({ "core.revisions.coalesceMs": 0 });
     const p = await newProvider();
-    const entry = await p.create(TYPE, { title: "Hello", body: "good" });
+    const entry = await p.create(TYPE, { title: "Hello", body: "good", status: "published" });
     await p.update(TYPE, entry.id, { body: "wrecked" });
     const original = (await listRevisions(entry.id)).slice(-1)[0];
 
     publicCache.reasons = [];
     await restoreRevision(entry.id, original.id, { actorId: BOB.id });
+    expect(publicCache.reasons).toEqual([`restore:${TYPE}`]);
+  });
+
+  it("還原到已發佈的版本(目前是草稿)也通知;草稿還原到草稿不通知", async () => {
+    await setSettings({ "core.revisions.coalesceMs": 0 });
+    const p = await newProvider();
+    const entry = await p.create(TYPE, { title: "Hello", body: "draft v1" });
+    const draftRev = (await listRevisions(entry.id)).slice(-1)[0];
+    await p.update(TYPE, entry.id, { body: "draft v2" });
+
+    publicCache.reasons = [];
+    await restoreRevision(entry.id, draftRev.id, { actorId: BOB.id });
+    expect(publicCache.reasons).toEqual([]);
+
+    await p.update(TYPE, entry.id, { status: "published" });
+    const publishedRev = (await listRevisions(entry.id))[0];
+    await p.update(TYPE, entry.id, { status: "draft" });
+
+    publicCache.reasons = [];
+    await restoreRevision(entry.id, publishedRev.id, { actorId: BOB.id });
     expect(publicCache.reasons).toEqual([`restore:${TYPE}`]);
   });
 

@@ -463,6 +463,20 @@ interface ContentRow {
   updatedAt: number;
 }
 
+/**
+ * 這次寫入有沒有改到訪客看得到的東西。訪客只看得到 status='published' 的項目(公開
+ * Content API 強制 filter.status、ListView / DetailView 只讀 published、publish-due
+ * 把到期草稿翻成 published),所以寫入前或寫入後任一邊是 published 才要讓存起來的
+ * 公開頁重算。草稿的新增、修改、刪除(含排程時間、匿名表單送出、收件清理)都不算:
+ * 一筆垃圾表單不該讓整站的頁面失效。
+ */
+export function touchesPublic(
+  before: string | null | undefined,
+  after: string | null | undefined,
+): boolean {
+  return before === "published" || after === "published";
+}
+
 function rowToEntry(row: ContentRow): ContentEntry {
   let parsed: Record<string, unknown> = {};
   try {
@@ -665,8 +679,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: entry.data,
     });
-    // 2.0:存起來的公開頁全部重算(publicContentChanged 永不 throw,失敗不影響寫入)。
-    publicContentChanged(`content:${type}`);
+    // 2.0:發佈的內容才讓存起來的公開頁重算(見 touchesPublic;永不 throw)。
+    if (touchesPublic(null, status)) publicContentChanged(`content:${type}`);
     return entry;
   }
 
@@ -811,8 +825,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: entry.data,
     });
-    // 2.0:存起來的公開頁全部重算(publicContentChanged 永不 throw,失敗不影響寫入)。
-    publicContentChanged(`content:${type}`);
+    // 2.0:發佈、下架、改已發佈的內容才讓存起來的公開頁重算(見 touchesPublic)。
+    if (touchesPublic(existing.status, status)) publicContentChanged(`content:${type}`);
     return entry;
   }
 
@@ -833,8 +847,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: existing?.data ?? {},
     });
-    // 2.0:存起來的公開頁全部重算(publicContentChanged 永不 throw,失敗不影響刪除)。
-    publicContentChanged(`content:${type}`);
+    // 2.0:刪的是已發佈的內容才讓存起來的公開頁重算(見 touchesPublic)。
+    if (touchesPublic(existing?.status, null)) publicContentChanged(`content:${type}`);
   }
 
   async query(

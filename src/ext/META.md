@@ -131,7 +131,9 @@ page whether it asks the server anything after it shows, in this order:
    changes, the write refreshes every stored page: call `services.publicContentChanged(reason)`
    after the write, or declare the table in `publicTables` if you write through ledger-kit.
    Content saves, the settings page, plugin install / enable / disable and script approval do
-   this already. Most pages end here.
+   this already. A content save refreshes only when the item is published before or after the
+   write (`touchesPublic` in `dx/content-provider.ts`); draft saves, anonymous form submissions
+   and draft clean-up do not, so a public page must never show draft content. Most pages end here.
    These look per-visitor but are refreshes, not server calls: stock, a price that is the same
    for everyone, "new" or "sold out" badges, anything that changes when someone saves in the
    admin, a scheduled publish (the job writes and refreshes). A date window (a sale banner,
