@@ -39,7 +39,7 @@
 插件可以宣告幾組後台風格（`appearances`，最多 6 組），出現在「從一款風格開始」的內建預設之後，卡片下方標「<插件名稱> 提供」，`description` 當滑過的提示。宣告式 manifest 與 code extension 都用同一個欄位：
 
 ```json
-"coreApi": "^1.57.0",
+"coreApi": ">=1.57.0",
 "appearances": [
   { "id": "warm", "name": { "zh-Hant": "暖櫃台", "en": "Warm counter" },
     "theme": { "version": 1, "background": "#f4ede2", "surface": "#fffaf3", "ink": "#3a2a20", "radius": "round", "elevation": "line" },

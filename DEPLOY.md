@@ -20,23 +20,30 @@ pnpm exec wrangler login
 
 ## 2. Create the resources
 
-One D1 database and **two** R2 buckets. `DB` and `NEXT_TAG_CACHE_D1` are two
-bindings, not two databases: the CLI points both at the same one, because a Free
-plan account only gets ten D1 databases and the tag cache holds nothing but
-`tag → revalidatedAt`.
+One D1 database, **two** R2 buckets and one lifecycle rule. `DB` and
+`NEXT_TAG_CACHE_D1` are two bindings, not two databases: the CLI points both at
+the same one, because a Free plan account only gets ten D1 databases and the tag
+cache holds nothing but `tag → revalidatedAt`. No KV namespace and no queue.
 
 ```bash
 pnpm exec wrangler d1 create cms-db          # note the database_id
 pnpm exec wrangler r2 bucket create cms-storage
 pnpm exec wrangler r2 bucket create cms-next-cache
+pnpm exec wrangler r2 bucket lifecycle add cms-next-cache expire-page-cache incremental-cache/ --expire-days 30
 ```
 
 | Resource | Binding | What it holds |
 |---|---|---|
 | `cms-db` | `DB` | Everything: users, sessions, settings, content, extensions, jobs |
-| `cms-db` | `NEXT_TAG_CACHE_D1` | On-demand `revalidateTag` timestamps, so every isolate agrees on what's stale |
+| `cms-db` | `NEXT_TAG_CACHE_D1` | The `revalidations` table: when the stored public pages were last invalidated, so every isolate agrees on what's stale |
 | `cms-storage` | `STORAGE` | Uploaded media |
-| `cms-next-cache` | `NEXT_INC_CACHE_R2_BUCKET` | Next.js ISR / data cache payloads |
+| `cms-next-cache` | `NEXT_INC_CACHE_R2_BUCKET` | Stored public pages (HTML and RSC payloads), keyed by build id |
+
+The lifecycle rule deletes stored pages 30 days after they were written. Each
+deploy starts a new key prefix and never reads the previous build's pages again,
+so without the rule they stay in the bucket. A page still in use that reaches 30
+days is rendered again on its next request. See
+[Public pages are stored whole](#public-pages-are-stored-whole).
 
 Want the tag cache in its own database — a multi-tenant account, or a hard
 boundary between your schema and OpenNext's? `cms setup --separate-tag-cache`
@@ -172,6 +179,126 @@ stored in the R2 object's `customMetadata` (`w` / `h`), next to the alt text.
 Files uploaded before this existed simply have no dimensions recorded; they keep
 serving normally, just without `width`/`height` attributes in the markup.
 
+## Public pages are stored whole
+
+Public pages (everything the catch-all `src/app/(public)/[[...slug]]` serves: the
+home page, plugin public routes, declarative list / detail / form views) and
+`/login` are rendered on their first request, stored in `NEXT_INC_CACHE_R2_BUCKET`
+and then answered by OpenNext's cache interception without running the Next
+server: one R2 read and one D1 query per request. `open-next.config.ts` sets this
+up (`r2IncrementalCache`, `d1NextTagCache`, `enableCacheInterception`). Admin,
+`/api`, `/setup`, robots, sitemap and feed are rendered on every request, as
+before.
+
+- **Nothing is rendered at build.** The build has no database, so the first
+  request for each page after a deploy renders it.
+- **A change refreshes every page.** A write to anything a plugin marked as
+  visitor-facing (published content, settings, plugin install / enable /
+  disable, declared tables and files; see "Public pages" in
+  [`src/ext/META.md`](./src/ext/META.md)) invalidates all stored pages at once;
+  each page is rendered again on its next visit. Draft saves do not.
+- **If a page still shows something old** (a write made straight to the
+  database, a plugin that forgot to say so), Settings → Site pages → "Remake all
+  pages" invalidates them by hand.
+- **Drafts:** editors open a draft from its edit screen ("Preview draft",
+  `/api/preview?path=…`). That sets Next's draft-mode cookie: those requests skip
+  the stored page and are never stored. The cookie's value is the same for every
+  editor until the next deploy, so the middleware checks on each request that
+  carries it that the browser still holds an editor session; otherwise it drops
+  the cookie and the visitor gets the stored page. Signing out ends preview too.
+- **Per-visitor parts** (who is signed in, the cart, a member's price) are
+  fetched by the browser after the page shows. The `signed_in=1` cookie, set and
+  cleared with the session and readable by scripts, tells the page whether
+  asking is worth it.
+
+Check it on a deployed site. A page answered from storage carries
+`x-opennext-cache: HIT`; a page the Next server rendered carries
+`x-nextjs-cache: MISS` instead:
+
+```bash
+curl -s -o /dev/null -D - https://<your-site>/ | grep -i -E 'x-(opennext|nextjs)-cache'   # first: x-nextjs-cache: MISS
+curl -s -o /dev/null -D - https://<your-site>/ | grep -i -E 'x-(opennext|nextjs)-cache'   # then:  x-opennext-cache: HIT
+```
+
+Do the same for a detail page and `/login`. After you save a published entry,
+the next request is a `MISS` with the new text, then `HIT` again.
+
+## Upgrading a 1.x site to 2.0
+
+The database needs no migration for 2.0, and both cache bindings already exist
+in a 1.x `wrangler.jsonc`. What changes is configuration, one bucket rule and
+the plugins.
+
+2.0 loads only plugins whose `coreApi` range includes 2.0.0, and a `^1.x` range
+does not. The plugins move first, while the site still runs 1.x, so that nothing
+is missing at any point:
+
+1. **Check each plugin** you use against the 2.0.0 entry in
+   [`src/ext/version.ts`](./src/ext/version.ts) ("Moving a plugin from 1.x to
+   2.0" in [`src/ext/META.md`](./src/ext/META.md) lists what to look for). The
+   store shows each registry plugin's range; compiled-in plugins under
+   `extensions/` declare it in `index.ts`. Most declarative manifests and many
+   code plugins need no code change.
+2. **Publish a version that runs on both.** A plugin that needs no change gets a
+   new version whose range starts at its current minimum and has no upper
+   bound, e.g. `">=1.17.0"` where it said `"^1.17.0"`. Both cores accept it; a
+   two-sided range such as `">=1.17.0 <3.0.0"` is refused by both (the range
+   check takes `x.y.z`, `^`, `~` and `>=` only). A plugin that needs 2.0-only
+   code declares `"^2.0.0"` instead; its 1.x version stays installable for 1.x
+   sites from the registry's `versions`.
+3. **Update the plugins on the site while it runs 1.x**: install each new
+   version from the store. Compiled-in plugins under `extensions/` change their
+   range in `index.ts`; that ships with the core in step 8. A plugin whose new
+   version declares `"^2.0.0"` cannot be installed on 1.x: it is unavailable
+   from step 8 until you install that version, so plan a short gap for it.
+4. **Merge 2.0** into your copy of the code.
+5. **`wrangler.jsonc`:**
+   - If `main` points at `worker/eager-entry.ts` (the optional eager startup
+     entry of 1.85.0), set it back to `custom-worker.ts`: that file no longer
+     exists and the build fails otherwise.
+   - Remove the `CMS_KV` entry from `kv_namespaces` (and the array, if it was
+     the only entry). 2.0 reads no KV.
+   - Remove the `CMS_CSP` variable if you set one. Public pages send a fixed
+     policy now (below).
+   - Keep `NEXT_INC_CACHE_R2_BUCKET` and `NEXT_TAG_CACHE_D1`. If you removed
+     either, put it back from the template.
+6. **Lifecycle rule:** run `cms setup` again (or `cms deploy`, which runs it). It
+   adds the rule to the page-cache bucket and leaves everything else as it is;
+   it also warns about a leftover `CMS_KV` entry. By hand, the
+   `wrangler r2 bucket lifecycle add` command from step 2 above.
+7. **Your own pages.** The root layout no longer sets `force-dynamic`. A page you
+   added under `src/app` outside the public catch-all that reads the database,
+   cookies or headers needs its own `export const dynamic = "force-dynamic"`, or
+   the build tries to render it without a database. To have such a page stored
+   too, follow the catch-all's segment config (`dynamic = "error"`,
+   `revalidate = false`, `generateStaticParams` returning `[]`) and move
+   per-visitor parts to the browser.
+8. **Deploy.** `opennextjs-cloudflare deploy` creates the `revalidations` table
+   if it is missing.
+9. **Check** with the `x-opennext-cache` commands above, then open
+   `/admin/extensions` and confirm nothing is listed as unavailable.
+10. **Delete the KV namespace** once you will not roll back to 1.x (1.x still
+    reads it when bound):
+
+    ```bash
+    pnpm exec wrangler kv namespace list                         # find cms-<slug>-kv
+    pnpm exec wrangler kv namespace delete --namespace-id <id>
+    ```
+
+### A plugin was missed
+
+A plugin whose range does not include 2.0.0 stays enabled in the database but is
+not loaded: `/admin/extensions` lists it as unavailable ("Requires core API
+^1.17.0; this core provides 2.0.0"), its pages answer 404 and its API routes,
+hooks, jobs and slot fills are absent. Installing or enabling it again is refused
+with `409 incompatible_core_api`. Its tables, settings and content are kept.
+
+To recover, either install a version whose range includes 2.0.0 as soon as the
+author publishes one (the plugin is loaded again with its data), or roll
+the Worker back to the last 1.x version (`wrangler rollback`) while you wait.
+Rolling back needs the `CMS_KV` binding the 1.x version was deployed with, so do
+not delete the namespace (step 10) before every plugin is back.
+
 ## Content-Security-Policy on public pages
 
 Public pages are stored whole and served to every visitor, so their policy is a
@@ -184,6 +311,11 @@ Admin, login and `/api` keep the Report-Only policy only.
 
 Cloudflare zone features that inject scripts into HTML (Rocket Loader, Zaraz, Web
 Analytics) are allowed by this policy when they load from `https:` hosts.
+
+There is no per-request nonce: a stored page is the same for every visitor.
+Inline scripts run under `'unsafe-inline'`, and the hosts a plugin's approved
+scripts load from are no longer enforced by the header. The
+`CMS_CSP` variable from 1.x is gone.
 
 ## Notes
 

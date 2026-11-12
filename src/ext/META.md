@@ -177,3 +177,59 @@ page whether it asks the server anything after it shows, in this order:
    answers that URL with a 500 and stores nothing. Also: no `revalidate = <number>`, no
    `revalidateTag(tag, "max")`, no module-level memo with a time limit in code that renders a
    public page, and pagination in the path (`/blog/page/2`), not `?page=`.
+5. **No nonce.** The per-request CSP nonce is gone in 2.0: nothing sets `x-nonce`, and a page
+   that is the same for every visitor cannot carry one. Inline scripts run under
+   `'unsafe-inline'`, external scripts load from any `https:` host (DEPLOY.md,
+   "Content-Security-Policy on public pages").
+6. **Drafts.** Visitors never see drafts. An editor opens one through `/api/preview?path=…`
+   (the "Preview draft" link), which turns on Next's draft mode for that browser; those requests
+   render on the server and are never stored. A public route with drafts of its own reads them
+   only when `(await draftMode()).isEnabled` (`next/headers`; it is always off in the render that
+   gets stored), as `dx/views/DetailView.tsx` does. Relation fields show only published items.
+7. **Signed in?** The session cookie is HttpOnly. `signed_in=1` (`lib/signed-in-hint.ts`,
+   `hasSignedInHint(document.cookie)`) is set and cleared with it and says only whether asking
+   the server who this is can be worth a request.
+
+Requires coreApi `^2.0.0`.
+
+## Moving a plugin from 1.x to 2.0
+
+A plugin whose `coreApi` range does not include 2.0.0 (every `^1.x` range) is not loaded on a 2.0
+core: `/admin/extensions` lists it as unavailable ("Requires core API ^1.x; this core provides
+2.0.0"), its public routes, API routes, hooks, jobs and slot fills are absent, and enabling or
+installing it is refused. To move one:
+
+1. **Public output reads no request.** In `PublicRoute` components and the `publicHome`,
+   `publicHeader`, `publicFooter` and `publicWidgets` filters, remove `cookies()`, `headers()`,
+   `connection()`, `searchParams`, `getSessionUser()` and decisions on the current time. Move what
+   differs per visitor into a client component that asks after the page shows (points 2 and 3
+   above). Pages under `next dev` show the error at once; check every public route there.
+2. **Remove `x-nonce` reads** (`headers().get("x-nonce")`). Inline scripts and third-party
+   widgets work without it.
+3. **Mark or announce writes** (point 1 above). Declare `visitorFacingTables` for ledger-kit tables
+   visitors see, `visitorFacingFiles` for files under your id that public pages show, set
+   `visitorFacing: false` on content types and settings that never reach a public page, and call
+   `services.publicContentChanged(reason)` after any other write that changes what visitors see.
+   A missing announcement shows as a stale page until the next change or deploy.
+4. **No time-based caching:** no `export const revalidate = <number>`, no
+   `revalidateTag(tag, "max")`, no module-level memo with a time limit in public render code.
+   `unstable_cache` reads from `ext/dx/content-cache.ts` (`cachedPublicQuery`,
+   `cachedPublicGetBySlug`) are gone; read through the content provider directly.
+5. **Choose the range.** Sites update their plugins while they still run 1.x and upgrade the core
+   afterwards (DEPLOY.md, "Upgrading a 1.x site to 2.0"), so a plugin that runs on both majors
+   publishes a version for both first:
+   - **Unchanged by 2.0** (nothing in points 1–4 applies, which includes most declarative
+     manifests): keep the minimum and drop the upper bound, `"^1.17.0"` → `">=1.17.0"`. Both cores
+     accept it (`test/semver.test.ts`). Two-sided ranges (`">=1.17.0 <3.0.0"`) and `||` are not
+     part of the range syntax (`semver.ts`, the manifest schemas): both cores refuse them. The
+     open-ended range also admits a later major, so narrow it to `"^2.0.0"` in a later version once
+     your sites are on 2.0.
+   - **Needs 2.0-only code** (it calls `services.publicContentChanged`, declares `visitorFacing*`
+     markers, or no longer works on 1.x after points 1–4): declare `"^2.0.0"`. Request reads moved
+     to the browser (points 1–2) usually run on 1.x as well; then the first case applies. A registry that also serves 1.x sites keeps the
+     previous version under `versions` in its `registry.json` (`lib/registry-versions.ts`), so 1.x
+     cores keep installing that one; on a site the plugin is unavailable from the core upgrade until
+     the new version is installed.
+
+   Either way a plugin delivered through a registry needs a new version, or sites are not offered
+   the update. Compiled-in plugins change the range in `index.ts`.

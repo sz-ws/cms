@@ -21,8 +21,10 @@ import { pageCacheTagCache } from "./src/lib/page-cache-tags";
 // NEXT_TAG_CACHE_D1,table `revalidations`)。每次快取命中都查它一次,判斷頁面是否已失效。
 // dev(`next dev`)走 Next 內建 handler,不需此 override。
 //
-// 部署前置:必須先 `wrangler d1 create cms-tag-cache`,並把真實 database_id 換進
-// wrangler.jsonc 的第二個 d1_databases 項。`revalidations` 表本身不需要手動建 ——
+// 部署前置:`cms setup` 建好 D1 與兩個 R2、把真實 database_id 寫進 wrangler.jsonc
+// (NEXT_TAG_CACHE_D1 預設與 DB 同一個資料庫),並在 NEXT_INC_CACHE_R2_BUCKET 加 lifecycle rule:
+// incremental-cache/ 底下滿 30 天的物件刪除(key 帶 build id,每次部署後舊的那批不再被讀)。
+// `revalidations` 表本身不需要手動建 ——
 // `opennextjs-cloudflare deploy` 會先跑 populate-cache,由它 CREATE TABLE IF NOT
 // EXISTS(該 schema 由 OpenNext 擁有,v1.19 加過 stale/expire 欄位)。見 DEPLOY.md。
 //

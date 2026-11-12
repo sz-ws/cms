@@ -41,7 +41,7 @@ to add a content type with an admin section and two public pages:
   "id": "recipes",
   "name": "Recipes",
   "version": "1.0.0",
-  "coreApi": "^1.0.0",
+  "coreApi": "^2.0.0",
   "description": "A recipe collection.",
   "contentTypes": [
     {
@@ -110,16 +110,23 @@ manifest can use uploads, email or AI without knowing what's behind them.
 
 ## Deploying
 
-See [DEPLOY.md](./DEPLOY.md). It's about ten steps against your own Cloudflare
-account — two D1 databases, two R2 buckets, one secret.
+See [DEPLOY.md](./DEPLOY.md). `cms deploy` (or `cms setup` and `pnpm run deploy`)
+does it against your own Cloudflare account: one D1 database, two R2 buckets
+(media, and the stored public pages with a 30-day lifecycle rule), three
+secrets. Public pages are rendered once, stored whole and answered without
+running the Next server until something visitors see changes; admin and API
+requests render every time. Upgrading from 1.x: DEPLOY.md, "Upgrading a 1.x site
+to 2.0".
 
 **Workers Paid ($5/mo) is recommended, not required.** Bundle size no longer
 decides it: since September 4, 2026 both plans allow a 64 MiB uncompressed Worker
 and there is no compressed limit, so extensions with real dependencies fit on
 either plan (a build with ten code extensions measures about 18 MiB). What runs
 short on the free plan is CPU: server-rendering Next.js regularly wants more than
-its 10 ms per request. Check your own build's **Total Upload** (the uncompressed
-size that counts) before deciding:
+its 10 ms per request. A stored public page measured 8–13 ms of CPU on a test
+site; the admin, API calls and the first render of each page after a change need
+more. Check your own build's **Total Upload** (the uncompressed size that counts)
+before deciding:
 
 ```bash
 npx wrangler deploy --dry-run
