@@ -517,3 +517,156 @@ describe("core api 1.9.0 + manifest gate (§6.7)", () => {
     expect(satisfies("1.8.0", "^1.9.0")).toBe(false);
   });
 });
+
+// ---- 關聯欄位只列已發佈的項目(公開頁 / 公開 API);後台照樣列出草稿 ----
+// 判斷與公開 list/detail view 相同:status === "published"。草稿的標題不給訪客看;
+// 草稿寫入不讓頁面重算(touchesPublic),留著它的標題遲早也會過時。
+
+describe("relations show only published items", () => {
+  const relManifest = {
+    kind: "declarative",
+    id: "rel",
+    name: "Rel",
+    version: "1.0.0",
+    coreApi: "^1.9.0",
+    contentTypes: [
+      {
+        name: "post",
+        slugField: "title",
+        fields: [
+          { key: "title", type: "text" },
+          { key: "main", type: "relation", to: "rel.tag" },
+          { key: "tags", type: "relations", to: "rel.tag" },
+        ],
+      },
+      { name: "tag", slugField: "title", fields: [{ key: "title", type: "text" }] },
+    ],
+    publicRoutes: [{ pattern: "/tags/:slug", view: "detail", contentType: "tag" }],
+  };
+
+  async function insertWithId(
+    id: string,
+    type: string,
+    slug: string,
+    status: "draft" | "published",
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const now = Date.now();
+    await d1()
+      .prepare(
+        "INSERT INTO contents (id, type, slug, status, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .bind(id, type, slug, status, JSON.stringify(data), now, now)
+      .run();
+  }
+
+  async function seedRel(): Promise<void> {
+    await insertDx("rel", relManifest);
+    await insertWithId("t-pub", "rel.tag", "open", "published", { title: "Open Tag" });
+    await insertWithId("t-draft", "rel.tag", "secret", "draft", { title: "Secret Draft Tag" });
+    await insertWithId("p1", "rel.post", "p1", "published", {
+      title: "P1",
+      main: "t-draft",
+      tags: ["t-draft", "t-pub"],
+    });
+  }
+
+  async function apiDetail(raw: string): Promise<{ data: Record<string, unknown> }> {
+    const res = await GET(
+      makeReq("/api/content/rel/post/p1", { token: raw }),
+      params("rel", "post", ["p1"]),
+    );
+    expect(res.status).toBe(200);
+    return (await res.json()) as { data: Record<string, unknown> };
+  }
+
+  it("public resolver drops a draft related item and keeps a published one", async () => {
+    await seedRel();
+    const { resolveRelations } = await import("../src/ext/dx/relation-resolve");
+    const shown = await resolveRelations("rel.tag", ["t-draft", "t-pub", "missing"]);
+    expect(shown).toEqual([{ id: "t-pub", title: "Open Tag", href: "/tags/open" }]);
+    // 只關聯到草稿 → 空的,與沒有關聯的欄位一樣。
+    expect(await resolveRelations("rel.tag", ["t-draft"])).toEqual([]);
+  });
+
+  it("draft preview still lists the draft related item, without a link", async () => {
+    await seedRel();
+    const { resolveRelations } = await import("../src/ext/dx/relation-resolve");
+    const shown = await resolveRelations("rel.tag", ["t-draft", "t-pub"], {
+      includeDrafts: true,
+    });
+    expect(shown).toEqual([
+      { id: "t-draft", title: "Secret Draft Tag", href: null },
+      { id: "t-pub", title: "Open Tag", href: "/tags/open" },
+    ]);
+  });
+
+  it("public Content API leaves out draft related ids (detail and list)", async () => {
+    await seedRel();
+    const { raw } = await createApiToken("ok");
+    const detail = await apiDetail(raw);
+    expect(detail.data.tags).toEqual(["t-pub"]);
+    expect("main" in detail.data).toBe(false);
+
+    const res = await GET(
+      makeReq("/api/content/rel/post", { token: raw }),
+      params("rel", "post"),
+    );
+    const list = (await res.json()) as { items: Array<{ data: Record<string, unknown> }> };
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0].data.tags).toEqual(["t-pub"]);
+    expect("main" in list.items[0].data).toBe(false);
+    expect(JSON.stringify(list)).not.toContain("t-draft");
+  });
+
+  it("publishing the related item makes it appear; unpublishing removes it", async () => {
+    await seedRel();
+    const { raw } = await createApiToken("ok");
+    const { resolveRelations } = await import("../src/ext/dx/relation-resolve");
+    const { getContentProvider, toTypeDef } = await import("../src/ext/dx/runtime");
+    const provider = await getContentProvider();
+    await provider.ensureType(toTypeDef("rel", relManifest.contentTypes[1] as never));
+
+    await provider.update("rel.tag", "t-draft", { title: "Secret Draft Tag", status: "published" });
+    expect((await apiDetail(raw)).data).toMatchObject({ main: "t-draft", tags: ["t-draft", "t-pub"] });
+    expect(await resolveRelations("rel.tag", ["t-draft"])).toEqual([
+      { id: "t-draft", title: "Secret Draft Tag", href: "/tags/secret" },
+    ]);
+
+    await provider.update("rel.tag", "t-draft", { title: "Secret Draft Tag", status: "draft" });
+    expect((await apiDetail(raw)).data.tags).toEqual(["t-pub"]);
+    expect(await resolveRelations("rel.tag", ["t-draft"])).toEqual([]);
+  });
+
+  it("admin relation options still include the draft", async () => {
+    await seedRel();
+    const { buildCrudRoutes } = await import("../src/ext/dx/crud");
+    const { CoreContentProvider } = await import("../src/ext/dx/content-provider");
+    const { HookBus } = await import("../src/ext/hooks");
+    const p = new CoreContentProvider(new HookBus());
+    const ctx = {
+      user: { id: "admin" },
+      services: { providers: { get: () => p } },
+    } as unknown as import("../src/ext/types").ApiCtx;
+    const route = buildCrudRoutes("rel", relManifest.contentTypes[1] as never).find(
+      (r) => r.method === "GET" && r.path === "tag/options",
+    );
+    if (!route) throw new Error("options route missing");
+
+    const byIds = await route.handler(
+      new Request("https://cms.test/api/ext/rel/tag/options?ids=t-draft,t-pub"),
+      {},
+      ctx,
+    );
+    const picked = (await byIds.json()) as { options: Array<{ id: string }> };
+    expect(picked.options.map((o) => o.id)).toEqual(["t-draft", "t-pub"]);
+
+    const search = await route.handler(
+      new Request("https://cms.test/api/ext/rel/tag/options"),
+      {},
+      ctx,
+    );
+    const all = (await search.json()) as { options: Array<{ id: string }> };
+    expect(all.options.map((o) => o.id).sort()).toEqual(["t-draft", "t-pub"]);
+  });
+});

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
   providerGet: vi.fn(),
+  resolve: vi.fn(async () => [] as unknown[]),
   draft: false,
 }));
 
@@ -25,7 +26,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/i18n/server", () => ({ getLocale: async () => "zh-Hant" }));
 vi.mock("@/lib/datetime-server", () => ({ getSiteTimeZone: async () => "Asia/Taipei" }));
 vi.mock("@/ext/dx/relation-resolve", () => ({
-  resolveRelations: async () => [],
+  resolveRelations: calls.resolve,
 }));
 vi.mock("@/ext/dx/views/media-dims", async (importActual) => {
   const actual = await importActual<typeof import("@/ext/dx/views/media-dims")>();
@@ -88,5 +89,39 @@ describe("DetailView reads the entry from the provider", () => {
     await expect(
       DetailView({ extId: "pages", slug: "soon", contentType: { name: "page", slugField: "title", fields: [{ key: "title", type: "text" }] } }),
     ).rejects.toThrow("notFound");
+  });
+
+  // 關聯欄位:公開頁只列已發佈的項目;全被排除時整欄不出現(與沒有關聯一樣),
+  // 草稿預覽才連草稿一起列出。
+  const relType = {
+    name: "post",
+    slugField: "title",
+    fields: [
+      { key: "title", type: "text" as const },
+      { key: "tags", type: "relations" as const, to: "blog.tag", label: "相關標籤" },
+    ],
+  };
+  const relEntry = {
+    id: "p1", type: "blog.post", locale: "en", translationGroup: "p1", slug: "p1",
+    status: "published", data: { title: "P1", tags: ["t-draft"] }, createdAt: 1, updatedAt: 1,
+  };
+
+  it("public render asks for published related items only; an emptied field is left out", async () => {
+    calls.resolve.mockClear();
+    calls.providerGet.mockResolvedValueOnce(relEntry);
+    const out = await DetailView({ extId: "blog", slug: "p1", contentType: relType });
+    expect(calls.resolve).toHaveBeenCalledWith("blog.tag", ["t-draft"], { includeDrafts: false });
+    expect(JSON.stringify(out)).not.toContain("相關標籤");
+  });
+
+  it("draft preview asks for draft related items too", async () => {
+    calls.draft = true;
+    calls.resolve.mockClear();
+    calls.resolve.mockResolvedValueOnce([{ id: "t-draft", title: "草稿標籤", href: null }]);
+    calls.providerGet.mockResolvedValueOnce(relEntry);
+    const out = await DetailView({ extId: "blog", slug: "p1", contentType: relType });
+    expect(calls.resolve).toHaveBeenCalledWith("blog.tag", ["t-draft"], { includeDrafts: true });
+    expect(JSON.stringify(out)).toContain("草稿標籤");
+    calls.draft = false;
   });
 });

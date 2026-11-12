@@ -67,7 +67,8 @@ export async function DetailView({
     displayValue(titleField, entry.data[titleField.key], timeZone) || entry.id;
 
   // 08 §2:先解析所有 relation/relations 欄位的 id → { title, href }(server-side,
-  // 走 provider 直查,無 HTTP)。逐欄位一組,供下方同步 map 顯示。
+  // 走 provider 直查,無 HTTP)。逐欄位一組,供下方同步 map 顯示。公開頁只列已發佈的
+  // 關聯項目;草稿預覽連草稿一起列(見 resolveRelations)。
   const relations = new Map<string, ResolvedRelation[]>();
   await Promise.all(
     contentType.fields.map(async (f) => {
@@ -75,7 +76,7 @@ export async function DetailView({
       if (!f.to) return;
       const ids = relationIds(f, entry.data[f.key]);
       if (ids.length === 0) return;
-      relations.set(f.key, await resolveRelations(f.to, ids));
+      relations.set(f.key, await resolveRelations(f.to, ids, { includeDrafts: preview }));
     }),
   );
 
@@ -112,6 +113,13 @@ export async function DetailView({
           const value = entry.data[f.key];
           if (value === undefined || value === null || value === "") return null;
           if (Array.isArray(value) && value.length === 0) return null;
+          // 關聯項目全被排除(未發佈或已刪除)→ 整欄不渲染,與沒有關聯一樣。
+          if (
+            (f.type === "relation" || f.type === "relations") &&
+            (relations.get(f.key) ?? []).length === 0
+          ) {
+            return null;
+          }
           // author:只顯示解析出的使用者名稱;查無 user → 整欄不渲染(見上方
           // authorName 解析,不落地內部 user id)。
           if (f.key === "author") {
@@ -175,7 +183,8 @@ export async function DetailView({
                   </span>
                 ) : f.type === "relation" || f.type === "relations" ? (
                   // 08 §2: resolved id → title, linked when the target has a
-                  // public detail route + is published.
+                  // public detail route + is published (public pages list
+                  // published items only; see resolveRelations).
                   <span className="flex flex-wrap items-center gap-2">
                     {(relations.get(f.key) ?? []).map((r) =>
                       r.href ? (

@@ -71,20 +71,42 @@ async function loadTargetMeta(
   return { contentType, detailBase };
 }
 
+export interface ResolveRelationsOptions {
+  /**
+   * 草稿預覽(編輯開了 draft mode,逐請求渲染、不會存起來)才帶 true:未發佈與查無
+   * 的項目照樣列出,讓編輯看到自己選了什麼。缺省 = 公開頁:只列已發佈的項目。
+   */
+  includeDrafts?: boolean;
+}
+
+/** 與公開 list / detail view 同一判斷:status 是 published 才給訪客看。 */
+function isPublished(entry: { status: string } | null): boolean {
+  return entry?.status === "published";
+}
+
 /**
- * Resolve entry id(s) of a relation target to { id, title, href }. Only
- * PUBLISHED target entries get an href (drafts have no public page). Missing /
- * unresolvable ids fall back to showing the raw id with a null href. Order of
- * the input ids is preserved.
+ * Resolve entry id(s) of a relation target to { id, title, href }. Order of the
+ * input ids is preserved.
+ *
+ * Public pages (the default) get PUBLISHED target entries only: a draft or
+ * missing related item is left out entirely, no title, no link. Visitors never
+ * see a draft's title, and draft writes do not refresh the stored pages
+ * (touchesPublic), so a draft title there would also go stale. With
+ * `includeDrafts` (draft preview) every id is listed; drafts get no href, and
+ * missing ids fall back to the raw id.
  */
 export async function resolveRelations(
   to: string,
   ids: readonly string[],
+  options: ResolveRelationsOptions = {},
 ): Promise<ResolvedRelation[]> {
+  const includeDrafts = options.includeDrafts === true;
   const clean = ids.filter((s) => typeof s === "string" && s.length > 0);
   if (clean.length === 0) return [];
   const parts = splitTo(to);
-  if (!parts) return clean.map((id) => ({ id, title: id, href: null }));
+  if (!parts) {
+    return includeDrafts ? clean.map((id) => ({ id, title: id, href: null })) : [];
+  }
 
   const target = await loadTargetMeta(parts.extId, parts.typeName);
   const fullType = `${parts.extId}.${parts.typeName}`;
@@ -99,18 +121,88 @@ export async function resolveRelations(
   // method is the documented follow-up.
   const entries = await Promise.all(clean.map((id) => provider.get(fullType, id)));
 
-  return clean.map((id, i) => {
+  return clean.flatMap((id, i): ResolvedRelation[] => {
     const entry = entries[i];
-    if (!entry) return { id, title: id, href: null };
+    if (!includeDrafts && !isPublished(entry)) return [];
+    if (!entry) return [{ id, title: id, href: null }];
     const rawTitle = titleField ? entry.data[titleField.key] : undefined;
     const title =
       (titleField ? displayValue(titleField, rawTitle) : "").trim() ||
       entry.slug ||
       entry.id;
     const href =
-      target?.detailBase && entry.slug && entry.status === "published"
+      target?.detailBase && entry.slug && isPublished(entry)
         ? detailPath(target.detailBase, entry.slug)
         : null;
-    return { id, title, href };
+    return [{ id, title, href }];
   });
+}
+
+interface RelationFieldLike {
+  key?: string;
+  type?: string;
+  to?: string;
+}
+
+/**
+ * 公開 Content API 用:relation / relations 欄位只留已發佈的關聯項目(與公開頁同一判斷)。
+ * 單一 relation 指向未發佈項目 → 該欄不輸出(與沒填一樣);relations 濾掉未發佈的 id。
+ * 回傳新的 entry,不改傳入的物件。同一個 id 在整個回應裡只查一次。
+ */
+export async function keepPublishedRelations<
+  T extends { data: Record<string, unknown> },
+>(fields: readonly RelationFieldLike[], entries: readonly T[]): Promise<T[]> {
+  const relFields = fields.filter(
+    (f): f is Required<RelationFieldLike> =>
+      typeof f.key === "string" &&
+      (f.type === "relation" || f.type === "relations") &&
+      typeof f.to === "string" &&
+      splitTo(f.to) !== null,
+  );
+  if (relFields.length === 0) return [...entries];
+
+  const provider = await getContentProvider();
+  const checked = new Map<string, Promise<boolean>>();
+  const published = (type: string, id: string): Promise<boolean> => {
+    const key = `${type}\u0000${id}`;
+    let found = checked.get(key);
+    if (!found) {
+      found = provider.get(type, id).then(isPublished);
+      checked.set(key, found);
+    }
+    return found;
+  };
+
+  return Promise.all(
+    entries.map(async (entry) => {
+      // 每個 relation 欄位的結果:null = 整欄拿掉,其餘 = 換成這個值。
+      const kept = new Map<string, unknown>();
+      await Promise.all(
+        relFields.map(async (f) => {
+          const value = entry.data[f.key];
+          if (f.type === "relation") {
+            if (typeof value !== "string" || value.length === 0) return;
+            if (!(await published(f.to, value))) kept.set(f.key, null);
+            return;
+          }
+          if (!Array.isArray(value)) return;
+          const flags = await Promise.all(
+            value.map((id) =>
+              typeof id === "string" && id.length > 0 ? published(f.to, id) : false,
+            ),
+          );
+          kept.set(f.key, value.filter((_, i) => flags[i]));
+        }),
+      );
+      // 保留原本的欄位順序。
+      const data = Object.fromEntries(
+        Object.entries(entry.data).flatMap(([k, v]): [string, unknown][] => {
+          if (!kept.has(k)) return [[k, v]];
+          const next = kept.get(k);
+          return next === null ? [] : [[k, next]];
+        }),
+      );
+      return { ...entry, data };
+    }),
+  );
 }

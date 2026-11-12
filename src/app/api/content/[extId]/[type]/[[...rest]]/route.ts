@@ -5,6 +5,7 @@ import { authenticateApiToken } from "@/lib/api-token";
 import { getContentProvider } from "@/ext/dx/runtime";
 import { isSubmissionTypeName } from "@/ext/dx/submission";
 import { decodePathSegments } from "@/ext/dx/route-matcher";
+import { keepPublishedRelations } from "@/ext/dx/relation-resolve";
 import { publicExtras, type ExtraFieldDef } from "@/lib/extra-fields";
 import { getExtraFieldDefs } from "@/lib/extra-fields-server";
 import type {
@@ -83,7 +84,7 @@ function parseLocaleParams(sp: URLSearchParams): {
 interface StoredManifest {
   contentTypes?: Array<{
     name?: string;
-    fields?: Array<{ key?: string }>;
+    fields?: Array<{ key?: string; type?: string; to?: string }>;
     // 收件匣判定用(見下方 isSubmissionTypeName):這兩個欄位與 publicRoutes 一起
     // 餵給 dx/submission.ts 的最小結構型別,故此處刻意保持鬆散、不引 zod 型別。
     public?: boolean;
@@ -218,15 +219,18 @@ export async function GET(
     const slug = decoded[0];
     const entry = await (await getContentProvider()).getBySlug(fullType, slug);
     if (!entry || entry.status !== "published") return notFound();
-    return Response.json(serialize(entry, extraDefs));
+    // 關聯欄位只留已發佈的項目(與公開頁一致)。
+    const [shown] = await keepPublishedRelations(ct.fields ?? [], [entry]);
+    return Response.json(serialize(shown, extraDefs));
   }
 
   // list:GET /<extId>/<type>。
   const sp = new URL(req.url).searchParams;
   const { query, page, perPage } = buildQuery(sp, fieldKeys);
   const { items, total } = await (await getContentProvider()).query(fullType, query);
+  const shown = await keepPublishedRelations(ct.fields ?? [], items);
   return Response.json({
-    items: items.map((entry) => serialize(entry, extraDefs)),
+    items: shown.map((entry) => serialize(entry, extraDefs)),
     total,
     page,
     perPage,
