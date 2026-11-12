@@ -2,6 +2,13 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { env } from "cloudflare:test";
 
 const session = vi.hoisted(() => ({ role: "admin" as string | null }));
+// 2.0 頁面快取:後台風格只畫在後台,存它不該讓存起來的公開頁重算。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
 vi.mock("@/lib/cf", () => ({ getEnv: () => env, getDB: () => (env as { DB: unknown }).DB }));
 vi.mock("@/ext/loader", async () => {
   const { HookBus } = await import("../src/ext/hooks");
@@ -40,6 +47,11 @@ describe("admin style persistence and access", () => {
     const response = await GET();
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await response.json()).toEqual(appearance);
+  });
+  it("saving the admin style leaves the stored public pages alone", async () => {
+    publicCache.reasons = [];
+    expect((await PUT(request(ADMIN_THEME_PRESETS[1].appearance))).status).toBe(200);
+    expect(publicCache.reasons).toEqual([]);
   });
   it("continues to honor old accent writes", async () => {
     await PUT(request(ADMIN_THEME_PRESETS[1].appearance));

@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   writes: [] as Record<string, unknown>[],
+  reasons: [] as string[],
+}));
+
+// 2.0 頁面快取:設定頁存檔(站名、圖示、公告、商店與插件設定都畫在公開頁上)寫完通知一次;
+// 被拒絕的存檔什麼都沒寫,不通知。
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    state.reasons.push(reason);
+  },
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -83,6 +92,7 @@ function request(entries: Record<string, unknown>): Request {
 
 beforeEach(() => {
   state.writes = [];
+  state.reasons = [];
 });
 
 describe("PUT /api/settings value contract", () => {
@@ -151,5 +161,20 @@ describe("PUT /api/settings value contract", () => {
     const response = await PUT(request(entries));
     expect(response.status).toBe(200);
     expect(state.writes).toEqual([entries]);
+  });
+});
+
+describe("PUT /api/settings and the page cache (2.0)", () => {
+  it("a saved change remakes the stored public pages once", async () => {
+    const res = await PUT(request({ "core.count": 3 }));
+    expect(res.status).toBe(200);
+    expect(state.writes).toEqual([{ "core.count": 3 }]);
+    expect(state.reasons).toEqual(["settings"]);
+  });
+
+  it("a refused save writes nothing and remakes nothing", async () => {
+    const res = await PUT(request({ "core.unknown": 1 }));
+    expect(res.status).toBe(400);
+    expect(state.reasons).toEqual([]);
   });
 });

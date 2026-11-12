@@ -9,6 +9,7 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth";
 import { setSettings } from "@/lib/settings";
+import { publicContentChanged } from "@/lib/public-cache";
 import {
   assertSameOrigin,
   originErrorResponse,
@@ -145,6 +146,8 @@ export async function POST(req: Request): Promise<Response> {
 
   // 後續步驟失敗的恢復 = 用剛設的密碼去 /login(04 §5),不需特殊處理。
   await setSettings({ "core.siteTitle": parsed.siteTitle });
+  // 站名畫在每一頁上:設定之前就被存起來的頁面(例如首頁的歡迎畫面)要重算。
+  publicContentChanged("setup");
 
   const token = await createSession(id);
   const store = await cookies();

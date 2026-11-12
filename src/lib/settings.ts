@@ -3,7 +3,6 @@ import { db } from "./db";
 import { settings } from "./schema";
 import { getEnv } from "./cf";
 import { forgetRequestStamps, getRequestStamps } from "./request-stamps";
-import { publicContentChanged } from "./public-cache";
 import { dropColdSnapshot, takeColdSettings } from "./cold-snapshot";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
@@ -764,9 +763,10 @@ export async function setSettings(
   // 同 graph 立即失效(admin 存檔後下一個 request 讀到新值);跨 graph/isolate 靠
   // 每 request 的 stamp 重算(見 readAll 註解)。
   invalidateSettingsCache();
-  // 2.0:站名、圖示、語言、公告、商店與插件設定都畫在公開頁上 —— 存起來的公開頁全部重算。
-  // 不分哪個 key:分了就要維護一張「哪些設定會上公開頁」的表,漏一個就是舊頁面。
-  if (batch.length > 0) publicContentChanged("settings");
+  // 2.0:這裡**不**讓存起來的公開頁重算。背景記帳也走這裡(授權回報時間、示範回呼的紀錄、
+  // 後台風格),每一筆都讓整站重算的話,一個定期的背景寫入就會讓頁面按排程失效。重算由
+  // 「人改了訪客看得到的東西」的那一層呼叫 publicContentChanged:設定頁的 PUT /api/settings、
+  // 首次設定、插件自己的後台存檔(例如運費設定)。
   // hook 分派:settings:saved(03 §1)。enabled extension 的 handler 收得到。
   try {
     const { getExtRuntime } = await import("@/ext/loader");
@@ -801,8 +801,8 @@ export async function setExtensionSettingsRaw(
       });
   }
   // 同 setSettings:直接寫表後失效 isolate 快取(install route 於此後仍會再失效一次,無害)。
+  // 公開頁的重算由 install route 做(同 setSettings 的理由)。
   invalidateSettingsCache();
-  if (Object.keys(prepared).length > 0) publicContentChanged("settings");
 }
 
 /**

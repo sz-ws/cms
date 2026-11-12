@@ -25,8 +25,10 @@ vi.mock("@/ext/loader", async () => {
   return { getExtRuntime: async () => rt };
 });
 
-// 2.0 頁面快取:設定(站名、圖示、語言、公告、商店與插件設定)都畫在公開頁上,
-// setSettings / setExtensionSettingsRaw 寫完各通知一次。
+// 2.0 頁面快取:低階的 setSettings / setExtensionSettingsRaw 不通知頁面快取。背景記帳也寫
+// 設定(授權回報時間、示範回呼的紀錄、後台風格),它們每次一寫就讓整站重算會讓存起來的頁面
+// 按排程失效。通知的是「人存了訪客看得到的東西」的那一層:設定頁的 PUT /api/settings、
+// 首次設定、插件自己的後台存檔(settings-route.test.ts 等)。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
 vi.mock("@/lib/public-cache", () => ({
   publicContentChanged: (reason: string) => {
@@ -134,19 +136,16 @@ describe("settings stamp-based memo", () => {
   });
 });
 
-describe("settings writes → publicContentChanged (2.0)", () => {
-  it("setSettings tells the page cache once per save", async () => {
-    await setSettings({ "core.siteTitle": "A", "core.siteDescription": "B" });
-    expect(publicCache.reasons).toEqual(["settings"]);
+describe("low-level settings writes leave the page cache alone (2.0)", () => {
+  it("setSettings does not tell the page cache: bookkeeping writes use it too", async () => {
+    await setSettings({ "core.license.lastCheckin": 1700000000000 });
+    await setSettings({ "core.siteTitle": "A" });
+    expect(publicCache.reasons).toEqual([]);
+    expect(await getSetting("core.siteTitle")).toBe("A");
   });
 
-  it("setExtensionSettingsRaw (install-time defaults) tells it too", async () => {
+  it("setExtensionSettingsRaw (install-time defaults) does not either; the install route does", async () => {
     await setExtensionSettingsRaw({ "ext.demo.mode": "a" }, new Set());
-    expect(publicCache.reasons).toEqual(["settings"]);
-  });
-
-  it("an empty save writes nothing and tells nobody", async () => {
-    await setSettings({});
     expect(publicCache.reasons).toEqual([]);
   });
 });

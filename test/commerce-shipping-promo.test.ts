@@ -21,6 +21,7 @@ import { createManualPaymentProvider } from "../src/ext/payment-kit/manual";
 import { createCommerceCheckoutHandler } from "../src/ext/commerce-kit/checkout";
 import {
   computeShippingOptions,
+  createShippingConfigHandler,
   DEFAULT_REGIONS,
   parseShippingConfig,
   shippingRegions,
@@ -124,6 +125,32 @@ describe("computeShippingOptions(純函式)", () => {
     };
     expect(computeShippingOptions({ subtotal: 1, qty: 1 }, cfg)[0].fee).toBe(80);
     expect(computeShippingOptions({ subtotal: 1, qty: 2 }, cfg)[0].fee).toBe(0);
+  });
+});
+
+// 2.0 頁面快取:運費設定畫在結帳頁上。後台存檔的 handler 寫完自己通知(services.publicContentChanged);
+// 低階的 services.settings.set 不通知(背景記帳也用它)。
+describe("shipping-config 後台存檔", () => {
+  it("寫完設定、通知存起來的公開頁重算;不合格的設定什麼都不寫", async () => {
+    const writes: Record<string, unknown>[] = [];
+    const reasons: string[] = [];
+    const ctx = {
+      services: {
+        settings: { set: async (entries: Record<string, unknown>) => void writes.push(entries) },
+        publicContentChanged: (reason: string) => void reasons.push(reason),
+      },
+    } as unknown as ApiCtx;
+    const handler = createShippingConfigHandler({ settingsKey: "ext.shop.shipping" });
+    const post = (body: unknown) =>
+      handler(new Request("https://cms.test/x", { method: "POST", body: JSON.stringify(body) }), {}, ctx);
+
+    expect((await post(CONFIG)).status).toBe(200);
+    expect(writes).toEqual([{ "ext.shop.shipping": JSON.stringify(CONFIG) }]);
+    expect(reasons).toEqual(["shipping"]);
+
+    expect((await post({ methods: "nope" })).status).toBe(400);
+    expect(writes).toHaveLength(1);
+    expect(reasons).toEqual(["shipping"]);
   });
 });
 

@@ -50,6 +50,14 @@ vi.mock("@/lib/rate-limit", () => ({
 
 vi.mock("@/lib/settings", () => ({ setSettings: async () => {} }));
 
+// 2.0 頁面快取:首次設定寫了站名(畫在每一頁上),存起來的公開頁要重算。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 vi.mock("next/headers", () => ({
   cookies: async () => ({ set: () => {} }),
 }));
@@ -105,9 +113,18 @@ beforeEach(() => {
 
 describe("POST /api/setup", () => {
   it("帶對 token 的第一個請求可以建立管理員", async () => {
+    publicCache.reasons = [];
     const res = await POST(request(validBody()));
     expect(res.status).toBe(200);
     expect(db.trace).toContain("insert");
+    // 站名寫進去了:存起來的公開頁重算一次。
+    expect(publicCache.reasons).toEqual(["setup"]);
+  });
+
+  it("token 不對時什麼都沒寫,也不讓公開頁重算", async () => {
+    publicCache.reasons = [];
+    await POST(request(validBody({ setupToken: "wrong" })));
+    expect(publicCache.reasons).toEqual([]);
   });
 
   it("token 不對 → 401,而且完全不碰資料庫、不做雜湊", async () => {
