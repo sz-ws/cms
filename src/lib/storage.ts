@@ -189,6 +189,14 @@ export async function headFile(key: string): Promise<StoredFile | null> {
 export async function deleteFile(key: string): Promise<void> {
   await getStorage().delete(key);
   await invalidateStorageIndex();
+  // 2.0:存起來的公開頁可能還指著這個檔,全部重算(上傳不用:每次上傳都是新的網址,
+  // 現有頁面不會變)。動態 import:理由同 invalidateStorageIndex。
+  try {
+    const { publicContentChanged } = await import("@/lib/public-cache");
+    publicContentChanged("media");
+  } catch (error) {
+    console.error("[storage:cache] failed to load the page cache", error);
+  }
 }
 
 export async function listFiles(

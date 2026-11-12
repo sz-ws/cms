@@ -56,6 +56,14 @@ vi.mock("@/ext/loader", () => ({
 }));
 vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => {} }));
 
+// 2.0 頁面快取:核准(或撤回)script 會改每一頁的 HTML,寫完通知一次;被擋下來的不通知。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { overrideRegistry } from "../src/ext/overrides";
 import { surfaceIds } from "../src/ext/dx/surfaces";
 import { hashScripts } from "../src/ext/dx/scripts";
@@ -144,6 +152,7 @@ beforeEach(async () => {
     [PLAIN, manifest(PLAIN)],
   ]);
   registryState.allowScripts = false;
+  publicCache.reasons = [];
 });
 
 describe("install with the compiled layer", () => {
@@ -203,7 +212,9 @@ describe("installed plugins", () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({ error: "scripts_compiled" });
     expect((await row(COMPILED))?.approval).toBeNull();
+    expect(publicCache.reasons).toEqual([]);
     expect((await approve(PLAIN)).status).toBe(200);
+    expect(publicCache.reasons).toEqual([`scripts:${PLAIN}`]);
   });
 
   it("reports compiled, running, stopped, or no scripts", async () => {

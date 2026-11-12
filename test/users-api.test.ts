@@ -31,6 +31,15 @@ vi.mock("@/lib/auth", async (importActual) => {
   };
 });
 
+// 2.0 頁面快取:公開的內容頁會顯示作者名字(DetailView),改名要讓存起來的頁面重算;
+// 只改角色或密碼不影響公開頁,不通知。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { PATCH, DELETE } from "../src/app/api/users/[id]/route";
 
 type TestEnv = { DB: D1Database };
@@ -86,6 +95,7 @@ beforeEach(async () => {
       .run();
   }
   authState.user = ADMIN;
+  publicCache.reasons = [];
 });
 
 describe("PATCH /api/users/[id] — guards", () => {
@@ -171,6 +181,13 @@ describe("PATCH /api/users/[id] — updates", () => {
       .bind(ADMIN.id)
       .first<{ name: string }>();
     expect(row?.name).toBe("Renamed");
+    expect(publicCache.reasons).toEqual(["user:name"]);
+  });
+
+  it("a role-only change does not touch the page cache (2.0)", async () => {
+    const res = await PATCH(patchReq(EDITOR.id, { role: "admin" }), params(EDITOR.id));
+    expect(res.status).toBe(200);
+    expect(publicCache.reasons).toEqual([]);
   });
 
   it("password change rewrites password_hash via hashPassword", async () => {
@@ -209,5 +226,15 @@ describe("DELETE /api/users/[id] — regression", () => {
       .prepare("SELECT COUNT(*) AS n FROM users")
       .first<{ n: number }>();
     expect(n?.n).toBe(1);
+  });
+
+  // 2.0:公開頁顯示作者名字,刪掉作者要讓存起來的頁面重算;沒有刪到任何一列就不必。
+  it("refreshes the stored public pages only when a user was deleted", async () => {
+    const delReq = (id: string) =>
+      new Request(`${ORIGIN}/api/users/${id}`, { method: "DELETE", headers: { Origin: ORIGIN } });
+    expect((await DELETE(delReq("nobody"), params("nobody"))).status).toBe(200);
+    expect(publicCache.reasons).toEqual([]);
+    expect((await DELETE(delReq(EDITOR.id), params(EDITOR.id))).status).toBe(200);
+    expect(publicCache.reasons).toEqual(["user:delete"]);
   });
 });

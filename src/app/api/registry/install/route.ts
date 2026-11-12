@@ -52,7 +52,7 @@ import { getExtRuntime, invalidateExtRuntimeMemo } from "@/ext/loader";
 import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
 import { installVerdict, unmetRequirements } from "@/ext/plugin-ref";
 import { byId, listInstalledPlugins } from "@/ext/installed-plugins";
-import { revalidateExt } from "@/ext/dx/cache-invalidate";
+import { publicContentChanged } from "@/lib/public-cache";
 import {
   prepareExtensionSettingValues,
   invalidateSettingsCache,
@@ -664,12 +664,14 @@ export async function POST(req: Request): Promise<Response> {
   try {
     invalidateExtRuntimeMemo();
     invalidateSettingsCache();
-    revalidateExt(id);
     const rt = await getExtRuntime();
     await rt.hooks.doAction("ext:enabled", id);
   } catch (e) {
     console.error(`[registry-install] post-commit refresh failed ext="${id}"`, e);
   }
+  // 2.0:安裝、重裝、更新、回到上一版都在這裡寫完 —— 存起來的公開頁全部重算。放在 try 外面:
+  // hook 失敗也要通知(寫入已經成立);publicContentChanged 自己永不 throw。
+  publicContentChanged(`ext:${id}`);
 
   return Response.json({ ok: true, id, version: manifest.version });
 }

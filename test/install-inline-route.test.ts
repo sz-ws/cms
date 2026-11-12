@@ -43,6 +43,14 @@ vi.mock("@/ext/loader", () => ({
 }));
 vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => {} }));
 
+// 2.0 頁面快取:安裝、重裝、回到上一版都寫完才通知一次;失敗(沒寫入)不通知。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { POST } from "../src/app/api/registry/install/route";
 
 type TestEnv = { DB: D1Database };
@@ -107,6 +115,7 @@ beforeEach(async () => {
       "DELETE FROM extensions;",
     ].map((sql) => d1().prepare(sql)),
   );
+  publicCache.reasons = [];
 });
 
 describe("POST /api/registry/install — inline manifest (dev only)", () => {
@@ -122,7 +131,8 @@ describe("POST /api/registry/install — inline manifest (dev only)", () => {
     expect(row!.version).toBe("1.0.0");
     expect(row!.enabled).toBe(1);
     // 沒有 registry 來源 → 明確存 NULL,而不是空字串或假的 URL。
-    expect(row!.source).toBeNull();
+    expect(row!.source).toBeNull();    // 2.0:寫完通知頁面快取一次(Phase 1 的陷阱:舊的 revalidateExt("max") 會讓頁面卡在舊版)。
+    expect(publicCache.reasons).toEqual(["ext:recipes"]);
   });
 
   it("still runs full manifest validation — a bad manifest is refused", async () => {
@@ -133,6 +143,7 @@ describe("POST /api/registry/install — inline manifest (dev only)", () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json<{ error: string }>()).error).toBe("invalid_manifest");
+    expect(publicCache.reasons).toEqual([]);
     const row = await d1()
       .prepare("SELECT id FROM declarative_extensions WHERE id = ?")
       .bind("recipes")

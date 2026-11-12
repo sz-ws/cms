@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { staffRoleExists } from "@/lib/staff-roles";
+import { publicContentChanged } from "@/lib/public-cache";
 
 // 1.50.0:staffRoleId 指派自訂角色(users.role 同時寫成 guest,見 migrations/0021);
 // role 指派預設角色(同時清掉自訂角色)。兩個不能同時給。
@@ -97,6 +98,8 @@ export async function PATCH(
     patch.passwordHash = await hashPassword(parsed.password);
 
   await db().update(users).set(patch).where(eq(users.id, id));
+  // 2.0:公開的內容頁會顯示作者名字(dx/views/DetailView.tsx),改名要讓存起來的公開頁重算。
+  if (patch.name !== undefined) publicContentChanged("user:name");
 
   const [row] = await db()
     .select({
@@ -141,6 +144,8 @@ export async function DELETE(
     return Response.json({ error: "cannot_delete_self" }, { status: 400 });
   }
 
-  await db().delete(users).where(eq(users.id, id));
+  const deleted = await db().delete(users).where(eq(users.id, id)).returning({ id: users.id });
+  // 2.0 頁面快取:公開的內容頁顯示作者名字(DetailView),作者刪掉後那一欄要消失。
+  if (deleted.length > 0) publicContentChanged("user:delete");
   return Response.json({ ok: true });
 }

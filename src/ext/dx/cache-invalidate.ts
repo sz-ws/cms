@@ -13,10 +13,13 @@ import { contentTag, extTag, storageIndexTag } from "./cache-tags";
 //
 // next 16 的 revalidateTag(tag, profile) 需要第二個 cache-life profile 參數;單一參數
 // 已 deprecated。這裡在 route handler / provider(非 Server Action)情境呼叫,故不能用
-// 只限 Server Action 的 updateTag()。profile "max" 是 stale-while-revalidate：失效後
-// 第一位讀者可先拿 stale value，背景重建；適合 public content/dashboard 統計，不把
-// mutation latency 轉嫁給下一位訪客。
-const REVALIDATE_PROFILE = "max";
+// 只限 Server Action 的 updateTag()。
+//
+// 2.0:一律 { expire: 0 }(立刻過期),不用 "max"。頁面渲染時讀過的 unstable_cache 會把
+// 它的 tag 抄到存起來的整頁上;"max" 是 stale-while-revalidate,OpenNext 會把那些頁面當成
+// 「舊的、背景重算」,背景重算要 queue,這個專案沒有 queue —— 頁面就一直卡在舊版
+// (2.0 Phase 1 實測)。公開頁的失效走 @/lib/public-cache 的 publicContentChanged。
+const REVALIDATE_PROFILE = { expire: 0 };
 
 /** 精準失效單一 content type(create/update/delete 後呼叫)。type = "<extId>.<typeName>"。 */
 export function revalidateContent(type: string): void {

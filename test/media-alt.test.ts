@@ -94,7 +94,16 @@ vi.mock("@/ext/dx/cache-invalidate", () => ({
   revalidateStorageIndex: () => {},
 }));
 
+// 2.0 頁面快取:刪檔要讓頁面不再指向一張不存在的圖;上傳不影響任何現有頁面(網址每次都是新的)。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import {
+  deleteFile,
   listFiles,
   putFile,
   updateFileAlt,
@@ -220,5 +229,15 @@ describe("updateFileAlt", () => {
     expect(res).toEqual({ ok: false, reason: "conflict" });
     // 舊 body 沒有蓋掉新上傳的內容。
     expect(decode(store().get(KEY)!.body)).toBe("NEWUPLOAD");
+  });
+});
+
+describe("page cache (2.0)", () => {
+  it("deleteFile tells the page cache; putFile does not", async () => {
+    publicCache.reasons = [];
+    await putFile("core", "a.png", encode("X"), "image/png");
+    expect(publicCache.reasons).toEqual([]);
+    await deleteFile(KEY);
+    expect(publicCache.reasons).toEqual(["media"]);
   });
 });

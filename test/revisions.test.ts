@@ -44,6 +44,14 @@ vi.mock("@/ext/loader", async () => {
   };
 });
 
+// 2.0 頁面快取:還原是一筆寫入,寫完要讓存起來的公開頁重算。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { CoreContentProvider } from "../src/ext/dx/content-provider";
 import { HookBus } from "../src/ext/hooks";
 import { buildCrudRoutes } from "../src/ext/dx/crud";
@@ -400,6 +408,18 @@ describe("restoreRevision", () => {
     const after = await p.get(TYPE, entry.id);
     expect(after?.data).toMatchObject({ title: "Hello", body: "good" });
     expect(after?.data.note).toBeUndefined(); // merge 的話這裡會殘留 "junk"
+  });
+
+  it("還原之後通知頁面快取一次,reason 帶內容型別(2.0)", async () => {
+    await setSettings({ "core.revisions.coalesceMs": 0 });
+    const p = await newProvider();
+    const entry = await p.create(TYPE, { title: "Hello", body: "good" });
+    await p.update(TYPE, entry.id, { body: "wrecked" });
+    const original = (await listRevisions(entry.id)).slice(-1)[0];
+
+    publicCache.reasons = [];
+    await restoreRevision(entry.id, original.id, { actorId: BOB.id });
+    expect(publicCache.reasons).toEqual([`restore:${TYPE}`]);
   });
 
   it("還原本身也留一筆 reason=restore,壞掉的版本仍留在歷史裡", async () => {

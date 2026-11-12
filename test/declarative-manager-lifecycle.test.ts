@@ -28,6 +28,14 @@ vi.mock("@/ext/installed-plugins", async (importActual) => {
   };
 });
 
+// 2.0 頁面快取:插件啟用、停用、移除都會改公開頁(路由、外框、樣式),寫完各通知一次。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import {
   disableDeclarative,
   enableDeclarative,
@@ -51,6 +59,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   staleRead.enabled = null;
+  publicCache.reasons = [];
   await d1().exec(
     "DELETE FROM declarative_extensions; DELETE FROM ext_migrations; DELETE FROM settings; DELETE FROM contents;",
   );
@@ -59,6 +68,18 @@ beforeEach(async () => {
       "INSERT INTO declarative_extensions (id,manifest,version,enabled,installed_at,updated_at) VALUES ('demo','{}','1.0.0',1,100,100)",
     )
     .run();
+});
+
+describe("declarative lifecycle → publicContentChanged (2.0)", () => {
+  it("disable, enable and uninstall each tell the page cache once", async () => {
+    await disableDeclarative("demo");
+    expect(publicCache.reasons).toEqual(["ext:demo"]);
+    await enableDeclarative("demo");
+    expect(publicCache.reasons).toEqual(["ext:demo", "ext:demo"]);
+    publicCache.reasons = [];
+    await uninstallDeclarative("demo", true);
+    expect(publicCache.reasons).toEqual(["ext:demo"]);
+  });
 });
 
 describe("declarative manager revision lifecycle", () => {

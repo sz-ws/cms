@@ -48,6 +48,14 @@ vi.mock("@/ext/loader", async () => {
   return { getExtRuntime: async () => rt };
 });
 
+// 2.0 頁面快取:排程發佈是一筆寫入,寫完要讓存起來的公開頁重算(publicContentChanged)。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { runDueJobs, maybeRunJobs } from "../src/lib/jobs";
 import { CoreContentProvider } from "../src/ext/dx/content-provider";
 import { HookBus } from "../src/ext/hooks";
@@ -152,6 +160,7 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM storage_history;");
   await d1().exec("DELETE FROM heartbeats;");
   hookState.calls = [];
+  publicCache.reasons = [];
   authState.user = ADMIN;
 });
 
@@ -249,6 +258,21 @@ describe("runDueJobs — publish-due", () => {
 
     // FTS 行已重建(publish 後可被搜尋)。
     expect((await ftsCount("due2"))?.n).toBe(1);
+  });
+
+  it("tells the page cache once per published row, with the content type (2.0)", async () => {
+    const now = 5_000_000;
+    await insertContent({ id: "pc1", status: "draft", publishAt: now - 1, data: { title: "A" } });
+    await insertContent({ id: "pc2", type: "blog.page", status: "draft", publishAt: now - 1, data: { title: "B" } });
+    await insertContent({ id: "pc3", status: "draft", publishAt: now + 100_000, data: { title: "later" } });
+
+    await runDueJobs(now);
+    expect(publicCache.reasons.sort()).toEqual(["publish:blog.page", "publish:blog.post"]);
+
+    // 第二次跑沒有東西翻轉 → 不通知。
+    publicCache.reasons = [];
+    await runDueJobs(now);
+    expect(publicCache.reasons).toEqual([]);
   });
 
   it("leaves not-due drafts and already-published rows untouched", async () => {

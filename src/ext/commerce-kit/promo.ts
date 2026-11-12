@@ -5,6 +5,7 @@ import { lazySchema } from "@/lib/lazy-schema";
 import type { ApiCtx } from "../types";
 import type { CommerceDb } from "./orders";
 import { normalizePromoCode, PROMO_CODE_RE } from "./promo-code";
+import { publicContentChanged } from "@/lib/public-cache";
 
 // commerce-kit:優惠碼(Phase 4,docs/spec-commerce-kit.md)。
 //
@@ -390,6 +391,8 @@ export function createPromoSaveHandler(opts: PromoAdminHandlerOptions) {
     if (rows.length === 0) {
       return Response.json({ ok: false, error: "invalid_input" }, { status: 400 });
     }
+    // 2.0:結帳頁只在有啟用中的優惠碼時擺輸入欄(shop 的 public-pages)—— 存起來的公開頁全部重算。
+    publicContentChanged(`promo:${opts.table}`);
     return Response.json({ ok: true, code });
   };
 }
@@ -411,6 +414,7 @@ export function createPromoDeleteHandler(opts: PromoAdminHandlerOptions) {
     await ctx.services.db.run(sql`
       DELETE FROM ${sql.raw(opts.table)} WHERE code = ${normalizePromoCode(body.code)}
     `);
+    publicContentChanged(`promo:${opts.table}`);
     return Response.json({ ok: true });
   };
 }

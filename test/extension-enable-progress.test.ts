@@ -31,6 +31,14 @@ vi.mock("@/ext/loader", () => ({
 }));
 vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 
+// 2.0 頁面快取:啟用(含套用更新)寫完要讓存起來的公開頁重算。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { enableExtension, enableStepCheck, enableStepMigrate, pendingCodeUpgrades, type EnableStepEvent } from "../src/ext/manager";
 import { applyStepEvent, initialSteps, markFailed, receiptSteps, withMigrations } from "../src/app/(admin)/admin/extensions/EnableProgress";
 
@@ -46,6 +54,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await d1().exec("DELETE FROM extensions; DELETE FROM ext_migrations; DELETE FROM settings;");
+  publicCache.reasons = [];
 });
 
 async function enableAndCollect(): Promise<EnableStepEvent[]> {
@@ -53,6 +62,15 @@ async function enableAndCollect(): Promise<EnableStepEvent[]> {
   await enableExtension("demo", (e) => events.push(e));
   return events;
 }
+
+describe("enableExtension → publicContentChanged (2.0)", () => {
+  it("啟用與套用更新各通知一次,在最後一步寫完之後", async () => {
+    await enableExtension("demo");
+    expect(publicCache.reasons).toEqual(["ext:demo"]);
+    await enableExtension("demo");
+    expect(publicCache.reasons).toEqual(["ext:demo", "ext:demo"]);
+  });
+});
 
 describe("enableExtension progress", () => {
   it("第一次啟用:每一步依序回報,每個 migration 各一組", async () => {

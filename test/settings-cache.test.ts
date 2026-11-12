@@ -25,9 +25,19 @@ vi.mock("@/ext/loader", async () => {
   return { getExtRuntime: async () => rt };
 });
 
+// 2.0 頁面快取:設定(站名、圖示、語言、公告、商店與插件設定)都畫在公開頁上,
+// setSettings / setExtensionSettingsRaw 寫完各通知一次。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import {
   getSetting,
   setSettings,
+  setExtensionSettingsRaw,
   invalidateSettingsCache,
 } from "../src/lib/settings";
 
@@ -61,6 +71,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await d1().exec("DELETE FROM settings;");
   invalidateSettingsCache();
+  publicCache.reasons = [];
 });
 
 describe("settings stamp-based memo", () => {
@@ -120,5 +131,22 @@ describe("settings stamp-based memo", () => {
     // 無 memo(beforeEach 已清)且表有資料 → 直接全表讀,回正確值。
     await seedSetting("core.locale", "zh-Hant", 1000);
     expect(await getSetting("core.locale", "en")).toBe("zh-Hant");
+  });
+});
+
+describe("settings writes → publicContentChanged (2.0)", () => {
+  it("setSettings tells the page cache once per save", async () => {
+    await setSettings({ "core.siteTitle": "A", "core.siteDescription": "B" });
+    expect(publicCache.reasons).toEqual(["settings"]);
+  });
+
+  it("setExtensionSettingsRaw (install-time defaults) tells it too", async () => {
+    await setExtensionSettingsRaw({ "ext.demo.mode": "a" }, new Set());
+    expect(publicCache.reasons).toEqual(["settings"]);
+  });
+
+  it("an empty save writes nothing and tells nobody", async () => {
+    await setSettings({});
+    expect(publicCache.reasons).toEqual([]);
   });
 });

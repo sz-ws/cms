@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getSessionAccess } from "@/lib/auth";
@@ -27,7 +28,6 @@ import { getLocale, getMessages } from "@/lib/i18n/server";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import type { PageSearchConfig } from "@/components/admin/PageSearch";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
@@ -54,21 +54,13 @@ export default async function AdminLayout({
     }
   }
 
-  // Lazy fallback 不卡住 admin render:把保底 sweep 交給 waitUntil,在 response 之後完成。
+  // Lazy fallback 不卡住 admin render:保底 sweep 交給 after(),在 response 之後完成。
   //
-  // next dev 也走得到這條 —— initOpenNextCloudflareForDev() 會準備一份 context,
-  // getCloudflareContext() 不會 throw,只是它的 waitUntil 是 no-op。所以 dev 下 sweep
-  // 其實是一個沒人 await 的 floating promise;之所以無害,是因為 maybeRunJobs 內部
-  // 整個包在 try/catch,任何失敗只會 console.error,不會變成 unhandled rejection。
-  //
-  // 底下的同步 await 只在真的完全拿不到 Cloudflare context 時才會踩到(非 Worker、
-  // 非 dev 的執行環境),不是 next dev 的正常路徑。
-  const jobs = maybeRunJobs();
-  try {
-    getCloudflareContext().ctx.waitUntil(jobs);
-  } catch {
-    await jobs;
-  }
+  // 2.0:用 Next 的 after() 而不是直接 waitUntil。sweep 裡的排程發佈會呼叫 publicContentChanged
+  // (revalidatePath);在渲染途中排出去的 promise 還帶著「渲染中」的 context,Next 會擋下
+  // revalidatePath("during render")。after() 的 callback 在回應之後、以 after 階段執行,
+  // 失效照常寫進 tag cache(OpenNext 的 waitUntil 撐著它跑完)。maybeRunJobs 永不 throw。
+  after(() => maybeRunJobs());
 
   const siteTitle = await getSetting<string>("core.siteTitle", "My Site");
   const brandLogo = await getSetting<string>("core.brandLogo", "");

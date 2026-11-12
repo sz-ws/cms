@@ -3,6 +3,7 @@ import { db } from "./db";
 import { settings } from "./schema";
 import { getEnv } from "./cf";
 import { getRequestStamps, publishRequestStamps } from "./request-stamps";
+import { publicContentChanged } from "./public-cache";
 import { dropColdSnapshot, takeColdSettings } from "./cold-snapshot";
 import { DEFAULT_INSIGHT_CONFIG } from "./dashboard-insights-config";
 import { decryptSecretWithKey, encryptSecretWithKey } from "./secret-envelope";
@@ -767,6 +768,9 @@ export async function setSettings(
   // 同 graph 立即失效(admin 存檔後下一個 request 讀到新值);跨 graph/isolate 靠
   // 每 request 的 stamp 重算(見 readAll 註解)。
   invalidateSettingsCache();
+  // 2.0:站名、圖示、語言、公告、商店與插件設定都畫在公開頁上 —— 存起來的公開頁全部重算。
+  // 不分哪個 key:分了就要維護一張「哪些設定會上公開頁」的表,漏一個就是舊頁面。
+  if (batch.length > 0) publicContentChanged("settings");
   // hook 分派:settings:saved(03 §1)。enabled extension 的 handler 收得到。
   try {
     const { getExtRuntime } = await import("@/ext/loader");
@@ -802,6 +806,7 @@ export async function setExtensionSettingsRaw(
   }
   // 同 setSettings:直接寫表後失效 isolate 快取(install route 於此後仍會再失效一次,無害)。
   invalidateSettingsCache();
+  if (Object.keys(prepared).length > 0) publicContentChanged("settings");
 }
 
 /**

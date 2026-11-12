@@ -29,6 +29,13 @@ vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }))
 vi.mock("next/link", () => ({ default: () => null }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: () => undefined, redirect: () => undefined, notFound: () => undefined }));
 
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { ExtensionLifecycleConflict, assertCodeDependencies, writeCodeDisabled } from "../src/ext/code-lifecycle";
 import { disableExtension, pendingCodeUpgrades, uninstallExtension } from "../src/ext/manager";
 
@@ -52,6 +59,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await d1().exec("DELETE FROM extensions; DELETE FROM declarative_extensions; DELETE FROM ext_migrations; DELETE FROM settings;");
   deployed.extensions = [];
+  publicCache.reasons = [];
 });
 
 describe("網站本身的一層不能在後台停用或移除", () => {
@@ -146,5 +154,14 @@ describe("移除插件時,core 一併刪掉它記在會員身上的資料(1.81.0
 
     const keys = await d1().prepare("SELECT key FROM user_fields ORDER BY key").all<{ key: string }>();
     expect(keys.results.map((row) => row.key)).toEqual(["notes-extra.phone"]);
+    // 2.0 頁面快取:停用通知一次,刪完資料再通知一次(之後的頁面看不到它的任何東西)。
+    expect(publicCache.reasons).toEqual(["ext:notes", "ext:notes"]);
+  });
+
+  it("停用一般插件通知頁面快取一次(2.0)", async () => {
+    deployed.extensions = [plugin("plain")];
+    await enabledRow("plain");
+    await disableExtension("plain");
+    expect(publicCache.reasons).toEqual(["ext:plain"]);
   });
 });

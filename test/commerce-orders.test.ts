@@ -10,6 +10,15 @@ vi.mock("@/lib/cf", () => ({
   getStorage: () => (env as { STORAGE?: unknown }).STORAGE,
 }));
 
+// 2.0 頁面快取:訂單狀態一變,公開頁可能跟著變(最近成交的 feed、別的插件的庫存),所以
+// 狀態真的轉了就通知 publicContentChanged;沒轉成(非法、冪等重送)不通知。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { db } from "../src/lib/db";
 import {
   countByStatus,
@@ -55,6 +64,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await d1().exec(`DELETE FROM ${TABLE};`);
+  publicCache.reasons = [];
 });
 
 describe("狀態機定義", () => {
@@ -121,6 +131,15 @@ describe("transitionOrder", () => {
     await seed("CO5", "paid");
     expect(await transitionOrder(deps(), TABLE, "CO5", "paid")).toBe(false); // 冪等
     expect((await getOrder(deps(), TABLE, "CO5"))?.status).toBe("paid");
+  });
+
+  it("轉移成立才通知頁面快取(2.0):reason 帶訂單表名,非法或重複的轉移不通知", async () => {
+    await seed("PC1");
+    expect(await transitionOrder(deps(), TABLE, "PC1", "paid")).toBe(true);
+    expect(publicCache.reasons).toEqual([`order:${TABLE}`]);
+    expect(await transitionOrder(deps(), TABLE, "PC1", "paid")).toBe(false);
+    expect(await transitionOrder(deps(), TABLE, "NOPE", "paid")).toBe(false);
+    expect(publicCache.reasons).toEqual([`order:${TABLE}`]);
   });
 
   it("查無此單 → false", async () => {

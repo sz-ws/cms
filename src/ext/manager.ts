@@ -27,7 +27,7 @@ import {
 import { registry } from "@/../extensions/registry";
 import { invalidateSettingsCache } from "@/lib/settings";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "./loader";
-import { revalidateExt } from "./dx/cache-invalidate";
+import { publicContentChanged } from "@/lib/public-cache";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import type { Extension, ExtMigration } from "./types";
@@ -68,7 +68,7 @@ function findManifest(extId: string): Extension {
 // 的預設值 → 記錄版本並通知其他插件。以前 API 全部做完才回一個 200,後台只能轉圈等。
 // 現在四步各自是一個函式(enableStep*),後台一步打一次 API(api/extensions/[extId] 的
 // action "enable-step"),畫面照實顯示走到哪一步、卡在哪一步。每一步都是完整的一個請求,
-// D1、快取失效(revalidateTag)都在請求裡做完 —— 不用串流,也就沒有「回應送出後才執行」的問題。
+// D1、快取失效(publicContentChanged)都在請求裡做完 —— 不用串流,也就沒有「回應送出後才執行」的問題。
 //
 // 已啟用的 extension 再跑一次 = 套用更新:已套用的 migration 會跳過、已存在的設定不覆寫,
 // 所以中途失敗後重按一次是安全的。
@@ -238,14 +238,15 @@ export async function enableStepRecord(extId: string): Promise<void> {
   // memo 主動失效(belt-and-braces;跨 isolate 靠 stamp)。
   invalidateExtRuntimeMemo();
   invalidateSettingsCache();
-  // 該 extension 的 public content cache 整批失效(enable 後結構/資料可能全變)。
-  revalidateExt(extId);
 
   // hooks.doAction("ext:enabled", extId)
   // 已知行為(03 §5):此 HookBus 是「更新前」建好的(per-request cache),
   // 剛啟用的 extension 收不到自己的 ext:enabled;其他原本 enabled 的收得到。
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
+  // 2.0:存起來的公開頁全部重算。放在最後:上面的 getExtRuntime 會順便對齊內建插件(有寫入),
+  // hook 也可能寫東西,全部寫完才通知,重算出來的頁面才不會讀到一半的狀態。
+  publicContentChanged(`ext:${extId}`);
 }
 
 /**
@@ -270,7 +271,8 @@ export async function applyPendingCodeUpgrades(): Promise<{ applied: string[]; f
       await enableStepSettings(extId);
       // 站台的層沒有 extensions 列,版號不用記(pendingCodeUpgrades 對層只看 migration)。
       if (!ext.layer) await writeCodeEnabled(getDB(), ext, registry, Date.now());
-      revalidateExt(extId);
+      // 2.0:不通知頁面快取。這裡只在部署後第一次載入時跑(常常就在某個公開頁的渲染裡,Next 不准在
+      // 渲染途中失效);而部署換了 build id,存起來的頁面本來就全部作廢(OpenNext 的快取鍵帶 build id)。
       applied.push(extId);
     } catch (e) {
       console.error(`[ext] auto-upgrade of "${extId}" failed`, e);
@@ -325,11 +327,11 @@ export async function disableExtension(extId: string): Promise<void> {
   await writeCodeDisabled(getDB(), ext, registry, Date.now());
 
   invalidateExtRuntimeMemo();
-  // 該 extension 的 public content cache 整批失效(disable 後不應再回舊資料)。
-  revalidateExt(extId);
 
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
+  // 2.0:存起來的公開頁全部重算(它的路由、外框、插槽都不能再出現)。寫完、hook 跑完才通知。
+  publicContentChanged(`ext:${extId}`);
 }
 
 export async function uninstallExtension(extId: string): Promise<void> {
@@ -378,6 +380,8 @@ export async function uninstallExtension(extId: string): Promise<void> {
   invalidateExtRuntimeMemo();
   // 上面刪了 ext.<id>.% 的 settings 列,失效 isolate settings 快取。
   invalidateSettingsCache();
+  // 2.0:disableExtension 已經通知過一次;這裡刪掉了它的設定與資料,再通知一次。
+  publicContentChanged(`ext:${extId}`);
 }
 
 // ---- declarative extensions(core-v2 §3.2/§3.3)----
@@ -500,6 +504,8 @@ export async function enableDeclarative(extId: string): Promise<void> {
   invalidateExtRuntimeMemo();
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
+  // 2.0:存起來的公開頁全部重算(它的公開路由、樣式、script 出現了)。
+  publicContentChanged(`ext:${extId}`);
 }
 
 /** 停用,條件是沒有啟用中的插件需要它(先擋一次給名稱,寫入時再擋一次)。 */
@@ -517,6 +523,8 @@ export async function disableDeclarative(extId: string): Promise<void> {
   await disableDeclarativeGuarded(extId);
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
+  // 2.0:存起來的公開頁全部重算(它的路由與 script 不能再出現)。
+  publicContentChanged(`ext:${extId}`);
 }
 
 /**
@@ -571,6 +579,7 @@ export async function uninstallDeclarative(
   invalidateExtRuntimeMemo();
   // 上面刪了 ext.<id>.% 的 settings 列,失效 isolate settings 快取。
   invalidateSettingsCache();
-  revalidateExt(extId);
   await rt.hooks.doAction("ext:disabled", extId);
+  // 2.0:存起來的公開頁全部重算(插件、設定,選了的話連內容都刪了)。
+  publicContentChanged(`ext:${extId}`);
 }

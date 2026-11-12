@@ -12,6 +12,14 @@ vi.mock("@/lib/cf", () => ({
   getStorage: () => (env as { STORAGE?: unknown }).STORAGE,
 }));
 
+// 2.0 頁面快取:結帳頁只在有啟用中的優惠碼時才擺輸入欄,所以優惠碼的新增、修改、刪除都通知一次。
+const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
+vi.mock("@/lib/public-cache", () => ({
+  publicContentChanged: (reason: string) => {
+    publicCache.reasons.push(reason);
+  },
+}));
+
 import { db } from "../src/lib/db";
 import { edgeFromMs, edgeToMs, promoPeriodState } from "../src/ext/commerce-kit/promo-window";
 import { createPromoDeleteHandler, createPromoSaveHandler, listPromos, listPromosByCodes, quotePromo } from "../src/ext/commerce-kit/promo";
@@ -100,7 +108,19 @@ const BASE = { code: "SAVE10", label: "", type: "percent", value: 10, minSubtota
 beforeAll(async () => {
   await d1().exec(`CREATE TABLE IF NOT EXISTS ${TABLE} (code TEXT PRIMARY KEY, label TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, value INTEGER NOT NULL DEFAULT 0, min_subtotal INTEGER NOT NULL DEFAULT 0, max_uses INTEGER, used INTEGER NOT NULL DEFAULT 0, starts_at INTEGER, ends_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`);
 });
-beforeEach(async () => { await d1().exec(`DELETE FROM ${TABLE};`); });
+beforeEach(async () => { await d1().exec(`DELETE FROM ${TABLE};`); publicCache.reasons = []; });
+
+describe("優惠碼寫入 → publicContentChanged (2.0)", () => {
+  it("save and delete each tell the page cache; a refused save does not", async () => {
+    await saved(BASE);
+    expect(publicCache.reasons).toEqual([`promo:${TABLE}`]);
+    const startsAt = taipei(2026, 10, 1);
+    expect((await saved({ ...BASE, startsAt, endsAt: startsAt - 1 })).status).toBe(400);
+    expect(publicCache.reasons).toEqual([`promo:${TABLE}`]);
+    await remove(post({ code: "SAVE10" }), {}, ctx());
+    expect(publicCache.reasons).toEqual([`promo:${TABLE}`, `promo:${TABLE}`]);
+  });
+});
 
 describe("儲存 API 的開始與結束", () => {
   it("stores both and reads them back unchanged", async () => {
