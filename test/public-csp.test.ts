@@ -30,11 +30,12 @@ import {
   enforcedPublicPolicy,
   isPublicPagePath,
   publicPolicy,
+  publicReportOnlyPolicy,
   reportOnlyPolicy,
 } from "../src/lib/csp";
 import { approvedScriptHosts } from "../src/lib/public-csp";
 import { hashScripts } from "../src/ext/dx/scripts";
-import { middleware } from "../src/middleware";
+import { middleware, config as middlewareConfig } from "../src/middleware";
 import { makeScriptsWidget } from "../src/ext/dx/scripts-widget";
 import type { DeclarativeManifest } from "../src/ext/dx/manifest";
 
@@ -189,32 +190,22 @@ describe("middleware", () => {
   const request = (path: string, init?: ConstructorParameters<typeof NextRequest>[1]) =>
     new NextRequest(`https://site.test${path}`, init);
 
-  // 2.0:公開頁整頁存起來,CSP 改由 next.config.ts 送固定標頭(publicPolicy)。middleware
-  // 對公開頁原樣放行:不產生 nonce、不送 CSP、不把任何東西寫進請求標頭。
-  it("passes public pages through untouched: no nonce, no policy, no request headers", async () => {
-    await insertDx("ga", GA, await approvalFor(GA));
-    const res = await middleware(request("/products"));
-    expect(res.headers.get("content-security-policy")).toBeNull();
-    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
-    expect(res.headers.get("x-middleware-request-x-nonce")).toBeNull();
-    expect(res.headers.get("x-middleware-override-headers")).toBeNull();
+  // 2.0 phase 2:middleware 只跑在 /admin。公開頁(包含 OpenNext 快取命中的那些)、/login、/setup、
+  // /api、robots.txt 這類檔案都不經過它 —— CSP 全部是 next.config.ts 的固定標頭。
+  it("only runs for the admin area", () => {
+    expect(middlewareConfig.matcher).toEqual(["/admin", "/admin/:path*"]);
   });
 
-  it("leaves admin and login to next.config's Report-Only policy", async () => {
+  it("sends a visitor without a session cookie to the login page, and sets no CSP", async () => {
     const admin = await middleware(request("/admin/settings"));
     expect(admin.status).toBe(307);
+    expect(admin.headers.get("location")).toBe("https://site.test/login?next=%2Fadmin%2Fsettings");
     expect(admin.headers.get("content-security-policy")).toBeNull();
-    const login = await middleware(request("/login"));
-    expect(login.headers.get("content-security-policy")).toBeNull();
-    expect(login.headers.get("content-security-policy-report-only")).toBeNull();
   });
 
-  it("files get the admin Report-Only policy, pages with a dot in the path pass through", async () => {
-    const file = await middleware(request("/robots.txt"));
-    expect(file.headers.get("content-security-policy")).toBeNull();
-    expect(file.headers.get("content-security-policy-report-only")).toBe(PREVIOUS_POLICY);
-    const page = await middleware(request("/blog/v1.2-release"));
-    expect(page.headers.get("content-security-policy")).toBeNull();
+  it("passes the path to the admin layout when there is a session cookie", async () => {
+    const res = await middleware(request("/admin/users", { headers: { cookie: "session=x" } }));
+    expect(res.headers.get("x-middleware-request-x-pathname")).toBe("/admin/users");
   });
 });
 
@@ -224,6 +215,13 @@ describe("static public policy (2.0)", () => {
       "script-src 'self' 'unsafe-inline' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; report-uri /api/csp-report",
     );
     expect(publicPolicy(true)).toMatch(/^script-src 'self' 'unsafe-inline' https: 'unsafe-eval';/);
+  });
+
+  it("the public Report-Only policy is the admin one with the public script rule and the map frame", () => {
+    expect(publicReportOnlyPolicy()).toBe(
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src 'self' https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests; report-uri /api/csp-report",
+    );
+    expect(publicReportOnlyPolicy()).not.toContain("wasm-unsafe-eval");
   });
 });
 

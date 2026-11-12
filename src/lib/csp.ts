@@ -194,6 +194,17 @@ export function publicPolicy(dev = false): string {
 }
 
 /**
+ * 2.0 公開頁的 Report-Only:後台那一份,script-src 換成公開頁 enforce 的那條(publicPolicy),
+ * 加上 Google 地圖的嵌入(店家頁尾常見)。固定字串,跟頁面一起送給每個訪客;核准過的宣告式
+ * script 的主機不再逐站列出(那要逐請求查資料庫),它們的圖片、字體、連線會照實出現在回報裡。
+ */
+export function publicReportOnlyPolicy(): string {
+  return reportOnlyPolicy()
+    .replace("script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'", "script-src 'self' 'unsafe-inline' https:")
+    .replace("; object-src 'none'", "; frame-src 'self' https://www.google.com; object-src 'none'");
+}
+
+/**
  * next.config.ts headers() 的 source:REPORT_ONLY_PATHS 以外的每一條路徑(公開頁,以及
  * robots.txt 這類檔案 —— 檔案多一個用不到的標頭沒有代價)。寫法是 Next 文件的負向前瞻範例。
  */
@@ -217,17 +228,16 @@ export function isPublicPagePath(pathname: string): boolean {
   return !isFilePath(pathname);
 }
 
-/** 最後一段是已知副檔名的檔案(這些由 middleware 補上後台那份 Report-Only)。 */
+/** 最後一段是已知副檔名的檔案。2.0 起 middleware 不再用它(只跑 /admin);留給 isPublicPagePath。 */
 export function isFilePath(pathname: string): boolean {
   return FILE_EXTENSION_RE.test(pathname.slice(pathname.lastIndexOf("/") + 1));
 }
 
 /**
- * 仍然只送 Report-Only 的路徑(next.config.ts 的 headers() 用)。公開頁的 CSP 標頭
- * 由 middleware 送 —— 兩邊不能對同一個路徑送同一個標頭:OpenNext 合併時 next.config
- * 的標頭蓋過 middleware 的,`next dev` 則相反,同一份設定在兩個環境會送出不同的
- * policy。這張表以外、又不是公開頁的路徑(isFilePath 的檔案)由 middleware 送
- * reportOnlyPolicy(),所以每一個路徑至少有 Report-Only。
+ * 只送後台那份 Report-Only 的路徑(next.config.ts 的 headers() 用)。其餘每一條路徑(公開頁與
+ * robots.txt 這類檔案)走 PUBLIC_PAGES_SOURCE。2.0 起所有 CSP 標頭都由 next.config 送,
+ * middleware 不送任何 CSP —— 兩邊對同一個路徑送同一個標頭時,OpenNext 與 `next dev` 合併的
+ * 先後相反,同一份設定會在兩個環境送出不同的 policy。
  */
 export const REPORT_ONLY_PATHS = [
   "/admin",
