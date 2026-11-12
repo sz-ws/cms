@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // slug 正規化(src/ext/dx/slug.ts)+ 網址兩端(route-matcher.ts 的 decodePathSegments /
-// detailPath)+ 公開頁 dispatch((public)/[...slug]/page.tsx)的純邏輯測試。
+// detailPath)+ 公開頁 dispatch((public)/[[...slug]]/page.tsx)的純邏輯測試。
 //
 // 這一檔釘三件事:
 //   1. 純 ASCII 標題的 slug 與舊規則逐字相同 —— 舊規則就地複製在下面,拿亂數字串對拍;
 //   2. 中日韓標題得到可讀的 slug,而且放進網址、再解回來還是同一個字串;
 //   3. 請求裡的 slug 不管是編碼過的還是已解碼的都對得上,壞掉的 `%` 序列是 404 不是 500。
 
-const runtime = vi.hoisted(() => ({ enabled: [] as unknown[] }));
+const runtime = vi.hoisted(() => ({ enabled: [] as unknown[], unavailableById: new Map<string, { kind: string }>() }));
 vi.mock("@/ext/loader", () => ({ getExtRuntime: async () => runtime }));
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -23,7 +23,7 @@ import {
   detailPath,
   matchSegments,
 } from "../src/ext/dx/route-matcher";
-import PublicPage from "../src/app/(public)/[...slug]/page";
+import PublicPage from "../src/app/(public)/[[...slug]]/page";
 
 /** 改版前 content-provider.ts / SlugField.tsx 的規則,一字不改 —— 對拍用的基準。 */
 function legacySlugify(input: string): string {
@@ -244,6 +244,7 @@ describe("(public)/[...slug] — 公開頁 dispatch", () => {
 
   beforeEach(() => {
     const template = compilePattern("/news/:slug");
+    runtime.unavailableById = new Map();
     runtime.enabled = [
       {
         publicRoutes: [
@@ -280,5 +281,19 @@ describe("(public)/[...slug] — 公開頁 dispatch", () => {
 
   it("沒有 route 匹配 → 404", async () => {
     await expect(open(["other", SLUG])).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  // 插件的 migration 這次沒跑成:這一次是 500(Next 不存),不是一個少了插件、會被存起來的 404 或頁面。
+  it("一個插件這次 migration 失敗 → 丟錯(不存),不是 404;首頁也一樣", async () => {
+    runtime.unavailableById = new Map([["news", { kind: "migration-failed" }]]);
+    await expect(open(["other", SLUG])).rejects.toThrow(/migration failed/);
+    await expect(open(["news", SLUG])).rejects.toThrow(/migration failed/);
+    await expect(open([])).rejects.toThrow(/migration failed/);
+  });
+
+  it("不相容之類不會自己恢復的狀態照常渲染", async () => {
+    runtime.unavailableById = new Map([["old", { kind: "core-api-incompatible" }]]);
+    const el = await open(["news", SLUG]);
+    expect(el.type).toBe(Detail);
   });
 });
