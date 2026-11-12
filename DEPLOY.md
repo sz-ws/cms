@@ -193,15 +193,13 @@ Analytics) are allowed by this policy when they load from `https:` hosts.
   declares the exact `next` range it was built against (via its `@opennextjs/aws`
   peer), and the range is narrow: `1.20.2` is the last release that accepts
   `next@16.2.x`; `1.20.3+` requires `next@>=16.3.3`, and `1.20.16` (used here
-  with `next@16.4.6`) requires `next@>=16.4.5` and `wrangler@^4.148.0`. Re-check the
-  eager startup entry (`worker/README.md`) after every bump of the pair. `pnpm install` prints an
+  with `next@16.4.6`) requires `next@>=16.4.5` and `wrangler@^4.148.0`. `pnpm install` prints an
   "unmet peer" line when the pair drifts — treat that as a build blocker, not a
   warning, and bump both or neither.
 - `pnpm exec wrangler deploy --dry-run` gives you a config and bundle preflight before the real deploy.
 - `node cli/dist/cli.js deploy --dry-run` is a different thing: it reports the deployment plan and reads what already exists on your account. It runs the project's own Wrangler, so it needs `pnpm install` to have finished; on a fresh clone it stops with exit 7 and tells you. `cms deploy` without `--dry-run` installs first, so it works on a fresh clone.
 - `migrations/` are applied to `cms-db` only. The tag cache binding points at the same database by default, and it declares no `migrations_dir` — its one table comes from OpenNext.
 - After `opennextjs-cloudflare build`, run `pnpm exec wrangler deploy --dry-run` and check **Total Upload**, the uncompressed Worker bundle size. Since [September 4, 2026](https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/), both Free and Paid plans allow **64 MiB uncompressed**; the former compressed-size limits and this project's 8 MB compressed gate no longer apply. The gzip figure is informational. Continue checking startup time (1 second) and runtime memory (128 MB); larger bundles do not increase those limits.
-- Optional eager startup: `worker/eager-entry.ts` is the same Worker as `custom-worker.ts`, but it loads OpenNext's server handler at startup (through `worker/eager-startup.mjs`), so the Next server is built when the isolate starts instead of in the first request. The default entry stays `custom-worker.ts`; a site opts in by setting `main` in `wrangler.jsonc` to `worker/eager-entry.ts` and opts out by setting it back. The startup work counts toward the 1-second limit. To see it, run `pnpm exec wrangler deploy --dry-run --outfile x.bundle --compatibility-date 2026-05-03` and then `pnpm exec wrangler check startup --worker x.bundle`, which writes a startup CPU profile. A Worker over the limit fails `wrangler deploy` and the live version stays as it was. When you upgrade `@opennextjs/cloudflare`, compare `initRuntime` in the new `.open-next/cloudflare/init.js` with `worker/eager-startup.mjs`. See `worker/README.md`.
 - Schema changes are hand-written SQL in `migrations/`; `db:generate` is disabled on
   purpose. Scaffold the next migration with `pnpm db:new <slug>`, mirror the DDL in
   `src/lib/schema.ts` (same names, same columns), and verify with
