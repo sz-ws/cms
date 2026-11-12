@@ -23,21 +23,16 @@ vi.mock("@/lib/cf", () => ({
 // 純模組(dx/submission.ts、dx/crud.ts)的原因:最重要的正確性需求必須是測試能
 // 直接斷言的東西。interpret.tsx 對這兩者只是轉呼叫,沒有第二份判斷邏輯。
 
-// Content API 的快取層換成直接查真實 provider(照 content-api.test.ts 的既有做法):
+// Content API 的 provider 換成直接 new 的真實 provider(照 content-api.test.ts 的既有做法):
 // 路由語意(auth / gating / published-only / submission 擋牆)完全不變。
-vi.mock("@/ext/dx/content-cache", async () => {
+vi.mock("@/ext/dx/runtime", async (importActual) => {
+  const actual = await importActual<typeof import("../src/ext/dx/runtime")>();
   const { CoreContentProvider } = await import(
     "../src/ext/dx/content-provider"
   );
   const { HookBus } = await import("../src/ext/hooks");
   const provider = new CoreContentProvider(new HookBus());
-  return {
-    cachedPublicQuery: (_extId: string, type: string, q: unknown) =>
-      provider.query(type, q as never),
-    cachedPublicGetBySlug: (_extId: string, type: string, slug: string) =>
-      provider.getBySlug(type, slug),
-    cachedExtStylesheet: async () => null,
-  };
+  return { ...actual, getContentProvider: async () => provider };
 });
 
 // publish-due 會透過 loader 派發 content:updated hook;給一個空 runtime 即可。

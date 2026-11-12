@@ -6,7 +6,7 @@ import { declarativeExtensions as dxTable } from "@/lib/schema";
 import { getLocale } from "@/lib/i18n/server";
 import { publicExtras } from "@/lib/extra-fields";
 import { getExtraFieldDefs } from "@/lib/extra-fields-server";
-import { cachedPublicQuery } from "./content-cache";
+import { getContentProvider } from "./runtime";
 import { parseManifest, type DeclarativeManifest } from "./manifest";
 import { isSubmissionTypeName } from "./submission";
 import { pickTitleField } from "./views/field-utils";
@@ -52,12 +52,12 @@ type Loaded = { id: string; slug: string | null; data: Record<string, unknown> }
 async function publishedEntries(extId: string, type: string): Promise<Loaded[]> {
   const fullType = `${extId}.${type}`;
   const [{ items }, extraDefs] = await Promise.all([
-    cachedPublicQuery(extId, fullType, {
+    getContentProvider().then((provider) => provider.query(fullType, {
       filter: { status: "published" },
       sort: { field: "createdAt", dir: "desc" },
       page: 1,
       perPage: CONTENT_REF_LIMIT,
-    }),
+    })),
     getExtraFieldDefs(fullType),
   ]);
   return items.map((e) => ({

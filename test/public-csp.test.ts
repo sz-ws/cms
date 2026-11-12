@@ -10,7 +10,9 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/settings", () => ({ getSetting: async (_key: string, fallback: unknown) => fallback }));
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
-vi.mock("@/ext/dx/content-cache", () => ({ cachedPublicQuery: async () => ({ items: [] }) }));
+vi.mock("@/ext/dx/runtime", () => ({
+  getContentProvider: async () => ({ query: async () => ({ items: [], total: 0 }) }),
+}));
 
 import { NextRequest } from "next/server";
 import {

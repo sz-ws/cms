@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { DeclarativeTheme } from "./manifest";
-import { cachedExtStylesheet } from "./content-cache";
+import { eq } from "drizzle-orm";
+import { db } from "../../lib/db";
+import { declarativeExtensions } from "../../lib/schema";
 
 // 1.8.0:public 頁面的 theme scope。把 manifest.theme 的 tokens 宣告成 CSS 自訂屬性
 // (只宣告有給的),掛在一個 data-ext="<id>" 的包裹層上,供泛用 public views 以
@@ -57,8 +59,27 @@ export function ExtThemeScope({ extId, theme, children }: ExtThemeScopeProps) {
  * 有 sheet 才 render <style>,並以 CSS nesting 包成 `[data-ext="<id>"] { <sheet> }`
  * scoped 於外層 wrapper。無 sheet(或讀取失敗)→ 不 render → 頁面照常無自訂樣式。
  */
+/**
+ * 讀某 extension 已驗證的 co-located stylesheet(declarative_extensions.stylesheet);無 sheet → null。
+ * 直接讀 D1:整頁存起來的是這次渲染的結果(2.0 頁面快取),re-install 帶新 CSS 時安裝路徑會讓頁面重算。
+ * 任何 DB 例外一律降級為「無 sheet」並 console.error —— 絕不讓樣式讀取失敗連累 public 頁面渲染。
+ */
+async function extStylesheet(extId: string): Promise<string | null> {
+  try {
+    const rows = await db()
+      .select({ stylesheet: declarativeExtensions.stylesheet })
+      .from(declarativeExtensions)
+      .where(eq(declarativeExtensions.id, extId))
+      .limit(1);
+    return rows[0]?.stylesheet ?? null;
+  } catch (err) {
+    console.error(`[dx:theme] reading the stylesheet failed; rendering without it extId=${extId}`, err);
+    return null;
+  }
+}
+
 async function ExtStyleTag({ extId }: { extId: string }) {
-  const sheet = await cachedExtStylesheet(extId);
+  const sheet = await extStylesheet(extId);
   if (!sheet) return null;
   // CSS 進 <style> 文字節點(單一 string child,React 原樣輸出不逃逸);breakout(`</`)
   // 已於 validateStylesheet 拒絕,extId 受 ID_RE 約束,故此處無需再跳脫。

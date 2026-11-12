@@ -9,23 +9,17 @@ vi.mock("@/lib/cf", () => ({
   getStorage: () => (env as { STORAGE?: unknown }).STORAGE,
 }));
 
-// content-cache 走 next/cache 的 unstable_cache + getExtRuntime(loader/registry/React
-// cache),在 pool-workers 測試環境不穩且會跨 case 快取造成非確定性。此處以「直接查
-// 真實 provider」取代快取層 —— 路由的語意(auth / gating / published-only / 白名單 /
-// 分頁)完全不變,且對真實 contents 表讀取,只是拿掉 unstable_cache 記帳。
-vi.mock("@/ext/dx/content-cache", async () => {
+// getContentProvider 經 getExtRuntime(loader/registry/React cache),在 pool-workers 測試
+// 環境載不起來。此處換成直接 new 的真實 provider —— 路由的語意(auth / gating /
+// published-only / 白名單 / 分頁)完全不變,且對真實 contents 表讀取。
+vi.mock("@/ext/dx/runtime", async (importActual) => {
+  const actual = await importActual<typeof import("../src/ext/dx/runtime")>();
   const { CoreContentProvider } = await import(
     "../src/ext/dx/content-provider"
   );
   const { HookBus } = await import("../src/ext/hooks");
   const provider = new CoreContentProvider(new HookBus());
-  return {
-    cachedPublicQuery: (_extId: string, type: string, q: unknown) =>
-      provider.query(type, q as never),
-    cachedPublicGetBySlug: (_extId: string, type: string, slug: string) =>
-      provider.getBySlug(type, slug),
-    cachedExtStylesheet: async () => null,
-  };
+  return { ...actual, getContentProvider: async () => provider };
 });
 
 import {

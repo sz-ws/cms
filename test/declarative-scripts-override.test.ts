@@ -28,13 +28,16 @@ const contentState = vi.hoisted(() => ({
   items: new Map<string, unknown[]>(),
   failing: new Set<string>(),
 }));
-vi.mock("@/ext/dx/content-cache", () => ({
-  cachedPublicQuery: async (_extId: string, type: string) => {
-    if (contentState.failing.has(type)) throw new Error(`${type} is down`);
-    return { items: contentState.items.get(type) ?? [] };
-  },
-  cachedExtStylesheet: async () => null,
+vi.mock("@/ext/dx/runtime", async (importActual) => ({
+  ...(await importActual<typeof import("../src/ext/dx/runtime")>()),
+  getContentProvider: async () => ({
+    query: async (type: string) => {
+      if (contentState.failing.has(type)) throw new Error(`${type} is down`);
+      return { items: contentState.items.get(type) ?? [], total: 0 };
+    },
+  }),
 }));
+
 
 const feedState = vi.hoisted(() => ({ recentPurchases: async (): Promise<unknown> => [] }));
 vi.mock("@/ext/loader", () => ({

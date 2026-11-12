@@ -2,10 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { declarativeExtensions } from "@/lib/schema";
 import { authenticateApiToken } from "@/lib/api-token";
-import {
-  cachedPublicGetBySlug,
-  cachedPublicQuery,
-} from "@/ext/dx/content-cache";
+import { getContentProvider } from "@/ext/dx/runtime";
 import { isSubmissionTypeName } from "@/ext/dx/submission";
 import { decodePathSegments } from "@/ext/dx/route-matcher";
 import { publicExtras, type ExtraFieldDef } from "@/lib/extra-fields";
@@ -25,7 +22,7 @@ import type {
 //   GET /api/content/<extId>/<type>          → list  { items, total, page, perPage }
 //   GET /api/content/<extId>/<type>/<slug>   → detail { id, slug, data, createdAt, updatedAt }
 //
-// 走既有 cachedPublicQuery/cachedPublicGetBySlug tagged cache(content mutation 已會失效)。
+// 直接讀 content provider(每個請求查 D1;這是 API,不進頁面快取)。
 
 const PER_PAGE_CAP = 100;
 const DEFAULT_PER_PAGE = 20;
@@ -219,7 +216,7 @@ export async function GET(
     const decoded = decodePathSegments(segments);
     if (!decoded) return notFound();
     const slug = decoded[0];
-    const entry = await cachedPublicGetBySlug(extId, fullType, slug);
+    const entry = await (await getContentProvider()).getBySlug(fullType, slug);
     if (!entry || entry.status !== "published") return notFound();
     return Response.json(serialize(entry, extraDefs));
   }
@@ -227,7 +224,7 @@ export async function GET(
   // list:GET /<extId>/<type>。
   const sp = new URL(req.url).searchParams;
   const { query, page, perPage } = buildQuery(sp, fieldKeys);
-  const { items, total } = await cachedPublicQuery(extId, fullType, query);
+  const { items, total } = await (await getContentProvider()).query(fullType, query);
   return Response.json({
     items: items.map((entry) => serialize(entry, extraDefs)),
     total,

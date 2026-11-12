@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { toTypeDef } from "../runtime";
-import { cachedPublicQuery } from "../content-cache";
+import { getContentProvider, toTypeDef } from "../runtime";
 import type { DeclarativeContentType, ListLayout } from "../manifest";
 import { displayValue } from "./field-utils";
 import { inferCardConfig } from "./collection/card-config";
@@ -40,8 +39,8 @@ export async function ListView({
   layout = "table",
 }: ListViewProps) {
   const def = toTypeDef(extId, contentType);
-  // public 匿名讀取:走 tagged data cache(content:<type> / ext:<extId>),mutation 精準失效。
-  const { items } = await cachedPublicQuery(extId, def.type, {
+  // 直接讀 provider:整頁存起來的是這次渲染的結果(2.0 頁面快取)。
+  const { items } = await (await getContentProvider()).query(def.type, {
     filter: { status: "published" },
     sort: { field: "createdAt", dir: "desc" },
     page: 1,

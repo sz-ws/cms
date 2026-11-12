@@ -657,8 +657,7 @@ async function decryptSecret(stored: string): Promise<string> {
 //
 // 為何不用 next/cache 的 unstable_cache:prod 的 D1 tag cache 每次讀都要打 revalidations
 // 表(hasBeenRevalidated → SELECT ... WHERE tag IN (...)),對「單表一次讀」沒省到,還多
-// 一次 R2 incremental cache get(content-cache.ts 走 unstable_cache 是因為要掛 tag 做精準
-// 失效,取捨不同)。
+// 一次 R2 incremental cache get。
 //
 // 失敗一律降級:stamp query 失敗 → 直接走全表讀(不寫 memo,無法驗新鮮度);任何一步
 // throw 都往上拋(維持原 readAll 的行為),絕不因快取 plumbing 弄壞讀取路徑。

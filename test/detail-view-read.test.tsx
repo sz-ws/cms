@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
-  cachedGet: vi.fn(),
   providerGet: vi.fn(),
   draft: false,
 }));
@@ -25,9 +24,6 @@ vi.mock("next/link", () => ({
 }));
 vi.mock("@/lib/i18n/server", () => ({ getLocale: async () => "zh-Hant" }));
 vi.mock("@/lib/datetime-server", () => ({ getSiteTimeZone: async () => "Asia/Taipei" }));
-vi.mock("@/ext/dx/content-cache", () => ({
-  cachedPublicGetBySlug: calls.cachedGet,
-}));
 vi.mock("@/ext/dx/relation-resolve", () => ({
   resolveRelations: async () => [],
 }));
@@ -38,9 +34,10 @@ vi.mock("@/ext/dx/views/media-dims", async (importActual) => {
 
 import { DetailView } from "../src/ext/dx/views/DetailView";
 
-describe("DetailView public content cache key", () => {
+// 2.0:DetailView 直接讀 content provider(整頁存起來的是這次渲染的結果,沒有另一層資料快取)。
+describe("DetailView reads the entry from the provider", () => {
   it("keeps English content reachable when the admin interface is Chinese", async () => {
-    calls.cachedGet.mockImplementationOnce(async (_ext: string, _type: string, _slug: string, locale?: string) => locale ? null : ({
+    calls.providerGet.mockImplementationOnce(async (_type: string, _slug: string, locale?: string) => locale ? null : ({
       id: "about-zh",
       type: "pages.page",
       locale: "en",
@@ -62,16 +59,13 @@ describe("DetailView public content cache key", () => {
       },
     });
 
-    expect(calls.cachedGet).toHaveBeenCalledWith(
-      "pages",
-      "pages.page",
-      "about",
-    );
+    // 不帶 locale:core.locale 是管理介面語言,不能拿來過濾內容。
+    expect(calls.providerGet).toHaveBeenCalledWith("pages.page", "about");
   });
 
-  it("2.0: in draft mode reads the provider directly and shows a draft", async () => {
+  it("2.0: in draft mode shows a draft", async () => {
     calls.draft = true;
-    calls.cachedGet.mockClear();
+    calls.providerGet.mockClear();
     calls.providerGet.mockResolvedValueOnce({
       id: "d1", type: "pages.page", locale: "en", translationGroup: "d1", slug: "soon",
       status: "draft", data: { title: "還沒發佈" }, createdAt: 1, updatedAt: 1,
@@ -82,13 +76,12 @@ describe("DetailView public content cache key", () => {
       contentType: { name: "page", slugField: "title", fields: [{ key: "title", type: "text" }] },
     });
     expect(calls.providerGet).toHaveBeenCalledWith("pages.page", "soon");
-    expect(calls.cachedGet).not.toHaveBeenCalled();
     expect(JSON.stringify(out)).toContain("還沒發佈");
     calls.draft = false;
   });
 
   it("2.0: outside draft mode a draft is still a 404", async () => {
-    calls.cachedGet.mockResolvedValueOnce({
+    calls.providerGet.mockResolvedValueOnce({
       id: "d1", type: "pages.page", locale: "en", translationGroup: "d1", slug: "soon",
       status: "draft", data: { title: "還沒發佈" }, createdAt: 1, updatedAt: 1,
     });
