@@ -48,7 +48,12 @@ vi.mock("@/lib/rate-limit", () => ({
   },
 }));
 
-vi.mock("@/lib/settings", () => ({ setSettings: async () => {} }));
+const settingsWrite = vi.hoisted(() => ({ fail: false }));
+vi.mock("@/lib/settings", () => ({
+  setSettings: async () => {
+    if (settingsWrite.fail) throw new Error("D1 unavailable");
+  },
+}));
 
 // 2.0 頁面快取:首次設定寫了站名(畫在每一頁上),存起來的公開頁要重算。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
@@ -109,6 +114,7 @@ beforeEach(() => {
   db.userCount = 0;
   db.trace = [];
   limiter.blocked = false;
+  settingsWrite.fail = false;
 });
 
 describe("POST /api/setup", () => {
@@ -118,6 +124,14 @@ describe("POST /api/setup", () => {
     expect(res.status).toBe(200);
     expect(db.trace).toContain("insert");
     // 站名寫進去了:存起來的公開頁重算一次。
+    expect(publicCache.reasons).toEqual(["setup"]);
+  });
+
+  it("管理員建好了但站名沒寫進去:存起來的頁面照樣重算(/login 不再叫人去 /setup)", async () => {
+    publicCache.reasons = [];
+    settingsWrite.fail = true;
+    await expect(POST(request(validBody()))).rejects.toThrow("D1 unavailable");
+    expect(db.trace).toContain("insert");
     expect(publicCache.reasons).toEqual(["setup"]);
   });
 

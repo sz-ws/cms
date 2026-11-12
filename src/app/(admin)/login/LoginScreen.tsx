@@ -11,12 +11,14 @@ export function LoginScreen({
   providers,
   oauthError,
   resetAvailable,
+  autoPasskey,
 }: {
   siteTitle: string;
   next?: string;
   providers?: LoginProviderButton[];
   oauthError?: string;
   resetAvailable?: boolean;
+  autoPasskey?: boolean;
 }) {
   const [phase, setPhase] = useState<"loading" | "playing" | "held">(
     "loading",
@@ -73,6 +75,7 @@ export function LoginScreen({
           providers={providers}
           oauthError={oauthError}
           resetAvailable={resetAvailable}
+          autoPasskey={autoPasskey}
         />
       </main>
     </div>

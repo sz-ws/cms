@@ -78,6 +78,7 @@ export function LoginForm({
   providers = [],
   oauthError,
   resetAvailable = false,
+  autoPasskey = true,
 }: {
   next?: string;
   siteTitle: string;
@@ -85,15 +86,22 @@ export function LoginForm({
   oauthError?: string;
   /** 1.56.0:寄得出信 → 給「忘記密碼」;否則請他聯絡網站管理員。 */
   resetAvailable?: boolean;
+  /** 2.0:進頁自動試一次 Passkey。存起來的 /login 在確定訪客留在這頁之後才給 true。 */
+  autoPasskey?: boolean;
 }) {
   const t = useT();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  // OAuth redirect 帶回的錯誤只當「初始值」:使用者一開始新的登入嘗試就讓位。
-  const [error, setError] = useState<string | null>(() =>
-    oauthError ? t(oauthErrorKey(oauthError)) : null,
-  );
+  // OAuth redirect 帶回的錯誤只在一開始顯示:使用者一開始新的登入嘗試就讓位。2.0:存起來的 /login
+  // hydrate 之後才讀得到網址,oauthError 會從 undefined 變成錯誤碼,所以由 prop 推出來,不當 state 初始值。
+  const [error, setError] = useState<string | null>(null);
+  const [oauthErrorDismissed, setOauthErrorDismissed] = useState(false);
+  const shownError = error ?? (oauthError && !oauthErrorDismissed ? t(oauthErrorKey(oauthError)) : null);
+  function clearError() {
+    setError(null);
+    setOauthErrorDismissed(true);
+  }
   const [pending, setPending] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
   // client-only 能力偵測:server snapshot 給 null(SSR/hydration 一致),client 端
@@ -114,7 +122,7 @@ export function LoginForm({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    clearError();
     setPending(true);
     try {
       const res = await fetch("/api/auth/login", {
@@ -142,7 +150,7 @@ export function LoginForm({
   // auto = 進頁自動觸發的那一次:ceremony 被取消/無 credential 時保持安靜,
   // 不對「只是想用密碼登入」的人噴錯誤;但 ceremony 完成而 verify 失敗仍要講。
   async function onPasskey(auto = false) {
-    setError(null);
+    clearError();
     setPasskeyPending(true);
     try {
       const result = await signInWithPasskey();
@@ -165,12 +173,12 @@ export function LoginForm({
   }
 
   useEffect(() => {
-    if (browserSupportsWebAuthn() && !autoTried.current) {
+    if (autoPasskey && browserSupportsWebAuthn() && !autoTried.current) {
       autoTried.current = true;
       void onPasskey(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only auto attempt
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one auto attempt, once allowed
+  }, [autoPasskey]);
 
   const passwordForm = (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -196,7 +204,7 @@ export function LoginForm({
       {resetAvailable ? (
         <TextButton
           onClick={() => {
-            setError(null);
+            clearError();
             setResetting(true);
           }}
         >
@@ -269,12 +277,12 @@ export function LoginForm({
               </button>
             )}
 
-            {error && (
+            {shownError && (
               <p
                 role="alert"
                 className="rounded-[8px] border border-red-600/15 bg-red-50 px-3 py-2 text-[13px] text-red-700"
               >
-                {error}
+                {shownError}
               </p>
             )}
 
@@ -373,7 +381,7 @@ export function LoginForm({
                           next={safeNext(next)}
                           className={className}
                           style={style}
-                          onError={(code) => setError(code ? t(oauthErrorKey(code)) : null)}
+                          onError={(code) => (code ? setError(t(oauthErrorKey(code))) : clearError())}
                         >
                           {content}
                         </FirebaseSignInButton>

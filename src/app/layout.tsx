@@ -39,7 +39,7 @@ const interHeading = Inter({
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
 // 2.0:根 layout 不再 force-dynamic。公開頁由 (public)/[[...slug]]/page.tsx 在第一次造訪時
-// 算好整頁存起來(dynamic = "error"),後台、登入、首次設定各自 force-dynamic。這裡讀的站台
+// 算好整頁存起來(dynamic = "error"),/login 也一樣((admin)/login/[[...rest]]/page.tsx);後台與首次設定各自 force-dynamic。這裡讀的站台
 // 外殼設定走 getSiteShell():`next build` 會經由這個 layout 預先產生 404 頁,而建置時沒有
 // 網站的資料庫,所以那時它回內建預設值;正式環境的每個請求照常讀設定(見 lib/site-shell.ts)。
 //

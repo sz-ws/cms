@@ -44,11 +44,20 @@ export async function sendEmail(msg: EmailMessage): Promise<EmailSendResult> {
  */
 export async function emailReady(): Promise<boolean> {
   try {
-    const provider = await activeEmailProvider();
-    return provider.isConfigured ? await provider.isConfigured() : true;
+    return await emailConfigured();
   } catch {
     return false;
   }
+}
+
+/**
+ * 2.0:同一個判斷,但查不到就丟錯,不當作「沒設定」。給存起來的頁面用(/login):查詢一時失敗時
+ * 這一次渲染失敗、不存,下一次再算;當成 false 存起來,「忘記密碼」會一直不見,直到下一次失效。
+ * provider 自己判定的「沒設定」(包括金鑰解不開)照樣是 false。
+ */
+export async function emailConfigured(): Promise<boolean> {
+  const provider = await activeEmailProvider();
+  return provider.isConfigured ? await provider.isConfigured() : true;
 }
 
 /**

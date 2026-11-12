@@ -144,9 +144,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // 後續步驟失敗的恢復 = 用剛設的密碼去 /login(04 §5),不需特殊處理。
-  await setSettings({ "core.siteTitle": parsed.siteTitle });
-  // 站名畫在每一頁上:設定之前就被存起來的頁面(例如首頁的歡迎畫面)要重算。
-  publicContentChanged("setup");
+  // 站名畫在每一頁上:設定之前就被存起來的頁面(例如首頁的歡迎畫面)要重算。存起來的 /login 也記著
+  // 「還沒有人,去 /setup」:站名沒寫進去也要重算,否則 /login 與 /setup 會互相轉。
+  try {
+    await setSettings({ "core.siteTitle": parsed.siteTitle });
+  } finally {
+    publicContentChanged("setup");
+  }
 
   const token = await createSession(id);
   const store = await cookies();

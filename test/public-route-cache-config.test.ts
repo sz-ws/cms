@@ -25,6 +25,10 @@ const file = (suffix: string) => {
 const PUBLIC = "/src/app/(public)/";
 const publicFiles = Object.entries(sources).filter(([path]) => path.includes(PUBLIC));
 const publicPages = publicFiles.filter(([path]) => path.endsWith("/page.tsx"));
+// 2.0:/login 也是存起來的頁面(同樣的路由形狀),它的檔案同樣不讀請求。
+const LOGIN = "/src/app/(admin)/login/";
+const loginFiles = Object.entries(sources).filter(([path]) => path.includes(LOGIN));
+const storedPages = [...publicPages, ...loginFiles.filter(([path]) => path.endsWith("/page.tsx"))];
 
 describe("cacheable public routes keep the A1 exports", () => {
   it("the public pages are exactly the one optional catch-all", () => {
@@ -33,7 +37,14 @@ describe("cacheable public routes keep the A1 exports", () => {
     ]);
   });
 
-  it.each(publicPages)("%s renders on first visit, is stored, and refuses request data", (_path, source) => {
+  it("the login page is the one stored page outside (public)", () => {
+    expect(storedPages.map(([path]) => path.slice(path.indexOf("/src/app/")))).toEqual([
+      "/src/app/(public)/[[...slug]]/page.tsx",
+      "/src/app/(admin)/login/[[...rest]]/page.tsx",
+    ]);
+  });
+
+  it.each(storedPages)("%s renders on first visit, is stored, and refuses request data", (_path, source) => {
     expect(source).toMatch(/^export const dynamic = "error";$/m);
     expect(source).toMatch(/^export const dynamicParams = true;$/m);
     expect(source).toMatch(/^export const revalidate = false;$/m);
@@ -47,8 +58,8 @@ describe("cacheable public routes keep the A1 exports", () => {
     }
   });
 
-  it("nothing under (public) reads the request", () => {
-    for (const [path, source] of publicFiles) {
+  it("nothing under (public) or the login page reads the request", () => {
+    for (const [path, source] of [...publicFiles, ...loginFiles]) {
       expect(source, path).not.toMatch(/from ["']next\/headers["']/);
     }
   });
