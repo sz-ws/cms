@@ -118,3 +118,42 @@
   - `plugin-ref.ts`: plugin identity (`<publisher>/<name>`) and plugin-to-plugin requirement rules, pure (server + client).
   - `installed-plugins.ts`: what is installed (both kinds) with identity and requirements; used by the store index, install route, enable/disable and the extensions page.
   - `code-lifecycle.ts`: besides the code-plugin guards, the SQL guards that carry plugin requirements into the declarative enable/disable writes.
+
+## Public pages
+
+A public page — a `PublicRoute`, the `publicHome` / `publicHeader` / `publicFooter` /
+`publicWidgets` filters, a declarative list, detail or form view — is rendered once, stored
+whole and sent to every visitor from the page cache without running the Next server
+(`src/app/(public)/[[...slug]]/page.tsx`, `lib/public-cache.ts`). Decide before you write the
+page whether it asks the server anything after it shows, in this order:
+
+1. **Default: it asks nothing.** The HTML is the same for every visitor. When what it shows
+   changes, the write refreshes every stored page: call `services.publicContentChanged(reason)`
+   after the write, or declare the table in `publicTables` if you write through ledger-kit.
+   Content saves, the settings page, plugin install / enable / disable and script approval do
+   this already. Most pages end here.
+   These look per-visitor but are refreshes, not server calls: stock, a price that is the same
+   for everyone, "new" or "sold out" badges, anything that changes when someone saves in the
+   admin, a scheduled publish (the job writes and refreshes). A date window (a sale banner,
+   the site notice): put the window in the HTML and let the browser decide.
+2. **It asks only for what differs per visitor or must be current to the second:** who is
+   signed in, a cart kept on the server, a price only this member gets, their orders,
+   submitting a form, placing an order. These go in a client component.
+3. **If it asks:**
+   - A write is a server action (or your existing API route), run by the visitor's action — a
+     click, a submit — never on page load.
+   - A read on page load is at most one call per page view, and is skipped when the answer is
+     already known in the browser (an empty cart in `localStorage`, a visitor who never signed in).
+   - Use a server action when only your component needs the answer: one import, its own POST
+     and same-origin checks. Use an API route (`apiRoutes`, `GET`, `Cache-Control: private,
+     no-store`) when something else needs the same answer or you want a URL you can open.
+   - Why "no call" is the default: each call is a Next server request. Measured on a test site,
+     a stored page costs about 10 ms CPU; a call costs 0.2–0.4 s and 10–80 ms CPU when the
+     Worker is warm, and 300–700 ms CPU on a cold Worker, which has to start the server first.
+4. **What breaks:** reading `cookies()`, `headers()`, `connection()` or `searchParams` (or a
+   `fetch` with `cache: "no-store"`) while the page renders. Public routes are
+   `dynamic = "error"`, so Next refuses: `next dev` shows `Route /[[...slug]] with
+   dynamic = "error" couldn't be rendered statically because it used cookies()`, production
+   answers that URL with a 500 and stores nothing. Also: no `revalidate = <number>`, no
+   `revalidateTag(tag, "max")`, no module-level memo with a time limit in code that renders a
+   public page, and pagination in the path (`/blog/page/2`), not `?page=`.

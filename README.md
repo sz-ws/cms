@@ -104,7 +104,7 @@ manifest can use uploads, email or AI without knowing what's behind them.
 | **Auth** | Password, passkey (WebAuthn), and third-party OIDC sign-in declared in a manifest. Preset roles (admin / staff / guest) plus custom staff roles that grant None, View or Edit per admin page. |
 | **Content** | JSON document model, no runtime DDL. Text, richtext, media, relations, and nested group / repeater / block fields for page building. Draft and scheduled publish. |
 | **Admin** | Auto-generated editors and settings forms, composable dashboard, ⌘K search over your content (D1 FTS5). English and 繁體中文. |
-| **Public site** | Generic list / detail / form views driven by your manifest, tagged edge caching, robots / sitemap / feed. |
+| **Public site** | Generic list / detail / form views driven by your manifest, stored whole and refreshed when content changes, robots / sitemap / feed. |
 | **API** | Read-only public content API with bearer tokens and a per-type exposure allowlist. |
 | **Jobs** | Periodic and one-shot extension jobs, declarative retention schedules. |
 

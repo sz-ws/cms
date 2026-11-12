@@ -14,7 +14,8 @@ import { getSetting } from "@/lib/settings";
 //   - revalidate = false:不依時間重算,只在失效時重算(依時間重算要 queue,這裡不用)。
 //   - dynamic = "error":頁面、layout 或任何插件的元件在渲染時讀了 cookies()、headers()、
 //     searchParams,就直接報錯,而不是悄悄把整頁變成每次即時算。存起來的頁面對每個訪客都
-//     一樣;因人而異的東西(登入狀態、購物車)由瀏覽器向 API 取。
+//     一樣;因人而異的東西(登入狀態、購物車)在頁面出現之後由 client 元件問伺服器(server action
+//     或 API route)。什麼時候需要問、怎麼問:src/ext/META.md 的「Public pages」。
 //
 // 首頁也在這裡(slug 是 undefined):以前 `/` 是同層的 page.tsx,optional catch-all 因此不能用;
 // 兩個合成一個,`/` 才能跟其他公開頁一樣被存起來。
