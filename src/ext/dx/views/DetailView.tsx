@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
+import { draftMode } from "next/headers";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { toTypeDef } from "../runtime";
+import { getContentProvider, toTypeDef } from "../runtime";
 import { cachedPublicGetBySlug } from "../content-cache";
 import type { DeclarativeContentType, DeclarativeField } from "../manifest";
 import { displayValue, fieldLabel } from "./field-utils";
@@ -52,8 +53,15 @@ export async function DetailView({
   // public 匿名讀取:走 tagged data cache(content:<type> / ext:<extId>),mutation 精準失效。
   // core.locale 是管理介面語言；公開 route 尚未携帶內容 locale，不能用它過濾
   // entry，否則切換後台語言會讓既有文章變成 404。與 ListView 保持同一查詢語意。
-  const entry = await cachedPublicGetBySlug(extId, def.type, slug);
-  if (!entry || entry.status !== "published") notFound();
+  //
+  // 2.0 草稿預覽:編輯開了 Next 的 draft mode(/api/preview)時,這一次是逐請求渲染、不會存起來,
+  // 直接讀 provider(草稿也讀)。存起來的那一次渲染裡 draftMode() 一律是關的(Next 在靜態渲染裡
+  // 給的是空的 draft mode,不算讀請求),所以不會把草稿存給訪客。
+  const preview = (await draftMode()).isEnabled;
+  const entry = preview
+    ? await (await getContentProvider()).getBySlug(def.type, slug)
+    : await cachedPublicGetBySlug(extId, def.type, slug);
+  if (!entry || (!preview && entry.status !== "published")) notFound();
 
   const titleField =
     contentType.fields.find((f) => f.key === contentType.slugField) ??

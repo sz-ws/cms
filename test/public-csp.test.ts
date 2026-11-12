@@ -192,8 +192,13 @@ describe("middleware", () => {
 
   // 2.0 phase 2:middleware 只跑在 /admin。公開頁(包含 OpenNext 快取命中的那些)、/login、/setup、
   // /api、robots.txt 這類檔案都不經過它 —— CSP 全部是 next.config.ts 的固定標頭。
-  it("only runs for the admin area", () => {
-    expect(middlewareConfig.matcher).toEqual(["/admin", "/admin/:path*"]);
+  // 例外:帶著 draft mode cookie 的公開頁請求(草稿預覽,每次驗編輯身分,見 test/preview-access.test.ts)。
+  it("only runs for the admin area, and for public pages only with the draft mode cookie", () => {
+    expect(middlewareConfig.matcher).toEqual([
+      "/admin",
+      "/admin/:path*",
+      { source: PUBLIC_PAGES_SOURCE, has: [{ type: "cookie", key: "__prerender_bypass" }] },
+    ]);
   });
 
   it("sends a visitor without a session cookie to the login page, and sets no CSP", async () => {
