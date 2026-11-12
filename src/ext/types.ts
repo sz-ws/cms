@@ -357,6 +357,13 @@ export interface Extension {
   provides?: ProviderRegistration[]; // core-v2 §2.2:選填
   jobs?: ExtJobRegistration[]; // spec-extension-jobs.md:週期性 / 一次性任務宣告
   /**
+   * 2.0:這些表的資料會畫在公開頁上(例:庫存 `["ext_inventory_accounts"]`)。公開頁整頁存起來給每個訪客
+   * (src/lib/public-cache.ts),經 ledger-kit 的交易寫到這些表之後,core 自動讓存起來的頁面重算 ——
+   * 插件不用自己通知。不經 ledger-kit 的寫入,寫完自己呼叫 `services.publicContentChanged(reason)`。
+   * 表名的規則同 jobs[].wakeOn。
+   */
+  publicTables?: string[];
+  /**
    * 1.30.0(docs/spec-admin-agent.md §2 表格第二列):這個 extension 讓 admin agent
    * 能操作自己的動作。宣告了就自動進 agent 的 tool registry —— 裝一個 extension =
    * AI 自動會操作它,不必再改 core 一行。
@@ -741,6 +748,8 @@ const manifestSchema = lazySchema(() => z
       )
       .optional(),
     jobs: jobsSchema(),
+    // 2.0:同 jobs[].wakeOn 的表名規則。
+    publicTables: z.array(z.string().regex(/^[a-z][a-z0-9_]{2,60}$/, "invalid table name")).max(20).optional(),
     // 1.74.0:插槽。fill() 產生的物件;這裡只驗形狀,先後與名字的規則在 slots.ts。
     fills: z.array(z.object({ kind: z.enum(["value", "view"]), slotId: z.string().min(1) }).passthrough()).optional(),
     layer: z.enum(["agency", "site"]).optional(),

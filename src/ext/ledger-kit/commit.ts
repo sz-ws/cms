@@ -1,6 +1,8 @@
 import { checkedText, copyOwner, readOperation, type LedgerAction } from "./operations";
 import { appendTransaction } from "./transaction";
 import { ledgerTables } from "./schema";
+import { publicTablesIn } from "../../lib/public-tables";
+import { publicContentChanged } from "../../lib/public-cache";
 import type { LedgerCommand, LedgerOperation } from "./types";
 
 export class LedgerConflict extends Error {
@@ -68,6 +70,7 @@ export async function commitLedgerOperations(
     // Partial receipt loss indicates external data corruption, not a valid replay.
     // Guarded in-batch before any action, so this is a defensive assertion.
     if (applied.some(Boolean) && !applied.every(Boolean)) throw new Error("inconsistent ledger receipts");
+    if (applied[0]) announcePublicWrites(plans);
     return { status: applied[0] ? "applied" : "replayed" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -75,6 +78,22 @@ export async function commitLedgerOperations(
     if (message.includes("ledger_precondition")) throw new LedgerConflict("precondition_failed");
     throw error;
   }
+}
+
+/**
+ * 2.0 頁面快取:這筆交易寫到了插件宣告為公開的表(Extension.publicTables,src/lib/public-tables.ts),
+ * 存起來的公開頁全部重算。只在交易真的成立(applied)之後;重送(replayed)沒有改任何東西。
+ */
+function announcePublicWrites(plans: readonly { prefix: string; action: LedgerAction }[]): void {
+  const written = plans.flatMap(({ prefix, action }) => {
+    if (action.kind === "transaction") {
+      return action.mutations.flatMap((mutation) => (mutation.kind === "guard" ? [] : [mutation.table]));
+    }
+    const t = ledgerTables(prefix);
+    return [t.accounts, t.ledger, t.reservations];
+  });
+  const tables = publicTablesIn(written);
+  if (tables.length > 0) publicContentChanged(`ledger:${tables.join(",")}`);
 }
 
 function appendAction(

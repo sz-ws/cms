@@ -11,6 +11,7 @@ import { createRegistry, registerExtensionProviders } from "./providers";
 import type { HookBus } from "./hooks";
 import type { ProviderRegistry, ProviderRegistryImpl } from "./providers";
 import type { SlotRegistry } from "./slots";
+import { publicContentChanged } from "@/lib/public-cache";
 
 // core-v2 §2.1:CoreServices —— 傳給 extension API handler 的 ctx.services。
 // storage/settings 皆 scope 綁定至 extId;providers active id 於此預先解析。
@@ -57,6 +58,13 @@ export interface CoreServices {
   /** 1.74.0:插槽(slots.ts)—— 這次請求或這一輪排程裡,啟用中的插件與站台各層填了什麼。 */
   slots: SlotRegistry;
   jobs: ScopedJobs;
+  /**
+   * 2.0:告訴 CMS「訪客看得到的東西變了」—— 每一個存起來的公開頁在下一次造訪時重算。插件用 `db`
+   * 直接寫了會畫在公開頁上的資料之後,在同一個請求裡(API handler、排程工作)、回應之前呼叫。
+   * reason 只用在記錄(會自動加上插件 id),例如 `services.publicContentChanged("price")`。永不 throw。
+   * 經 ledger-kit 寫的表用 Extension.publicTables 宣告就好;內容(content provider)與設定 core 自己會通知。
+   */
+  publicContentChanged(reason: string): void;
 }
 
 function makeScopedStorage(extId: string): ScopedStorage {
@@ -139,6 +147,7 @@ export function scopedServices(
     providers,
     slots,
     jobs: makeScopedJobs(extId),
+    publicContentChanged: (reason) => publicContentChanged(`${extId}:${reason}`),
   };
 }
 
