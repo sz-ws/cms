@@ -25,10 +25,9 @@ vi.mock("@/ext/loader", async () => {
   return { getExtRuntime: async () => rt };
 });
 
-// 2.0 頁面快取:低階的 setSettings / setExtensionSettingsRaw 不通知頁面快取。背景記帳也寫
-// 設定(授權回報時間、示範回呼的紀錄、後台風格),它們每次一寫就讓整站重算會讓存起來的頁面
-// 按排程失效。通知的是「人存了訪客看得到的東西」的那一層:設定頁的 PUT /api/settings、
-// 首次設定、插件自己的後台存檔(settings-route.test.ts 等)。
+// 2.0 頁面快取:setSettings 只在寫到帶 visitorFacing 記號的欄位時通知頁面快取(src/lib/visitor-facing.ts)。
+// 背景記帳寫的是沒宣告的 key(授權回報時間、示範回呼的紀錄)或標了 false 的欄位(後台風格),
+// 它們每次一寫就讓整站重算會讓存起來的頁面按排程失效。完整的清單在 visitor-facing.test.ts。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
 vi.mock("@/lib/public-cache", () => ({
   publicContentChanged: (reason: string) => {
@@ -136,11 +135,13 @@ describe("settings stamp-based memo", () => {
   });
 });
 
-describe("low-level settings writes leave the page cache alone (2.0)", () => {
-  it("setSettings does not tell the page cache: bookkeeping writes use it too", async () => {
+describe("settings writes and the page cache (2.0)", () => {
+  it("bookkeeping keys leave the page cache alone; a visitor-facing field refreshes it", async () => {
     await setSettings({ "core.license.lastCheckin": 1700000000000 });
-    await setSettings({ "core.siteTitle": "A" });
+    await setSettings({ "core.adminTheme": "x" });
     expect(publicCache.reasons).toEqual([]);
+    await setSettings({ "core.siteTitle": "A" });
+    expect(publicCache.reasons).toEqual(["setting:core.siteTitle"]);
     expect(await getSetting("core.siteTitle")).toBe("A");
   });
 

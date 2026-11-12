@@ -133,13 +133,13 @@ describe("transitionOrder", () => {
     expect((await getOrder(deps(), TABLE, "CO5"))?.status).toBe("paid");
   });
 
-  it("轉移成立才通知頁面快取(2.0):reason 帶訂單表名,非法或重複的轉移不通知", async () => {
+  it("轉移成立才通知頁面快取(2.0):訂單表是 kit 定義的表,預設帶 visitorFacing 記號,非法或重複的轉移不通知", async () => {
     await seed("PC1");
     expect(await transitionOrder(deps(), TABLE, "PC1", "paid")).toBe(true);
-    expect(publicCache.reasons).toEqual([`order:${TABLE}`]);
+    expect(publicCache.reasons).toEqual([`table:${TABLE}`]);
     expect(await transitionOrder(deps(), TABLE, "PC1", "paid")).toBe(false);
     expect(await transitionOrder(deps(), TABLE, "NOPE", "paid")).toBe(false);
-    expect(publicCache.reasons).toEqual([`order:${TABLE}`]);
+    expect(publicCache.reasons).toEqual([`table:${TABLE}`]);
   });
 
   it("查無此單 → false", async () => {

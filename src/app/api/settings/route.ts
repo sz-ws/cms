@@ -9,7 +9,6 @@ import {
   splitRegistrySourceTokens,
 } from "@/lib/settings";
 import { validateSettingEntries } from "@/lib/setting-validation";
-import { publicContentChanged } from "@/lib/public-cache";
 
 const bodySchema = z.object({
   entries: z.record(z.string(), z.unknown()),
@@ -80,10 +79,8 @@ export async function PUT(req: Request): Promise<Response> {
     );
   }
 
+  // 2.0:存到帶著 visitorFacing 記號的欄位(站名、圖示、語言、公告、商店與插件設定),setSettings 讓
+  // 存起來的公開頁重算;只改後台風格、金鑰之類沒記號的欄位不重算(src/lib/visitor-facing.ts)。
   await setSettings(entries);
-  // 2.0:站名、圖示、語言、公告、商店與插件設定都畫在公開頁上 —— 存起來的公開頁全部重算。
-  // 不分哪個 key:分了就要維護一張「哪些設定會上公開頁」的表,漏一個就是舊頁面。這個存檔是人按的,
-  // 一次存檔一次重算;背景記帳直接呼叫 setSettings,不經過這裡。
-  publicContentChanged("settings");
   return Response.json({ ok: true });
 }

@@ -27,7 +27,7 @@ import {
 import { registry } from "@/../extensions/registry";
 import { invalidateSettingsCache } from "@/lib/settings";
 import { getExtRuntime, invalidateExtRuntimeMemo } from "./loader";
-import { publicContentChanged } from "@/lib/public-cache";
+import { wrote } from "@/lib/visitor-facing";
 import { CORE_API_VERSION } from "./version";
 import { satisfies } from "./semver";
 import type { Extension, ExtMigration } from "./types";
@@ -246,7 +246,7 @@ export async function enableStepRecord(extId: string): Promise<void> {
   await rt.hooks.doAction("ext:enabled", extId);
   // 2.0:存起來的公開頁全部重算。放在最後:上面的 getExtRuntime 會順便對齊內建插件(有寫入),
   // hook 也可能寫東西,全部寫完才通知,重算出來的頁面才不會讀到一半的狀態。
-  publicContentChanged(`ext:${extId}`);
+  wrote("extension", extId);
 }
 
 /**
@@ -331,7 +331,7 @@ export async function disableExtension(extId: string): Promise<void> {
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
   // 2.0:存起來的公開頁全部重算(它的路由、外框、插槽都不能再出現)。寫完、hook 跑完才通知。
-  publicContentChanged(`ext:${extId}`);
+  wrote("extension", extId);
 }
 
 export async function uninstallExtension(extId: string): Promise<void> {
@@ -381,7 +381,7 @@ export async function uninstallExtension(extId: string): Promise<void> {
   // 上面刪了 ext.<id>.% 的 settings 列,失效 isolate settings 快取。
   invalidateSettingsCache();
   // 2.0:disableExtension 已經通知過一次;這裡刪掉了它的設定與資料,再通知一次。
-  publicContentChanged(`ext:${extId}`);
+  wrote("extension", extId);
 }
 
 // ---- declarative extensions(core-v2 §3.2/§3.3)----
@@ -505,7 +505,7 @@ export async function enableDeclarative(extId: string): Promise<void> {
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:enabled", extId);
   // 2.0:存起來的公開頁全部重算(它的公開路由、樣式、script 出現了)。
-  publicContentChanged(`ext:${extId}`);
+  wrote("extension", extId);
 }
 
 /** 停用,條件是沒有啟用中的插件需要它(先擋一次給名稱,寫入時再擋一次)。 */
@@ -524,7 +524,7 @@ export async function disableDeclarative(extId: string): Promise<void> {
   const rt = await getExtRuntime();
   await rt.hooks.doAction("ext:disabled", extId);
   // 2.0:存起來的公開頁全部重算(它的路由與 script 不能再出現)。
-  publicContentChanged(`ext:${extId}`);
+  wrote("extension", extId);
 }
 
 /**
@@ -581,5 +581,5 @@ export async function uninstallDeclarative(
   invalidateSettingsCache();
   await rt.hooks.doAction("ext:disabled", extId);
   // 2.0:存起來的公開頁全部重算(插件、設定,選了的話連內容都刪了)。
-  publicContentChanged(`ext:${extId}`);
+  wrote("extension", extId);
 }

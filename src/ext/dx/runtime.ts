@@ -65,6 +65,7 @@ export function toTypeDef(
     type: `${extId}.${ct.name}`,
     label: canonicalLabel(ct.label),
     slugField: ct.slugField,
+    visitorFacing: ct.visitorFacing,
     fields: ct.fields.map((f) => ({
       key: f.key,
       type: f.type,

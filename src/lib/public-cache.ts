@@ -12,6 +12,8 @@ import { reportError } from "@/lib/observe/report";
 // 不帶 profile:Next 對沒有 profile 的 revalidatePath 是「立刻過期」,下一個請求直接重算,
 // 不會先回舊頁再背景更新 —— 後者要 queue,這個專案不用 queue(見 open-next.config.ts)。
 //
+// 誰呼叫:寫入的底層依 visitorFacing 記號決定(src/lib/visitor-facing.ts);少數寫入明確呼叫(escape hatch)。
+//
 // 規則:寫入 commit 之後、在同一個請求裡(route handler、server action、cron 跑的 job)呼叫。
 // 在請求之外(waitUntil、after()、Worker 的 scheduled)Next 會丟 "static generation store
 // missing";那種情況這裡記錄並回報,寫入本身不受影響,頁面會舊到下一次任何失效或下一次部署。

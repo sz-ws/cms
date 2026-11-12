@@ -52,7 +52,7 @@ import { getExtRuntime, invalidateExtRuntimeMemo } from "@/ext/loader";
 import { isBuiltinDeclarative } from "@/ext/builtin-declaratives";
 import { installVerdict, unmetRequirements } from "@/ext/plugin-ref";
 import { byId, listInstalledPlugins } from "@/ext/installed-plugins";
-import { publicContentChanged } from "@/lib/public-cache";
+import { wrote } from "@/lib/visitor-facing";
 import {
   prepareExtensionSettingValues,
   invalidateSettingsCache,
@@ -671,7 +671,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   // 2.0:安裝、重裝、更新、回到上一版都在這裡寫完 —— 存起來的公開頁全部重算。放在 try 外面:
   // hook 失敗也要通知(寫入已經成立);publicContentChanged 自己永不 throw。
-  publicContentChanged(`ext:${id}`);
+  wrote("extension", id);
 
   return Response.json({ ok: true, id, version: manifest.version });
 }

@@ -6,7 +6,7 @@ import { getHeartbeats, setHeartbeats } from "./heartbeats";
 import { runInRequestScope } from "./request-scope";
 import { clearWake, SAFETY_INTERVAL_MS, wokenAt } from "./wake";
 import { indexContentEntry } from "./search";
-import { publicContentChanged } from "@/lib/public-cache";
+import { wrote } from "./visitor-facing";
 
 // Core jobs surface（v1）+ scheduled publishing。
 //
@@ -107,7 +107,7 @@ function errorMessage(e: unknown): string {
 //      （{ type, id, data }，data 為解析後的 JSON document）。
 //   3. 重建該列 FTS 索引(indexContentEntry;best-effort,同 provider 哲學:索引失敗
 //      絕不連累主流程)。
-//   4. 2.0:讓存起來的公開頁重算(publicContentChanged,永不 throw)。
+//   4. 2.0:讓存起來的公開頁重算(visitorFacing 的內容規則:草稿翻成已發佈,永不 throw)。
 //
 // 刻意「不」重跑 field validation:排程發佈只是狀態轉換,內容在寫入時已驗過;原生
 // row update + 明確的 hook/index/invalidate 呼叫即可,避免重複驗證成本與其副作用。
@@ -203,7 +203,7 @@ const publishDueJob: CoreJob = {
 
       // 2.0:存起來的公開頁全部重算。這裡在 Next 的請求裡(cron 打的 /api/jobs/run、手動執行,
       // 或 admin layout 用 after() 排的保底 sweep),所以 revalidatePath 有它要的 store。
-      publicContentChanged(`publish:${row.type}`);
+      wrote("content", row.type, { before: false, after: true });
     }
 
     return { ok: true, processed };

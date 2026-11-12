@@ -212,7 +212,7 @@ describe("installed plugins", () => {
     expect((await row(COMPILED))?.approval).toBeNull();
     expect(publicCache.reasons).toEqual([]);
     expect((await approve(PLAIN)).status).toBe(200);
-    expect(publicCache.reasons).toEqual([`scripts:${PLAIN}`]);
+    expect(publicCache.reasons).toEqual([`extension:${PLAIN}`]);
   });
 
   it("reports compiled, running, stopped, or no scripts", async () => {

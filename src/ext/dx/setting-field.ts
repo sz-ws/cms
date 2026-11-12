@@ -9,6 +9,7 @@ export function toSettingField(f: DeclarativeSettingField): SettingField {
     default: f.default,
     required: f.required,
     secret: f.secret,
+    visitorFacing: f.visitorFacing,
   };
   if (f.type === "select") {
     return { ...base, type: "select", options: f.options ?? [] };

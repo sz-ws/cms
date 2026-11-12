@@ -128,13 +128,31 @@ whole and sent to every visitor from the page cache without running the Next ser
 page whether it asks the server anything after it shows, in this order:
 
 1. **Default: it asks nothing.** The HTML is the same for every visitor. When what it shows
-   changes, the write refreshes every stored page: call `services.publicContentChanged(reason)`
-   after the write, or declare the table in `publicTables` if you write through ledger-kit.
-   Content saves, the settings page, plugin install / enable / disable and script approval do
-   this already. A content save refreshes only when the item is published before or after the
-   write (`touchesPublic` in `dx/content-provider.ts`); draft saves, anonymous form submissions
-   and draft clean-up do not, so a public page must never show draft content. Most pages end here.
-   These look per-visitor but are refreshes, not server calls: stock, a price that is the same
+   changes, the stored pages are refreshed — all of them, on their next visit. Three points:
+   - **Mark what visitors see.** `visitorFacing` means only "visitors can see output that
+     depends on this"; whoever owns a thing marks it (`lib/visitor-facing.ts`):
+
+     | Thing | Where | Default |
+     |---|---|---|
+     | Content type | `contentTypes[].visitorFacing` | `true` |
+     | Setting field | `settings[].visitorFacing` | `true`; keys you never declared: `false` |
+     | Table | `visitorFacingTables: ["ext_acme_stock"]` (or `{ table: false }`) | `false`; commerce-kit's order and promo tables: `true` |
+     | Your files (keys under your id) | `visitorFacingFiles: true` | `false` |
+     | The plugin itself (install, enable, disable, remove, scripts) | `visitorFacing` | `true` |
+
+     Things people edit in the admin default to `true` (mark `false` to opt out); things
+     programs write default to `false` (mark `true` to opt in). Core marks its own settings and
+     file areas the same way.
+   - **Core refreshes on any write to a marked thing**: content saves, settings writes,
+     ledger-kit and commerce-kit writes, file deletes and plugin lifecycle all go through one
+     rule. Content counts only while an item is published before or after the write, so draft
+     saves, anonymous form submissions and draft clean-up refresh nothing, and a public page
+     must never show draft content.
+   - **Anything else calls `services.publicContentChanged(reason)` after the write**: rows you
+     write with `services.db` outside ledger-kit, a setting key you did not declare, external
+     state.
+
+   Most pages end here. These look per-visitor but are refreshes, not server calls: stock, a price that is the same
    for everyone, "new" or "sold out" badges, anything that changes when someone saves in the
    admin, a scheduled publish (the job writes and refreshes). A date window (a sale banner,
    the site notice): put the window in the HTML and let the browser decide.

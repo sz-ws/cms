@@ -134,8 +134,8 @@ export function createShippingConfigHandler(opts: ShippingConfigHandlerOptions) 
     await ctx.services.settings.set({
       [opts.settingsKey]: JSON.stringify(config),
     });
-    // 2.0:運費選項畫在結帳頁上,存起來的公開頁要重算。低階的 services.settings.set 不做這件事
-    // (背景記帳也用它),所以由這個後台存檔自己通知。
+    // 2.0:運費選項畫在結帳頁上,存起來的公開頁要重算。這個 key 不是宣告過的設定欄位(有自己的編輯頁),
+    // 沒有 visitorFacing 記號,所以這個後台存檔自己通知(escape hatch)。
     ctx.services.publicContentChanged("shipping");
     return Response.json({ ok: true });
   };

@@ -65,9 +65,9 @@ async function enableAndCollect(): Promise<EnableStepEvent[]> {
 describe("enableExtension → publicContentChanged (2.0)", () => {
   it("啟用與套用更新各通知一次,在最後一步寫完之後", async () => {
     await enableExtension("demo");
-    expect(publicCache.reasons).toEqual(["ext:demo"]);
+    expect(publicCache.reasons).toEqual(["extension:demo"]);
     await enableExtension("demo");
-    expect(publicCache.reasons).toEqual(["ext:demo", "ext:demo"]);
+    expect(publicCache.reasons).toEqual(["extension:demo", "extension:demo"]);
   });
 });
 

@@ -212,6 +212,8 @@ export interface ContentTypeDef {
   type: string; // 完整 type key,如 "gallery.item"
   label?: string;
   slugField?: string; // auto-slug 來源欄位
+  /** 2.0:已發佈的項目畫在公開頁上,寫入時讓公開頁重算(預設 true;src/lib/visitor-facing.ts)。 */
+  visitorFacing?: boolean;
   fields: ContentFieldDef[];
 }
 

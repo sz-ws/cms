@@ -91,7 +91,7 @@ function isPublished(entry: { status: string } | null): boolean {
  * Public pages (the default) get PUBLISHED target entries only: a draft or
  * missing related item is left out entirely, no title, no link. Visitors never
  * see a draft's title, and draft writes do not refresh the stored pages
- * (touchesPublic), so a draft title there would also go stale. With
+ * (contentWritten in content-provider.ts), so a draft title there would also go stale. With
  * `includeDrafts` (draft preview) every id is listed; drafts get no href, and
  * missing ids fall back to the raw id.
  */

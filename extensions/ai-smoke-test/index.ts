@@ -16,6 +16,8 @@ export const aiSmokeTest = defineExtension({
   coreApi: "^1.0.0",
   description: "ai:generate capability 的最小驗證 extension（僅本機測試用）。",
   icon: "puzzle",
+  // 2.0:只在後台與伺服器裡做事,公開頁上什麼都不畫 —— 安裝、啟用、停用不必讓存起來的公開頁重算。
+  visitorFacing: false,
   adminPages: [
     {
       slug: "",

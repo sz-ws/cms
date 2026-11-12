@@ -15,7 +15,7 @@ import { scriptsCompiledIn } from "@/ext/dx/scripts-compiled";
 import { buildInstallRevisionClaim } from "@/ext/dx/declarative-migrate";
 import { isStaleInstallConflict } from "@/ext/dx/install-contract";
 import { invalidateExtRuntimeMemo } from "@/ext/loader";
-import { publicContentChanged } from "@/lib/public-cache";
+import { wrote } from "@/lib/visitor-facing";
 
 // 1.48.0:已安裝的宣告式插件的 scripts —— 查看、停用、重新核准。
 //
@@ -159,7 +159,7 @@ export async function POST(
   }
   invalidateExtRuntimeMemo();
   // 2.0:核准或撤回 script 改的是每一頁的 HTML(scripts-widget)—— 存起來的公開頁全部重算。
-  publicContentChanged(`scripts:${extId}`);
+  wrote("extension", extId);
 
   return Response.json({ ok: true, approved: scriptsApproval !== null });
 }

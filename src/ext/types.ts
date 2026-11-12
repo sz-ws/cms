@@ -66,6 +66,11 @@ export interface SettingFieldBase {
   /** Empty/blank values are rejected at manifest/install/settings boundaries. */
   required?: boolean;
   secret?: boolean; // true → 加密儲存、API 只寫不讀(02 §1、05 §4)
+  /**
+   * 2.0:訪客看得到依賴這個值的輸出,存檔時讓存起來的公開頁重算(預設 true;只在後台或伺服器裡
+   * 用的值標 false)。見 src/lib/visitor-facing.ts。
+   */
+  visitorFacing?: boolean;
   /** 1.44.0:另一個設定是某個值時才顯示;key 寫同一個 extension 的設定 key。 */
   showWhen?: { key: string; equals: string | boolean };
 }
@@ -357,12 +362,25 @@ export interface Extension {
   provides?: ProviderRegistration[]; // core-v2 §2.2:選填
   jobs?: ExtJobRegistration[]; // spec-extension-jobs.md:週期性 / 一次性任務宣告
   /**
-   * 2.0:這些表的資料會畫在公開頁上(例:庫存 `["ext_inventory_accounts"]`)。公開頁整頁存起來給每個訪客
-   * (src/lib/public-cache.ts),經 ledger-kit 的交易寫到這些表之後,core 自動讓存起來的頁面重算 ——
-   * 插件不用自己通知。不經 ledger-kit 的寫入,寫完自己呼叫 `services.publicContentChanged(reason)`。
-   * 表名的規則同 jobs[].wakeOn。
+   * 2.0 頁面快取的記號 visitorFacing(src/lib/visitor-facing.ts):「訪客看得到依賴它的輸出」。
+   * 帶著記號的東西被寫到,core 讓存起來的公開頁全部重算,插件不用自己通知。
+   *
+   * visitorFacing:這個插件本身。安裝、啟用、停用、移除、核准 script 都會改公開頁(預設 true);
+   * 只在後台或伺服器裡做事、公開頁上什麼都不畫的插件標 false。
    */
-  publicTables?: string[];
+  visitorFacing?: boolean;
+  /**
+   * 這些表的資料會畫在公開頁上(例:庫存 `["ext_inventory_accounts"]`)。經 ledger-kit 的交易、commerce-kit
+   * 的訂單與優惠碼寫到它們,core 讓公開頁重算。表預設 false;commerce-kit 自己定義的表預設 true,
+   * 用它的插件可以寫 `{ ext_acme_orders: false }` 退出。表名的規則同 jobs[].wakeOn。
+   * 不經這兩條路的寫入(services.db 直接寫),寫完自己呼叫 `services.publicContentChanged(reason)`。
+   */
+  visitorFacingTables?: string[] | Record<string, boolean>;
+  /**
+   * 這個插件存的檔案(storage key 以插件 id 開頭)會畫在公開頁上:刪檔時讓公開頁重算。預設 false
+   * (上傳不用:每次上傳都是新網址)。
+   */
+  visitorFacingFiles?: boolean;
   /**
    * 1.30.0(docs/spec-admin-agent.md §2 表格第二列):這個 extension 讓 admin agent
    * 能操作自己的動作。宣告了就自動進 agent 的 tool registry —— 裝一個 extension =
@@ -566,6 +584,7 @@ const settingSchema = lazySchema(() => z
     default: z.unknown(),
     required: z.boolean().optional(),
     secret: z.boolean().optional(),
+    visitorFacing: z.boolean().optional(),
     type: z.enum(["text", "textarea", "number", "boolean", "select", "color"]),
     unit: z.enum(["minutes"]).optional(),
     options: z
@@ -748,8 +767,15 @@ const manifestSchema = lazySchema(() => z
       )
       .optional(),
     jobs: jobsSchema(),
-    // 2.0:同 jobs[].wakeOn 的表名規則。
-    publicTables: z.array(z.string().regex(/^[a-z][a-z0-9_]{2,60}$/, "invalid table name")).max(20).optional(),
+    // 2.0 頁面快取的記號(src/lib/visitor-facing.ts)。表名規則同 jobs[].wakeOn。
+    visitorFacing: z.boolean().optional(),
+    visitorFacingTables: z
+      .union([
+        z.array(z.string().regex(/^[a-z][a-z0-9_]{2,60}$/, "invalid table name")).max(20),
+        z.record(z.string().regex(/^[a-z][a-z0-9_]{2,60}$/, "invalid table name"), z.boolean()),
+      ])
+      .optional(),
+    visitorFacingFiles: z.boolean().optional(),
     // 1.74.0:插槽。fill() 產生的物件;這裡只驗形狀,先後與名字的規則在 slots.ts。
     fills: z.array(z.object({ kind: z.enum(["value", "view"]), slotId: z.string().min(1) }).passthrough()).optional(),
     layer: z.enum(["agency", "site"]).optional(),

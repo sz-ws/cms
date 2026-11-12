@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { getStorage } from "./cf";
 import { sniffImageSize, SNIFF_BYTES } from "./image-dimensions";
+import { declareVisitorFacing, wrote } from "./visitor-facing";
 // 注意:loader 以動態 import 載入,避免 storage → loader → registry → posts/api →
 // storage 的靜態循環相依(會造成 "Cannot access before initialization")。
 
@@ -192,14 +193,27 @@ export async function headFile(key: string): Promise<StoredFile | null> {
 }
 
 /**
- * 刪 R2 物件。2.0:這裡**不**讓存起來的公開頁重算 —— 換頭像(公開頁不顯示)與插件自己的刪檔
- * 也走這裡。後台的刪檔動作(api/media/delete)刪完自己通知;插件刪了公開頁用得到的檔,
- * 寫完呼叫 services.publicContentChanged。上傳本來就不用:每次上傳都是新的網址。
+ * 刪 R2 物件。2.0:刪完把檔案區(key 的第一段)交給 visitorFacing 的規則(src/lib/visitor-facing.ts):
+ * `core`(後台媒體庫)帶著記號,刪了讓存起來的公開頁重算;`avatars` 與插件的檔案區預設不算
+ * (插件標 Extension.visitorFacingFiles 加入)。上傳不用:每次上傳都是新的網址。
  */
 export async function deleteFile(key: string): Promise<void> {
   await getStorage().delete(key);
   await invalidateStorageIndex();
+  wrote("files", fileScope(key));
 }
+
+/** key 的第一段:`core`、`avatars` 或插件 id(見 makeKey)。 */
+function fileScope(key: string): string {
+  const slash = key.indexOf("/");
+  return slash < 0 ? key : key.slice(0, slash);
+}
+
+// core 自己的檔案區,跟插件用同一個記號:媒體庫的檔案畫在公開頁上,頭像不畫。
+declareVisitorFacing("core", "files", [
+  ["core", true],
+  ["avatars", false],
+]);
 
 export async function listFiles(
   prefix: string,

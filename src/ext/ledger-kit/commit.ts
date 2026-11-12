@@ -1,8 +1,7 @@
 import { checkedText, copyOwner, readOperation, type LedgerAction } from "./operations";
 import { appendTransaction } from "./transaction";
 import { ledgerTables } from "./schema";
-import { publicTablesIn } from "../../lib/public-tables";
-import { publicContentChanged } from "../../lib/public-cache";
+import { wrote } from "../../lib/visitor-facing";
 import type { LedgerCommand, LedgerOperation } from "./types";
 
 export class LedgerConflict extends Error {
@@ -81,8 +80,9 @@ export async function commitLedgerOperations(
 }
 
 /**
- * 2.0 頁面快取:這筆交易寫到了插件宣告為公開的表(Extension.publicTables,src/lib/public-tables.ts),
- * 存起來的公開頁全部重算。只在交易真的成立(applied)之後;重送(replayed)沒有改任何東西。
+ * 2.0 頁面快取:這筆交易寫到的表交給 visitorFacing 的規則(src/lib/visitor-facing.ts):有帶記號的表
+ * (Extension.visitorFacingTables),存起來的公開頁全部重算。只在交易真的成立(applied)之後;
+ * 重送(replayed)沒有改任何東西。
  */
 function announcePublicWrites(plans: readonly { prefix: string; action: LedgerAction }[]): void {
   const written = plans.flatMap(({ prefix, action }) => {
@@ -92,8 +92,7 @@ function announcePublicWrites(plans: readonly { prefix: string; action: LedgerAc
     const t = ledgerTables(prefix);
     return [t.accounts, t.ledger, t.reservations];
   });
-  const tables = publicTablesIn(written);
-  if (tables.length > 0) publicContentChanged(`ledger:${tables.join(",")}`);
+  wrote("table", written);
 }
 
 function appendAction(

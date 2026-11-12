@@ -305,6 +305,8 @@ const contentTypeSchema = lazySchema(() => z
     // (crud.ts POST 的 ct.public 分支);public 非 true 時無作用 —— 不需 zod 交叉檢查,
     // 執行層自然不會走到(見 dx/notify.ts)。
     notifyOnCreate: z.boolean().optional(),
+    // 2.0 頁面快取的記號(src/lib/visitor-facing.ts):已發佈的項目畫在公開頁上(預設 true)。
+    visitorFacing: z.boolean().optional(),
     // 1.21.0:此 type 是「內容」還是「收件匣」(別人寄進來、不會被發佈的訊息)。
     // 注意與頂層的 `kind: "declarative"` 是不同物件上的不同欄位 —— 那個說的是
     // 「這份 manifest 是哪種 extension」,這個說的是「這個 content type 是什麼」。
@@ -337,6 +339,7 @@ const settingFieldSchema = lazySchema(() => z
     default: z.unknown(),
     required: z.boolean().optional(),
     secret: z.boolean().optional(),
+    visitorFacing: z.boolean().optional(),
     type: z.enum(["text", "textarea", "number", "boolean", "select"]),
     options: z.array(settingOptionSchema()).optional(),
   })
@@ -1282,6 +1285,8 @@ export interface DeclarativeContentType {
   /** A(docs/spec-declarative-notify-schedule.md):public create 成功後 best-effort
    * 寄通知信;只在 `public` 為 true 時生效。 */
   notifyOnCreate?: boolean;
+  /** 2.0:已發佈的項目畫在公開頁上,寫入時讓公開頁重算(預設 true;src/lib/visitor-facing.ts)。 */
+  visitorFacing?: boolean;
   /** Progressive form layout:extensions 可以選擇 baseline(auto2col / single)或
    * 宣告 manual 來自定欄位順序與寬度。沒寫 → FormView 跑 auto2col 預設。 */
   layout?: {

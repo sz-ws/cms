@@ -419,7 +419,7 @@ describe("restoreRevision", () => {
 
     publicCache.reasons = [];
     await restoreRevision(entry.id, original.id, { actorId: BOB.id });
-    expect(publicCache.reasons).toEqual([`restore:${TYPE}`]);
+    expect(publicCache.reasons).toEqual([`content:${TYPE}`]);
   });
 
   it("還原到已發佈的版本(目前是草稿)也通知;草稿還原到草稿不通知", async () => {
@@ -439,7 +439,7 @@ describe("restoreRevision", () => {
 
     publicCache.reasons = [];
     await restoreRevision(entry.id, publishedRev.id, { actorId: BOB.id });
-    expect(publicCache.reasons).toEqual([`restore:${TYPE}`]);
+    expect(publicCache.reasons).toEqual([`content:${TYPE}`]);
   });
 
   it("還原本身也留一筆 reason=restore,壞掉的版本仍留在歷史裡", async () => {

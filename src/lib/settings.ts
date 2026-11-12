@@ -14,6 +14,7 @@ import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from "./datetime";
 import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from "./units";
 import { SITE_NOTICE_KEYS, SITE_NOTICE_MAX_LENGTH } from "./site-notice";
 import { AI_NOTES_MAX_LENGTH, AI_NOTES_SETTING } from "./ai-notes";
+import { declareVisitorFacing, wrote } from "./visitor-facing";
 
 // SettingField 型別(03 §1)。Phase 4 的 src/ext/types.ts 會 re-export 同一形狀;
 // 為讓 Phase 3 不依賴尚未建立的 ext 模組,型別在此獨立定義(欄位一字不差照 03 §1)。
@@ -27,6 +28,12 @@ export interface SettingFieldBase {
   /** Empty/blank values are rejected by the shared server-side validator. */
   required?: boolean;
   secret?: boolean;
+  /**
+   * 2.0 頁面快取的記號(src/lib/visitor-facing.ts):訪客看得到依賴這個值的輸出,存檔時讓存起來的
+   * 公開頁全部重算。宣告過的欄位預設 true;只在後台或伺服器裡用的值(後台風格、金鑰、收件人)標 false。
+   * 沒宣告的 key(程式自己記的帳)一律不算。
+   */
+  visitorFacing?: boolean;
   /**
    * 顯示分組(settings 頁一組一張卡)。設定頁的卡片完全由此欄位推導:任何
    * group id 都會長出自己的卡,不必另外登記;省略 → 落到
@@ -118,6 +125,7 @@ export async function getDefaultContentLocale(): Promise<string> {
 export const CORE_SETTINGS: SettingField[] = [
   {
     key: "core.adminTheme",
+    visitorFacing: false,
     group: "general",
     label: { en: "Admin style", "zh-Hant": "後台風格" },
     type: "textarea",
@@ -251,6 +259,7 @@ export const CORE_SETTINGS: SettingField[] = [
     // color-mix() 從這一色推(globals.css 的 --admin-accent)。只收 #rrggbb。
     // AdminTheme 的 SSR/sync 讀這個值;保留原 key 供舊站與 API 相容。
     key: "core.adminAccent",
+    visitorFacing: false,
     group: "general",
     label: { en: "Admin accent colour", "zh-Hant": "後台主色" },
     description: {
@@ -413,6 +422,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.notifyEmail",
+    visitorFacing: false,
     group: "email",
     label: { en: "Notification email", "zh-Hant": "通知信收件人" },
     description: {
@@ -424,6 +434,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.mode",
+    visitorFacing: false,
     group: "ai",
     label: { en: "AI provider", "zh-Hant": "AI 服務" },
     description: {
@@ -441,6 +452,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.baseUrl",
+    visitorFacing: false,
     group: "ai",
     enabledWhen: { key: "core.ai.mode", oneOf: ["openai", "anthropic"] },
     label: { en: "API base URL", "zh-Hant": "API 網址" },
@@ -453,6 +465,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.apiKey",
+    visitorFacing: false,
     group: "ai",
     enabledWhen: { key: "core.ai.mode", oneOf: ["openai", "anthropic"] },
     label: { en: "API key", "zh-Hant": "API 金鑰" },
@@ -466,6 +479,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.ai.model",
+    visitorFacing: false,
     group: "ai",
     enabledWhen: { key: "core.ai.mode", oneOf: ["openai", "anthropic", "workers-ai"] },
     label: { en: "Model", "zh-Hant": "模型" },
@@ -480,6 +494,7 @@ export const CORE_SETTINGS: SettingField[] = [
     // 1.60.0:給 AI 的說明。接在內建說明後面,後台助理與 AI 連線都讀(src/ext/agent-guide.ts)。
     // 排在 AI 卡的最後一格,緊鄰下面的「AI 連線」卡。
     key: AI_NOTES_SETTING,
+    visitorFacing: false,
     group: "ai",
     label: { en: "Notes for AI", "zh-Hant": "給 AI 的說明" },
     description: {
@@ -495,6 +510,7 @@ export const CORE_SETTINGS: SettingField[] = [
     // MCP、探索文件、登記、換權杖與同意畫面全部回「沒有開放」,已連線的 App 暫停。
     // 不進通用設定表單 —— 設定頁的「AI 連線」卡有自己的開關(settings/page.tsx 排除)。
     key: "core.mcp.enabled",
+    visitorFacing: false,
     group: "ai",
     label: { en: "Let AI apps connect", "zh-Hant": "開放 AI 連線" },
     type: "boolean",
@@ -504,6 +520,7 @@ export const CORE_SETTINGS: SettingField[] = [
     // spec-login-providers.md §5:第三方登入(Google/LINE/OIDC)找不到已連結的身分時
     // 怎麼辦。email 相同也絕不自動連結(防帳號接管)。
     key: "core.auth.oauthRegistration",
+    visitorFacing: false,
     group: "advanced",
     label: { en: "New third-party sign-ins", "zh-Hant": "第三方登入的新使用者" },
     description: {
@@ -527,6 +544,7 @@ export const CORE_SETTINGS: SettingField[] = [
     // 1.56.0:忘記密碼(src/lib/password-reset.ts)。關掉時後台人員(管理員、工作人員、
     // 自訂角色)申請重設只會收到「請聯絡網站管理員」,不會收到驗證碼;會員不受影響。
     key: "core.auth.staffPasswordReset",
+    visitorFacing: false,
     group: "advanced",
     label: { en: "Staff can reset their password by email", "zh-Hant": "後台人員可用 Email 重設密碼" },
     description: {
@@ -538,6 +556,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.apiSecret",
+    visitorFacing: false,
     group: "advanced",
     label: { en: "API secret", "zh-Hant": "API 密鑰" },
     type: "text",
@@ -547,6 +566,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.demoCallbackSecret",
+    visitorFacing: false,
     group: "advanced",
     label: { en: "Demo callback signing secret", "zh-Hant": "示範回呼的簽章密鑰" },
     description: {
@@ -561,6 +581,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.registrySources",
+    visitorFacing: false,
     label: "Registry Sources",
     description:
       "JSON array of https base URLs used as extension registry sources (core-v2 §3.4). Fetches are restricted to exactly these values (SSRF guard).",
@@ -571,6 +592,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.registryTokens",
+    visitorFacing: false,
     label: "Registry Access Tokens",
     description:
       "Encrypted map of registry source URL → access token. Written only via the registry sources manager (tokens are split out of core.registrySources so they never persist in plaintext); never rendered in the generic settings form.",
@@ -580,6 +602,7 @@ export const CORE_SETTINGS: SettingField[] = [
   },
   {
     key: "core.dashboard.insights",
+    visitorFacing: false,
     group: "advanced",
     label: "Dashboard Insights Widgets",
     description:
@@ -604,6 +627,13 @@ export const CORE_SETTINGS: SettingField[] = [
 ];
 
 /** extension settings 的完整 key:ext.<extId>.<key>(03 §7 / 05 §3)。 */
+// 2.0 頁面快取:core 的設定欄位跟插件的一樣,用欄位上的 visitorFacing 宣告(src/lib/visitor-facing.ts)。
+declareVisitorFacing(
+  "core",
+  "setting",
+  CORE_SETTINGS.map((f) => [f.key, f.visitorFacing ?? true] as const),
+);
+
 export const extSetting = (extId: string, key: string): string =>
   `ext.${extId}.${key}`;
 
@@ -763,10 +793,6 @@ export async function setSettings(
   // 同 graph 立即失效(admin 存檔後下一個 request 讀到新值);跨 graph/isolate 靠
   // 每 request 的 stamp 重算(見 readAll 註解)。
   invalidateSettingsCache();
-  // 2.0:這裡**不**讓存起來的公開頁重算。背景記帳也走這裡(授權回報時間、示範回呼的紀錄、
-  // 後台風格),每一筆都讓整站重算的話,一個定期的背景寫入就會讓頁面按排程失效。重算由
-  // 「人改了訪客看得到的東西」的那一層呼叫 publicContentChanged:設定頁的 PUT /api/settings、
-  // 首次設定、插件自己的後台存檔(例如運費設定)。
   // hook 分派:settings:saved(03 §1)。enabled extension 的 handler 收得到。
   try {
     const { getExtRuntime } = await import("@/ext/loader");
@@ -775,6 +801,10 @@ export async function setSettings(
   } catch (e) {
     console.error("[settings] post-commit hook dispatch failed", e);
   }
+  // 2.0:寫到帶著 visitorFacing 的設定,存起來的公開頁全部重算(src/lib/visitor-facing.ts)。
+  // 背景記帳寫的是沒宣告的 key 或標了 false 的欄位(授權回報、示範回呼、後台風格),不會讓頁面按排程失效。
+  // 插件的宣告由 loader 登記;上面的 secretKeySetAsync 已經建好這個請求的 runtime。
+  wrote("setting", keys);
 }
 
 /**

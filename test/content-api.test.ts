@@ -520,7 +520,7 @@ describe("core api 1.9.0 + manifest gate (§6.7)", () => {
 
 // ---- 關聯欄位只列已發佈的項目(公開頁 / 公開 API);後台照樣列出草稿 ----
 // 判斷與公開 list/detail view 相同:status === "published"。草稿的標題不給訪客看;
-// 草稿寫入不讓頁面重算(touchesPublic),留著它的標題遲早也會過時。
+// 草稿寫入不讓頁面重算(contentWritten),留著它的標題遲早也會過時。
 
 describe("relations show only published items", () => {
   const relManifest = {

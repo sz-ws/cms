@@ -14,7 +14,7 @@ import type { HookBus } from "../hooks";
 import { isTiptapDoc, isValidRichtextDoc, normalizeRichtextImages, stringToDoc } from "./fields/richtext-schema";
 import { GALLERY_MAX, isMediaKey } from "./media-key";
 import { slugify } from "./slug";
-import { publicContentChanged } from "@/lib/public-cache";
+import { declareVisitorFacing, wrote } from "@/lib/visitor-facing";
 import { indexContentEntry, removeContentIndex } from "@/lib/search";
 import {
   DEFAULT_CONTENT_LOCALE,
@@ -464,17 +464,18 @@ interface ContentRow {
 }
 
 /**
- * 這次寫入有沒有改到訪客看得到的東西。訪客只看得到 status='published' 的項目(公開
- * Content API 強制 filter.status、ListView / DetailView 只讀 published、publish-due
- * 把到期草稿翻成 published),所以寫入前或寫入後任一邊是 published 才要讓存起來的
- * 公開頁重算。草稿的新增、修改、刪除(含排程時間、匿名表單送出、收件清理)都不算:
- * 一筆垃圾表單不該讓整站的頁面失效。
+ * 2.0 頁面快取,內容這一種東西:寫完交給 visitorFacing 的規則(src/lib/visitor-facing.ts)。
+ * 內容類型帶著記號(預設 true),而且只有 status='published' 的項目訪客看得到(公開 Content API 強制
+ * filter.status、ListView / DetailView 只讀 published、publish-due 把到期草稿翻成 published),所以
+ * 寫入前或寫入後任一邊是 published 才算。草稿的新增、修改、刪除(含排程時間、匿名表單送出、收件清理)
+ * 都不算:一筆垃圾表單不該讓整站的頁面失效。provider、還原版本與排程發佈都經過這裡。永不 throw。
  */
-export function touchesPublic(
+export function contentWritten(
+  type: string,
   before: string | null | undefined,
   after: string | null | undefined,
-): boolean {
-  return before === "published" || after === "published";
+): void {
+  wrote("content", type, { before: before === "published", after: after === "published" });
 }
 
 function rowToEntry(row: ContentRow): ContentEntry {
@@ -545,6 +546,10 @@ export class CoreContentProvider implements ContentProvider {
       ...def,
       fields: def.fields.map((f) => ({ ...f })),
     });
+    // 2.0:用程式宣告的內容類型也從這裡帶它的 visitorFacing 記號(宣告式的由 loader 登記)。
+    if (def.visitorFacing !== undefined) {
+      declareVisitorFacing(`content-type:${def.type}`, "content", [[def.type, def.visitorFacing]]);
+    }
   }
 
   /**
@@ -679,8 +684,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: entry.data,
     });
-    // 2.0:發佈的內容才讓存起來的公開頁重算(見 touchesPublic;永不 throw)。
-    if (touchesPublic(null, status)) publicContentChanged(`content:${type}`);
+    // 2.0:發佈的內容才讓存起來的公開頁重算(見 contentWritten)。
+    contentWritten(type, null, status);
     return entry;
   }
 
@@ -825,8 +830,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: entry.data,
     });
-    // 2.0:發佈、下架、改已發佈的內容才讓存起來的公開頁重算(見 touchesPublic)。
-    if (touchesPublic(existing.status, status)) publicContentChanged(`content:${type}`);
+    // 2.0:發佈、下架、改已發佈的內容才讓存起來的公開頁重算(見 contentWritten)。
+    contentWritten(type, existing.status, status);
     return entry;
   }
 
@@ -847,8 +852,8 @@ export class CoreContentProvider implements ContentProvider {
       id,
       data: existing?.data ?? {},
     });
-    // 2.0:刪的是已發佈的內容才讓存起來的公開頁重算(見 touchesPublic)。
-    if (touchesPublic(existing?.status, null)) publicContentChanged(`content:${type}`);
+    // 2.0:刪的是已發佈的內容才讓存起來的公開頁重算(見 contentWritten)。
+    contentWritten(type, existing?.status, null);
   }
 
   async query(

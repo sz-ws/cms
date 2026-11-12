@@ -27,6 +27,8 @@ export const cron = defineExtension({
     "分鐘級準時排程入口：外部 companion worker 以簽章回呼催動 core 的到期任務掃描。",
   icon: "clock",
   menu: { section: "system" },
+  // 2.0:只在後台與伺服器裡做事,公開頁上什麼都不畫 —— 安裝、啟用、停用不必讓存起來的公開頁重算。
+  visitorFacing: false,
   settings: [
     {
       key: "secret",

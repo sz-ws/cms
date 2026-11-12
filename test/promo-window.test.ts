@@ -113,12 +113,12 @@ beforeEach(async () => { await d1().exec(`DELETE FROM ${TABLE};`); publicCache.r
 describe("優惠碼寫入 → publicContentChanged (2.0)", () => {
   it("save and delete each tell the page cache; a refused save does not", async () => {
     await saved(BASE);
-    expect(publicCache.reasons).toEqual([`promo:${TABLE}`]);
+    expect(publicCache.reasons).toEqual([`table:${TABLE}`]);
     const startsAt = taipei(2026, 10, 1);
     expect((await saved({ ...BASE, startsAt, endsAt: startsAt - 1 })).status).toBe(400);
-    expect(publicCache.reasons).toEqual([`promo:${TABLE}`]);
+    expect(publicCache.reasons).toEqual([`table:${TABLE}`]);
     await remove(post({ code: "SAVE10" }), {}, ctx());
-    expect(publicCache.reasons).toEqual([`promo:${TABLE}`, `promo:${TABLE}`]);
+    expect(publicCache.reasons).toEqual([`table:${TABLE}`, `table:${TABLE}`]);
   });
 });
 

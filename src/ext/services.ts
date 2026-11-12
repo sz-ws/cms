@@ -62,7 +62,8 @@ export interface CoreServices {
    * 2.0:告訴 CMS「訪客看得到的東西變了」—— 每一個存起來的公開頁在下一次造訪時重算。插件用 `db`
    * 直接寫了會畫在公開頁上的資料之後,在同一個請求裡(API handler、排程工作)、回應之前呼叫。
    * reason 只用在記錄(會自動加上插件 id),例如 `services.publicContentChanged("price")`。永不 throw。
-   * 經 ledger-kit 寫的表用 Extension.publicTables 宣告就好;內容(content provider)與設定 core 自己會通知。
+   * 這是 escape hatch:經 core 底層的寫入(內容、宣告過的設定欄位、ledger-kit 或 commerce-kit 寫的表、
+   * 刪檔、插件的安裝與啟停)由 visitorFacing 記號決定,core 自己會通知(src/lib/visitor-facing.ts)。
    */
   publicContentChanged(reason: string): void;
 }

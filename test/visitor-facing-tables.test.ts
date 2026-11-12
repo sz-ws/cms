@@ -2,8 +2,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { env } from "cloudflare:test";
 
 // 2.0 頁面快取,插件那一邊:
-//   1. Extension.publicTables —— 「這些表的資料會上公開頁」。經 ledger-kit 的交易寫到這些表(庫存的扣、補、
-//      退),交易成立之後 core 替插件通知 publicContentChanged,插件不用寫一行。同 jobs[].wakeOn 的宣告方式。
+//   1. Extension.visitorFacingTables —— 「訪客看得到依賴這些表的輸出」。經 ledger-kit 的交易寫到這些表(庫存的扣、
+//      補、退),交易成立之後 core 替插件通知 publicContentChanged,插件不用寫一行。同 jobs[].wakeOn 的宣告方式。
 //   2. services.publicContentChanged(reason) —— 插件用 services.db 直接寫自己的公開資料時自己呼叫。
 
 vi.mock("@/lib/cf", () => ({
@@ -22,7 +22,10 @@ vi.mock("@/lib/public-cache", () => ({
   },
 }));
 
-import { setPublicTables } from "../src/lib/public-tables";
+import { declareVisitorFacing } from "../src/lib/visitor-facing";
+
+const setPublicTables = (tables: string[]) =>
+  declareVisitorFacing("extensions", "table", tables.map((t) => [t, true] as const));
 import { commitLedgerOperations, createLedgerProvider, ledgerSchema, prepareTransaction, transactionSchema } from "../src/ext/ledger-kit";
 import type { LedgerAccount } from "../src/ext/ledger-kit";
 import { ledgerTables } from "../src/ext/ledger-kit/schema";
@@ -62,7 +65,7 @@ describe("ledger-kit commits on declared public tables", () => {
     setPublicTables([`${STOCK}_accounts`]);
     const stock = createLedgerProvider(d1(), STOCK);
     expect(await commitLedgerOperations(command("open"), [stock.prepareOpen(item("sku-1")), stock.prepareCredit(item("sku-1"), "5")])).toEqual({ status: "applied" });
-    expect(publicCache.reasons).toEqual([`ledger:${STOCK}_accounts`]);
+    expect(publicCache.reasons).toEqual([`table:${STOCK}_accounts`]);
   });
 
   it("a replayed command changes nothing and tells nobody", async () => {
@@ -94,20 +97,22 @@ describe("ledger-kit commits on declared public tables", () => {
     await commitLedgerOperations(command("note"), [
       prepareTransaction(d1(), STOCK, [{ kind: "insert", table: `${STOCK}_notes`, values: { id: "n1", created_at: 1 } }]),
     ]);
-    expect(publicCache.reasons).toEqual([`ledger:${STOCK}_notes`]);
+    expect(publicCache.reasons).toEqual([`table:${STOCK}_notes`]);
   });
 });
 
-describe("Extension.publicTables", () => {
+describe("Extension.visitorFacingTables", () => {
   const base = { id: "acme", name: "Acme", version: "1.0.0", coreApi: "^1.10.0" };
 
   it("accepts table names in the same shape as wakeOn", () => {
-    expect(defineExtension({ ...base, publicTables: ["ext_acme_accounts"] }).publicTables).toEqual(["ext_acme_accounts"]);
+    expect(defineExtension({ ...base, visitorFacingTables: ["ext_acme_accounts"] }).visitorFacingTables).toEqual(["ext_acme_accounts"]);
+    expect(defineExtension({ ...base, visitorFacingTables: { ext_acme_orders: false } }).visitorFacingTables).toEqual({ ext_acme_orders: false });
   });
 
   it("refuses anything that is not a plain table name", () => {
-    expect(() => defineExtension({ ...base, publicTables: ["ext_acme; DROP TABLE x"] })).toThrow(/publicTables/);
-    expect(() => defineExtension({ ...base, publicTables: ["Ext"] })).toThrow(/publicTables/);
+    expect(() => defineExtension({ ...base, visitorFacingTables: ["ext_acme; DROP TABLE x"] })).toThrow(/visitorFacingTables/);
+    expect(() => defineExtension({ ...base, visitorFacingTables: ["Ext"] })).toThrow(/visitorFacingTables/);
+    expect(() => defineExtension({ ...base, visitorFacingTables: { "Ext x": true } })).toThrow(/visitorFacingTables/);
   });
 });
 

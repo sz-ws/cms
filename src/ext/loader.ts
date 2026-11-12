@@ -24,10 +24,10 @@ import {
 } from "./builtin-declaratives";
 import { forgetRequestStamps, getRequestStamps } from "@/lib/request-stamps";
 import { dropColdSnapshot, takeColdRuntimeRows } from "@/lib/cold-snapshot";
-import { getPlainSetting } from "@/lib/settings";
+import { extSetting, getPlainSetting } from "@/lib/settings";
 import { CODE_SIGNATURE_KEY, codeSignature } from "./code-signature";
 import { setWakeTables } from "@/lib/wake";
-import { setPublicTables } from "@/lib/public-tables";
+import { declareExtensionsVisitorFacing } from "@/lib/visitor-facing";
 import type { Extension, HookName } from "./types";
 
 // manifest.migrations 兜底已成功套用的 extId(install route 是主要套用點;這裡
@@ -441,8 +441,9 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
 
   // 1.80.0:啟用的插件說「這些表有新資料就叫醒排程」(jobs[].wakeOn);ledger-kit 的交易照這份設記號。
   setWakeTables(enabled.flatMap((ext) => (ext.jobs ?? []).flatMap((job) => job.wakeOn ?? [])));
-  // 2.0:啟用的插件說「這些表的資料會上公開頁」(publicTables);ledger-kit 的交易寫到它們就讓公開頁重算。
-  setPublicTables(enabled.flatMap((ext) => ext.publicTables ?? []));
+  // 2.0:插件宣告的 visitorFacing 記號(插件本身、設定欄位、表、內容類型、檔案區);寫到帶記號的東西,
+  // 存起來的公開頁全部重算(src/lib/visitor-facing.ts)。插件本身的記號查裝著的全部,停用、移除時也查得到。
+  declareExtensionsVisitorFacing([...registry, ...dxEnabled], enabled, extSetting);
 
   const hooks = new HookBus();
   for (const ext of enabled)

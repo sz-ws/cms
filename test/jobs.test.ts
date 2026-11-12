@@ -267,7 +267,7 @@ describe("runDueJobs — publish-due", () => {
     await insertContent({ id: "pc3", status: "draft", publishAt: now + 100_000, data: { title: "later" } });
 
     await runDueJobs(now);
-    expect(publicCache.reasons.sort()).toEqual(["publish:blog.page", "publish:blog.post"]);
+    expect(publicCache.reasons.sort()).toEqual(["content:blog.page", "content:blog.post"]);
 
     // 第二次跑沒有東西翻轉 → 不通知。
     publicCache.reasons = [];

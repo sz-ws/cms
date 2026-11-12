@@ -3,8 +3,7 @@ import { db } from "./db";
 import { contents } from "./schema";
 import { captureRevision, getRevision } from "./revisions";
 import { indexContentEntry } from "./search";
-import { publicContentChanged } from "@/lib/public-cache";
-import { touchesPublic } from "@/ext/dx/content-provider";
+import { contentWritten } from "@/ext/dx/content-provider";
 
 // 版本還原(undo)。從 ./revisions 拆出來的理由只有一個:那支模組是「擷取 / 保留 /
 // 讀取」的資料層,而還原是**寫入**動作,得自己補齊 provider 寫入路徑的副作用清單
@@ -125,9 +124,7 @@ export async function restoreRevision(
     console.error("[revisions] restore reindex failed", contentId, e);
   }
   // 2.0:還原前或還原後是已發佈的才讓存起來的公開頁重算(同 provider,永不 throw)。
-  if (touchesPublic(row.status, revision.status)) {
-    publicContentChanged(`restore:${row.type}`);
-  }
+  contentWritten(row.type, row.status, revision.status);
 
   // 還原後的狀態自己也是一個版本:被還原掉的壞版本仍留在列表裡(undo 可 redo)。
   await captureRevision({

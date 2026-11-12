@@ -232,12 +232,15 @@ describe("updateFileAlt", () => {
 });
 
 describe("page cache (2.0)", () => {
-  // 低階的 putFile / deleteFile 都不通知:上傳是新網址,刪檔由後台的刪檔動作通知
-  // (media-delete-route.test.ts);換頭像與插件自己的刪檔不該讓整站重算。
-  it("neither putFile nor deleteFile tells the page cache", async () => {
+  // 上傳不通知(每次都是新網址)。刪檔依檔案區的 visitorFacing 記號:core 的媒體檔通知,
+  // 頭像與插件的檔案區不通知(完整清單在 visitor-facing.test.ts)。
+  it("putFile never tells the page cache; deleteFile only for a visitor-facing scope", async () => {
     publicCache.reasons = [];
     await putFile("core", "a.png", encode("X"), "image/png");
-    await deleteFile(KEY);
     expect(publicCache.reasons).toEqual([]);
+    await deleteFile("avatars/2026/01/x.png");
+    expect(publicCache.reasons).toEqual([]);
+    await deleteFile(KEY);
+    expect(publicCache.reasons).toEqual([`files:${KEY.split("/")[0]}`]);
   });
 });

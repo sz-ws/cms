@@ -1,6 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import { OrderManagedError, resolveOrderOwner } from "./order-manager";
-import { publicContentChanged } from "../../lib/public-cache";
+import { kitTableWritten } from "./visitor-facing";
 import type { CoreServices } from "../services";
 import { recordSearchClauses, type RecordSearch, type RecordSearchFields } from "../record-search";
 import {
@@ -350,10 +350,10 @@ export async function transitionOrder(
     RETURNING order_no AS orderNo
   `);
   if (rows.length === 0) return false;
-  // 2.0:訂單狀態一變,公開頁可能跟著變 —— 宣告式 script 的「最近成交」feed(shop 的 publicFeeds)、
-  // 賣出的件數。存起來的公開頁全部重算。轉移是狀態機唯一的寫入口,所以只在這裡通知一次;
-  // 受管訂單(上面交給 OrderManager 的)由接手的插件自己通知。
-  publicContentChanged(`order:${table}`);
+  // 2.0:訂單狀態一變,公開頁可能跟著變 —— 宣告式 script 的「最近成交」feed(publicFeeds)、賣出的件數。
+  // 訂單表是 kit 定義的表,預設帶著 visitorFacing 記號(./visitor-facing.ts)。轉移是狀態機唯一的寫入口,
+  // 所以只在這裡交一次;受管訂單(上面交給 OrderManager 的)由接手的插件自己的寫入決定。
+  kitTableWritten(table);
   return true;
 }
 

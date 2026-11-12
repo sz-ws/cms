@@ -72,12 +72,12 @@ beforeEach(async () => {
 describe("declarative lifecycle → publicContentChanged (2.0)", () => {
   it("disable, enable and uninstall each tell the page cache once", async () => {
     await disableDeclarative("demo");
-    expect(publicCache.reasons).toEqual(["ext:demo"]);
+    expect(publicCache.reasons).toEqual(["extension:demo"]);
     await enableDeclarative("demo");
-    expect(publicCache.reasons).toEqual(["ext:demo", "ext:demo"]);
+    expect(publicCache.reasons).toEqual(["extension:demo", "extension:demo"]);
     publicCache.reasons = [];
     await uninstallDeclarative("demo", true);
-    expect(publicCache.reasons).toEqual(["ext:demo"]);
+    expect(publicCache.reasons).toEqual(["extension:demo"]);
   });
 });
 

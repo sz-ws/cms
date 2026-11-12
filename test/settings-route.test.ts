@@ -165,11 +165,11 @@ describe("PUT /api/settings value contract", () => {
 });
 
 describe("PUT /api/settings and the page cache (2.0)", () => {
-  it("a saved change remakes the stored public pages once", async () => {
+  it("the route does not refresh by itself: setSettings does, per visitorFacing field (visitor-facing.test.ts)", async () => {
     const res = await PUT(request({ "core.count": 3 }));
     expect(res.status).toBe(200);
     expect(state.writes).toEqual([{ "core.count": 3 }]);
-    expect(state.reasons).toEqual(["settings"]);
+    expect(state.reasons).toEqual([]);
   });
 
   it("a refused save writes nothing and remakes nothing", async () => {
