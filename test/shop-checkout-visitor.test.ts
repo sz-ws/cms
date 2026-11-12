@@ -7,7 +7,7 @@ const session = vi.hoisted(() => ({ user: null as null | { email: string; name: 
 vi.mock("@/lib/auth", () => ({ getSessionUser: async () => session.user }));
 
 import { checkoutVisitorHandler } from "../extensions/shop/checkout-visitor";
-import { prefillFromVisitor } from "../extensions/shop/checkout-options";
+import { prefillFromVisitor, shouldAskVisitor } from "../extensions/shop/checkout-options";
 
 const call = () => checkoutVisitorHandler();
 
@@ -43,3 +43,21 @@ describe("prefillFromVisitor", () => {
   });
 });
 
+
+// 0.14.1:問伺服器只在有用的時候 —— 購物車空著、或瀏覽器沒有登入提示(signed_in cookie)就不問,
+// 頁面照「還沒登入」畫。登入的會員、購物車有東西 → 照舊問一次。
+describe("shouldAskVisitor", () => {
+  it("asks only for a signed-in visitor with something in the cart", () => {
+    expect(shouldAskVisitor({ itemCount: 2, cookie: "signed_in=1" })).toBe(true);
+    expect(shouldAskVisitor({ itemCount: 0, cookie: "signed_in=1" })).toBe(false);
+    expect(shouldAskVisitor({ itemCount: 2, cookie: "" })).toBe(false);
+    expect(shouldAskVisitor({ itemCount: 2, cookie: "theme=dark" })).toBe(false);
+  });
+
+  // 改版前登入的會員沒有提示:一定要登入才能結帳時照樣問,不然會被擋在「請先登入」。
+  it("asks without the hint when the checkout requires signing in", () => {
+    expect(shouldAskVisitor({ itemCount: 2, cookie: "", signInRequired: true })).toBe(true);
+    expect(shouldAskVisitor({ itemCount: 0, cookie: "", signInRequired: true })).toBe(false);
+    expect(shouldAskVisitor({ itemCount: 2, cookie: "", signInRequired: false })).toBe(false);
+  });
+});

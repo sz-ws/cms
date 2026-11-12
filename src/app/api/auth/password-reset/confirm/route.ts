@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { getDB } from "@/lib/cf";
-import { SESSION_COOKIE, createSession, sessionCookieOptions } from "@/lib/auth";
+import { createSession, setSessionCookies } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { readBoundedJsonObject } from "@/lib/body-limit";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
@@ -65,7 +65,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const token = await createSession(result.userId);
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, sessionCookieOptions());
+  setSessionCookies(store, token);
   await fireSignedIn({ userId: result.userId, method: "reset", emailVerified: true });
   await afterResponse(notifyPasswordChanged(result.email, await getLocale()));
   return Response.json({ ok: true });

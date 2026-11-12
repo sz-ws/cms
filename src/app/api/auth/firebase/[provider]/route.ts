@@ -2,11 +2,10 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import {
   AuthError,
-  SESSION_COOKIE,
   createSession,
   purgeExpiredSessions,
   requireAuth,
-  sessionCookieOptions,
+  setSessionCookies,
 } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
@@ -92,7 +91,7 @@ export async function POST(
   await purgeExpiredSessions(outcome.userId);
   const token = await createSession(outcome.userId);
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, sessionCookieOptions());
+  setSessionCookies(store, token);
   await fireSignedIn({
     userId: outcome.userId,
     method: "firebase",

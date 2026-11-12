@@ -381,6 +381,8 @@ describe("login verify success (§6.3)", () => {
 
     // session 建立(cookie 語意同 password 路徑:cookies().set 被呼叫)。
     expect(cookieStore.map.has("session")).toBe(true);
+    // 2.0:旁邊的登入提示(瀏覽器讀得到,存起來的公開頁靠它決定要不要問伺服器)。
+    expect(cookieStore.map.has("signed_in")).toBe(true);
     const sess = await d1()
       .prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = 'u1'")
       .first<{ n: number }>();

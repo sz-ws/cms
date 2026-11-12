@@ -5,6 +5,7 @@ import { db } from "./db";
 import { sessions, staffRoles, users } from "./schema";
 import { getEnv } from "./cf";
 import { currentAccessScope } from "./access-scope";
+import { SIGNED_IN_HINT_COOKIE } from "./signed-in-hint";
 import { atLeast, parseStoredAccess, type AccessMap } from "@/ext/admin-access";
 import {
   PBKDF2_ITERATIONS,
@@ -379,6 +380,36 @@ export function sessionCookieOptions() {
 }
 export { SESSION_COOKIE };
 
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
+
+/**
+ * 2.0:登入時設 session cookie,旁邊再設瀏覽器讀得到的登入提示(signed-in-hint.ts:值 "1"、不帶身分、
+ * 同樣的期限)。存起來的公開頁靠提示決定要不要問伺服器;每一條登入路徑都經過這裡。
+ */
+export function setSessionCookies(store: CookieStore, token: string): void {
+  const options = sessionCookieOptions();
+  store.set(SESSION_COOKIE, token, options);
+  store.set(SIGNED_IN_HINT_COOKIE, "1", { ...options, httpOnly: false });
+}
+
+/**
+ * 2.0:驗 session 時順手讓登入提示跟 session 一致。改版前登入的會員、或自己設 session cookie 的外掛,
+ * 有 session 沒提示 → 補上;提示在但 session 不在(過期、別處登出)→ 清掉。
+ *
+ * 只有 route handler / server action 的回應能帶 Set-Cookie;Server Component 裡 cookies() 是唯讀,
+ * set/delete 會丟錯。那裡不補也不清(提示照舊,下一個 route handler / server action 會補),所以吞掉。
+ */
+function syncSignedInHint(store: CookieStore, signedIn: boolean): void {
+  const hasHint = store.get(SIGNED_IN_HINT_COOKIE)?.value === "1";
+  if (signedIn === hasHint) return;
+  try {
+    if (signedIn) store.set(SIGNED_IN_HINT_COOKIE, "1", { ...sessionCookieOptions(), httpOnly: false });
+    else store.delete(SIGNED_IN_HINT_COOKIE);
+  } catch {
+    // 唯讀的 cookies()(Server Component render):這個回應不能改 cookie,見上。
+  }
+}
+
 const sessionBaseColumns = {
   userId: users.id,
   email: users.email,
@@ -448,7 +479,8 @@ export interface SessionAccess {
 }
 
 /**
- * 讀 cookie → 查 D1(JOIN users,LEFT JOIN staff_roles)→ 過期回 null + 順手刪列。
+ * 讀 cookie → 查 D1(JOIN users,LEFT JOIN staff_roles)→ 過期回 null + 順手刪列;
+ * 能寫 cookie 的回應順手補上 / 清掉登入提示(syncSignedInHint)。
  * React cache() 包裝:同一 request 多處呼叫只查一次。
  *
  * 自訂角色:users.role 存的是 "guest"(角色列消失時退回最低權限),角色還在時
@@ -457,6 +489,12 @@ export interface SessionAccess {
  */
 export const getSessionAccess = cache(async (): Promise<SessionAccess | null> => {
   const store = await cookies();
+  const session = await readSession(store);
+  syncSignedInHint(store, session !== null);
+  return session;
+});
+
+async function readSession(store: CookieStore): Promise<SessionAccess | null> {
   const raw = store.get(SESSION_COOKIE)?.value;
   if (!raw) return null;
   const id = await hashToken(raw);
@@ -490,7 +528,7 @@ export const getSessionAccess = cache(async (): Promise<SessionAccess | null> =>
     },
     access: parseStoredAccess(row.staffRoleAccess),
   };
-});
+}
 
 /**
  * 目前登入的人。自訂角色:目前的後台頁 / API 有開門(lib/access-scope.ts)且角色的
@@ -514,6 +552,7 @@ export async function destroySession(): Promise<void> {
     await db().delete(sessions).where(eq(sessions.id, id));
   }
   store.delete(SESSION_COOKIE);
+  store.delete(SIGNED_IN_HINT_COOKIE);
 }
 
 /** login 成功時順手刪除該 user 的過期 sessions(免 cron,04 §2)。 */

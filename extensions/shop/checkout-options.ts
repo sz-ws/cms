@@ -1,6 +1,7 @@
 import type { SettingField } from "@/ext/types";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
 import { sitePath } from "@/lib/sign-in-continue";
+import { hasSignedInHint } from "@/lib/signed-in-hint";
 
 // 結帳頁的開關(shop 0.2.0)。設定存在 settings 表(`ext.shop.<key>`),由 public-pages.tsx 在
 // 伺服器讀出、經 resolveCheckoutOptions 正規化後交給 CheckoutView。這裡沒有任何 React,所以能直接用
@@ -118,6 +119,19 @@ export function prefillFromVisitor(
     address: typed.address || contact.address || "",
     region: typed.region || region,
   };
+}
+
+/**
+ * 0.14.1:結帳頁只在有用的時候問伺服器這位訪客是誰 —— 購物車有東西,而且瀏覽器有登入提示
+ * (signed-in-hint.ts,登入時設、登出時清)。不問的時候頁面照「還沒登入」畫,和問到「沒登入」一樣。
+ * 提示只決定要不要問;是不是登入照舊由伺服器回答。
+ *
+ * 例外:一定要登入才能結帳(受管模式、不開放訪客結帳)時,沒有提示照樣問。改版前登入的會員沒有
+ * 提示(提示在第一個驗 session 的 route handler 才補上),不問就會被擋在「請先登入」。問的那一次
+ * 也會把提示補上。
+ */
+export function shouldAskVisitor(input: { itemCount: number; cookie: string; signInRequired?: boolean }): boolean {
+  return input.itemCount > 0 && (input.signInRequired === true || hasSignedInHint(input.cookie));
 }
 
 export function checkoutContact(user: { email?: string | null; name?: string | null } | null): CheckoutContact {

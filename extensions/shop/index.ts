@@ -110,7 +110,9 @@ export const shop = defineExtension({
   // 不會多一張佔著庫存與優惠碼的訂單;那張已經不能付(取消、過期、付過)時當成新的一筆再送一次。購物車清空時一起忘掉。
   // 0.14.0:結帳表單也能先帶入收件地區(CheckoutContact.region,例如會員存的;不在運費設定的地區裡就不帶);
   // shopShippingRegions() 給別的插件同一份地區選項(例如會員資料頁)。
-  version: "0.14.0",
+  // 0.14.1:結帳頁只在購物車有東西、而且瀏覽器有登入提示(core 的 signed_in cookie)時才問 checkout-visitor;
+  // 其他訪客不再多一次伺服器請求。登入的會員照舊。一定要登入才能結帳時,沒有提示照樣問(改版前登入的會員)。
+  version: "0.14.1",
   // ^1.31.0:宣告了 agentTools(1.30.0 的新表面),而那批 tool 的 write 動詞用了
   // 1.31.0 的 AgentTool.summarize(確認卡的中文摘要)。舊 core 會安靜地忽略這兩個
   // 欄位 —— agentTools 整個不見、摘要退回英文,兩者都沒有錯誤訊息,所以版號要標到

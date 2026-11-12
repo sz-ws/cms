@@ -1,10 +1,9 @@
 import { cookies } from "next/headers";
 import {
-  SESSION_COOKIE,
   createSession,
   getSessionUser,
   purgeExpiredSessions,
-  sessionCookieOptions,
+  setSessionCookies,
 } from "@/lib/auth";
 import { takeOAuthFlow } from "@/lib/oauth-flow-cookie";
 import { fireSignedIn } from "@/lib/signed-in";
@@ -55,7 +54,7 @@ export async function GET(
   if (outcome.kind === "session") {
     await purgeExpiredSessions(outcome.userId);
     const token = await createSession(outcome.userId);
-    store.set(SESSION_COOKIE, token, sessionCookieOptions());
+    setSessionCookies(store, token);
     await fireSignedIn({
       userId: outcome.userId,
       method: "oauth",

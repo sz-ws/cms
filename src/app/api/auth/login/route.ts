@@ -4,12 +4,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import {
-  SESSION_COOKIE,
   createSession,
   getActivePasswordHashingProfile,
   purgeExpiredSessions,
-  sessionCookieOptions,
   verifyPassword,
+  setSessionCookies,
 } from "@/lib/auth";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import {
@@ -88,7 +87,7 @@ export async function POST(req: Request): Promise<Response> {
   await purgeExpiredSessions(user.id);
   const token = await createSession(user.id);
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, sessionCookieOptions());
+  setSessionCookies(store, token);
   await fireSignedIn({ userId: user.id, method: "password", emailVerified: false });
 
   return Response.json({ ok: true });

@@ -3,10 +3,9 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDB, getEnv } from "@/lib/cf";
 import {
-  SESSION_COOKIE,
   createSession,
   hashPassword,
-  sessionCookieOptions,
+  setSessionCookies,
 } from "@/lib/auth";
 import { setSettings } from "@/lib/settings";
 import { publicContentChanged } from "@/lib/public-cache";
@@ -151,7 +150,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const token = await createSession(id);
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, sessionCookieOptions());
+  setSessionCookies(store, token);
 
   return Response.json({ ok: true });
 }

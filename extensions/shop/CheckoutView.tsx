@@ -24,7 +24,7 @@ import {
   getCartSnapshot,
   subscribeCart,
 } from "./cart-store";
-import { prefillFromVisitor, resolveCheckoutOptions, type CheckoutContact, type ContactFields } from "./checkout-options";
+import { prefillFromVisitor, resolveCheckoutOptions, shouldAskVisitor, type CheckoutContact, type ContactFields } from "./checkout-options";
 import type { CheckoutVisitor } from "./checkout-visitor";
 import {
   CHECKOUT_URL,
@@ -219,6 +219,8 @@ export function CheckoutView({
 }) {
   // 2.0:結帳頁是存起來的公開頁,伺服器不知道訪客是誰。頁面出現之後問一次(checkout-visitor.ts):
   // 登入了沒、要帶入的姓名、Email、電話、地址與地區。問到之前 visitor 是 null。
+  // 0.14.1:購物車空著、或瀏覽器沒有登入提示就不問(shouldAskVisitor),visitor 留在 null = 還沒登入;
+  // 一定要登入才能結帳時沒有提示照樣問。
   const [asked, setAsked] = useState<CheckoutVisitor | null>(null);
   const supplied = givenVisitor !== undefined;
   const visitor = supplied ? givenVisitor : asked;
@@ -251,22 +253,33 @@ export function CheckoutView({
   const [promoError, setPromoError] = useState<string | null>(null);
   const [method, setMethod] = useState<"card" | "transfer">(cardEnabled ? "card" : "transfer");
   const [fieldValues, setFieldValues] = usePrefilledFields(fields);
+  const itemCount = items.length;
+  // 已經為哪個 emailLocked 問過(null = 還沒問到);emailLocked 一改照舊再問一次,和以前一樣。
+  const askedFor = useRef<boolean | null>(null);
   useEffect(() => {
     // 包著它的元件已經問過(或正在問):不再問一次。
     if (supplied) return;
+    const signInRequired = options.managedOrders && !options.guestCheckout;
+    if (askedFor.current === emailLocked || !shouldAskVisitor({ itemCount, cookie: document.cookie, signInRequired })) return;
+    askedFor.current = emailLocked;
     let live = true;
+    let pending = true;
     fetch(VISITOR_URL, { credentials: "same-origin", cache: "no-store" })
       .then((res) => (res.ok ? (res.json() as Promise<CheckoutVisitor>) : null))
       .then((found) => {
+        pending = false;
         if (live) setAsked(found ?? { signedIn: false, contact: {} });
       })
       .catch(() => {
+        pending = false;
         if (live) setAsked({ signedIn: false, contact: {} });
       });
     return () => {
       live = false;
+      // 回應回來之前就換掉了(emailLocked 改變、開發模式的雙重 effect):下一輪重新問。問到了就不再問。
+      if (pending) askedFor.current = null;
     };
-  }, [emailLocked, supplied]);
+  }, [emailLocked, itemCount, options.managedOrders, options.guestCheckout, supplied]);
   // 問到(或傳進來)的回答:只填還空著的欄位 —— 回應回來之前客人已經打了字,就照他打的。Email 被頁面鎖住時不動。
   // 回答一換就在這一次 render 裡補(React 的「依 props 調整 state」寫法),不在 effect 裡設 state。
   const [filledFrom, setFilledFrom] = useState(visitor);
