@@ -3,6 +3,7 @@ import { requireMediaAccess } from "@/lib/access-api";
 import { assertSameOrigin, originErrorResponse } from "@/lib/security";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { deleteFile } from "@/lib/storage";
+import { publicContentChanged } from "@/lib/public-cache";
 
 // Task #7 §1: admin media deletion — the gap left by C.5b (upload + list only).
 // POST /api/media/delete, body { key }. Mirrors the upload route's guard order
@@ -71,6 +72,8 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   await deleteFile(key);
+  // 2.0:存起來的公開頁可能還指著這個檔,全部重算。
+  publicContentChanged("media");
   return Response.json({ ok: true });
 }
 
@@ -115,5 +118,7 @@ export async function DELETE(req: Request): Promise<Response> {
   }
 
   await deleteFile(key);
+  // 2.0:存起來的公開頁可能還指著這個檔,全部重算。
+  publicContentChanged("media");
   return Response.json({ ok: true });
 }

@@ -191,17 +191,14 @@ export async function headFile(key: string): Promise<StoredFile | null> {
   };
 }
 
+/**
+ * 刪 R2 物件。2.0:這裡**不**讓存起來的公開頁重算 —— 換頭像(公開頁不顯示)與插件自己的刪檔
+ * 也走這裡。後台的刪檔動作(api/media/delete)刪完自己通知;插件刪了公開頁用得到的檔,
+ * 寫完呼叫 services.publicContentChanged。上傳本來就不用:每次上傳都是新的網址。
+ */
 export async function deleteFile(key: string): Promise<void> {
   await getStorage().delete(key);
   await invalidateStorageIndex();
-  // 2.0:存起來的公開頁可能還指著這個檔,全部重算(上傳不用:每次上傳都是新的網址,
-  // 現有頁面不會變)。動態 import:理由同 invalidateStorageIndex。
-  try {
-    const { publicContentChanged } = await import("@/lib/public-cache");
-    publicContentChanged("media");
-  } catch (error) {
-    console.error("[storage:cache] failed to load the page cache", error);
-  }
 }
 
 export async function listFiles(

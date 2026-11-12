@@ -93,7 +93,7 @@ vi.mock("@/ext/loader", () => ({
 // 儀表板統計快照的失效要 Next 的 request scope;測試裡打樁掉。
 vi.mock("next/cache", () => ({ revalidateTag: () => {} }));
 
-// 2.0 頁面快取:刪檔要讓頁面不再指向一張不存在的圖;上傳不影響任何現有頁面(網址每次都是新的)。
+// 2.0 頁面快取:低階的上傳與刪檔都不通知(見下方 page cache 那一組)。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));
 vi.mock("@/lib/public-cache", () => ({
   publicContentChanged: (reason: string) => {
@@ -232,11 +232,12 @@ describe("updateFileAlt", () => {
 });
 
 describe("page cache (2.0)", () => {
-  it("deleteFile tells the page cache; putFile does not", async () => {
+  // 低階的 putFile / deleteFile 都不通知:上傳是新網址,刪檔由後台的刪檔動作通知
+  // (media-delete-route.test.ts);換頭像與插件自己的刪檔不該讓整站重算。
+  it("neither putFile nor deleteFile tells the page cache", async () => {
     publicCache.reasons = [];
     await putFile("core", "a.png", encode("X"), "image/png");
-    expect(publicCache.reasons).toEqual([]);
     await deleteFile(KEY);
-    expect(publicCache.reasons).toEqual(["media"]);
+    expect(publicCache.reasons).toEqual([]);
   });
 });
