@@ -12,6 +12,8 @@ import { resolveLocalizedString } from "@/lib/i18n/localized";
 import type { LocalizedString } from "@/lib/i18n/localized";
 import { canEditCurrentPage } from "@/lib/access-guards";
 import { getExtraFieldDefs } from "@/lib/extra-fields-server";
+import { buttonVariants } from "@/components/ui/button";
+import { draftPreviewHref } from "../preview-link";
 
 // admin create/edit 頁(server component)。edit 模式(?id=…)先載入既有 entry,
 // 再交給 client surface。Surface 先嘗試固定入口 layout.tsx 註冊的元件,
@@ -32,6 +34,8 @@ export interface FormViewPageProps {
   adminSlug: string;
   contentType: DeclarativeContentType;
   entryId?: string;
+  /** manifest 的公開路由:草稿有公開網址時,編輯頁顯示「預覽草稿」(2.0)。 */
+  publicRoutes?: readonly { pattern: string; view: string; contentType: string }[];
 }
 
 export async function FormViewPage({
@@ -40,6 +44,7 @@ export async function FormViewPage({
   adminSlug,
   contentType,
   entryId,
+  publicRoutes,
 }: FormViewPageProps) {
   const def = toTypeDef(extId, contentType);
   // 1.50.0:只能檢視這一頁的角色看得到內容,改不了(API 另外守門)。
@@ -56,6 +61,7 @@ export async function FormViewPage({
   let initialData: Record<string, unknown> = {};
   let initialStatus: "draft" | "published" = "draft";
   let initialPublishAt: number | null = null;
+  let previewHref: string | null = null;
   // 版本紀錄在 server 就查好(client 不再為了首屏打一次自己的 API)。歷史表讀不到
   // (0010 migration 尚未套用)時退回空陣列 —— 編輯頁本身絕不能因為附屬面板而 500。
   let revisions: RevisionRowDTO[] = [];
@@ -65,6 +71,7 @@ export async function FormViewPage({
     if (existing) {
       initialData = existing.data;
       initialStatus = existing.status;
+      previewHref = draftPreviewHref(publicRoutes, contentType.name, existing);
       // publishAt 為 row 欄位,不在 ContentEntry 上(見 content-provider.ts)。
       initialPublishAt = await getContentPublishAt(entryId);
       try {
@@ -96,6 +103,21 @@ export async function FormViewPage({
             : format(m["extForm.admin.editType"], { type: resolvedTitle })
           : format(m["collection.new"], { type: resolvedTitle })}
       </PageTitle>
+      {/* 2.0:草稿在網站上的樣子。打開 Next 的 draft mode(只對這位編輯),另開分頁看那一篇;
+          訪客看到的照舊是存起來的頁面。已發佈或沒有網址的草稿不顯示。 */}
+      {previewHref && (
+        <p className="-mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <a
+            href={previewHref}
+            target="_blank"
+            rel="noopener"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            {m["extForm.admin.previewDraft"]}
+          </a>
+          <span>{m["extForm.admin.previewDraftHint"]}</span>
+        </p>
+      )}
       <AdminFormSurface
         extId={extId}
         typeName={contentType.name}

@@ -970,6 +970,8 @@ export const en = {
   "extForm.error.mustBeDate": "Field \"{field}\" must be a date.",
   "extForm.admin.editEntry": "Edit: {title}",
   "extForm.admin.editType": "Edit {type}",
+  "extForm.admin.previewDraft": "Preview draft",
+  "extForm.admin.previewDraftHint": "See this draft as it will look on the site. Visitors can't see it.",
   "extForm.admin.status": "Status",
   "extForm.admin.entryStatus": "Entry status",
   "extForm.admin.saving": "Saving…",

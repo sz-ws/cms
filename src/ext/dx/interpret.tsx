@@ -194,6 +194,7 @@ function buildAdminPages(
           adminSlug: slug,
           contentType: ct,
           entryId: searchParams.id || undefined,
+          publicRoutes: manifest.publicRoutes,
         };
         return (
           <Slot of={formSlot} props={props}>

@@ -947,6 +947,8 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "extForm.error.mustBeDate": "「{field}」必須是日期。",
   "extForm.admin.editEntry": "編輯：{title}",
   "extForm.admin.editType": "編輯{type}",
+  "extForm.admin.previewDraft": "預覽草稿",
+  "extForm.admin.previewDraftHint": "在網站上看這篇草稿的樣子，訪客看不到。",
   "extForm.admin.status": "狀態",
   "extForm.admin.entryStatus": "項目狀態",
   "extForm.admin.saving": "儲存中…",
