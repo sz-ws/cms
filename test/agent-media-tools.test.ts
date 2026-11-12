@@ -55,11 +55,6 @@ vi.mock("@/lib/cf", () => ({
   getStorage: () => fakeBucket,
   getAI: () => undefined,
 }));
-// 上傳後的統計快照失效需要 Next 的 request scope;只打樁這一支,內容的失效照舊。
-vi.mock("@/ext/dx/cache-invalidate", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/ext/dx/cache-invalidate")>()),
-  revalidateStorageIndex: () => {},
-}));
 vi.mock("@/ext/loader", async () => {
   const { HookBus } = await import("../src/ext/hooks");
   const rt = {

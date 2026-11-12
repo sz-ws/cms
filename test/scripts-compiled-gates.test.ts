@@ -54,7 +54,6 @@ vi.mock("@/ext/loader", () => ({
   }),
   invalidateExtRuntimeMemo: () => {},
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => {} }));
 
 // 2.0 頁面快取:核准(或撤回)script 會改每一頁的 HTML,寫完通知一次;被擋下來的不通知。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));

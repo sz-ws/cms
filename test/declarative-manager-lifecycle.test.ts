@@ -13,7 +13,6 @@ vi.mock("@/ext/loader", () => ({
     hooks: { doAction: async () => undefined },
   }),
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 // 模擬「讀的時候還是啟用、寫的時候剛被停用」:讓 manager 讀到過時的已安裝清單。
 const staleRead = vi.hoisted(() => ({ enabled: null as null | string[] }));
 vi.mock("@/ext/installed-plugins", async (importActual) => {

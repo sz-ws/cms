@@ -113,16 +113,21 @@ function makeKey(scope: string, filename: string): string {
   return `${scope}/${yyyy}/${mm}/${nanoid()}.${safeExt(filename)}`;
 }
 
+/** 後台儀表板「檔案數量 / 總容量」快照的 tag(components/admin/dashboard/widget-data.ts)。 */
+export const STORAGE_INDEX_TAG = "storage:index";
+
 /**
- * storage 是低頻 mutation、高頻 dashboard read；成功寫入後才精準失效統計 snapshot。
- * 動態 import 避免 storage 基礎模組把 next/cache 拉進 scheduled/build 路徑。
+ * storage 是低頻 mutation、高頻 dashboard read；成功寫入後才失效統計 snapshot。
+ * 立刻過期({ expire: 0 }),不用 "max":stale-while-revalidate 要背景重算,這個專案沒有 queue。
+ * 動態 import 避免 storage 基礎模組把 next/cache 拉進 scheduled/build 路徑。在 Next 的請求
+ * 之外(排程、測試)revalidateTag 會 throw —— 只記錄,絕不連累這次寫入。
  */
 async function invalidateStorageIndex(): Promise<void> {
   try {
-    const { revalidateStorageIndex } = await import("@/ext/dx/cache-invalidate");
-    revalidateStorageIndex();
+    const { revalidateTag } = await import("next/cache");
+    revalidateTag(STORAGE_INDEX_TAG, { expire: 0 });
   } catch (error) {
-    console.error("[storage:cache] failed to load cache invalidator", error);
+    console.error("[storage:cache] could not expire the storage snapshot", error);
   }
 }
 

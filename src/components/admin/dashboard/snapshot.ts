@@ -1,6 +1,5 @@
 import { unstable_cache } from "next/cache";
 import { getDB } from "@/lib/cf";
-import { contentTag } from "@/ext/dx/cache-tags";
 
 const RECENT_TOTAL = 9;
 const CACHE_SECONDS = 300;
@@ -153,9 +152,10 @@ export async function queryDashboardContentSnapshot(
 }
 
 /**
- * Dashboard metrics 可以接受數分鐘的 stale-while-revalidate；content mutation 已會
- * revalidate 對應的 content:<type>，所以正常寫入後仍是 on-demand 更新。TTL 只負責
- * 防守繞過 provider 的人工 DB 寫入，以及讓孤兒 cache 最終收斂。
+ * Dashboard metrics 可以接受數分鐘的 stale-while-revalidate。內容寫入會呼叫
+ * publicContentChanged → revalidatePath("/", "layout");Next 把頁面的隱含 tag(含根 layout 的
+ * `_N_T_/layout`)當作 unstable_cache 的 soft tag 一起比對,所以正常寫入後仍是 on-demand 更新。
+ * TTL 只負責防守繞過 provider 的人工 DB 寫入,以及讓孤兒 cache 最終收斂。
  */
 export async function getDashboardContentSnapshot(
   types: readonly DashboardTypeTitleKey[],
@@ -175,10 +175,7 @@ export async function getDashboardContentSnapshot(
           normalized.map((type) => [type.typeKey, type.titleKey]),
         ),
       ],
-      {
-        tags: normalized.map((type) => contentTag(type.typeKey)),
-        revalidate: CACHE_SECONDS,
-      },
+      { revalidate: CACHE_SECONDS },
     );
     return await run();
   } catch (error) {

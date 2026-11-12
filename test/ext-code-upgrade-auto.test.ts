@@ -44,7 +44,6 @@ vi.mock("@/ext/loader", () => ({
   invalidateExtRuntimeMemo: () => undefined,
   getExtRuntime: async () => ({ hooks: { doAction: hookCalls.doAction } }),
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 
 import {
   applyPendingCodeUpgrades,

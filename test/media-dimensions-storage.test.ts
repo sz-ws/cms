@@ -68,10 +68,11 @@ vi.mock("@/lib/cf", () => ({ getStorage: () => fakeBucket }));
 vi.mock("@/ext/loader", () => ({
   getExtRuntime: async () => ({ hooks: { doAction: async () => {} } }),
 }));
-// put/delete 現在會失效 dashboard storage snapshot；此檔只驗 R2 metadata，
-// 沒有 Next request cache scope，故把失效器打樁掉避免無關的 stderr。
-vi.mock("@/ext/dx/cache-invalidate", () => ({
-  revalidateStorageIndex: () => {},
+// put/delete 會失效後台儀表板的 storage snapshot(立刻過期,不用 stale-while-revalidate:
+// 那要背景重算,這個專案沒有 queue)。測試沒有 Next 的 request scope,記下呼叫就好。
+const tagCalls = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock("next/cache", () => ({
+  revalidateTag: (...args: unknown[]) => void tagCalls.calls.push(args),
 }));
 
 import { putFile, headFile, listFiles } from "@/lib/storage";
@@ -102,6 +103,12 @@ beforeEach(() => {
 });
 
 describe("putFile records intrinsic dimensions", () => {
+  it("expires the dashboard's storage snapshot immediately after an upload", async () => {
+    tagCalls.calls = [];
+    await putFile("core", "a.txt", new Uint8Array([1, 2, 3]), "text/plain");
+    expect(tagCalls.calls).toEqual([["storage:index", { expire: 0 }]]);
+  });
+
   it("sniffs a PNG and writes w/h into customMetadata", async () => {
     const file = await putFile("core", "photo.png", pngBlob(1920, 1080), "image/png");
     expect(file.width).toBe(1920);

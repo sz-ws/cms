@@ -25,7 +25,6 @@ vi.mock("@/ext/loader", () => ({
     hooks: { doAction: async () => undefined },
   }),
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 vi.mock("next/link", () => ({ default: () => null }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: () => undefined, redirect: () => undefined, notFound: () => undefined }));
 

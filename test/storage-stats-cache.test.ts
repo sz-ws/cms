@@ -22,6 +22,7 @@ vi.mock("next/cache", () => ({
 }));
 
 vi.mock("@/lib/storage", () => ({
+  STORAGE_INDEX_TAG: "storage:index",
   listFiles: async () => {
     state.listCalls++;
     return {

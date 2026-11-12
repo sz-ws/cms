@@ -29,7 +29,6 @@ vi.mock("@/ext/loader", () => ({
   invalidateExtRuntimeMemo: () => undefined,
   getExtRuntime: async () => ({ hooks: { doAction: async () => undefined } }),
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 
 // 2.0 頁面快取:啟用(含套用更新)寫完要讓存起來的公開頁重算。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));

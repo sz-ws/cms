@@ -41,7 +41,6 @@ vi.mock("@/ext/loader", () => ({
   }),
   invalidateExtRuntimeMemo: () => {},
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => {} }));
 
 // 2.0 頁面快取:安裝、重裝、回到上一版都寫完才通知一次;失敗(沒寫入)不通知。
 const publicCache = vi.hoisted(() => ({ reasons: [] as string[] }));

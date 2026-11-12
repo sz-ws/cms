@@ -3,8 +3,7 @@ import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { getDB } from "@/lib/cf";
 import { contents } from "@/lib/schema";
-import { listFiles } from "@/lib/storage";
-import { storageIndexTag } from "@/ext/dx/cache-tags";
+import { STORAGE_INDEX_TAG, listFiles } from "@/lib/storage";
 import type { TrendWidgetData } from "./widgets";
 
 const DAY_MS = 86_400_000;
@@ -119,7 +118,7 @@ export async function scanStorageStats(): Promise<StorageStats> {
 export async function getStorageStats(): Promise<StorageStats> {
   try {
     const run = unstable_cache(scanStorageStats, ["dashboard-storage-stats-v1"], {
-      tags: [storageIndexTag()],
+      tags: [STORAGE_INDEX_TAG],
       revalidate: 3600,
     });
     return await run();

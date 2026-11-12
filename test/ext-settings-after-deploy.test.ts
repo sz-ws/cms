@@ -36,7 +36,6 @@ const runtime = vi.hoisted(() => () => ({
   }),
 }));
 vi.mock("@/ext/loader", runtime);
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => undefined }));
 // banktransfer 的後台頁會帶進 next/*,在 workers 測試池裡載不起來,換成最小的替身。
 vi.mock("next/link", () => ({ default: () => null }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: () => undefined, redirect: () => undefined, notFound: () => undefined }));

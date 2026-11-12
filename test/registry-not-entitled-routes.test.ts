@@ -49,7 +49,6 @@ vi.mock("@/ext/loader", () => ({
   }),
   invalidateExtRuntimeMemo: () => {},
 }));
-vi.mock("@/ext/dx/cache-invalidate", () => ({ revalidateExt: () => {} }));
 
 import { POST as install } from "../src/app/api/registry/install/route";
 import { GET as preview } from "../src/app/api/registry/manifest/route";
