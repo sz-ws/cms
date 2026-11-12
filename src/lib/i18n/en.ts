@@ -1180,6 +1180,14 @@ export const en = {
   "export.formatNote":
     "One line of JSON per record (.ndjson) — readable by spreadsheet tools, scripts and other platforms. The last line says \"end\"; if it is missing, the download was cut short. Very large sites arrive in parts and the file tells you how to fetch the rest.",
 
+  // PublicPagesRefreshCard(設定頁,2.0)
+  "publicPages.title": "Site pages",
+  "publicPages.desc":
+    "Every page of the site is saved ready-made and sent straight to visitors, so it opens fast. Changes to content, settings or plugins update the pages on their own. If the site still shows something old, remake all pages: each one is made again the next time someone opens it.",
+  "publicPages.refresh": "Remake all pages",
+  "publicPages.done": "Request sent. Each page is made again the next time someone opens it; if a page still shows old content after a few minutes, press the button again.",
+  "publicPages.failed": "That did not work. Try again in a moment.",
+
   // ExtraFieldsManager(設定頁)+ ExtraFieldsPanel(編輯頁)
   "extraFields.title": "Additional fields",
   "extraFields.desc": "Fields you add to a content type appear in the editor for every entry of that type.",

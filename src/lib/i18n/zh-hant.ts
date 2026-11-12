@@ -1154,6 +1154,14 @@ export const zhHant: Partial<Record<MessageKey, string>> = {
   "export.formatNote":
     "每行一筆 JSON（.ndjson）—— 試算表工具、程式與其他平台都讀得懂。最後一行是 \"end\"，沒有它就代表下載中斷了。內容很多的網站會分次下載，檔案裡會告訴你怎麼接續。",
 
+  // PublicPagesRefreshCard(設定頁,2.0)
+  "publicPages.title": "網站頁面",
+  "publicPages.desc":
+    "網站的每一頁預先存好，訪客打開時直接送出，開啟較快。內容、設定或插件有變動時，頁面會自動更新。網站上仍看到舊內容時，按「重新產生全部頁面」：每一頁會在下次有人打開時重新產生。",
+  "publicPages.refresh": "重新產生全部頁面",
+  "publicPages.done": "要求已送出。每一頁在下次有人打開時重新產生；幾分鐘後仍是舊內容，請再按一次。",
+  "publicPages.failed": "沒有成功，請稍後再試。",
+
   // ExtraFieldsManager(設定頁)+ ExtraFieldsPanel(編輯頁)
   "extraFields.title": "額外欄位",
   "extraFields.desc": "替某種內容加上自己的欄位，這種內容的每一筆在編輯時都會出現。",

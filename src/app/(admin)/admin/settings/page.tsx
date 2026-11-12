@@ -18,6 +18,7 @@ import { AdminThemeEditor } from "@/components/admin/AdminThemeEditor";
 import { pluginAdminPresets, resolveAdminAppearance } from "@/lib/admin-theme";
 import { RegistrySourcesManager, type RegistrySource } from "@/components/admin/RegistrySourcesManager";
 import { ApiTokensManager } from "@/components/admin/ApiTokensManager";
+import { PublicPagesRefreshCard } from "@/components/admin/PublicPagesRefreshCard";
 import {
   ContentExportCard,
   type ExportContentType,
@@ -221,6 +222,7 @@ export default async function SettingsPage({
             <RegistrySourcesManager initialSources={registrySources} />
             <ApiTokensManager initialTokens={apiTokens} />
             <ContentExportCard types={exportTypes} />
+            <PublicPagesRefreshCard />
           </div>
         }
       />

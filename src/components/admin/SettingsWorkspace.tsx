@@ -504,7 +504,7 @@ export function SettingsWorkspace({
           coreAddon: hasCoreAddon
             ? {
                 title: t("settingsWorkspace.registryAndTokens"),
-                keywords: [t("registry.title"), t("apiTokens.title"), t("export.title")].join(" "),
+                keywords: [t("registry.title"), t("apiTokens.title"), t("export.title"), t("publicPages.title"), t("publicPages.refresh")].join(" "),
               }
             : undefined,
           style: hasStyle
