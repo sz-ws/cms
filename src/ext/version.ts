@@ -1388,7 +1388,7 @@
 //   (next to declarative recent cards); plugin order, then declaration order. One period control for the
 //   page: in the header of the only period card when that is a daily chart (as in 1.61.0), otherwise at
 //   the top of the section. Core asks each period widget for the previous period too and writes the change.
-// - Adapters, deprecated, removed in 2.0, one file each: `dashboardStats` (1.52.0) → number cards
+// - Adapters, deprecated, removed in a later major version, one file each: `dashboardStats` (1.52.0) → number cards
 //   (`dx/dashboard-stats.ts`; `display` stays a legacy-only override); `dashboardRevenue` (1.61.0) → a
 //   timeseries widget on commerce-kit's `REVENUE` metric (`dx/dashboard-revenue.ts`); `RevenueChart` and
 //   `report/revenue-summary.ts` wrap or re-export the generic pieces. Declarative `dashboardCards` stay:
@@ -1476,7 +1476,7 @@
 //   expires (at most 5 minutes, `lib/stamps.ts`).
 // - Neutral wording in comments, examples and messages; the lifecycle error for `canUninstall: false`
 //   reads 這個插件只能停用，不能移除。
-// - Deprecated, removed in 2.0: `legacy-ownership.ts` (the `<table>_managed` check while `managed_by` is
+// - Deprecated, removed in a later major version: `legacy-ownership.ts` (the `<table>_managed` check while `managed_by` is
 //   missing or empty), `legacy-storefront.ts` (`guestCheckout()` for managers without `storefront()`),
 //   `ManagedCommerceProvider` (`managed.ts`, alias of `OrderManager`), the report body's `last5`
 //   (`transfer-legacy.ts`) and `transferLast5` on `CommerceOrder` / `TransitionExtras`,
@@ -1838,4 +1838,30 @@
 // src/lib/image-variants.ts). Without it the transform used a near-lossless default, so a 960-wide webp of a
 // 3.5 MB photo was 3.6 MB, larger than the original. Variants already cached by browsers or the edge keep the old
 // bytes until they expire or are purged. No API change.
-export const CORE_API_VERSION = "1.85.1";
+// 2.0.0: Public pages are stored whole. The public catch-all (`src/app/(public)/[[...slug]]`) and `/login` render once
+// per build, are stored in the Next incremental cache (R2 binding `NEXT_INC_CACHE_R2_BUCKET`; invalidation records in
+// the D1 table `revalidations` behind `NEXT_TAG_CACHE_D1`) and are answered by OpenNext's cache interception without
+// running the Next server. A write to anything marked `visitorFacing` expires every stored page at once
+// (`lib/visitor-facing.ts` → `lib/public-cache.ts` `publicContentChanged`): content types (`contentTypes[].visitorFacing`,
+// default true; only while an item is published before or after the write), setting fields (`settings[].visitorFacing`,
+// default true), tables (`visitorFacingTables`, default none; commerce-kit's order and promo tables are marked), file
+// scopes (`visitorFacingFiles`) and the plugin itself (`visitorFacing`, default true). Any other write that changes what
+// visitors see calls `services.publicContentChanged(reason)`. Settings → Site pages has a button that expires them all.
+// Breaking for code plugins, hence the major: a `PublicRoute` component and the `publicHome` / `publicHeader` /
+// `publicFooter` / `publicWidgets` filters render the same HTML for every visitor. Reading `cookies()`, `headers()`,
+// `connection()` or `searchParams` while rendering fails (the route is `dynamic = "error"`: `next dev` shows the error,
+// production answers 500 and stores nothing); per-visitor parts move to client components that ask after the page shows
+// (src/ext/META.md, "Public pages"). The per-request CSP nonce is gone: `x-nonce` is no longer set, public pages send a
+// fixed policy (`script-src 'self' 'unsafe-inline' https:`) from `next.config.ts`, and approved script hosts are no
+// longer enforced by the header. No `revalidate = <number>` and no `revalidateTag(tag, "max")` on public pages. Editors
+// see drafts through Next draft mode (`/api/preview?path=…`, the "Preview draft" link); relation fields show only
+// published items on public output; `signed_in=1` (`lib/signed-in-hint.ts`) is a browser-readable hint set and cleared
+// with the session, so a stored page can skip asking who is signed in. Removed: the CMS_KV version-stamp copy and its
+// public-page header, `ext/dx/content-cache.ts` (`cachedPublicQuery`, `cachedPublicGetBySlug`),
+// `ext/dx/cache-invalidate.ts`, `ext/dx/cache-tags.ts`, `lib/public-csp.ts` and the nonce helpers in `lib/csp.ts`, the
+// optional eager Worker entry `worker/eager-entry.ts` (1.85.0). Plugins declare coreApi "^2.0.0"; a plugin whose range
+// does not include 2.0.0 (every "^1.x" range) is not loaded: /admin/extensions lists it as unavailable ("Requires core
+// API …; this core provides 2.0.0"), its routes, hooks and jobs are absent, and enabling or installing it is refused.
+// Sites: bind no KV, keep the two cache bindings, add the R2 lifecycle rule (`cms setup` does it); DEPLOY.md,
+// "Upgrading a 1.x site to 2.0".
+export const CORE_API_VERSION = "2.0.0";

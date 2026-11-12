@@ -364,7 +364,7 @@ describe("core.settings.get:secret 欄位過濾(spec §1.3)", () => {
         id: "acme",
         name: "Acme",
         version: "1.0.0",
-        coreApi: "^1.0.0",
+        coreApi: ">=1.0.0",
         settings: [
           { key: "token", label: "Acme token", type: "text", secret: true, default: "" },
           { key: "endpoint", label: "Acme endpoint", type: "text", default: "" },
@@ -407,14 +407,14 @@ describe("core.extensions.list", () => {
     id: "posts",
     name: "Posts",
     version: "1.2.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     description: "Blog posts",
   } as Extension;
   const dxExt = {
     id: "gallery",
     name: { en: "Gallery", "zh-Hant": "作品集" },
     version: "1.0.0",
-    coreApi: "^1.8.0",
+    coreApi: ">=1.8.0",
     contentTypes: [{ name: "item", fields: [{ key: "title", type: "text" }] }],
   } as Extension;
 
@@ -430,7 +430,7 @@ describe("core.extensions.list", () => {
         id: "posts",
         name: "Posts",
         version: "1.2.0",
-        coreApi: "^1.0.0",
+        coreApi: ">=1.0.0",
         kind: "code",
         description: "Blog posts",
         contentTypes: [],
@@ -439,7 +439,7 @@ describe("core.extensions.list", () => {
         id: "gallery",
         name: "Gallery",
         version: "1.0.0",
-        coreApi: "^1.8.0",
+        coreApi: ">=1.8.0",
         kind: "declarative",
         description: undefined,
         contentTypes: ["gallery.item"],

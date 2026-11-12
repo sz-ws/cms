@@ -43,7 +43,7 @@ const FREE: RegistryEntry = {
   kind: "declarative",
   name: "評論",
   version: "1.1.0",
-  coreApi: "^1.0.0",
+  coreApi: ">=1.0.0",
   description: "在商品頁收集評論。",
   author: "Acme",
   source: "https://registry.example.com",

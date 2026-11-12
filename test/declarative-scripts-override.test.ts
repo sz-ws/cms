@@ -78,7 +78,7 @@ function manifestFor(id: string, extra: Record<string, unknown> = {}) {
     id,
     name: id,
     version: "1.0.0",
-    coreApi: "^1.51.0",
+    coreApi: ">=1.51.0",
     contentTypes: [
       { name: "sample", label: "Sample", fields: [{ key: "product", type: "text", label: "Product" }] },
     ],
@@ -137,7 +137,7 @@ beforeAll(async () => {
     id: "catalog",
     name: "Catalog",
     version: "1.0.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     contentTypes: [
       { name: "product", label: "Product", slugField: "title", fields: [{ key: "title", type: "text", label: "Title" }] },
     ],

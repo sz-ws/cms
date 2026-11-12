@@ -25,7 +25,7 @@ function entry(id: string, extra: Partial<RegistryEntry> = {}): RegistryEntry {
     kind: "declarative",
     name: id,
     version: "1.0.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     source: "https://registry.example.com",
     installed: false,
     installedVersion: null,

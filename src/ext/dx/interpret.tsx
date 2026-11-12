@@ -1,6 +1,5 @@
-import { CORE_API_VERSION } from "../version";
-import { satisfies } from "../semver";
 import { parseManifest } from "./manifest";
+import { coreApiCompatible } from "./enabled-manifests";
 import type {
   DeclarativeContentType,
   DeclarativeManifest,
@@ -459,5 +458,5 @@ export function interpretManifest(row: DeclarativeRow): ManifestInterpretation {
 
 /** manifest 的 coreApi 是否相容目前 CORE_API_VERSION。 */
 export function isManifestCompatible(manifest: DeclarativeManifest): boolean {
-  return satisfies(CORE_API_VERSION, manifest.coreApi);
+  return coreApiCompatible(manifest.coreApi);
 }

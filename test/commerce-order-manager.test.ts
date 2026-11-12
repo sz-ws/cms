@@ -20,7 +20,7 @@ const world = vi.hoisted(() => ({ enabled: ["mgr"] as string[] }));
 
 vi.mock("@/ext/loader", () => {
   const ext = (id: string, name: string, tables: string[]) => ({
-    id, name, version: "1.0.0", coreApi: "^1.63.0",
+    id, name, version: "1.0.0", coreApi: ">=1.63.0",
     provides: tables.map((table) => ({ capability: "commerce:orders", id: table, create: () => manager })),
   });
   const all = [ext("mgr", "訂單管理", ["ext_omtest_orders", "ext_omold_orders"]), ext("other", "別的插件", [])];

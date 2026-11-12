@@ -32,7 +32,7 @@ const manager = vi.hoisted(() => ({
 const world = vi.hoisted(() => ({ enabled: ["mgr"] as string[] }));
 
 vi.mock("@/ext/loader", () => {
-  const ext = { id: "mgr", name: "訂單管理", version: "1.0.0", coreApi: "^1.63.0", provides: [{ capability: "commerce:orders", id: "ext_rcust_orders", create: () => manager }] };
+  const ext = { id: "mgr", name: "訂單管理", version: "1.0.0", coreApi: ">=1.63.0", provides: [{ capability: "commerce:orders", id: "ext_rcust_orders", create: () => manager }] };
   return {
     getExtRuntime: async () => ({
       all: [ext],

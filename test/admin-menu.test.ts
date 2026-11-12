@@ -141,7 +141,7 @@ describe("admin icons", () => {
   });
 
   it("validates icon and menu in defineExtension", () => {
-    const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: "^1.39.0" };
+    const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: ">=1.39.0" };
     expect(() => defineExtension({ ...base, icon: ICON_SVG, menu: { section: "commerce", parent: "shop", order: 5 } })).not.toThrow();
     expect(() => defineExtension({ ...base, icon: "<svg><script>alert(1)</script></svg>" })).toThrow(/icon/);
     expect(() => defineExtension({ ...base, menu: { parent: "demo" } })).toThrow(/nest under itself/);
@@ -150,7 +150,7 @@ describe("admin icons", () => {
   });
 
   it("validates icon and menu in declarative manifests", () => {
-    const base = { kind: "declarative", id: "notes", name: "Notes", version: "1.0.0", coreApi: "^1.39.0" };
+    const base = { kind: "declarative", id: "notes", name: "Notes", version: "1.0.0", coreApi: ">=1.39.0" };
     expect(parseManifest({ ...base, icon: ICON_SVG, menu: { section: "content" } }).ok).toBe(true);
     expect(parseManifest({ ...base, icon: '<svg><path d="M0 0" onclick="x()"/></svg>' }).ok).toBe(false);
     expect(parseManifest({ ...base, menu: { parent: "notes" } }).ok).toBe(false);

@@ -102,7 +102,7 @@ core 看這一欄決定一筆訂單歸誰:
 `ext_shop_orders_managed` 標記表(`commerce-kit/legacy-ownership.ts`)。
 
 商店這邊只做一件事:`public-pages.tsx` 看 registry 有沒有這個 provider,有就照
-`storefront()` 畫結帳頁(沒有 `storefront()` 的插件照舊問 `guestCheckout()`,2.0 拿掉)。
+`storefront()` 畫結帳頁(沒有 `storefront()` 的插件照舊問 `guestCheckout()`,之後的主版本拿掉)。
 **所以沒有 shop 端的開關** —— 若加一個「關閉」,頁面會顯示舊表單、伺服器仍交給插件,
 兩邊對不上。要退出,在 `/admin/extensions` 停用那個插件(它自己決定停不停得了);停用後
 結帳會停在上面的 503,直到重新啟用或另行處理它的訂單。

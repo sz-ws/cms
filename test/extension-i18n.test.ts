@@ -14,7 +14,7 @@ const base = {
   id: "blog",
   name: "Blog",
   version: "1.0.0",
-  coreApi: "^1.17.0",
+  coreApi: ">=1.17.0",
 };
 
 describe("extension i18n — manifest 解析相容性(spec §3 Option A)", () => {

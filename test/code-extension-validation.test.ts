@@ -5,7 +5,7 @@ const base = {
   id: "quality-test",
   name: "Quality test",
   version: "1.0.0",
-  coreApi: "^1.18.0",
+  coreApi: ">=1.18.0",
 };
 
 describe("code extension manifest validation", () => {
@@ -61,7 +61,7 @@ describe("code extension manifest validation", () => {
     expect(() =>
       defineExtension({
         ...base,
-        coreApi: "^1.17.0",
+        coreApi: ">=1.17.0",
         settings: [
           {
             key: "apiKey",

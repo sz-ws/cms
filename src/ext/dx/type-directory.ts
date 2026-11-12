@@ -1,6 +1,4 @@
-import { sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { declarativeExtensions as dxTable } from "@/lib/schema";
+import { enabledCompatibleManifests } from "./enabled-manifests";
 import { parseManifest } from "./manifest";
 import type { DeclarativeContentType } from "./manifest";
 import { resolveLocalizedString } from "@/lib/i18n/localized";
@@ -46,13 +44,8 @@ function resolveCollectionSlug(
 export async function listDeclarativeTypes(
   locale: Locale = "en",
 ): Promise<DeclarativeTypeInfo[]> {
-  const rows = await db()
-    .select({
-      id: dxTable.id,
-      manifest: dxTable.manifest,
-    })
-    .from(dxTable)
-    .where(sql`${dxTable.enabled} = 1`);
+  // 2.0:只列 loader 會載入的插件(啟用且 coreApi 相容)。
+  const rows = await enabledCompatibleManifests();
 
   const types: DeclarativeTypeInfo[] = [];
   for (const row of rows) {

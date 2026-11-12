@@ -846,7 +846,7 @@ function promptInput(
           id: "gallery",
           name: "Gallery",
           version: "1.0.0",
-          coreApi: "^1.28.0",
+          coreApi: ">=1.28.0",
           kind: "declarative",
           contentTypes: ["gallery.item"],
         },
@@ -909,7 +909,7 @@ describe("system prompt(spec §4.5 五段)", () => {
           id: `ext${i}`,
           name: `Ext ${i}`,
           version: "1.0.0",
-          coreApi: "^1.0.0",
+          coreApi: ">=1.0.0",
           kind: "declarative" as const,
           contentTypes: [],
         })),
@@ -960,7 +960,7 @@ describe("system prompt(spec §4.5 五段)", () => {
           id: "gallery",
           name: "Gallery",
           version: "1.0.0",
-          coreApi: "^1.28.0",
+          coreApi: ">=1.28.0",
           contentTypes: [
             {
               name: "item",

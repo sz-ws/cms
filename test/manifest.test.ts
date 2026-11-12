@@ -9,7 +9,7 @@ const base = {
   id: "contact-ext",
   name: "Contact",
   version: "1.0.0",
-  coreApi: "^1.4.0",
+  coreApi: ">=1.4.0",
 };
 
 describe("parseManifest", () => {
@@ -28,7 +28,7 @@ describe("parseManifest", () => {
     expect(
       parseManifest({
         ...base,
-        coreApi: "^1.18.0",
+        coreApi: ">=1.18.0",
         settings: [
           {
             key: "mode",
@@ -49,7 +49,7 @@ describe("parseManifest", () => {
     expect(
       parseManifest({
         ...base,
-        coreApi: "^1.18.0",
+        coreApi: ">=1.18.0",
         settings: [
           {
             key: "apiKey",
@@ -219,7 +219,7 @@ describe("parseManifest", () => {
       id: "contact",
       name: "Contact",
       version: "1.0.0",
-      coreApi: "^1.3.0",
+      coreApi: ">=1.3.0",
       description: "Declarative public contact form.",
       contentTypes: [
         {
@@ -311,7 +311,7 @@ describe("parseManifest — marketplace metadata (1.5.0)", () => {
   it("accepts full metadata block", () => {
     const r = parseManifest({
       ...base,
-      coreApi: "^1.5.0",
+      coreApi: ">=1.5.0",
       author: {
         name: "Suko",
         url: "https://suko.tw",
@@ -353,7 +353,7 @@ describe("parseManifest — marketplace metadata (1.5.0)", () => {
 });
 
 describe("parseManifest — store categories and detail text (1.58.0)", () => {
-  const v158 = { ...base, coreApi: "^1.58.0" };
+  const v158 = { ...base, coreApi: ">=1.58.0" };
 
   it("accepts the new categories, highlights and details, as strings or per locale", () => {
     for (const category of ["auth", "marketing", "analytics"]) {
@@ -385,7 +385,7 @@ describe("parseManifest — store categories and detail text (1.58.0)", () => {
       { category: "analytics" },
     ];
     for (const extra of cases) {
-      const r = parseManifest({ ...base, coreApi: "^1.57.0", ...extra });
+      const r = parseManifest({ ...base, coreApi: ">=1.57.0", ...extra });
       expect(r.ok).toBe(false);
       expect(r.error).toContain('coreApi "^1.58.0"');
     }
@@ -444,7 +444,7 @@ describe("parseManifest — capabilities (roadmap #17: install-time gate, not zo
 describe("parseManifest — dashboardCards (roadmap #16)", () => {
   const withType = {
     ...base,
-    coreApi: "^1.6.0",
+    coreApi: ">=1.6.0",
     contentTypes: [
       { name: "post", label: "Posts", fields: [{ key: "title", type: "text" as const }] },
     ],
@@ -550,7 +550,7 @@ describe("parseManifest — installPrompts (must reference settings[].key)", () 
 describe("parseManifest — layout: \"stacked\" (1.7.0 vocabulary components)", () => {
   const withType = {
     ...base,
-    coreApi: "^1.7.0",
+    coreApi: ">=1.7.0",
     contentTypes: [
       { name: "post", label: "Posts", fields: [{ key: "title", type: "text" as const }] },
     ],
@@ -609,7 +609,7 @@ describe("parseManifest — layout: \"stacked\" (1.7.0 vocabulary components)", 
 describe("parseManifest — publicRoute `stepped` (1.7.0, form view only)", () => {
   const withType = {
     ...base,
-    coreApi: "^1.7.0",
+    coreApi: ">=1.7.0",
     contentTypes: [
       {
         name: "submission",
@@ -687,7 +687,7 @@ describe("parseManifest — publicRoute `stepped` (1.7.0, form view only)", () =
 describe("parseManifest — theme design tokens (1.8.0)", () => {
   const withTheme = (theme: unknown) => ({
     ...base,
-    coreApi: "^1.8.0",
+    coreApi: ">=1.8.0",
     theme,
   });
 
@@ -824,7 +824,7 @@ describe("unmetRequiredServices", () => {
 describe("parseManifest — notifyOnCreate (1.11.0)", () => {
   const withType = (ctExtra: Record<string, unknown>) => ({
     ...base,
-    coreApi: "^1.11.0",
+    coreApi: ">=1.11.0",
     contentTypes: [
       {
         name: "submission",
@@ -857,7 +857,7 @@ describe("parseManifest — notifyOnCreate (1.11.0)", () => {
 describe("parseManifest — schedule[] (1.11.0)", () => {
   const withSchedule = (schedule: unknown) => ({
     ...base,
-    coreApi: "^1.11.0",
+    coreApi: ">=1.11.0",
     contentTypes: [
       {
         name: "submission",

@@ -83,7 +83,7 @@ const PLAIN = "plain";
 const SCRIPTS = [{ src: "https://cdn.proof.test/w.js" }, { inline: "x()", domains: ["api.proof.test"] }];
 
 function manifest(id: string, extra: Record<string, unknown> = {}) {
-  return { kind: "declarative", id, name: id, version: "1.0.0", coreApi: "^1.51.0", scripts: SCRIPTS, ...extra };
+  return { kind: "declarative", id, name: id, version: "1.0.0", coreApi: ">=1.51.0", scripts: SCRIPTS, ...extra };
 }
 
 const approval = async () => JSON.stringify({ hash: await hashScripts(SCRIPTS), by: "a@t.co", at: 1 });

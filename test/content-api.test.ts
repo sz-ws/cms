@@ -119,7 +119,7 @@ const blogManifest = {
   id: "blog",
   name: "Blog",
   version: "1.0.0",
-  coreApi: "^1.9.0",
+  coreApi: ">=1.9.0",
   contentTypes: [
     {
       name: "post",
@@ -406,7 +406,7 @@ describe("customApiRoutes gating (§6.5)", () => {
       id: "shop",
       name: "Shop",
       version: "1.0.0",
-      coreApi: "^1.9.0",
+      coreApi: ">=1.9.0",
       contentTypes: [
         { name: "product", fields: [{ key: "title", type: "text" }] },
         { name: "secret", fields: [{ key: "title", type: "text" }] },
@@ -493,7 +493,7 @@ describe("core api 1.9.0 + manifest gate (§6.7)", () => {
       id: "shop",
       name: "Shop",
       version: "1.0.0",
-      coreApi: "^1.9.0",
+      coreApi: ">=1.9.0",
       contentTypes: [{ name: "product", fields: [{ key: "title", type: "text" }] }],
       customApiRoutes: [{ method: "GET", path: "/p", contentType: "product" }],
     });
@@ -506,15 +506,15 @@ describe("core api 1.9.0 + manifest gate (§6.7)", () => {
       id: "shop",
       name: "Shop",
       version: "1.0.0",
-      coreApi: "^1.9.0",
+      coreApi: ">=1.9.0",
       customApiRoutes: [{ method: "POST", path: "/p" }],
     });
     expect(r.ok).toBe(false);
   });
 
   it("coreApi gate: this core installs ^1.9.0; a 1.8.0 core would not", () => {
-    expect(satisfies(CORE_API_VERSION, "^1.9.0")).toBe(true);
-    expect(satisfies("1.8.0", "^1.9.0")).toBe(false);
+    expect(satisfies(CORE_API_VERSION, ">=1.9.0")).toBe(true);
+    expect(satisfies("1.8.0", ">=1.9.0")).toBe(false);
   });
 });
 
@@ -528,7 +528,7 @@ describe("relations show only published items", () => {
     id: "rel",
     name: "Rel",
     version: "1.0.0",
-    coreApi: "^1.9.0",
+    coreApi: ">=1.9.0",
     contentTypes: [
       {
         name: "post",
@@ -668,5 +668,56 @@ describe("relations show only published items", () => {
     );
     const all = (await search.json()) as { options: Array<{ id: string }> };
     expect(all.options.map((o) => o.id).sort()).toEqual(["t-draft", "t-pub"]);
+  });
+});
+
+// ---- 2.0:loader 排除的插件(coreApi 不相容,例如還是 "^1.x")從旁邊的路也讀不到 ----
+
+describe("plugins the loader leaves out stay out of the direct readers", () => {
+  const legacy = { ...blogManifest, id: "legacy", name: "Legacy", coreApi: "^1.9.0" };
+
+  async function seedLegacy(): Promise<void> {
+    await seedBlog();
+    await insertDx("legacy", legacy);
+    await insertContent("legacy.post", "old", "published", { title: "Old", category: "news" });
+    await insertDx("off", { ...blogManifest, id: "off", name: "Off" });
+    await d1().prepare("UPDATE declarative_extensions SET enabled = 0 WHERE id = 'off'").run();
+  }
+
+  it("enabledCompatibleManifests lists only enabled plugins whose coreApi includes this core", async () => {
+    await seedLegacy();
+    const { enabledCompatibleManifests } = await import("../src/ext/dx/enabled-manifests");
+    expect((await enabledCompatibleManifests()).map((r) => r.id)).toEqual(["blog"]);
+    expect(await enabledCompatibleManifests("legacy")).toEqual([]);
+    expect(await enabledCompatibleManifests("off")).toEqual([]);
+    expect((await enabledCompatibleManifests("blog")).map((r) => r.id)).toEqual(["blog"]);
+  });
+
+  it("the Content API answers 404 for a ^1.x plugin's published content", async () => {
+    await seedLegacy();
+    const { raw } = await createApiToken("ok");
+    const list = await GET(makeReq("/api/content/legacy/post", { token: raw }), params("legacy", "post"));
+    expect(list.status).toBe(404);
+    const detail = await GET(makeReq("/api/content/legacy/post/old", { token: raw }), params("legacy", "post", ["old"]));
+    expect(detail.status).toBe(404);
+    expect((await GET(makeReq("/api/content/blog/post", { token: raw }), params("blog", "post"))).status).toBe(200);
+  });
+
+  it("the admin type directory leaves the plugin out", async () => {
+    await seedLegacy();
+    const { listDeclarativeTypes } = await import("../src/ext/dx/type-directory");
+    const ids = (await listDeclarativeTypes()).map((t) => t.typeKey);
+    expect(ids).toContain("blog.post");
+    expect(ids).not.toContain("legacy.post");
+  });
+
+  it("a relation into the plugin keeps the title but gets no link (its routes are gone)", async () => {
+    await insertDx("legacy", { ...legacy, publicRoutes: [{ pattern: "/old/:slug", view: "detail", contentType: "post" }] });
+    await d1()
+      .prepare("INSERT INTO contents (id, type, slug, status, data, created_at, updated_at) VALUES ('l1', 'legacy.post', 'old', 'published', ?, 1, 1)")
+      .bind(JSON.stringify({ title: "Old" }))
+      .run();
+    const { resolveRelations } = await import("../src/ext/dx/relation-resolve");
+    expect(await resolveRelations("legacy.post", ["l1"])).toEqual([{ id: "l1", title: "old", href: null }]);
   });
 });

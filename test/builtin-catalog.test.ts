@@ -20,7 +20,7 @@ vi.mock("@/../extensions/registry", () => ({ registry: registryState.entries }))
 vi.mock("@/ext/dx/interpret", () => ({
   interpretManifest: (row: { id: string; manifest: string; version: string }) => ({
     status: "ok" as const,
-    extension: { id: row.id, name: row.id, version: row.version, coreApi: "^1.0.0" } as unknown as Extension,
+    extension: { id: row.id, name: row.id, version: row.version, coreApi: ">=1.0.0" } as unknown as Extension,
   }),
 }));
 
@@ -62,7 +62,7 @@ async function putSetting(key: string, value: unknown, at: number): Promise<void
     .run();
 }
 
-const shopExtension = { id: "shop", name: "shop", version: "0.5.0", coreApi: "^1.49.0" } as Extension;
+const shopExtension = { id: "shop", name: "shop", version: "0.5.0", coreApi: ">=1.49.0" } as Extension;
 
 beforeAll(async () => {
   await d1().exec(

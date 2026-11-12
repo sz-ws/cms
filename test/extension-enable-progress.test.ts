@@ -8,7 +8,7 @@ const demo = vi.hoisted(() => ({
   id: "demo",
   name: "Demo",
   version: "1.1.0",
-  coreApi: "^1.0.0",
+  coreApi: ">=1.0.0",
   migrations: [
     { id: "0001_a", sql: "CREATE TABLE IF NOT EXISTS demo_a (id TEXT)" },
     { id: "0002_b", sql: "CREATE TABLE IF NOT EXISTS demo_b (id TEXT)" },

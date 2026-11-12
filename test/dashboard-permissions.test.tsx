@@ -192,7 +192,7 @@ describe("插件的儀表板卡", () => {
     id,
     name: id,
     version: "1.0.0",
-    coreApi: "^1.6.0",
+    coreApi: ">=1.6.0",
     contentTypes: [productType, categoryType],
     dashboardCards: cards,
   });

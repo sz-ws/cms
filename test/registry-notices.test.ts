@@ -199,7 +199,7 @@ const entry = (extra: Record<string, unknown> = {}) => ({
   kind: "declarative",
   name: "工作階段錄影",
   version: "0.1.0",
-  coreApi: "^1.0.0",
+  coreApi: ">=1.0.0",
   ...extra,
 });
 

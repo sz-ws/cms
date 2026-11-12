@@ -84,7 +84,7 @@ describe("settings page", () => {
 });
 
 describe("defineExtension", () => {
-  const base = { id: "unit-test", name: "Unit", version: "0.1.0", coreApi: "^1.52.0" } satisfies Partial<Extension>;
+  const base = { id: "unit-test", name: "Unit", version: "0.1.0", coreApi: ">=1.52.0" } satisfies Partial<Extension>;
 
   it("數字設定可以帶 unit", () => {
     expect(() => defineExtension({ ...base, settings: [holdMinutes] } as Extension)).not.toThrow();

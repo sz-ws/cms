@@ -22,7 +22,7 @@ function serve(json: unknown) {
   );
 }
 
-const base = { name: "X", version: "1.0.0", coreApi: "^1.50.0" };
+const base = { name: "X", version: "1.0.0", coreApi: ">=1.50.0" };
 
 describe("registry index parsing", () => {
   it("reads identity and both shapes of requiresExtensions", async () => {

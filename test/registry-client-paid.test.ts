@@ -46,7 +46,7 @@ const entry = (extra: Record<string, unknown> = {}) => ({
   kind: "declarative",
   name: "Session replay",
   version: "0.1.0",
-  coreApi: "^1.0.0",
+  coreApi: ">=1.0.0",
   ...extra,
 });
 
@@ -182,8 +182,8 @@ describe("registry 保留的舊版本", () => {
   it("索引的 versions 解析進 entry", async () => {
     const source = "https://versions-index.example.com";
     sourcesState.sources = [source];
-    serve(() => json(200, { extensions: [entry({ versions: [{ version: "0.0.9", coreApi: "^1.0.0" }, { version: "bad" }] })] }));
+    serve(() => json(200, { extensions: [entry({ versions: [{ version: "0.0.9", coreApi: ">=1.0.0" }, { version: "bad" }] })] }));
     const { entries } = await fetchRegistryIndex();
-    expect(entries[0].versions).toEqual([{ version: "0.0.9", coreApi: "^1.0.0" }]);
+    expect(entries[0].versions).toEqual([{ version: "0.0.9", coreApi: ">=1.0.0" }]);
   });
 });

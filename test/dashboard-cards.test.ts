@@ -34,7 +34,7 @@ function makeExt(cards: Extension["dashboardCards"]): Extension {
     id: "blog",
     name: "Blog",
     version: "1.0.0",
-    coreApi: "^1.6.0",
+    coreApi: ">=1.6.0",
     contentTypes: [postType, noteType],
     dashboardCards: cards,
   };

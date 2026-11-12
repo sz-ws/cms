@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { declarativeExtensions as dxTable } from "@/lib/schema";
+import { enabledCompatibleManifests } from "./enabled-manifests";
 import { defineAgentTool, readStringArg } from "../agent-tools";
 import type { AgentTool, AgentToolCtx } from "../agent-tools";
 import type { Locale } from "@/lib/i18n/index";
@@ -572,10 +570,8 @@ export function manifestAgentTools(
  */
 export async function listDeclarativeAgentTools(): Promise<AgentTool[]> {
   const [rows, extraFields] = await Promise.all([
-    db()
-      .select({ id: dxTable.id, manifest: dxTable.manifest })
-      .from(dxTable)
-      .where(sql`${dxTable.enabled} = 1`),
+    // 2.0:只給 loader 會載入的插件(啟用且 coreApi 相容)的 tool。
+    enabledCompatibleManifests(),
     // 1.60.0:額外欄位的定義一次讀齊(壞值當空,見 parseExtraFieldsSetting)。
     getExtraFieldsSetting(),
   ]);

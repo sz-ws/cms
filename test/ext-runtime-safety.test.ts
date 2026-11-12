@@ -31,13 +31,16 @@ vi.mock("@/ext/dx/declarative-migrate", async (importActual) => ({
 //
 // 這樣的取捨是對的:本測試的主體是「loader 拿到各種 interpret 結果時怎麼把關」,
 // 不是 interpret 自己的解析邏輯(那由 manifest.test.ts 覆蓋)。
-vi.mock("@/ext/dx/interpret", () => ({
+vi.mock("@/ext/dx/interpret", async () => {
+  const { satisfies } = await import("../src/ext/semver");
+  const { CORE_API_VERSION } = await import("../src/ext/version");
+  return {
   interpretManifest: (row: { id: string; manifest: string; version: string }) => {
     const m = JSON.parse(row.manifest) as { coreApi?: string };
     const coreApi = typeof m.coreApi === "string" ? m.coreApi : "";
     // 與真實 interpret 同樣的把關順序:不相容在建立任何 runtime surface 之前擋下。
     if (!coreApi) return { status: "invalid" as const };
-    if (!coreApi.startsWith("^1.")) {
+    if (!satisfies(CORE_API_VERSION, coreApi)) {
       return { status: "incompatible" as const, coreApi };
     }
     return {
@@ -51,7 +54,8 @@ vi.mock("@/ext/dx/interpret", () => ({
       } as unknown as Extension,
     };
   },
-}));
+  };
+});
 
 // ⚠️ loader 只能**動態** import。頂層靜態 import 會把 interpret.tsx → view 元件 →
 // next/link 整條 client 相依鏈拉進 workers 測試池,模組載入當下就炸
@@ -141,8 +145,8 @@ beforeEach(async () => {
 
 describe("extension runtime CORE_API boundary", () => {
   it("excludes an incompatible declarative extension while a healthy one keeps its routes", async () => {
-    await enableDeclarative("old-dx", manifest("old-dx", "^2.0.0"));
-    await enableDeclarative("healthy-dx", manifest("healthy-dx", "^1.0.0"));
+    await enableDeclarative("old-dx", manifest("old-dx", "^3.0.0"));
+    await enableDeclarative("healthy-dx", manifest("healthy-dx", ">=1.0.0"));
 
     const rt = await (await getLoader()).getExtRuntime();
 
@@ -150,7 +154,7 @@ describe("extension runtime CORE_API boundary", () => {
     expect(rt.enabled.flatMap((ext) => ext.publicRoutes ?? [])).toHaveLength(1);
     expect(rt.unavailableById.get("old-dx")).toMatchObject({
       kind: "core-api-incompatible",
-      coreApi: "^2.0.0",
+      coreApi: "^3.0.0",
     });
   });
 
@@ -158,8 +162,8 @@ describe("extension runtime CORE_API boundary", () => {
     const incompatibleHook = vi.fn();
     const healthyHook = vi.fn();
     registryState.entries.push(
-      codeExtension("old-code", "^2.0.0", incompatibleHook),
-      codeExtension("healthy-code", "^1.0.0", healthyHook),
+      codeExtension("old-code", "^3.0.0", incompatibleHook),
+      codeExtension("healthy-code", ">=1.0.0", healthyHook),
     );
     await enableCode("old-code");
     await enableCode("healthy-code");
@@ -173,18 +177,18 @@ describe("extension runtime CORE_API boundary", () => {
     expect(incompatibleHook).not.toHaveBeenCalled();
     expect(rt.unavailableById.get("old-code")).toMatchObject({
       kind: "core-api-incompatible",
-      coreApi: "^2.0.0",
+      coreApi: "^3.0.0",
     });
   });
 
   it("keeps a migration failure unavailable and retries it on the later request", async () => {
     await enableDeclarative(
       "retry-dx",
-      manifest("retry-dx", "^1.0.0", [
+      manifest("retry-dx", ">=1.0.0", [
         "CREATE TABLE IF NOT EXISTS ext_retry_dx_items (id TEXT PRIMARY KEY)",
       ]),
     );
-    await enableDeclarative("healthy-dx", manifest("healthy-dx", "^1.0.0"));
+    await enableDeclarative("healthy-dx", manifest("healthy-dx", ">=1.0.0"));
     migrationState.run
       .mockRejectedValueOnce(new Error("D1 temporarily unavailable"))
       .mockResolvedValue(undefined);
@@ -212,8 +216,8 @@ describe("extension runtime: scripts compiled into the site", () => {
       overrideRegistry.register("proof-dx", surfaceIds.publicScripts(), "scripts", () => null);
     }
     const approval = JSON.stringify({ hash: "a".repeat(64), by: "a@t.co", at: 1 });
-    await enableDeclarative("proof-dx", manifest("proof-dx", "^1.0.0"));
-    await enableDeclarative("plain-dx", manifest("plain-dx", "^1.0.0"));
+    await enableDeclarative("proof-dx", manifest("proof-dx", ">=1.0.0"));
+    await enableDeclarative("plain-dx", manifest("plain-dx", ">=1.0.0"));
     await d1().prepare("UPDATE declarative_extensions SET scripts_approval = ?").bind(approval).run();
     const state = (id: string) =>
       d1()
@@ -243,10 +247,10 @@ describe("extension runtime slots and layers", () => {
     const Names = defineValueSlot<string[]>("test.runtime-names");
     const add = (name: string) => fill(Names, (names) => [...names, name]);
     registryState.entries.push(
-      { ...codeExtension("the-site", "^1.0.0", () => undefined), layer: "site", fills: [add("site")] },
-      { ...codeExtension("the-agency", "^1.0.0", () => undefined), layer: "agency", fills: [add("agency")] },
-      { ...codeExtension("a-plugin", "^1.0.0", () => undefined), fills: [add("plugin")] },
-      { ...codeExtension("off-plugin", "^1.0.0", () => undefined), fills: [add("off")] },
+      { ...codeExtension("the-site", ">=1.0.0", () => undefined), layer: "site", fills: [add("site")] },
+      { ...codeExtension("the-agency", ">=1.0.0", () => undefined), layer: "agency", fills: [add("agency")] },
+      { ...codeExtension("a-plugin", ">=1.0.0", () => undefined), fills: [add("plugin")] },
+      { ...codeExtension("off-plugin", ">=1.0.0", () => undefined), fills: [add("off")] },
     );
     // 只有一般插件要在後台啟用;兩個層沒有 extensions 列。
     await enableCode("a-plugin");
@@ -262,9 +266,9 @@ describe("extension runtime slots and layers", () => {
     const Names = defineValueSlot<string[]>("test.runtime-names");
     const add = (name: string) => fill(Names, (names) => [...names, name]);
     registryState.entries.push(
-      { ...codeExtension("the-site", "^1.0.0", () => undefined), layer: "site", fills: [add("site")] },
-      { ...codeExtension("the-agency", "^1.0.0", () => undefined), layer: "agency", fills: [add("agency")] },
-      { ...codeExtension("a-plugin", "^1.0.0", () => undefined), fills: [add("plugin")] },
+      { ...codeExtension("the-site", ">=1.0.0", () => undefined), layer: "site", fills: [add("site")] },
+      { ...codeExtension("the-agency", ">=1.0.0", () => undefined), layer: "agency", fills: [add("agency")] },
+      { ...codeExtension("a-plugin", ">=1.0.0", () => undefined), fills: [add("plugin")] },
     );
     await enableCode("a-plugin");
     const vars = env as unknown as { CMS_LAYER_FILLS?: string };
@@ -280,7 +284,7 @@ describe("extension runtime slots and layers", () => {
   });
 
   it("leaves out a layer whose coreApi does not match, like any other plugin", async () => {
-    registryState.entries.push({ ...codeExtension("old-layer", "^2.0.0", () => undefined), layer: "site" });
+    registryState.entries.push({ ...codeExtension("old-layer", "^3.0.0", () => undefined), layer: "site" });
 
     const rt = await (await getLoader()).getExtRuntime();
 

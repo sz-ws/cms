@@ -69,7 +69,7 @@ const MANIFEST = {
   id: "recipes",
   name: "Recipes",
   version: "1.0.0",
-  coreApi: "^1.0.0",
+  coreApi: ">=1.0.0",
   description: "A recipe collection.",
   contentTypes: [
     {
@@ -169,7 +169,7 @@ describe("POST /api/registry/install — inline manifest (dev only)", () => {
   it("refuses an inline manifest that declares a stylesheet — nothing to fetch it from", async () => {
     const res = await post({
       id: "recipes",
-      manifest: { ...MANIFEST, coreApi: "^1.8.0", stylesheet: "style.css" },
+      manifest: { ...MANIFEST, coreApi: ">=1.8.0", stylesheet: "style.css" },
     });
     expect(res.status).toBe(400);
     expect((await res.json<{ error: string }>()).error).toBe("invalid_stylesheet");
@@ -207,7 +207,7 @@ describe("POST /api/registry/install — inline manifest (dev only)", () => {
 describe("POST /api/registry/install — scripts need an approval", () => {
   const WITH_SCRIPTS = {
     ...MANIFEST,
-    coreApi: "^1.48.0",
+    coreApi: ">=1.48.0",
     scripts: [{ inline: "window.__recipes = true;" }],
   };
 

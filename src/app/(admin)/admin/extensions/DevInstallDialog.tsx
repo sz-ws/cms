@@ -35,7 +35,7 @@ const PLACEHOLDER = `{
   "id": "recipes",
   "name": "Recipes",
   "version": "1.0.0",
-  "coreApi": "^1.0.0",
+  "coreApi": "^2.0.0",
   "contentTypes": [ ... ]
 }`;
 

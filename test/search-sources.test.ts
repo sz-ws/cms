@@ -96,9 +96,9 @@ describe("searchRecordSources", () => {
 });
 
 describe("defineExtension 驗證 adminPages[].search", () => {
-  const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: "^1.40.0" };
+  const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: ">=1.40.0" };
   const Page = () => null;
-  const ext = (search: AdminPageSearch, coreApi = "^1.40.0") =>
+  const ext = (search: AdminPageSearch, coreApi = ">=1.40.0") =>
     defineExtension({ ...base, coreApi, adminPages: [{ slug: "", title: "訂單", component: Page, search }] });
 
   it("合法宣告通過,只有頁面搜尋(沒有 global)也可以", () => {
@@ -114,6 +114,6 @@ describe("defineExtension 驗證 adminPages[].search", () => {
   });
 
   it("需要 coreApi 1.40.0 以上", () => {
-    expect(() => ext(ORDERS, "^1.39.0")).toThrow(/1\.40\.0/);
+    expect(() => ext(ORDERS, ">=1.39.0")).toThrow(/1\.40\.0/);
   });
 });

@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, gt, inArray, lt, or, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { contents, declarativeExtensions as dxTable } from "@/lib/schema";
+import { contents } from "@/lib/schema";
 import { getSetting } from "@/lib/settings";
 import { parseManifest } from "./manifest";
+import { enabledCompatibleManifests } from "./enabled-manifests";
 import type { DeclarativeField } from "./manifest";
 import { displayValue, pickTitleField } from "./views/field-utils";
 import { detailPath } from "./route-matcher";
@@ -141,10 +142,8 @@ async function buildRouteIndex(): Promise<{
   detailRoutes: DetailRouteInfo[];
   listPaths: string[];
 }> {
-  const rows = await db()
-    .select({ id: dxTable.id, manifest: dxTable.manifest })
-    .from(dxTable)
-    .where(eq(dxTable.enabled, 1));
+  // 2.0:loader 排除的插件(coreApi 不相容)的網址不進 sitemap(那些路由已經不存在)。
+  const rows = await enabledCompatibleManifests();
 
   const detailRoutes: DetailRouteInfo[] = [];
   const listPaths: string[] = [];

@@ -34,7 +34,8 @@ export const newebpay = defineExtension({
   // 0.3.0(core 1.79.0):後台「測試付款」付完(或在藍新按返回商店)回到這個插件的後台頁,上面寫這次的結果
   // (PaymentReturn 只認領測試訂單,isTestOrderNo;商店訂單照舊由訂單管理插件認領)。
   version: "0.3.0",
-  coreApi: "^1.79.0",
+  // ^2.0.0:core 2.0(公開頁整頁存起來)。只換範圍,插件版本不變。
+  coreApi: "^2.0.0",
   description:
     "線上刷卡收款：客人在藍新付款成功後，訂單會自動改成已付款。",
   icon: "credit-card",

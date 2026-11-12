@@ -44,7 +44,7 @@ vi.mock("@/ext/loader", async () => {
     id: "pubtest",
     name: "pubtest",
     version: "0.0.1",
-    coreApi: "^1.28.0",
+    coreApi: ">=1.28.0",
     apiRoutes: [
       { method: "POST", path: "open", public: true, handler: handler("open") },
       { method: "POST", path: "locked", handler: handler("locked") },

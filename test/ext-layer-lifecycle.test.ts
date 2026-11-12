@@ -40,7 +40,7 @@ import { disableExtension, pendingCodeUpgrades, uninstallExtension } from "../sr
 
 const d1 = () => (env as { DB: D1Database }).DB;
 
-const plugin = (id: string, more: Partial<Extension> = {}): Extension => ({ id, name: id, version: "1.0.0", coreApi: "^1.0.0", ...more });
+const plugin = (id: string, more: Partial<Extension> = {}): Extension => ({ id, name: id, version: "1.0.0", coreApi: ">=1.0.0", ...more });
 
 async function enabledRow(id: string, version = "1.0.0", enabled = 1): Promise<void> {
   await d1().prepare("INSERT INTO extensions (id, enabled, version, installed_at, updated_at) VALUES (?, ?, ?, 1, 1)").bind(id, enabled, version).run();

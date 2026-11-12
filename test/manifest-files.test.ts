@@ -12,7 +12,7 @@ function manifest(extra: Record<string, unknown> = {}) {
     id: "catalog",
     name: "Catalog",
     version: "0.1.0",
-    coreApi: "^1.25.0",
+    coreApi: ">=1.25.0",
     contentTypes: [
       { name: "product", fields: [{ key: "name", type: "text", label: "Name" }] },
     ],

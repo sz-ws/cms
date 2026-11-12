@@ -19,7 +19,7 @@ const base = {
   id: "reviews",
   name: "Reviews",
   version: "1.0.0",
-  coreApi: "^1.50.0",
+  coreApi: ">=1.50.0",
 };
 
 const installed = (plugins: InstalledPlugin[]) => new Map(plugins.map((p) => [p.id, p]));
@@ -66,7 +66,7 @@ describe("manifest identity and requiresExtensions", () => {
   });
 
   it("needs coreApi ^1.50.0 for either field", () => {
-    const old = { ...base, coreApi: "^1.49.0" };
+    const old = { ...base, coreApi: ">=1.49.0" };
     expect(parseManifest({ ...old, identity: "acme/reviews" }).error).toMatch(/1\.50\.0/);
     expect(parseManifest({ ...old, requiresExtensions: [{ id: "shop" }] }).error).toMatch(/1\.50\.0/);
     expect(parseManifest(old).ok).toBe(true);
@@ -90,13 +90,13 @@ describe("manifest identity and requiresExtensions", () => {
   });
 
   it("code extensions can carry an identity too, gated on coreApi", () => {
-    expect(defineExtension({ id: "stock", name: "Stock", version: "1.0.0", coreApi: "^1.50.0", identity: "acme/stock" }).identity).toBe(
+    expect(defineExtension({ id: "stock", name: "Stock", version: "1.0.0", coreApi: ">=1.50.0", identity: "acme/stock" }).identity).toBe(
       "acme/stock",
     );
-    expect(() => defineExtension({ id: "stock", name: "Stock", version: "1.0.0", coreApi: "^1.49.0", identity: "acme/stock" })).toThrow(
+    expect(() => defineExtension({ id: "stock", name: "Stock", version: "1.0.0", coreApi: ">=1.49.0", identity: "acme/stock" })).toThrow(
       /1\.50\.0/,
     );
-    expect(() => defineExtension({ id: "stock", name: "Stock", version: "1.0.0", coreApi: "^1.50.0", identity: "stock" })).toThrow();
+    expect(() => defineExtension({ id: "stock", name: "Stock", version: "1.0.0", coreApi: ">=1.50.0", identity: "stock" })).toThrow();
   });
 });
 

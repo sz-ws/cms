@@ -285,7 +285,7 @@ export interface TransitionExtras {
   transferReference?: string | null;
   /** 1.63.0:匯款人姓名(transfer_payer 欄)。給了(含 null)就取代上一次的;沒給 = 不動這一欄。 */
   transferPayer?: string | null;
-  /** @deprecated 1.63.0 — remove in 2.0. Use transferReference. */
+  /** @deprecated 1.63.0 — remove in a later major version. Use transferReference. */
   transferLast5?: string;
   transferReportedAt?: number;
   /** 動作附註(核帳紀錄等)。**追加**到 note 欄(換行分隔)—— note 是審計

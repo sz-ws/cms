@@ -122,7 +122,7 @@ const MANIFEST = {
   id: "gallery",
   name: "Gallery",
   version: "1.0.0",
-  coreApi: "^1.28.0",
+  coreApi: ">=1.28.0",
   contentTypes: [
     {
       name: "item",

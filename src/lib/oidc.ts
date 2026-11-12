@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { getDB } from "./cf";
-import { declarativeExtensions as dxTable, userIdentities } from "./schema";
+import { userIdentities } from "./schema";
+import { enabledCompatibleManifests } from "@/ext/dx/enabled-manifests";
 import { getSetting, extSetting } from "./settings";
 import { ownOrigin, siteOrigins } from "./site-origins";
 import { linkIdentity, signInWithIdentity, SENTINEL_PASSWORD_HASH } from "./login-accounts";
@@ -297,13 +298,9 @@ export function __clearOidcCaches(): void {
 // ---- provider 載入(manifest loginProvider + settings clientId/secret)----
 
 async function loadProvider(providerId: string): Promise<LoadedProvider | null> {
-  const rows = await db()
-    .select({ manifest: dxTable.manifest, enabled: dxTable.enabled })
-    .from(dxTable)
-    .where(eq(dxTable.id, providerId))
-    .limit(1);
-  const row = rows[0];
-  if (!row || row.enabled !== 1) return null;
+  // 2.0:啟用且 coreApi 相容(loader 會載入的)才算。
+  const row = (await enabledCompatibleManifests(providerId))[0];
+  if (!row) return null;
   const parsed = parseManifest(JSON.parse(row.manifest));
   const lp = parsed.ok ? parsed.manifest?.loginProvider : undefined;
   // Firebase 的 provider 不走導轉流程(見 firebase-login.ts)。
@@ -324,10 +321,7 @@ async function loadProvider(providerId: string): Promise<LoadedProvider | null> 
  * clientId/clientSecret 皆已設定者)。給登入頁/帳號頁渲染。
  */
 export async function listLoginProviders(): Promise<LoginProviderInfo[]> {
-  const rows = await db()
-    .select({ id: dxTable.id, manifest: dxTable.manifest })
-    .from(dxTable)
-    .where(eq(dxTable.enabled, 1));
+  const rows = await enabledCompatibleManifests();
   const out: LoginProviderInfo[] = [];
   for (const row of rows) {
     let parsed;

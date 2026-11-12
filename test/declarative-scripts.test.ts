@@ -20,7 +20,7 @@ const GA4 = {
   id: "ga4-lite",
   name: "GA4",
   version: "1.0.0",
-  coreApi: "^1.48.0",
+  coreApi: ">=1.48.0",
   settings: [
     { key: "measurementId", label: "Measurement ID", type: "text", default: "" },
     { key: "apiSecret", label: "API secret", type: "text", secret: true, default: "" },
@@ -72,7 +72,7 @@ describe("manifest.scripts schema", () => {
   });
 
   it("requires coreApi 1.48.0 or newer", () => {
-    const r = parseManifest({ ...GA4, coreApi: "^1.47.0" });
+    const r = parseManifest({ ...GA4, coreApi: ">=1.47.0" });
     expect(r.ok).toBe(false);
     expect(r.error).toContain("coreApi");
   });

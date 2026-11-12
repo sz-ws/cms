@@ -80,7 +80,7 @@ const ext = (id: string, load: Extension["dashboardStats"], more: Partial<Extens
   id,
   name: { en: `${id} plugin`, "zh-Hant": `${id} 插件` },
   version: "1.0.0",
-  coreApi: "^1.52.0",
+  coreApi: ">=1.52.0",
   dashboardStats: load,
   ...more,
 });

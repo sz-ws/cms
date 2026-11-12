@@ -74,7 +74,7 @@ const GALLERY_MANIFEST = {
   id: "gallery",
   name: "Gallery",
   version: "1.0.0",
-  coreApi: "^1.11.0",
+  coreApi: ">=1.11.0",
   contentTypes: [
     {
       name: "item",

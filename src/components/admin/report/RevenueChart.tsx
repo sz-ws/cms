@@ -6,7 +6,7 @@ import { REVENUE } from "@/ext/commerce-kit/metrics";
 import { TimeseriesChart } from "../dashboard/widgets/TimeseriesChart";
 import type { ChartSeries } from "../dashboard/widgets/timeseries";
 
-// @deprecated 1.62.0 —— 1.61.0 的每日營業額圖,2.0 拿掉。改用 components/admin/dashboard/widgets 的
+// @deprecated 1.62.0 —— 1.61.0 的每日營業額圖,之後的主版本拿掉。改用 components/admin/dashboard/widgets 的
 // TimeseriesChart,unit 給 { kind: "currency", code }(報表頁用 lib/units-server.ts 的 getSiteCurrency())。
 // 這裡照 1.61.0 的樣子畫:新台幣、疊起來。
 

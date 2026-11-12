@@ -1,4 +1,4 @@
-// @deprecated 1.62.0 —— 1.61.0 的名字,2.0 拿掉。圖的純函式搬到 components/admin/dashboard/widgets/timeseries.ts,
+// @deprecated 1.62.0 —— 1.61.0 的名字,之後的主版本拿掉。圖的純函式搬到 components/admin/dashboard/widgets/timeseries.ts,
 // 寫期間與比前一段搬到 lib/report-period.ts(periodChange、periodLabel),軸上的短數字是 lib/units.ts 的
 // compactNumber。
 

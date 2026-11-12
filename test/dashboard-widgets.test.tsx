@@ -71,7 +71,7 @@ const ext = (id: string, more: Partial<Extension> = {}): Extension => ({
   id,
   name: { en: `${id} plugin`, "zh-Hant": `${id} 插件` },
   version: "1.0.0",
-  coreApi: "^1.62.0",
+  coreApi: ">=1.62.0",
   ...more,
 });
 const widget = (id: string, load: DashboardWidgetDecl["load"], more: Partial<DashboardWidgetDecl> = {}): DashboardWidgetDecl => ({
@@ -130,8 +130,8 @@ describe("declaring widgets and metrics", () => {
   });
 
   it("both fields need coreApi ^1.62.0", () => {
-    expect(() => defineExtension({ ...valid(), coreApi: "^1.61.0" })).toThrow(/dashboardWidgets requires coreApi "\^1\.62\.0"/);
-    expect(() => defineExtension({ ...valid(), coreApi: "^1.61.0", dashboardWidgets: undefined })).toThrow(/metrics requires coreApi "\^1\.62\.0"/);
+    expect(() => defineExtension({ ...valid(), coreApi: ">=1.61.0" })).toThrow(/dashboardWidgets requires coreApi "\^1\.62\.0"/);
+    expect(() => defineExtension({ ...valid(), coreApi: ">=1.61.0", dashboardWidgets: undefined })).toThrow(/metrics requires coreApi "\^1\.62\.0"/);
   });
 
   it.each([

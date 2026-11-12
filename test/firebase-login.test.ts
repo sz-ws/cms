@@ -156,7 +156,7 @@ describe("listLoginProviders — firebase", () => {
   it("with both issuer and firebase declared: Firebase when its config is set, else OIDC (1.57.0)", async () => {
     const both = {
       ...FIREBASE_LOGIN_MANIFEST,
-      coreApi: "^1.57.0",
+      coreApi: ">=1.57.0",
       loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, issuer: "https://accounts.google.com" },
       settings: [
         ...FIREBASE_LOGIN_MANIFEST.settings,

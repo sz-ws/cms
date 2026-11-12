@@ -21,7 +21,7 @@ import { legacyStorefront } from "./legacy-storefront";
 //   結帳時沒有插件接手,但有它管過的訂單 → 503 checkout_paused(寧可停,不讓訂單分兩邊)。
 //   managed_by 是空的             → core 自己處理。
 //
-// 1.63.0 以前的舊站沒有 managed_by:legacy-ownership.ts 照舊看 `<訂單表>_managed` 表,2.0 拿掉。
+// 1.63.0 以前的舊站沒有 managed_by:legacy-ownership.ts 照舊看 `<訂單表>_managed` 表,之後的主版本拿掉。
 
 export const ORDERS_CAPABILITY = "commerce:orders";
 

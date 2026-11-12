@@ -76,7 +76,7 @@
     Declarative `dashboardCards` join it (stat → number card; recent cards keep their renderer).
   - `dx/dashboard-stats.ts`, `dx/dashboard-revenue.ts`: adapters for the deprecated 1.52.0
     `dashboardStats` (→ number cards, `display` kept) and 1.61.0 `dashboardRevenue` (→ a timeseries
-    widget on commerce-kit's `REVENUE`). Removed in 2.0.
+    widget on commerce-kit's `REVENUE`). Removed in a later major version.
   - `commerce-kit/metrics.ts` (1.62.0): `REVENUE` (`commerce.revenue`), the metric every plugin that
     takes money declares for its series on the dashboard.
   - `providers.ts` `ProviderRegistry.find(capability, guard?)` (1.63.0): the one provider of a capability
@@ -90,7 +90,7 @@
     manager is 503 `checkout_paused`. Core's own orders are reported with the order's email (or by the
     signed-in owner or an admin). `legacy-ownership.ts` (old `<table>_managed` check),
     `legacy-storefront.ts` (`guestCheckout()` fallback) and `managed.ts` (`ManagedCommerceProvider`
-    alias) are removed in 2.0.
+    alias) are removed in a later major version.
   - `commerce-kit/customer-order.ts`: `resolveCustomerOrder` answers "is this caller the customer of this
     order" for public routes where customers act on their own orders. A managed order asks the manager's
     optional `customerOrder()` (member by session, guest by order number + email; it also says when the

@@ -97,9 +97,9 @@ describe("resolveStatusSets / normalizeStatusSets", () => {
   });
 
   it("defineExtension 驗證 statusSets", () => {
-    const ext = { id: "demo", name: "Demo", version: "0.1.0", coreApi: "^1.40.0" };
+    const ext = { id: "demo", name: "Demo", version: "0.1.0", coreApi: ">=1.40.0" };
     expect(() => defineExtension({ ...ext, statusSets: [ORDER_SET] })).not.toThrow();
-    expect(() => defineExtension({ ...ext, coreApi: "^1.39.0", statusSets: [ORDER_SET] })).toThrow(/1\.40\.0/);
+    expect(() => defineExtension({ ...ext, coreApi: ">=1.39.0", statusSets: [ORDER_SET] })).toThrow(/1\.40\.0/);
     expect(() => defineExtension({ ...ext, statusSets: [{ id: "Bad Id", statuses: {} }] })).toThrow();
     expect(() =>
       defineExtension({ ...ext, statusSets: [{ id: "orders", statuses: { paid: { label: "x", tone: "pink" } } }] as never }),

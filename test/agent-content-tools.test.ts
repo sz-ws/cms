@@ -120,7 +120,7 @@ function manifestOf(
     id: "gallery",
     name: "Gallery",
     version: "1.0.0",
-    coreApi: "^1.28.0",
+    coreApi: ">=1.28.0",
     contentTypes,
     ...(publicRoutes ? { publicRoutes } : {}),
   });
@@ -553,7 +553,7 @@ describe("listDeclarativeAgentTools", () => {
       id: "gallery",
       name: "Gallery",
       version: "1.0.0",
-      coreApi: "^1.28.0",
+      coreApi: ">=1.28.0",
       contentTypes: [SIMPLE_TYPE],
     });
     await seed("disabled", {
@@ -561,7 +561,7 @@ describe("listDeclarativeAgentTools", () => {
       id: "disabled",
       name: "Off",
       version: "1.0.0",
-      coreApi: "^1.28.0",
+      coreApi: ">=1.28.0",
       contentTypes: [SIMPLE_TYPE],
     }, 0);
     // 非 JSON 的列。
@@ -588,7 +588,7 @@ describe("listDeclarativeAgentTools", () => {
       id: "gallery",
       name: "Gallery",
       version: "1.0.0",
-      coreApi: "^1.28.0",
+      coreApi: ">=1.28.0",
       contentTypes: [SIMPLE_TYPE],
     });
 

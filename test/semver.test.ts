@@ -32,6 +32,19 @@ describe("semver satisfies", () => {
     expect(satisfies("1.0", "1.0.0")).toBe(false); // not x.y.z
   });
 
+  it("a range for both majors: >= the old minimum passes 1.x and 2.0 cores", () => {
+    // 1.x → 2.0 transition (DEPLOY.md "Upgrading a 1.x site to 2.0"): the plugin publishes this first.
+    for (const core of ["1.17.0", "1.85.1", "2.0.0"]) expect(satisfies(core, ">=1.17.0")).toBe(true);
+    expect(satisfies("1.16.9", ">=1.17.0")).toBe(false);
+    expect(satisfies("2.0.0", "^1.17.0")).toBe(false); // caret stops at the major
+    expect(satisfies("1.85.1", "^2.0.0")).toBe(false);
+    // two-sided ranges are not part of the syntax: refused by both majors
+    for (const core of ["1.85.1", "2.0.0"]) {
+      expect(satisfies(core, ">=1.17.0 <3.0.0")).toBe(false);
+      expect(satisfies(core, "^1.17.0 || ^2.0.0")).toBe(false);
+    }
+  });
+
   it("real registry manifests resolve against CORE_API 1.3.0", () => {
     expect(satisfies("1.3.0", "^1.0.0")).toBe(true); // gallery
     expect(satisfies("1.3.0", "^1.1.0")).toBe(true); // blog

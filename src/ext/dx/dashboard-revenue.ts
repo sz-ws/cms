@@ -6,7 +6,7 @@ import type { DashboardStatsContext } from "./dashboard-stats";
 import type { WidgetSource } from "./dashboard-widgets";
 import { describe } from "./dashboard-hook";
 
-// @deprecated 1.62.0 —— 舊介面的轉接,2.0 整個檔案拿掉。
+// @deprecated 1.62.0 —— 舊介面的轉接,之後的主版本整個檔案拿掉。
 //
 // 1.61.0 的 Extension.dashboardRevenue(插件交給儀表板的每日金額)。1.62.0 起插件改成宣告 commerce-kit 的
 // REVENUE(`metrics: [REVENUE]`)加一個 `kind: "timeseries"`、`metric: REVENUE.key`、`period: true` 的
@@ -16,7 +16,7 @@ import { describe } from "./dashboard-hook";
 
 /**
  * 1.61.0:插件交給儀表板的一條每日金額(Extension.dashboardRevenue)。
- * @deprecated 1.62.0:改用 dashboardWidgets 的 timeseries widget(metric 是 commerce-kit 的 REVENUE)。2.0 拿掉。
+ * @deprecated 1.62.0:改用 dashboardWidgets 的 timeseries widget(metric 是 commerce-kit 的 REVENUE)。之後的主版本拿掉。
  */
 export interface RevenueSeries {
   /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
@@ -31,7 +31,7 @@ export interface RevenueSeries {
 
 /**
  * 1.61.0:dashboardRevenue 收到的內容;期間照站台時區切成整天。
- * @deprecated 1.62.0:`period: true` 的 widget 收到 WidgetContext.period。2.0 拿掉。
+ * @deprecated 1.62.0:`period: true` 的 widget 收到 WidgetContext.period。之後的主版本拿掉。
  */
 export interface DashboardRevenueContext extends DashboardStatsContext {
   /** 第一天(含),YYYY-MM-DD。 */

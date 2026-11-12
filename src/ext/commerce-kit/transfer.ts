@@ -38,7 +38,7 @@ const reportSchema = lazySchema(() => z
      * 管理員)就要帶;接管訂單的插件拿它認訪客。
      */
     email: z.string().max(200).optional(),
-    /** @deprecated 1.63.0 — remove in 2.0. The old name of `reference`. */
+    /** @deprecated 1.63.0 — remove in a later major version. The old name of `reference`. */
     last5: z.string().max(60).optional(),
   })
   .strict());

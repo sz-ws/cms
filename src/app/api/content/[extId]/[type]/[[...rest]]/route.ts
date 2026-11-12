@@ -1,6 +1,4 @@
-import { and, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { declarativeExtensions } from "@/lib/schema";
+import { enabledCompatibleManifests } from "@/ext/dx/enabled-manifests";
 import { authenticateApiToken } from "@/lib/api-token";
 import { getContentProvider } from "@/ext/dx/runtime";
 import { isSubmissionTypeName } from "@/ext/dx/submission";
@@ -150,18 +148,9 @@ export async function GET(
 
   const { extId, type: typeName, rest } = await ctx.params;
 
-  // 2) 只讀 enabled 的 declarative extension 宣告的 content types。
-  const rows = await db()
-    .select({ manifest: declarativeExtensions.manifest })
-    .from(declarativeExtensions)
-    .where(
-      and(
-        eq(declarativeExtensions.id, extId),
-        eq(declarativeExtensions.enabled, 1),
-      ),
-    )
-    .limit(1);
-  if (!rows[0]) return notFound(); // extId 未啟用
+  // 2) 只讀 loader 會載入的(enabled 且 coreApi 相容)declarative extension 宣告的 content types。
+  const rows = await enabledCompatibleManifests(extId);
+  if (!rows[0]) return notFound(); // extId 未啟用或與這個 core 不相容
 
   let manifest: StoredManifest;
   try {

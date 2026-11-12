@@ -58,7 +58,7 @@ beforeEach(async () => {
 // ---- helpers ----
 
 function fakeExt(id: string, jobs: ExtJobRegistration[]): Extension {
-  return { id, name: id, version: "1.0.0", coreApi: "^1.10.0", jobs };
+  return { id, name: id, version: "1.0.0", coreApi: ">=1.10.0", jobs };
 }
 
 interface ExtJobRowFull {

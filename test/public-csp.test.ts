@@ -106,7 +106,7 @@ describe("scripts widget (2.0)", () => {
       id: "ga",
       name: "GA",
       version: "1.0.0",
-      coreApi: "^1.48.0",
+      coreApi: ">=1.48.0",
       settings: [{ key: "id", label: "ID", type: "text", default: "G-1" }],
       scripts: GA,
     } as unknown as DeclarativeManifest;

@@ -91,7 +91,7 @@ function manifest(over: Partial<Extension>): Extension {
     id: "demo",
     name: "Demo",
     version: "1.0.0",
-    coreApi: "^1.30.0",
+    coreApi: ">=1.30.0",
     ...over,
   } as Extension;
 }
@@ -135,7 +135,7 @@ describe("defineExtension:agentTools 的命名空間與形狀(1.30.0)", () => {
   });
 
   it("沒宣告 agentTools 的既有 extension 完全不受影響(舊 coreApi 也照樣過)", () => {
-    expect(() => defineExtension(manifest({ coreApi: "^1.0.0" }))).not.toThrow();
+    expect(() => defineExtension(manifest({ coreApi: ">=1.0.0" }))).not.toThrow();
   });
 
   it("名字沒有 `<extId>.` 前綴 → 拒(含冒用別人命名空間的情況)", () => {
@@ -202,7 +202,7 @@ describe("defineExtension:agentTools 的命名空間與形狀(1.30.0)", () => {
   it("宣告 agentTools 卻沒標 coreApi ^1.30.0 → 拒(舊 core 會安靜忽略這個欄位)", () => {
     expect(() =>
       defineExtension(
-        manifest({ coreApi: "^1.29.0", agentTools: [tool("demo.things.list")] }),
+        manifest({ coreApi: ">=1.29.0", agentTools: [tool("demo.things.list")] }),
       ),
     ).toThrow(/agentTools requires coreApi/);
     expect(() =>
@@ -221,7 +221,7 @@ describe("buildAgentToolRegistry:enabled code extensions(spec §2 表格第二�
     id: "gallery",
     name: "Gallery",
     version: "1.0.0",
-    coreApi: "^1.28.0",
+    coreApi: ">=1.28.0",
     contentTypes: [{ name: "item", fields: [{ key: "title", type: "text" }] }],
   };
 
@@ -261,7 +261,7 @@ describe("buildAgentToolRegistry:enabled code extensions(spec §2 表格第二�
   });
 
   it("沒宣告 agentTools 的 enabled extension 什麼都不貢獻", async () => {
-    runtimeState.enabled = [defineExtension(manifest({ coreApi: "^1.0.0" }))];
+    runtimeState.enabled = [defineExtension(manifest({ coreApi: ">=1.0.0" }))];
     const names = (await buildAgentToolRegistry()).names();
     expect(names.every((n) => n.startsWith("core."))).toBe(true);
   });

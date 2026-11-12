@@ -29,31 +29,31 @@ const issues = (r: ReturnType<typeof parseManifest>) => (r.ok ? [] : JSON.string
 
 describe("gallery in a manifest", () => {
   it("takes a gallery field, at the top level or inside a repeater, from coreApi 1.66.0", () => {
-    expect(parseManifest(manifest("^1.66.0", [{ key: "photos", type: "gallery", max: 8 }])).ok).toBe(true);
+    expect(parseManifest(manifest(">=1.66.0", [{ key: "photos", type: "gallery", max: 8 }])).ok).toBe(true);
     expect(
       parseManifest(
-        manifest("^1.66.0", [{ key: "rows", type: "repeater", fields: [{ key: "photos", type: "gallery" }] }]),
+        manifest(">=1.66.0", [{ key: "rows", type: "repeater", fields: [{ key: "photos", type: "gallery" }] }]),
       ).ok,
     ).toBe(true);
   });
 
   it("asks for coreApi 1.66.0, also when the gallery is nested", () => {
-    expect(issues(parseManifest(manifest("^1.65.0", [{ key: "photos", type: "gallery" }])))).toContain(
+    expect(issues(parseManifest(manifest(">=1.65.0", [{ key: "photos", type: "gallery" }])))).toContain(
       'gallery fields require coreApi \\"^1.66.0\\" or newer',
     );
     expect(
       parseManifest(
-        manifest("^1.65.0", [{ key: "rows", type: "repeater", fields: [{ key: "photos", type: "gallery" }] }]),
+        manifest(">=1.65.0", [{ key: "rows", type: "repeater", fields: [{ key: "photos", type: "gallery" }] }]),
       ).ok,
     ).toBe(false);
   });
 
   it("allows max only on gallery fields, up to the core limit", () => {
-    expect(issues(parseManifest(manifest("^1.66.0", [{ key: "name", type: "text", max: 3 }])))).toContain(
+    expect(issues(parseManifest(manifest(">=1.66.0", [{ key: "name", type: "text", max: 3 }])))).toContain(
       "only valid on gallery fields",
     );
-    expect(parseManifest(manifest("^1.66.0", [{ key: "photos", type: "gallery", max: GALLERY_MAX + 1 }])).ok).toBe(false);
-    expect(parseManifest(manifest("^1.66.0", [{ key: "photos", type: "gallery", max: 0 }])).ok).toBe(false);
+    expect(parseManifest(manifest(">=1.66.0", [{ key: "photos", type: "gallery", max: GALLERY_MAX + 1 }])).ok).toBe(false);
+    expect(parseManifest(manifest(">=1.66.0", [{ key: "photos", type: "gallery", max: 0 }])).ok).toBe(false);
   });
 
   it("gives the catalog product more photos and detail images, and still parses", () => {

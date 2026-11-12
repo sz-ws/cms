@@ -28,7 +28,7 @@ function extWithProvides(
     id,
     name: id,
     version: "1.0.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     provides,
   };
 }

@@ -27,7 +27,7 @@ export {
   parseOrderMeta,
 } from "./orders";
 export type { CommerceDb, CreateOrderInput, TransitionExtras } from "./orders";
-// 1.63.0:訂單管理插件的合約(commerce:orders)。ManagedCommerceProvider 是它的舊名(./managed,2.0 拿掉)。
+// 1.63.0:訂單管理插件的合約(commerce:orders)。ManagedCommerceProvider 是它的舊名(./managed,之後的主版本拿掉)。
 export {
   ORDERS_CAPABILITY,
   OrderManagedError,
@@ -158,7 +158,7 @@ export type {
   ShopReturn,
 } from "./returns";
 export { createReturnsEngine, isMissingTableError } from "./returns-engine";
-/** @deprecated 1.63.0 — remove in 2.0. The restock provider is found by capability (isRestockProvider). */
+/** @deprecated 1.63.0 — remove in a later major version. The restock provider is found by capability (isRestockProvider). */
 export { RESTOCK_PROVIDER_ID } from "./returns-legacy";
 export type {
   ReturnsConfig,

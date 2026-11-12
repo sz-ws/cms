@@ -102,7 +102,7 @@ describe("ledger-kit commits on declared public tables", () => {
 });
 
 describe("Extension.visitorFacingTables", () => {
-  const base = { id: "acme", name: "Acme", version: "1.0.0", coreApi: "^1.10.0" };
+  const base = { id: "acme", name: "Acme", version: "1.0.0", coreApi: ">=1.10.0" };
 
   it("accepts table names in the same shape as wakeOn", () => {
     expect(defineExtension({ ...base, visitorFacingTables: ["ext_acme_accounts"] }).visitorFacingTables).toEqual(["ext_acme_accounts"]);

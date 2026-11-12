@@ -97,7 +97,7 @@ export interface CommerceOrder {
   transferReference: string | null;
   /** 1.63.0:匯款人姓名(付款方式要客人填的時候)。 */
   transferPayer: string | null;
-  /** @deprecated 1.63.0 — remove in 2.0. Same value as transferReference. */
+  /** @deprecated 1.63.0 — remove in a later major version. Same value as transferReference. */
   transferLast5: string | null;
   transferReportedAt: number | null;
   /** 1.63.0:結帳欄位的值({ "<providerId>.<key>": 值 };沒有是 {})。 */

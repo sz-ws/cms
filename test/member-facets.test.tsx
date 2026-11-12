@@ -53,7 +53,7 @@ const loyalty = (facets: MemberFacet[] = [tierFacet()], id = "loyalty"): Extensi
   id,
   name: { "zh-Hant": "會員等級", en: "Loyalty" },
   version: "1.0.0",
-  coreApi: "^1.60.0",
+  coreApi: ">=1.60.0",
   memberFacets: facets,
 });
 
@@ -175,7 +175,7 @@ describe("readMemberFacets", () => {
 
   it("does nothing when no plugin declares facets", async () => {
     const services = vi.fn(() => LOYALTY_SERVICES);
-    const plain: Extension = { id: "plain", name: "Plain", version: "1.0.0", coreApi: "^1.60.0" };
+    const plain: Extension = { id: "plain", name: "Plain", version: "1.0.0", coreApi: ">=1.60.0" };
     expect(await readMemberFacets([plain], IDS, { ...OPTIONS, services })).toEqual({ facets: [], byUser: new Map() });
     expect(services).not.toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe("Extension.memberFacets manifest rules", () => {
   });
 
   it("requires coreApi ^1.60.0", () => {
-    expect(() => defineExtension({ ...loyalty(), coreApi: "^1.59.0" })).toThrow(/memberFacets requires coreApi "\^1\.60\.0"/);
+    expect(() => defineExtension({ ...loyalty(), coreApi: ">=1.59.0" })).toThrow(/memberFacets requires coreApi "\^1\.60\.0"/);
   });
 
   it("rejects duplicate or malformed ids, unknown when and non-function read", () => {

@@ -132,7 +132,7 @@ describe("declarative manager revision lifecycle", () => {
 // 1.50.0:宣告式插件的 requiresExtensions —— 必要插件沒裝或停用時不能啟用。
 describe("declarative enable checks required plugins", () => {
   const needy = (requires: unknown[]) =>
-    JSON.stringify({ kind: "declarative", id: "needy", name: "Needy", version: "1.0.0", coreApi: "^1.50.0", requiresExtensions: requires });
+    JSON.stringify({ kind: "declarative", id: "needy", name: "Needy", version: "1.0.0", coreApi: ">=1.50.0", requiresExtensions: requires });
 
   async function insert(id: string, manifest: string, enabled: 0 | 1) {
     await d1()
@@ -150,7 +150,7 @@ describe("declarative enable checks required plugins", () => {
 
   it("asks to enable a required plugin that is installed but disabled, by its name", async () => {
     await insert("needy", needy([{ id: "stock" }]), 0);
-    await insert("stock", JSON.stringify({ kind: "declarative", id: "stock", name: "Stock room", version: "1.0.0", coreApi: "^1.0.0" }), 0);
+    await insert("stock", JSON.stringify({ kind: "declarative", id: "stock", name: "Stock room", version: "1.0.0", coreApi: ">=1.0.0" }), 0);
     await expect(enableDeclarative("needy")).rejects.toThrow("請先啟用必要插件：Stock room");
     await enableDeclarative("stock");
     await enableDeclarative("needy");
@@ -161,9 +161,9 @@ describe("declarative enable checks required plugins", () => {
 
 // 1.50.0:啟用中的插件非選用地需要它 → 不能停用、不能移除(與程式碼插件之間的規則相同)。
 describe("a plugin that another enabled plugin needs", () => {
-  const stock = JSON.stringify({ kind: "declarative", id: "stock", name: "Stock room", version: "1.0.0", coreApi: "^1.0.0" });
+  const stock = JSON.stringify({ kind: "declarative", id: "stock", name: "Stock room", version: "1.0.0", coreApi: ">=1.0.0" });
   const needing = (id: string, requires: unknown[]) =>
-    JSON.stringify({ kind: "declarative", id, name: { en: "Reviews", "zh-Hant": "評論" }, version: "1.0.0", coreApi: "^1.50.0", requiresExtensions: requires });
+    JSON.stringify({ kind: "declarative", id, name: { en: "Reviews", "zh-Hant": "評論" }, version: "1.0.0", coreApi: ">=1.50.0", requiresExtensions: requires });
 
   async function insert(id: string, manifest: string, enabled: 0 | 1) {
     await d1()
@@ -187,7 +187,7 @@ describe("a plugin that another enabled plugin needs", () => {
   });
 
   it("an optional need or a need for a different plugin with the same id does not block", async () => {
-    await insert("stock", JSON.stringify({ ...JSON.parse(stock), identity: "acme/stock", coreApi: "^1.50.0" }), 1);
+    await insert("stock", JSON.stringify({ ...JSON.parse(stock), identity: "acme/stock", coreApi: ">=1.50.0" }), 1);
     await insert("reviews", needing("reviews", [{ id: "stock", optional: true }]), 1);
     await insert("ratings", needing("ratings", [{ id: "stock", identity: "other/stock" }]), 1);
     await uninstallDeclarative("stock", false);

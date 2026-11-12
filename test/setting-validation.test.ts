@@ -118,7 +118,7 @@ describe("color settings (1.40.0)", () => {
   });
 
   it("defineExtension accepts swatches on color settings only", () => {
-    const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: "^1.40.0" };
+    const base = { id: "demo", name: "Demo", version: "0.1.0", coreApi: ">=1.40.0" };
     const color = { key: "brand", label: "Brand", type: "color" as const, default: "#5672e4" };
     expect(() =>
       defineExtension({ ...base, settings: [{ ...color, swatches: [{ value: "#e0457b", label: "Pink" }] }] }),

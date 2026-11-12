@@ -70,7 +70,7 @@ const ext = (id: string, load: Extension["dashboardRevenue"], more: Partial<Exte
   id,
   name: { en: `${id} plugin`, "zh-Hant": `${id} 插件` },
   version: "1.0.0",
-  coreApi: "^1.61.0",
+  coreApi: ">=1.61.0",
   dashboardRevenue: load,
   ...more,
 });
@@ -311,7 +311,7 @@ describe("the revenue card on the dashboard looks as in 1.61.0", () => {
       id: "modern",
       name: "modern",
       version: "1.0.0",
-      coreApi: "^1.62.0",
+      coreApi: ">=1.62.0",
       metrics: [REVENUE],
       dashboardWidgets: [
         {

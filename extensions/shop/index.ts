@@ -137,7 +137,8 @@ export const shop = defineExtension({
   //
   // ^1.76.0(0.13.0):優惠碼的期間、表單插槽 AdminPromoFormFields、優惠碼目錄(commerce:promos)與 ?promo= 連結;
   // 客人自己申請退貨(createCustomerReturnRoutes)。
-  coreApi: "^1.76.0",
+  // ^2.0.0:core 2.0(公開頁整頁存起來)。只換範圍,插件版本不變。
+  coreApi: "^2.0.0",
   description:
     "商品目錄、購物車、結帳、訂單與退貨管理：刷卡或匯款收款，匯款由後台人工對帳。",
   icon: "shopping-cart",

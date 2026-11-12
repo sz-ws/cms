@@ -4,7 +4,7 @@ import { segmentColor } from "./palette";
 import type { TimeseriesChartData } from "./types";
 
 // 1.62.0:每日趨勢圖(TimeseriesChart)的純函式,server 與 client 都能 import。
-// 1.61.0 時在 components/admin/report/revenue-summary.ts(那裡留著轉接,2.0 拿掉)。
+// 1.61.0 時在 components/admin/report/revenue-summary.ts(那裡留著轉接,之後的主版本拿掉)。
 
 export type ChartSeries = TimeseriesChartData["series"][number];
 

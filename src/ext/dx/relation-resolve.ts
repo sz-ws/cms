@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { declarativeExtensions } from "@/lib/schema";
+import { enabledCompatibleManifests } from "./enabled-manifests";
 import { getContentProvider } from "./runtime";
 import { parseManifest } from "./manifest";
 import type { DeclarativeContentType } from "./manifest";
@@ -40,11 +38,9 @@ async function loadTargetMeta(
   extId: string,
   typeName: string,
 ): Promise<TargetMeta | null> {
-  const rows = await db()
-    .select({ manifest: declarativeExtensions.manifest })
-    .from(declarativeExtensions)
-    .where(eq(declarativeExtensions.id, extId))
-    .limit(1);
+  // 2.0:目標插件要是 loader 會載入的(啟用且 coreApi 相容);不是的話它的 detail 路由不存在,
+  // 只列標題、不給連結。
+  const rows = await enabledCompatibleManifests(extId);
   const raw = rows[0]?.manifest;
   if (!raw) return null; // v1: relations into code extensions are unsupported.
   let json: unknown;

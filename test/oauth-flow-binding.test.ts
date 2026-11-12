@@ -95,7 +95,7 @@ const MANIFEST = {
   id: PROVIDER,
   name: "Example Login",
   version: "1.0.0",
-  coreApi: "^1.16.0",
+  coreApi: ">=1.16.0",
   loginProvider: { issuer: ISSUER, button: { label: "Continue with Example" } },
   settings: [
     { key: "clientId", label: "Client ID", type: "text", default: "" },

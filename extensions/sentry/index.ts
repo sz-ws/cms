@@ -34,7 +34,8 @@ export const sentry = defineExtension({
   id: "sentry",
   name: { en: "Error tracking", "zh-Hant": "錯誤追蹤" },
   version: "1.0.2",
-  coreApi: "^1.26.0",
+  // ^2.0.0:core 2.0(公開頁整頁存起來)。只換範圍,插件版本不變。
+  coreApi: "^2.0.0",
   description: {
     en: "Sends unhandled errors, failed extension hooks and failed cron ticks to a self-hosted GlitchTip (or Sentry) project.",
     "zh-Hant":

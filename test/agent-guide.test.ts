@@ -217,13 +217,13 @@ describe("Extension.agentGuide", () => {
   const base = { id: "loyalty", name: "Loyalty", version: "1.0.0" };
 
   it("is accepted from coreApi ^1.60.0", () => {
-    expect(() => defineExtension({ ...base, coreApi: "^1.60.0", agentGuide: { en: "Use loyalty.points.add." } })).not.toThrow();
+    expect(() => defineExtension({ ...base, coreApi: ">=1.60.0", agentGuide: { en: "Use loyalty.points.add." } })).not.toThrow();
   });
 
   it("needs the version that understands it, and stays short", () => {
-    expect(() => defineExtension({ ...base, coreApi: "^1.59.0", agentGuide: "Use it." })).toThrow(/agentGuide requires coreApi/);
+    expect(() => defineExtension({ ...base, coreApi: ">=1.59.0", agentGuide: "Use it." })).toThrow(/agentGuide requires coreApi/);
     expect(() =>
-      defineExtension({ ...base, coreApi: "^1.60.0", agentGuide: "x".repeat(AGENT_GUIDE_MAX_CHARS + 1) }),
+      defineExtension({ ...base, coreApi: ">=1.60.0", agentGuide: "x".repeat(AGENT_GUIDE_MAX_CHARS + 1) }),
     ).toThrow(/agentGuide is limited/);
   });
 });
@@ -280,12 +280,12 @@ describe("the admin assistant's system prompt", () => {
     });
 
     it("reads the stock capability from an enabled plugin's provides", async () => {
-      runtimeState.enabled = [{ id: "warehouse", name: "Warehouse", version: "1.0.0", coreApi: "^1.63.0", provides: [{ capability: "inventory", id: "warehouse", create: () => ({}) }] }];
+      runtimeState.enabled = [{ id: "warehouse", name: "Warehouse", version: "1.0.0", coreApi: ">=1.63.0", provides: [{ capability: "inventory", id: "warehouse", create: () => ({}) }] }];
       expect(await loadAgentSystemPrompt("en")).toContain("Stock: there is no tool for it here");
     });
 
     it("includes enabled plugins' own notes", async () => {
-      runtimeState.enabled = [{ id: "loyalty", name: "Loyalty", version: "1.0.0", coreApi: "^1.60.0", agentGuide: "Points: use loyalty.points.add." }];
+      runtimeState.enabled = [{ id: "loyalty", name: "Loyalty", version: "1.0.0", coreApi: ">=1.60.0", agentGuide: "Points: use loyalty.points.add." }];
       const prompt = await loadAgentSystemPrompt("en");
       expect(prompt).toContain("## From installed plugins\n### Loyalty\nPoints: use loyalty.points.add.");
     });

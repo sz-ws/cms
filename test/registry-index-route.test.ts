@@ -120,7 +120,7 @@ async function insertExt(
 }
 
 function fakeExt(id: string, version: string): Extension {
-  return { id, name: id, version, coreApi: "^1.0.0" };
+  return { id, name: id, version, coreApi: ">=1.0.0" };
 }
 
 describe("GET /api/registry/index", () => {
@@ -185,7 +185,7 @@ describe("GET /api/registry/index", () => {
         kind: "code",
         name: "Cron",
         version: "1.2.0",
-        coreApi: "^1.0.0",
+        coreApi: ">=1.0.0",
         source: "https://example.test",
       },
     ];
@@ -215,7 +215,7 @@ describe("GET /api/registry/index", () => {
         version: "0.3.0",
         coreApi: "^99.0.0",
         source: "https://example.test",
-        versions: [{ version: "0.2.2", coreApi: "^1.0.0" }],
+        versions: [{ version: "0.2.2", coreApi: ">=1.0.0" }],
       },
       { id: "future", kind: "declarative", name: "Future", version: "2.0.0", coreApi: "^99.0.0", source: "https://example.test" },
     ];
@@ -225,7 +225,7 @@ describe("GET /api/registry/index", () => {
       entries: { id: string; version: string; coreApi: string; compatible: boolean; installVersion?: string; latestVersion?: string }[];
     };
     const pay = body.entries.find((e) => e.id === "pay");
-    expect(pay).toMatchObject({ version: "0.2.2", coreApi: "^1.0.0", compatible: true, installVersion: "0.2.2", latestVersion: "0.3.0" });
+    expect(pay).toMatchObject({ version: "0.2.2", coreApi: ">=1.0.0", compatible: true, installVersion: "0.2.2", latestVersion: "0.3.0" });
     const future = body.entries.find((e) => e.id === "future");
     expect(future?.compatible).toBe(false);
     expect(future?.installVersion).toBeUndefined();
@@ -236,7 +236,7 @@ describe("GET /api/registry/index", () => {
     authState.user = ADMIN;
     const offer = { price: { amount: 25000, currency: "TWD", period: "year" } };
     registryState.entries = [
-      { id: "replay", kind: "declarative", name: "Replay", version: "0.1.0", coreApi: "^1.0.0", source: "https://registry.example.com", access: "locked", offer },
+      { id: "replay", kind: "declarative", name: "Replay", version: "0.1.0", coreApi: ">=1.0.0", source: "https://registry.example.com", access: "locked", offer },
     ];
     registryState.errors = [{ source: "https://other.example.com", error: "http 403", status: 403 }];
     const body = (await (await GET()).json()) as { entries: { access?: string; offer?: unknown }[]; errors: unknown[] };
@@ -251,7 +251,7 @@ describe("GET /api/registry/index", () => {
       id: "booking",
       kind: "declarative",
       version: "1.0.0",
-      coreApi: "^1.58.0",
+      coreApi: ">=1.58.0",
       source: "https://example.test",
       name: { "zh-Hant": "訂位", en: "Booking" },
       description: { en: "Book a table" },
@@ -285,8 +285,8 @@ describe("GET /api/registry/index", () => {
   it("leaves the built-in catalog out of the store", async () => {
     authState.user = ADMIN;
     registryState.entries = [
-      { id: "catalog", kind: "declarative", name: "Catalog", version: "0.2.0", coreApi: "^1.25.0", source: "https://example.test" },
-      { id: "blog", kind: "declarative", name: "Blog", version: "1.2.5", coreApi: "^1.0.0", source: "https://example.test" },
+      { id: "catalog", kind: "declarative", name: "Catalog", version: "0.2.0", coreApi: ">=1.25.0", source: "https://example.test" },
+      { id: "blog", kind: "declarative", name: "Blog", version: "1.2.5", coreApi: ">=1.0.0", source: "https://example.test" },
     ];
     rtState.all = [];
 
@@ -301,8 +301,8 @@ describe("GET /api/registry/index", () => {
       overrideRegistry.register("proof", surfaceIds.publicScripts(), "scripts", () => null);
     }
     registryState.entries = [
-      { id: "proof", kind: "declarative", name: "Proof", version: "0.3.0", coreApi: "^1.51.0", source: "https://example.test" },
-      { id: "blog", kind: "declarative", name: "Blog", version: "1.2.5", coreApi: "^1.0.0", source: "https://example.test" },
+      { id: "proof", kind: "declarative", name: "Proof", version: "0.3.0", coreApi: ">=1.51.0", source: "https://example.test" },
+      { id: "blog", kind: "declarative", name: "Blog", version: "1.2.5", coreApi: ">=1.0.0", source: "https://example.test" },
     ];
 
     const body = (await (await GET()).json()) as { entries: { id: string; scriptsCompiled?: boolean }[] };
@@ -320,7 +320,7 @@ describe("GET /api/registry/index — plugin identity", () => {
   const B = "https://registry-b.test";
 
   async function insertDx(id: string, source: string, identity?: string, enabled = 1) {
-    const manifest = { kind: "declarative", id, name: { en: "Reviews", "zh-Hant": "評論" }, version: "1.0.0", coreApi: "^1.50.0", ...(identity ? { identity } : {}) };
+    const manifest = { kind: "declarative", id, name: { en: "Reviews", "zh-Hant": "評論" }, version: "1.0.0", coreApi: ">=1.50.0", ...(identity ? { identity } : {}) };
     await d1()
       .prepare("INSERT INTO declarative_extensions (id, manifest, version, enabled, source, installed_at, updated_at) VALUES (?, ?, '1.0.0', ?, ?, 1, 1)")
       .bind(id, JSON.stringify(manifest), enabled, source)
@@ -332,7 +332,7 @@ describe("GET /api/registry/index — plugin identity", () => {
     kind: "declarative",
     name: "Reviews",
     version: "1.1.0",
-    coreApi: "^1.50.0",
+    coreApi: ">=1.50.0",
     source,
     ...(identity ? { identity } : {}),
   });
@@ -386,8 +386,8 @@ describe("GET /api/registry/index — plugin identity", () => {
     authState.user = ADMIN;
     rtState.all = [{ ...fakeExt("bundles", "1.0.0"), requiresExtensions: ["stock"] }];
     registryState.entries = [
-      { id: "bundles", kind: "code", name: "Bundles", version: "1.0.0", coreApi: "^1.36.0", source: A },
-      { id: "loyalty", kind: "code", name: "Loyalty", version: "1.0.0", coreApi: "^1.36.0", source: A, requiresExtensions: [{ id: "stock", optional: true }] },
+      { id: "bundles", kind: "code", name: "Bundles", version: "1.0.0", coreApi: ">=1.36.0", source: A },
+      { id: "loyalty", kind: "code", name: "Loyalty", version: "1.0.0", coreApi: ">=1.36.0", source: A, requiresExtensions: [{ id: "stock", optional: true }] },
     ];
     const body = (await (await GET()).json()) as { entries: { id: string; requiresExtensions?: unknown }[] };
     expect(body.entries[0].requiresExtensions).toEqual([{ id: "stock" }]);

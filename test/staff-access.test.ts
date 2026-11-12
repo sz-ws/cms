@@ -73,7 +73,7 @@ vi.mock("@/ext/loader", async () => {
     id: "demo",
     name: "demo",
     version: "0.0.1",
-    coreApi: "^1.50.0",
+    coreApi: ">=1.50.0",
     adminPages: [
       { slug: "orders", title: "訂單", component: () => null },
       { slug: "orders/detail", title: "訂單明細", showInMenu: false, accessAs: "demo/orders", component: () => null },

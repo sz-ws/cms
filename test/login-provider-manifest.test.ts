@@ -14,7 +14,7 @@ export const GOOGLE_LOGIN_MANIFEST = {
   id: "google-login",
   name: "Google Login",
   version: "1.0.0",
-  coreApi: "^1.16.0",
+  coreApi: ">=1.16.0",
   description: "Sign in with Google (OIDC).",
   loginProvider: {
     issuer: "https://accounts.google.com",
@@ -45,7 +45,7 @@ export const LINE_LOGIN_MANIFEST = {
   id: "line-login",
   name: "LINE Login",
   version: "1.0.0",
-  coreApi: "^1.16.0",
+  coreApi: ">=1.16.0",
   description: "Sign in with LINE (OIDC).",
   loginProvider: {
     issuer: "https://access.line.me",
@@ -191,7 +191,7 @@ export const FIREBASE_LOGIN_MANIFEST = {
   id: "firebase-login",
   name: "Firebase Login",
   version: "1.0.0",
-  coreApi: "^1.54.0",
+  coreApi: ">=1.54.0",
   description: "Sign in with Google through Firebase Authentication.",
   loginProvider: {
     firebase: { signIn: "google.com" as const },
@@ -215,7 +215,7 @@ describe("loginProvider manifest — firebase", () => {
   it("accepts issuer and firebase together when both sets of settings are declared (1.57.0)", () => {
     const both = parseManifest({
       ...FIREBASE_LOGIN_MANIFEST,
-      coreApi: "^1.57.0",
+      coreApi: ">=1.57.0",
       loginProvider: { ...FIREBASE_LOGIN_MANIFEST.loginProvider, issuer: "https://accounts.google.com" },
       settings: [...FIREBASE_LOGIN_MANIFEST.settings, ...GOOGLE_LOGIN_MANIFEST.settings],
     });

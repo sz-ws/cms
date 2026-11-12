@@ -184,7 +184,7 @@ export interface ExtJobRegistration {
 }
 
 // 1.62.0:儀表板的卡片(dashboardWidgets、metrics)的形狀在 ./dashboard-widgets.ts;1.52.0 的
-// dashboardStats 與 1.61.0 的 dashboardRevenue 的型別跟著它們的轉接放在 dx/(2.0 拿掉)。
+// dashboardStats 與 1.61.0 的 dashboardRevenue 的型別跟著它們的轉接放在 dx/(之後的主版本拿掉)。
 export type {
   DashboardWidgetDecl,
   MetricCombine,
@@ -332,13 +332,13 @@ export interface Extension {
   /**
    * 1.52.0:插件自己的儀表板數字(DashboardStat)。每次打開儀表板呼叫一次;丟例外、
    * 回傳不是陣列、或 2 秒內沒回來,這個插件的數字就不顯示,其他照常。
-   * @deprecated 1.62.0:改用 dashboardWidgets 的 `kind: "number"`(dx/dashboard-stats.ts 轉接)。2.0 拿掉。
+   * @deprecated 1.62.0:改用 dashboardWidgets 的 `kind: "number"`(dx/dashboard-stats.ts 轉接)。之後的主版本拿掉。
    */
   dashboardStats?: (ctx: DashboardStatsContext) => Promise<DashboardStat[]>;
   /**
    * 1.61.0:儀表板的每日金額(RevenueSeries)。需要 coreApi "^1.61.0"。
    * @deprecated 1.62.0:改成宣告 commerce-kit 的 REVENUE(metrics)加一個 metric 是它的 timeseries
-   * widget(dx/dashboard-revenue.ts 轉接)。2.0 拿掉。
+   * widget(dx/dashboard-revenue.ts 轉接)。之後的主版本拿掉。
    */
   dashboardRevenue?: (ctx: DashboardRevenueContext) => Promise<RevenueSeries[]>;
   /**

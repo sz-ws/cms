@@ -9,7 +9,7 @@ const exts = vi.hoisted(() => ({
     id: "demo",
     name: "Demo",
     version: "1.1.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     migrations: [
       { id: "0001_a", sql: "CREATE TABLE IF NOT EXISTS demo_a (id TEXT)" },
       { id: "0002_b", sql: "CREATE TABLE IF NOT EXISTS demo_b (id TEXT)" },
@@ -20,14 +20,14 @@ const exts = vi.hoisted(() => ({
     id: "broken",
     name: "Broken",
     version: "2.0.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     migrations: [{ id: "0001_bad", sql: "CREATE TABLE IF NOT EXISTS (" }],
   },
   racer: {
     id: "racer",
     name: "Racer",
     version: "1.0.0",
-    coreApi: "^1.0.0",
+    coreApi: ">=1.0.0",
     // 沒有 IF NOT EXISTS:第二個同時套用的人一定會失敗。
     migrations: [{ id: "0001_t", sql: "CREATE TABLE racer_t (id TEXT)" }],
   },

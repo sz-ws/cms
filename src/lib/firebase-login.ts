@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import { db } from "./db";
-import { declarativeExtensions as dxTable } from "./schema";
+import { enabledCompatibleManifests } from "@/ext/dx/enabled-manifests";
 import { linkIdentity, signInWithIdentity } from "./login-accounts";
 import { getJwks, loadFirebaseConfig, safeNext, verifyJwt, type FirebaseWebConfig } from "./oidc";
 import { parseManifest } from "@/ext/dx/manifest";
@@ -46,13 +44,9 @@ interface LoadedFirebaseProvider {
 }
 
 async function loadFirebaseProvider(providerId: string): Promise<LoadedFirebaseProvider | null> {
-  const rows = await db()
-    .select({ manifest: dxTable.manifest, enabled: dxTable.enabled })
-    .from(dxTable)
-    .where(eq(dxTable.id, providerId))
-    .limit(1);
-  const row = rows[0];
-  if (!row || row.enabled !== 1) return null;
+  // 2.0:啟用且 coreApi 相容(loader 會載入的)才算。
+  const row = (await enabledCompatibleManifests(providerId))[0];
+  if (!row) return null;
   let parsed;
   try {
     parsed = parseManifest(JSON.parse(row.manifest));

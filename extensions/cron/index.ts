@@ -22,7 +22,8 @@ export const cron = defineExtension({
   id: "cron",
   name: "Cron",
   version: "1.0.3",
-  coreApi: "^1.41.0",
+  // ^2.0.0:core 2.0(公開頁整頁存起來)。只換範圍,插件版本不變。
+  coreApi: "^2.0.0",
   description:
     "分鐘級準時排程入口：外部 companion worker 以簽章回呼催動 core 的到期任務掃描。",
   icon: "clock",

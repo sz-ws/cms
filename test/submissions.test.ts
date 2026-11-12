@@ -84,7 +84,7 @@ const CONTACT_MANIFEST = {
   id: "contact",
   name: "Contact",
   version: "1.0.0",
-  coreApi: "^1.11.0",
+  coreApi: ">=1.11.0",
   contentTypes: [
     {
       name: "submission",
@@ -457,7 +457,7 @@ describe("submissions are not reachable through the Content API", () => {
       id: "blog",
       name: "Blog",
       version: "1.0.0",
-      coreApi: "^1.0.0",
+      coreApi: ">=1.0.0",
       contentTypes: [
         { name: "post", fields: [{ key: "title", type: "text", label: "T" }] },
       ],

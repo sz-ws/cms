@@ -5,7 +5,7 @@ import type { Locale } from "@/lib/i18n/index";
 import { callDashboardHook, INVALID, isAdminHref, readText } from "./dashboard-hook";
 import type { WidgetEntry } from "./dashboard-widgets";
 
-// @deprecated 1.62.0 —— 舊介面的轉接,2.0 整個檔案拿掉。
+// @deprecated 1.62.0 —— 舊介面的轉接,之後的主版本整個檔案拿掉。
 //
 // 1.52.0 的 Extension.dashboardStats(插件自己的儀表板數字)。1.62.0 起插件改用 dashboardWidgets 的
 // `kind: "number"`(單位由 unit 決定);這裡把舊的數字轉成同一條路上的 number 卡(dx/dashboard-widgets.ts),
@@ -23,7 +23,7 @@ import type { WidgetEntry } from "./dashboard-widgets";
 
 /**
  * 1.52.0:插件放在儀表板上的一個數字(Extension.dashboardStats)。
- * @deprecated 1.62.0:改用 Extension.dashboardWidgets 的 `kind: "number"`。2.0 拿掉。
+ * @deprecated 1.62.0:改用 Extension.dashboardWidgets 的 `kind: "number"`。之後的主版本拿掉。
  */
 export interface DashboardStat {
   /** 同一個插件內唯一:^[a-z0-9][a-z0-9-]{0,40}$。 */
@@ -41,7 +41,7 @@ export interface DashboardStat {
 
 /**
  * 1.52.0:dashboardStats 收到的內容。
- * @deprecated 1.62.0:dashboardWidgets 的 load() 收到 WidgetContext。2.0 拿掉。
+ * @deprecated 1.62.0:dashboardWidgets 的 load() 收到 WidgetContext。之後的主版本拿掉。
  */
 export interface DashboardStatsContext {
   /** 這次儀表板的時間(ms)。 */

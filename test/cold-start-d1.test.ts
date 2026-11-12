@@ -100,7 +100,7 @@ vi.mock("react", async (importOriginal) => {
 // 一個啟用中的 code extension「shop」:它讓內建的商品目錄(commerce-kit)成為應有的,
 // loader 的完整載入因此會走內建插件的對齊。interpret 不載 view。
 vi.mock("@/../extensions/registry", () => ({
-  registry: [{ id: "shop", name: "Shop", version: "1.0.0", coreApi: "^1.0.0" }] as unknown as Extension[],
+  registry: [{ id: "shop", name: "Shop", version: "1.0.0", coreApi: ">=1.0.0" }] as unknown as Extension[],
 }));
 vi.mock("@/ext/dx/interpret", () => ({ interpretManifest: () => ({ status: "invalid" as const }) }));
 
@@ -164,7 +164,7 @@ const GA = [{ src: "https://www.googletagmanager.com/gtag/js" }];
 
 async function seed(): Promise<void> {
   const approval = JSON.stringify({ hash: await hashScripts(GA), by: "a@t.co", at: 1 });
-  const ga = JSON.stringify({ kind: "declarative", id: "ga", name: "ga", version: "1.0.0", coreApi: "^1.48.0", scripts: GA });
+  const ga = JSON.stringify({ kind: "declarative", id: "ga", name: "ga", version: "1.0.0", coreApi: ">=1.48.0", scripts: GA });
   // 內建的商品目錄已經對齊過(與底座這份一字不差):穩定狀態下的冷啟動不會寫任何東西。
   const catalog = catalogManifest();
   // 程式碼插件的更新也已經套用過(簽名與上面 mock 的 registry 相同)。

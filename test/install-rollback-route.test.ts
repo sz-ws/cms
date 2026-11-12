@@ -66,7 +66,7 @@ const post = (body: unknown) =>
     }),
   );
 
-const manifest = (version: string) => ({ kind: "declarative", id: "pay", name: "pay", version, coreApi: "^1.0.0" });
+const manifest = (version: string) => ({ kind: "declarative", id: "pay", name: "pay", version, coreApi: ">=1.0.0" });
 
 beforeAll(async () => {
   await d1().batch(

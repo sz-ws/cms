@@ -49,7 +49,7 @@ vi.mock("@/ext/loader", async () => {
     id: "rtshop",
     name: "rtshop",
     version: "0.0.1",
-    coreApi: "^1.50.0",
+    coreApi: ">=1.50.0",
     apiRoutes: [
       ...createReturnsApiRoutes({ ordersTable: setup.ordersTable, prefix: "ext_shop_return" }),
       ...createCustomerReturnRoutes({ ordersTable: setup.ordersTable, prefix: "ext_shop_return" }, { daysKey: setup.daysKey }),
@@ -60,7 +60,7 @@ vi.mock("@/ext/loader", async () => {
     id: "rtstock",
     name: "rtstock",
     version: "0.0.1",
-    coreApi: "^1.50.0",
+    coreApi: ">=1.50.0",
     provides: [
       {
         capability: "inventory",
@@ -82,7 +82,7 @@ vi.mock("@/ext/loader", async () => {
     id: "rtstock2",
     name: "rtstock2",
     version: "0.0.1",
-    coreApi: "^1.50.0",
+    coreApi: ">=1.50.0",
     provides: [
       {
         capability: "inventory",
@@ -171,7 +171,7 @@ describe("退貨 API 權限", () => {
         id: "shop",
         name: "shop",
         version: "0.6.0",
-        coreApi: "^1.50.0",
+        coreApi: ">=1.50.0",
         adminPages: [{ slug: "returns", title: { en: "Returns", "zh-Hant": "退貨管理" }, component: () => null, search: SHOP_RETURNS_SEARCH }],
         apiRoutes: routes,
         statusSets: [RETURN_STATUS_SET],
@@ -314,7 +314,7 @@ describe("客人自己申請退貨(公開路由)", () => {
         id: "shop",
         name: "shop",
         version: "0.6.0",
-        coreApi: "^1.50.0",
+        coreApi: ">=1.50.0",
         adminPages: [{ slug: "returns", title: { en: "Returns", "zh-Hant": "退貨管理" }, component: () => null, search: SHOP_RETURNS_SEARCH }],
         apiRoutes: routes,
         statusSets: [RETURN_STATUS_SET],

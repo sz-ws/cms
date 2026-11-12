@@ -9,7 +9,7 @@ const base = {
   id: "acme",
   name: "Acme",
   version: "1.0.0",
-  coreApi: "^1.10.0",
+  coreApi: ">=1.10.0",
 };
 
 describe("defineExtension — jobs validation (spec-extension-jobs.md)", () => {

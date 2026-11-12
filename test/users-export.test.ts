@@ -257,7 +257,7 @@ describe("member facets from a plugin", () => {
     id: "loyalty",
     name: "Loyalty",
     version: "1.0.0",
-    coreApi: "^1.60.0",
+    coreApi: ">=1.60.0",
     memberFacets: [
       {
         id: "tier",
@@ -338,7 +338,7 @@ describe("member facets from a plugin", () => {
   });
 
   it("does not ask for services when no plugin has facets", async () => {
-    runtime.exts = [{ id: "plain", name: "Plain", version: "1.0.0", coreApi: "^1.60.0" }];
+    runtime.exts = [{ id: "plain", name: "Plain", version: "1.0.0", coreApi: ">=1.60.0" }];
     const data = await loadUsers({ locale: "zh-Hant", timeZone: "Asia/Taipei" });
     expect(data.facets).toEqual([]);
     expect(data.users.every((u) => u.facets === undefined)).toBe(true);

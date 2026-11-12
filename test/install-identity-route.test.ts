@@ -75,7 +75,7 @@ const post = (body: unknown) =>
   );
 
 function manifest(extra: Record<string, unknown> = {}, id = "reviews") {
-  return { kind: "declarative", id, name: id, version: "1.0.0", coreApi: "^1.50.0", ...extra };
+  return { kind: "declarative", id, name: id, version: "1.0.0", coreApi: ">=1.50.0", ...extra };
 }
 
 function publish(source: string, m: { id: string }) {
@@ -221,7 +221,7 @@ describe("install: required plugins", () => {
   }
 
   async function enableShop(enabled: 0 | 1) {
-    rtState.all = [{ id: "shop", name: "Shop", version: "0.5.0", coreApi: "^1.49.0" }];
+    rtState.all = [{ id: "shop", name: "Shop", version: "0.5.0", coreApi: ">=1.49.0" }];
     await d1().prepare("INSERT INTO extensions (id, enabled, installed_at) VALUES ('shop', ?, 1)").bind(enabled).run();
   }
 

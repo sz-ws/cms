@@ -4,8 +4,8 @@ import { assertCanUninstall, noDeclarativeDependents, requiredPluginsEnabled, wr
 import { defineExtension } from "../src/ext/types";
 
 const db = (env as { DB: D1Database }).DB;
-const wallet = defineExtension({ id: "wallet", name: "Wallet", version: "0.1.0", coreApi: "^1.36.0", canDisable: { sql: "NOT EXISTS (SELECT 1 FROM pending_work)", message: "Pending work" } });
-const dealer = defineExtension({ id: "dealer", name: "Dealer", version: "0.1.0", coreApi: "^1.36.0", requiresExtensions: ["wallet"] });
+const wallet = defineExtension({ id: "wallet", name: "Wallet", version: "0.1.0", coreApi: ">=1.36.0", canDisable: { sql: "NOT EXISTS (SELECT 1 FROM pending_work)", message: "Pending work" } });
+const dealer = defineExtension({ id: "dealer", name: "Dealer", version: "0.1.0", coreApi: ">=1.36.0", requiresExtensions: ["wallet"] });
 const registry = [wallet, dealer];
 beforeAll(async () => {
   await db.prepare("CREATE TABLE IF NOT EXISTS extensions (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, version TEXT NOT NULL, installed_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
@@ -44,7 +44,7 @@ describe("code extension lifecycle guards", () => {
     expect(enabled.get("dealer") === 1 && enabled.get("wallet") !== 1).toBe(false);
   });
   it("validates minimum core API, dependency identity and trusted predicates", () => {
-    expect(() => defineExtension({ ...dealer, coreApi: "^1.35.0" })).toThrow(/1.36.0/);
+    expect(() => defineExtension({ ...dealer, coreApi: ">=1.35.0" })).toThrow(/1.36.0/);
     expect(() => defineExtension({ ...dealer, requiresExtensions: ["dealer"] })).toThrow();
     expect(() => defineExtension({ ...dealer, requiresExtensions: ["wallet", "wallet"] })).toThrow();
     expect(() => defineExtension({ ...wallet, canDisable: { sql: "1; DELETE FROM users", message: "bad" } })).toThrow();
@@ -65,11 +65,11 @@ describe("uninstall guards", () => {
     await expect(assertCanUninstall(db, guarded)).rejects.toThrow("無法移除：還有未處理的紀錄，只能停用。");
   });
   it("validates the predicate and needs core API 1.65.0", () => {
-    const base = { id: "ledger", name: "Ledger", version: "0.1.0", coreApi: "^1.65.0" };
+    const base = { id: "ledger", name: "Ledger", version: "0.1.0", coreApi: ">=1.65.0" };
     expect(() => defineExtension({ ...base, canUninstall: { sql: "NOT EXISTS (SELECT 1 FROM t)", message: "有紀錄" } })).not.toThrow();
-    expect(() => defineExtension({ ...base, coreApi: "^1.64.0", canUninstall: { sql: "1", message: "x" } })).toThrow(/1.65.0/);
+    expect(() => defineExtension({ ...base, coreApi: ">=1.64.0", canUninstall: { sql: "1", message: "x" } })).toThrow(/1.65.0/);
     expect(() => defineExtension({ ...base, canUninstall: { sql: "1; DROP TABLE users", message: "x" } })).toThrow();
-    expect(() => defineExtension({ ...base, coreApi: "^1.37.0", canUninstall: false })).not.toThrow();
+    expect(() => defineExtension({ ...base, coreApi: ">=1.37.0", canUninstall: false })).not.toThrow();
   });
 });
 

@@ -110,7 +110,7 @@ describe("ledger-kit transactions set the mark for the tables plugins named", ()
 describe("a woken tick runs every recurring job, then clears the mark", () => {
   function extWith(runs: string[]): Extension {
     const job: ExtJobRegistration = { id: "sweep", every: 30, wakeOn: [`${PREFIX}_outbox`], run: async () => { runs.push("sweep"); } };
-    return { id: "probe", name: "probe", version: "1.0.0", coreApi: "^1.80.0", jobs: [job] };
+    return { id: "probe", name: "probe", version: "1.0.0", coreApi: ">=1.80.0", jobs: [job] };
   }
 
   it("not woken: a job due in 30 minutes waits; woken: it runs now and the mark is gone", async () => {

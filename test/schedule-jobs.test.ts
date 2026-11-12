@@ -85,7 +85,7 @@ function makeManifest(
     id: "acme",
     name: "Acme",
     version: "1.0.0",
-    coreApi: "^1.11.0",
+    coreApi: ">=1.11.0",
     contentTypes: [submissionType],
     schedule,
   };
@@ -172,7 +172,7 @@ function fakeScheduleExt(now: number): Extension {
     new Map([["submission", submissionType]]),
   );
   void now;
-  return { id: "acme", name: "Acme", version: "1.0.0", coreApi: "^1.11.0", jobs };
+  return { id: "acme", name: "Acme", version: "1.0.0", coreApi: ">=1.11.0", jobs };
 }
 
 async function insertContent(row: {

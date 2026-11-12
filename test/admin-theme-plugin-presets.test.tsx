@@ -48,7 +48,7 @@ const plain: ExtensionAppearance = {
   theme: { version: 1, background: "#f5f5f5", surface: "#ffffff", ink: "#111111", radius: "sharp", elevation: "flat", font: "noto-serif", icons: "outline" },
 };
 
-const manifest = (appearances: unknown, coreApi = "^1.57.0") => ({
+const manifest = (appearances: unknown, coreApi = ">=1.57.0") => ({
   kind: "declarative" as const,
   id: "brand-kit",
   name: { en: "Brand kit", "zh-Hant": "品牌套件" },
@@ -57,7 +57,7 @@ const manifest = (appearances: unknown, coreApi = "^1.57.0") => ({
   appearances,
 });
 
-const codeExt = (appearances: ExtensionAppearance[], coreApi = "^1.57.0") => ({
+const codeExt = (appearances: ExtensionAppearance[], coreApi = ">=1.57.0") => ({
   id: "members",
   name: { en: "Members", "zh-Hant": "會員" },
   version: "1.0.0",
@@ -100,7 +100,7 @@ describe("manifest appearances", () => {
   });
 
   it("requires coreApi ^1.57.0", () => {
-    const old = parseManifest(manifest([warm], "^1.56.0"));
+    const old = parseManifest(manifest([warm], ">=1.56.0"));
     expect(old.ok).toBe(false);
     expect(old.error).toContain('appearances requires coreApi "^1.57.0"');
   });
@@ -116,7 +116,7 @@ describe("code extension appearances", () => {
     expect(() => defineExtension(codeExt([{ ...warm, accent: "#B5532F" }]))).toThrow(/accent/);
     expect(() => defineExtension(codeExt(Array.from({ length: 7 }, (_, i) => ({ ...warm, id: `s${i}` }))))).toThrow(/appearances/);
     expect(() => defineExtension(codeExt([warm, { ...plain, id: "warm" }]))).toThrow(/duplicate appearance id/);
-    expect(() => defineExtension(codeExt([warm], "^1.56.0"))).toThrow(/appearances requires coreApi/);
+    expect(() => defineExtension(codeExt([warm], ">=1.56.0"))).toThrow(/appearances requires coreApi/);
   });
 });
 
