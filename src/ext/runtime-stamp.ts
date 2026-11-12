@@ -13,8 +13,7 @@ import {
 // 指紋公式:兩表皆有 updated_at + enabled,故各取 (COUNT, MAX(updated_at),
 // SUM(enabled)) 三元組。所有會改動這兩表的路徑(manager.ts 的 enable/disable/
 // uninstall、install route 的 upsert)都會 bump updated_at 或改變 row 數,因此
-// 任一 mutation 都必然改變此戳。SQL 與字串格式在 @/lib/stamps,與合併查詢、KV 副本
-// 共用同一份。
+// 任一 mutation 都必然改變此戳。SQL 與字串格式在 @/lib/stamps,與合併查詢共用同一份。
 //
 // 用 getDB() 直打 D1(而非 drizzle db()):這只是低階純量指紋查詢,一條 SQL、每張表
 // 掃一次最省;失敗由 loader 端 catch 後退回完整載入路徑(§5:絕不 crash loader)。

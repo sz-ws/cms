@@ -4,9 +4,9 @@ import type { Extension } from "../src/ext/types";
 
 // 冷啟動的 D1 來回次數(一個公開頁 GET,在一個剛起來的 isolate 上)。
 //
-// 暖的 isolate 靠 memo 與 KV 的戳副本一趟 D1 都不打;冷的 isolate 的 memo 全是空的,以前
-// middleware 為了 CSP 白名單一趟、頁面為了設定、啟用的 code extension、內建插件的列、
-// 啟用的宣告式插件各一趟(沒有 KV 的站再加兩趟戳),而且大多一趟等一趟。這裡數的是
+// 暖的 isolate 靠 memo 只問一趟戳;冷的 isolate 的 memo 全是空的,以前頁面為了戳、設定、
+// 啟用的 code extension、內建插件的列、啟用的宣告式插件各一趟,而且大多一趟等一趟。
+// (2.0 起公開頁存起來,這裡數的是快取沒命中、要渲染的那一次。)這裡數的是
 // **來回**:一次 first/all/run/raw 算一趟,一個 batch 不論幾條 SQL 也算一趟。
 //
 // 每個測試都是一個新的 isolate:vi.resetModules() 之後重新 import,所有 module 級的
@@ -20,7 +20,6 @@ const trips = vi.hoisted((): Trips => ({ n: 0, log: [] }));
 const cfState = vi.hoisted(() => ({
   context: null as null | { env: Record<string, unknown>; ctx?: { waitUntil(p: Promise<unknown>): void } },
 }));
-const headerState = vi.hoisted(() => ({ publicPage: true }));
 /** 目前是第幾個請求:下面的 react cache 替身以它為範圍。 */
 const requestScope = vi.hoisted(() => ({ id: 0 }));
 
@@ -98,46 +97,25 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("next/headers", () => ({
-  headers: async () => new Headers(headerState.publicPage ? { "x-cms-public-page": "1" } : {}),
-}));
-
-// 這裡不會有 Next 的控制訊號要往回丟;真的 next/navigation 在 workers 測試池裡一載入就炸。
-vi.mock("next/navigation", () => ({ unstable_rethrow: () => {} }));
-
 // 一個啟用中的 code extension「shop」:它讓內建的商品目錄(commerce-kit)成為應有的,
-// loader 的完整載入因此會走內建插件的對齊。interpret 不載 view(同 request-stamps-kv)。
+// loader 的完整載入因此會走內建插件的對齊。interpret 不載 view。
 vi.mock("@/../extensions/registry", () => ({
   registry: [{ id: "shop", name: "Shop", version: "1.0.0", coreApi: "^1.0.0" }] as unknown as Extension[],
 }));
 vi.mock("@/ext/dx/interpret", () => ({ interpretManifest: () => ({ status: "invalid" as const }) }));
 
-import { NextRequest } from "next/server";
 import { catalogManifest } from "../src/ext/commerce-kit/catalog";
 import { hashScripts } from "../src/ext/dx/scripts-core";
-import { readStampsRecordFromD1 } from "../src/lib/stamps";
 import { codeSignature } from "../src/ext/code-signature";
+import { COMBINED_STAMP_SQL } from "../src/lib/stamps";
 
 const d1 = () => (env as { DB: D1Database }).DB;
 
-class FakeKv {
-  store = new Map<string, string>();
-  async get(key: string): Promise<string | null> {
-    return this.store.get(key) ?? null;
-  }
-  async put(key: string, value: string): Promise<void> {
-    this.store.set(key, value);
-  }
-  async delete(key: string): Promise<void> {
-    this.store.delete(key);
-  }
-}
-
 let pending: Promise<unknown>[] = [];
 
-function bind(kv: FakeKv | null): void {
+function bind(): void {
   cfState.context = {
-    env: { DB: countingD1(), ...(kv ? { CMS_KV: kv } : {}) },
+    env: { DB: countingD1() },
     ctx: { waitUntil: (p) => void pending.push(p) },
   };
 }
@@ -153,15 +131,13 @@ async function settle(): Promise<void> {
 /** 一個剛起來的 isolate:全新的 module(memo 全空)。 */
 async function coldIsolate() {
   vi.resetModules();
-  const [middleware, settings, loader, provider, hooks] = await Promise.all([
-    import("../src/middleware"),
+  const [settings, loader, provider, hooks] = await Promise.all([
     import("../src/lib/settings"),
     import("../src/ext/loader"),
     import("../src/ext/dx/content-provider"),
     import("../src/ext/hooks"),
   ]);
   return {
-    middleware: middleware.middleware,
     getPlainSetting: settings.getPlainSetting,
     getExtRuntime: loader.getExtRuntime,
     invalidateSettingsCache: settings.invalidateSettingsCache,
@@ -172,17 +148,16 @@ async function coldIsolate() {
 type Isolate = Awaited<ReturnType<typeof coldIsolate>>;
 
 /**
- * 一個公開頁 GET,照正式站的順序:middleware(CSP 白名單)→ 頁面(整包設定 + extension
- * runtime,兩者同時開始,像 root layout 與 (site)/layout 那樣)。回傳頁面拿到的東西。
+ * 一個公開頁 GET(快取沒命中、要渲染的那一種):整包設定 + extension runtime,兩者同時開始,
+ * 像 root layout 與 (site)/layout 那樣。回傳頁面拿到的東西。
  */
 async function publicPageGet(isolate: Isolate) {
   requestScope.id += 1;
-  const res = await isolate.middleware(new NextRequest("https://site.test/"));
   const [title, runtime] = await Promise.all([
     isolate.getPlainSetting<string>("core.siteTitle"),
     isolate.getExtRuntime(),
   ]);
-  return { csp: res.headers.get("content-security-policy") ?? "", title, runtime };
+  return { title, runtime };
 }
 
 const GA = [{ src: "https://www.googletagmanager.com/gtag/js" }];
@@ -225,7 +200,6 @@ beforeEach(async () => {
   await d1().exec("DELETE FROM settings; DELETE FROM extensions; DELETE FROM declarative_extensions; DELETE FROM contents;");
   await seed();
   pending = [];
-  headerState.publicPage = true;
   trips.n = 0;
   trips.log = [];
 });
@@ -236,25 +210,18 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe("a public page GET on a cold isolate", () => {
-  it("with a fresh KV copy of the stamps: one D1 round trip for the whole request", async () => {
-    const kv = new FakeKv();
-    bind(kv);
-    kv.store.set("cms:request-stamps:v1", JSON.stringify(await readStampsRecordFromD1(d1())));
-    trips.n = 0;
-
+describe("a public page render on a cold isolate", () => {
+  it("one D1 round trip for the whole request", async () => {
+    bind();
     const page = await publicPageGet(await coldIsolate());
     expect(page.title).toBe("Example Shop");
     expect(page.runtime.byId("shop")?.id).toBe("shop");
-    expect(page.csp).toContain("https://www.googletagmanager.com");
-    // middleware 從 KV 的副本拿白名單(零趟);頁面的設定與 runtime 同一個 batch。
+    // 戳、設定、runtime 同一個 batch。
     expect(trips.log).toEqual(["batch(4)"]);
   });
 
-  it("then a warm request makes no D1 query at all", async () => {
-    const kv = new FakeKv();
-    bind(kv);
-    kv.store.set("cms:request-stamps:v1", JSON.stringify(await readStampsRecordFromD1(d1())));
+  it("then a warm request asks only for the stamps", async () => {
+    bind();
     const isolate = await coldIsolate();
     await publicPageGet(isolate);
     trips.n = 0;
@@ -262,41 +229,15 @@ describe("a public page GET on a cold isolate", () => {
 
     const page = await publicPageGet(isolate);
     expect(page.title).toBe("Example Shop");
-    expect(trips.log).toEqual([]);
-  });
-
-  it("without KV: one round trip in the middleware and one for the page", async () => {
-    bind(null);
-    const page = await publicPageGet(await coldIsolate());
-    expect(page.title).toBe("Example Shop");
-    expect(page.runtime.byId("shop")?.id).toBe("shop");
-    expect(page.csp).toContain("https://www.googletagmanager.com");
-    // middleware:戳與白名單同一個 batch;頁面:戳、設定、runtime 同一個 batch。
-    expect(trips.log).toEqual(["batch(2)", "batch(4)"]);
-  });
-
-  it("with a stale KV copy: refreshes it with the allowlist, still one batch per bundle", async () => {
-    const kv = new FakeKv();
-    bind(kv);
-    kv.store.set(
-      "cms:request-stamps:v1",
-      JSON.stringify({ ...(await readStampsRecordFromD1(d1())), at: Date.now() - 10 * 60_000 }),
-    );
-    trips.n = 0;
-    const page = await publicPageGet(await coldIsolate());
-    expect(page.title).toBe("Example Shop");
-    expect(trips.log).toEqual(["batch(2)", "batch(4)"]);
-    await settle();
-    const written = JSON.parse(kv.store.get("cms:request-stamps:v1") ?? "{}") as { hosts?: string[]; at: number };
-    expect(written.hosts).toEqual(["www.googletagmanager.com"]);
-    expect(Date.now() - written.at).toBeLessThan(60_000);
+    // 只有那一條戳的查詢(不是一趟 batch:那是冷的讀法,代表 memo 沒用上)。
+    expect(trips.log).toEqual([COMBINED_STAMP_SQL.replace(/\s+/g, " ").slice(0, 70)]);
   });
 });
 
 describe("right after a deploy that changed the code extensions", () => {
-  it("the first cold request records the new signature; the next cold isolate is back to one round trip per bundle", async () => {
+  it("the first cold request records the new signature; the next cold isolate is back to one round trip", async () => {
     await d1().prepare("UPDATE settings SET value = '\"old\"' WHERE key = 'core.codeSignature'").run();
-    bind(null);
+    bind();
 
     const first = await publicPageGet(await coldIsolate());
     expect(first.runtime.byId("shop")?.id).toBe("shop");
@@ -309,25 +250,13 @@ describe("right after a deploy that changed the code extensions", () => {
     trips.n = 0;
     trips.log = [];
     await publicPageGet(await coldIsolate());
-    expect(trips.log).toEqual(["batch(2)", "batch(4)"]);
+    expect(trips.log).toEqual(["batch(4)"]);
   });
 });
 
 describe("the cold read never serves data that does not match the request's stamps", () => {
-  it("a KV copy that has not caught up with a write: the page still reads the new value", async () => {
-    const kv = new FakeKv();
-    bind(kv);
-    kv.store.set("cms:request-stamps:v1", JSON.stringify(await readStampsRecordFromD1(d1())));
-    // 別的機房剛寫入,KV 的副本還沒換(其他機房約 60 秒後才看得到)。
-    await d1().prepare("UPDATE settings SET value = '\"New\"', updated_at = 1700000009000 WHERE key = 'core.siteTitle'").run();
-
-    const page = await publicPageGet(await coldIsolate());
-    // 合併讀取的戳對不上 KV 的戳 → 不用它的設定,照舊自己查:讀到的是新值。
-    expect(page.title).toBe("New");
-  });
-
   it("a write during the cold read (invalidate) makes both memos read for themselves", async () => {
-    bind(null);
+    bind();
     const isolate = await coldIsolate();
     const title = isolate.getPlainSetting<string>("core.siteTitle");
     isolate.invalidateSettingsCache(); // 同一個 isolate 的寫入路徑
@@ -340,7 +269,7 @@ describe("the cold read never serves data that does not match the request's stam
 
   it("a built-in plugin that needs re-aligning is written, then its rows are read again", async () => {
     await d1().prepare("DELETE FROM declarative_extensions WHERE id = 'catalog'").run();
-    bind(null);
+    bind();
     const isolate = await coldIsolate();
     const runtime = await isolate.getExtRuntime();
     expect(runtime.byId("shop")?.id).toBe("shop");
@@ -353,7 +282,7 @@ describe("the cold read never serves data that does not match the request's stam
 
 describe("content lists", () => {
   it("read a page of entries and the total in one round trip", async () => {
-    bind(null);
+    bind();
     const isolate = await coldIsolate();
     await d1()
       .prepare(

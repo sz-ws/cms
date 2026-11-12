@@ -14,7 +14,7 @@
 //
 // 放進來的東西只活到這個請求結束,不跨請求、不跨 isolate —— 這不是快取,不需要失效規則;
 // 但**這個請求自己**寫了資料之後,寫入的人要把對應的那一格刪掉(版本戳由
-// publishRequestStamps 刪),之後的讀取才會重算。
+// forgetRequestStamps 刪),之後的讀取才會重算。
 //
 // Next 把 Server Component 與 Route Handler 編成不同的 module 實例,Worker 入口又是另一個
 // bundle:三邊要拿到同一個 AsyncLocalStorage,所以掛在 globalThis 的 Symbol.for 上

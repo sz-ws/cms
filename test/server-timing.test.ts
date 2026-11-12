@@ -58,26 +58,6 @@ describe("server timing", () => {
     expect(wrapped.CMS_SITE_SLUG).toBe(base.CMS_SITE_SLUG);
   });
 
-  it("counts KV calls when CMS_KV is bound, and leaves it out when it isn't", async () => {
-    class FakeKv {
-      #store = new Map<string, string>();
-      async get(key: string) {
-        return this.#store.get(key) ?? null;
-      }
-      async put(key: string, value: string) {
-        this.#store.set(key, value);
-      }
-    }
-    const timing = startTiming();
-    const bound = timedEnv({ ...(env as unknown as CloudflareEnv), CMS_KV: new FakeKv() } as unknown as CloudflareEnv, timing);
-    const kv = (bound as unknown as { CMS_KV: KVNamespace }).CMS_KV;
-    await kv.put("k", "v");
-    expect(await kv.get("k")).toBe("v");
-    expect(timing.kv.n).toBe(2);
-    const unbound = timedEnv(env as unknown as CloudflareEnv, startTiming());
-    expect((unbound as unknown as { CMS_KV?: KVNamespace }).CMS_KV).toBeUndefined();
-  });
-
   it("writes the Server-Timing header and marks only the first request in an isolate as cold", () => {
     const later = startTiming();
     expect(later.cold).toBe(false);

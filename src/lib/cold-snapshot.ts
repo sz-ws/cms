@@ -1,24 +1,23 @@
 import { getDB } from "./cf";
-import { hostsFromApprovedRows } from "./script-hosts";
 import {
   COMBINED_STAMP_SQL,
   stampsFromCombinedRow,
   type CombinedStampRow,
-  type StampsRecord,
+  type StampSet,
 } from "./stamps";
 
 // [core] 冷啟動的合併讀取:isolate 第一次要讀設定與 extension runtime 時,一個 D1 batch 拿齊。
 //
 // 為什麼:暖的 isolate 靠兩份 memo(settings.ts 的整包設定、ext/loader.ts 的 runtime)
 // 一趟 D1 都不用打;冷的 isolate 兩份都是空的,以前要一趟一趟問 —— 設定全表、啟用的
-// code extension、內建宣告式插件的列、啟用的宣告式插件,沒有 KV 的站前面還有一趟版本戳。
+// code extension、內建宣告式插件的列、啟用的宣告式插件,前面還有一趟版本戳。
 // 每一趟都要等上一趟回來(loader 要先知道設定才能對齊內建插件),D1 離 Worker 所在機房
 // 遠的時候,一趟就一兩百毫秒。這裡把它們放進同一個 batch:一趟。
 //
 // 為什麼安全:batch 是同一個交易,裡面的版本戳與三張表的內容是同一個時間點的。拿的一方
 // (readAll、getExtRuntime)只在「這份讀取的戳 === 這個請求的戳」時才用它的資料,戳一樣
-// 就是內容一樣 —— 與兩份 memo 本來的前提相同。對不上(KV 的戳還沒跟上剛剛的寫入、這份
-// 讀取是別的請求開始的而中間有人寫入)就照舊自己查。所以不論哪一種請求(公開頁、後台、
+// 就是內容一樣 —— 與兩份 memo 本來的前提相同。對不上(這份讀取是別的請求開始的而中間有人
+// 寫入)就照舊自己查。所以不論哪一種請求(公開頁、後台、
 // /api)拿到的資料都與以前一樣,只是少了幾趟來回。
 //
 // 生命週期:每個 module graph 只做一次(RSC、route handler 各自一份,middleware 不用)。
@@ -26,7 +25,7 @@ import {
 // invalidateExtRuntimeMemo)立刻丟掉,連還在等的一方也不給。之後的請求一律走原本的路:
 // memo 命中就不查,沒命中就各自查自己那一張表。
 //
-// 版本戳(沒有 KV、或 KV 的副本不能用時):只有**開始**這份讀取的那個請求可以拿它的戳當
+// 版本戳:只有**開始**這份讀取的那個請求可以拿它的戳當
 // 自己的戳。同時進來的其他請求如果拿它的戳,可能會錯過一筆在它們進來之前、這份讀取開始
 // 之後完成的寫入 —— 「寫入在下一個請求就看得見」不能打折,所以它們照舊自己問。
 
@@ -55,8 +54,8 @@ export interface ColdRuntimeRows {
 }
 
 interface ColdSnapshot extends ColdRuntimeRows {
-  /** 與下面的資料同一個交易算的三組戳與 CSP 白名單。 */
-  record: StampsRecord;
+  /** 與下面的資料同一個交易算的兩組戳。 */
+  record: StampSet;
   settings: Map<string, string>;
 }
 
@@ -71,16 +70,7 @@ interface Pending {
 let started = false;
 let pending: Pending | null = null;
 
-function parsedManifest(manifest: string): { scripts?: unknown; loginProvider?: { firebase?: unknown } } | null {
-  try {
-    return JSON.parse(manifest) as { scripts?: unknown; loginProvider?: { firebase?: unknown } } | null;
-  } catch {
-    return null;
-  }
-}
-
 async function readSnapshot(): Promise<ColdSnapshot | null> {
-  const at = Date.now();
   try {
     const d1 = getDB();
     const [stamps, settings, extensions, declaratives] = await d1.batch<unknown>([
@@ -90,27 +80,9 @@ async function readSnapshot(): Promise<ColdSnapshot | null> {
       d1.prepare(DECLARATIVES_SQL),
     ]);
     const dxRows = (declaratives.results ?? []) as ColdDeclarativeRow[];
-    // 與 script-hosts.ts 的 APPROVED_SCRIPTS_SQL 同一個條件,只是從已經讀回來的列算。
-    const hosts = await hostsFromApprovedRows(
-      dxRows
-        .filter((row) => row.enabled === 1)
-        .map((row) => {
-          const manifest = parsedManifest(row.manifest);
-          return {
-            scripts: manifest?.scripts ?? null,
-            approval: row.scriptsApproval,
-            firebase: manifest?.loginProvider?.firebase !== undefined,
-          };
-        })
-        .filter((row) => row.approval !== null || row.firebase),
-    );
     const settingRows = (settings.results ?? []) as { key: string; value: string }[];
     return {
-      record: {
-        ...stampsFromCombinedRow((stamps.results?.[0] ?? null) as CombinedStampRow | null),
-        at,
-        hosts,
-      },
+      record: stampsFromCombinedRow((stamps.results?.[0] ?? null) as CombinedStampRow | null),
       settings: new Map(settingRows.map((row): [string, string] => [row.key, row.value])),
       enabledExtensionIds: ((extensions.results ?? []) as { id: string }[]).map((row) => row.id),
       declaratives: dxRows,
@@ -142,9 +114,9 @@ function retireIfDone(entry: Pending): void {
 
 /**
  * 版本戳(request-stamps.ts 要去 D1 算戳的時候):只有這次呼叫**開始**了合併讀取才回傳它的
- * 戳(含 CSP 白名單),否則 null —— 呼叫端照舊自己算。永不 throw。
+ * 戳,否則 null —— 呼叫端照舊自己算。永不 throw。
  */
-export async function coldStampsRecord(): Promise<StampsRecord | null> {
+export async function coldStampsRecord(): Promise<StampSet | null> {
   if (started) return null;
   const joined = join();
   return joined ? ((await joined.entry.promise)?.record ?? null) : null;

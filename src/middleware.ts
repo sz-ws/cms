@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getDB } from "@/lib/cf";
 import { PREVIEW_COOKIE, isEditorSession, withoutPreviewCookie } from "@/lib/preview-access";
-import { PUBLIC_PAGE_HEADER } from "@/lib/stamps";
 
 // 渲染之前要決定的事有兩件:
 //   1. /admin 的廉價 cookie 存在性檢查(04 §4),真正驗證在 layout / handler(不查 D1)。
@@ -12,8 +11,7 @@ import { PUBLIC_PAGE_HEADER } from "@/lib/stamps";
 // 公開頁那條 matcher 帶 `has` cookie 條件:沒有 draft mode cookie 的請求,Next 不跑 middleware。
 // OpenNext 只比對 matcher 的路徑、不看 `has`,所以函式自己再看一次 cookie,沒有就立刻放行。
 // CSP 全部是 next.config.ts 的固定標頭(公開頁 enforce publicPolicy,其餘 Report-Only,組法在
-// @/lib/csp),快取命中時一樣會送。/login、/setup、/api、_next 不經過這裡。瀏覽器自己帶來的
-// PUBLIC_PAGE_HEADER 由 Worker 入口(custom-worker.ts)對每個請求刪掉。
+// @/lib/csp),快取命中時一樣會送。/login、/setup、/api、_next 不經過這裡。
 //
 // 公開頁那條 source 與 @/lib/csp 的 PUBLIC_PAGES_SOURCE 相同(Next 要求 config 是字面值,不能
 // import;test/public-csp.test.ts 比對兩者)。
@@ -45,7 +43,6 @@ export async function middleware(req: NextRequest) {
   // layout(Server Component 無法直接拿 pathname),讓 guest gate 能判斷路徑。
   const headers = new Headers(req.headers);
   headers.set("x-pathname", req.nextUrl.pathname);
-  headers.delete(PUBLIC_PAGE_HEADER);
   return NextResponse.next({ request: { headers } });
 }
 

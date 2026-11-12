@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 //      允許或拒絕。按鈕送出的是簽過的同意票(POST /api/oauth/authorize)。
 //
 // 放在 /admin 之外:middleware 對 /admin 沒 cookie 的轉址只帶路徑、會丟掉整串授權參數;
-// 後台的側欄外框也不該包住這一頁。這個路徑算公開頁(lib/csp.ts 的 isPublicPagePath),
+// 後台的側欄外框也不該包住這一頁。這個路徑算公開頁(lib/csp.ts 的 PUBLIC_PAGES_SOURCE),
 // 所以拿得到 enforce 的 CSP —— frame-ancestors 'none',加上 next.config 全站的
 // X-Frame-Options: DENY,同意按鈕不可能被嵌進別人的頁面裡點(clickjacking)。
 

@@ -14,24 +14,14 @@
 - `cf.ts`: Cloudflare env accessors (`getEnv`, `getDB`, `getStorage`).
 - `db.ts`: drizzle wrapper (uses `getDB()`).
 - `security.ts`: origin check + timing-safe compare.
-- `csp.ts`: every Content-Security-Policy string (zero deps: `next.config.ts` and the
-  middleware both load it). Public pages enforce script-src with a per-request nonce;
-  admin/API stay Report-Only.
-- `script-hosts.ts`: how the CSP allowlist is computed from `declarative_extensions` rows
-  (approved, enabled scripts whose hash still matches). Zero deps; shared by the
-  middleware, the KV stamps copy and the cold read.
-- `public-csp.ts`: the middleware's `cachedApprovedScriptHosts`, memoised per isolate
-  behind a version stamp. A cold isolate takes the list from the KV copy, or reads the
-  stamp and the list in one D1 batch.
-- `stamps.ts`: the version stamps behind the settings, extension-runtime and CSP
-  memos — the SQL, the exact string formats, and the optional Workers KV copy
-  (`CMS_KV`) that public GET pages read instead of D1. The copy also carries the CSP
-  allowlist (`hosts`), read in the same batch as the stamps. Loadable by the middleware
-  and the Worker entry. Writes publish through `invalidateSettingsCache` /
-  `invalidateExtRuntimeMemo`; a copy older than five minutes is ignored.
+- `csp.ts`: every Content-Security-Policy string (zero deps: `next.config.ts` loads it
+  and sends them all as fixed headers). Public pages enforce a static script policy
+  (`'unsafe-inline'`, `https:`); admin/API stay Report-Only.
+- `stamps.ts`: the version stamps behind the settings and extension-runtime memos — the
+  SQL and the exact string formats, shared by every path that computes them.
 - `request-stamps.ts`: one round trip per request for the settings + runtime stamps
-  (`getRequestStamps`, React-cached); KV only when the middleware marked the request
-  as a public page (`x-cms-public-page`), D1 otherwise.
+  (`getRequestStamps`, React-cached, and remembered in the request scope for route
+  handlers and cron); a write drops the remembered pair (`forgetRequestStamps`).
 - `cold-snapshot.ts`: a cold isolate's first read — stamps, the whole settings table,
   enabled extension ids and every `declarative_extensions` row in one D1 batch. The
   settings memo and the extension loader use it only when its stamps equal the

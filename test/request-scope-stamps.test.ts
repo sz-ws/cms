@@ -39,7 +39,7 @@ vi.mock("@/ext/loader", async () => {
   return { getExtRuntime: async () => rt };
 });
 
-import { getRequestStamps, publishRequestStamps } from "../src/lib/request-stamps";
+import { getRequestStamps, forgetRequestStamps } from "../src/lib/request-stamps";
 import { requestScope, runInRequestScope } from "../src/lib/request-scope";
 import { getSetting, invalidateSettingsCache, setSettings } from "../src/lib/settings";
 
@@ -131,7 +131,7 @@ describe("getRequestStamps in a request scope", () => {
       expect((await getRequestStamps()).settings).toEqual({ ok: true, stamp: "0:0" });
       await writeSetting("core.locale", 1700000000456);
       // 每條寫入路徑寫完都會呼叫它(invalidateSettingsCache / invalidateExtRuntimeMemo)。
-      publishRequestStamps();
+      forgetRequestStamps();
       expect((await getRequestStamps()).settings).toEqual({ ok: true, stamp: "1:1700000000456" });
       await getRequestStamps();
     });

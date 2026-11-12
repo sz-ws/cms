@@ -3,7 +3,6 @@ import { runCronTick } from "./extensions/cron/scheduled";
 import { withScheduledReporting } from "./extensions/sentry/scheduled";
 import { runInRequestScope } from "./src/lib/request-scope";
 import { runTimed, startTiming, timedEnv, withServerTiming } from "./src/lib/server-timing";
-import { stripPublicPageHeader } from "./src/lib/stamps";
 
 // Worker 入口(wrangler.jsonc 的 `main`)—— OpenNext 產出的 handler 再包一層。
 //
@@ -18,12 +17,9 @@ import { stripPublicPageHeader } from "./src/lib/stamps";
 export * from "./.open-next/worker.js";
 
 const worker = {
-  // Worker 變數 CMS_SERVER_TIMING = "1" 時量每個請求等 D1、R2、KV、對外 fetch 各多久(src/lib/server-timing.ts),
+  // Worker 變數 CMS_SERVER_TIMING = "1" 時量每個請求等 D1、R2、對外 fetch 各多久(src/lib/server-timing.ts),
   // 寫進 Server-Timing 標頭與 log;沒設就直接交給 OpenNext,不多包任何東西。
-  async fetch(incoming: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
-    // 「這是公開頁,版本戳可以從 KV 拿」只能由 middleware 說(src/lib/stamps.ts)。middleware
-    // 不經過 /api 與 /_next,瀏覽器自己帶來的這個標頭在這裡對每個請求刪掉;沒帶就原樣。
-    const request = stripPublicPageHeader(incoming);
+  async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
     // 每個請求一個請求範圍(src/lib/request-scope.ts):Route Handler 沒有 React cache() 的
     // 「同一個請求」,靠它讓同一個請求裡算過的東西(版本戳)不必每次重問 D1。
     return runInRequestScope(async () => {

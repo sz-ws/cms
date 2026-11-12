@@ -73,7 +73,6 @@ import {
   scriptsCompiledIn,
 } from "../src/ext/dx/scripts-compiled";
 import { parseManifest } from "../src/ext/dx/manifest";
-import { approvedScriptHosts } from "../src/lib/public-csp";
 import { POST as install } from "../src/app/api/registry/install/route";
 import { GET as preview } from "../src/app/api/registry/manifest/route";
 import { POST as scriptsAction } from "../src/app/api/extensions/[extId]/scripts/route";
@@ -226,29 +225,25 @@ describe("installed plugins", () => {
   });
 });
 
-describe("CSP hosts of replaced scripts", () => {
-  it("a compiled install adds no hosts", async () => {
+describe("approvals of replaced scripts", () => {
+  it("a compiled install keeps no approval", async () => {
     registryState.allowScripts = true;
     expect((await post({ id: COMPILED, source: SOURCE })).status).toBe(200);
-    expect(await approvedScriptHosts(d1())).toEqual([]);
+    expect((await row(COMPILED))?.approval ?? null).toBeNull();
   });
 
   it("an approval from before the compile-in is retired once, and only for the compiled plugin", async () => {
     await insertInstalled(COMPILED, await approval(), 5);
     await insertInstalled(PLAIN, await approval(), 5);
-    expect(await approvedScriptHosts(d1())).toEqual(["cdn.proof.test", "api.proof.test"]);
 
     const rows = [
       { id: COMPILED, scriptsApproval: await approval(), updatedAt: 5 },
       { id: PLAIN, scriptsApproval: await approval(), updatedAt: 5 },
     ];
     expect(await retireReplacedScriptApprovals(rows, 100)).toBe(true);
-    // updated_at 推進:loader 與 CSP 的版本戳都會換。
+    // updated_at 推進:loader 的版本戳會換。
     expect(await row(COMPILED)).toEqual({ approval: null, updatedAt: 100 });
     expect((await row(PLAIN))?.approval).toBe(await approval());
-    // plain 的核准還在(主機跟 proof 一樣);拿掉它之後白名單是空的 —— proof 不再貢獻主機。
-    await d1().prepare("DELETE FROM declarative_extensions WHERE id = ?").bind(PLAIN).run();
-    expect(await approvedScriptHosts(d1())).toEqual([]);
 
     expect(
       await retireReplacedScriptApprovals([{ id: COMPILED, scriptsApproval: null, updatedAt: 100 }], 200),

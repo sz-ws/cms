@@ -22,7 +22,7 @@ import {
   builtinWanted,
   reconcileBuiltinDeclaratives,
 } from "./builtin-declaratives";
-import { getRequestStamps, publishRequestStamps } from "@/lib/request-stamps";
+import { forgetRequestStamps, getRequestStamps } from "@/lib/request-stamps";
 import { dropColdSnapshot, takeColdRuntimeRows } from "@/lib/cold-snapshot";
 import { getPlainSetting } from "@/lib/settings";
 import { CODE_SIGNATURE_KEY, codeSignature } from "./code-signature";
@@ -122,15 +122,13 @@ export function resetCodeUpgradeCheck(): void {
 /**
  * 主動失效 memo(belt-and-braces:同 isolate 的 mutation 後立即清,讓下個 request
  * 不必等 stamp 比對就重建)。跨 isolate 的正確性已由每 request 的 stamp 重算涵蓋。
- * 由 manager.ts 的 enable/disable/uninstall 與 install route 於寫入後呼叫。
- *
- * 綁了 CMS_KV 的站同時把新戳發布到 KV(公開頁從那裡拿戳,見 @/lib/stamps);背景、
- * 永不 throw,沒綁 KV 或不在 request 裡就什麼都不做。
+ * 由 manager.ts 的 enable/disable/uninstall 與 install route 於寫入後呼叫。這個請求先前算好的
+ * 戳也一起作廢(@/lib/request-stamps)。
  */
 export function invalidateExtRuntimeMemo(): void {
   runtimeMemo = null;
   dropColdSnapshot();
-  publishRequestStamps();
+  forgetRequestStamps();
 }
 
 // 03 §7:兩個 extension 的 id 重複 → registry 載入時 throw(在 loader 加檢查)。
@@ -248,7 +246,7 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
     const upgradesWrote = runtimeMemo === null ? await ensureCodeUpgrades() : false;
     if (upgradesWrote) {
       dropColdSnapshot();
-      publishRequestStamps();
+      forgetRequestStamps();
     }
     // 未命中(或 stamp 失敗):完整載入。
     // memo 是空的(冷的 isolate):先看冷啟動的合併讀取(@/lib/cold-snapshot)—— 與整包設定
@@ -295,15 +293,15 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
         if (await reconcileBuiltinDeclaratives(wanted, Date.now(), coldDeclaratives ?? undefined)) {
           builtinsSettled = false;
           coldDeclaratives = null;
-          // 這是一筆沒經過 manager 的寫入:KV 的戳副本(若有)要在這裡發布。
-          publishRequestStamps();
+          // 這是一筆沒經過 manager 的寫入:這個請求先前算的戳不能再用。
+          forgetRequestStamps();
         }
       } catch (e) {
         console.error("[loader] reconciling built-in extensions failed", e);
         builtinsSettled = false;
         coldDeclaratives = null;
-        // 失敗之前可能已經寫進去一部分:這個請求先前算的戳不能再用,KV 的副本也要換。
-        publishRequestStamps();
+        // 失敗之前可能已經寫進去一部分:這個請求先前算的戳不能再用。
+        forgetRequestStamps();
       }
     }
 
@@ -325,20 +323,20 @@ export const getExtRuntime = cache(async (): Promise<ExtRuntime> => {
           .from(dxTable)
           .where(eq(dxTable.enabled, 1));
 
-    // 1.51.0:編進網站的插件,編進去之前留下的 script 核准清掉(CSP 只看得到核准,
-    // 理由見 dx/scripts-compiled.ts)。同內建插件:有寫入就不寫 memo;失敗只 log。
+    // 1.51.0:編進網站的插件,編進去之前留下的 script 核准清掉(理由見
+    // dx/scripts-compiled.ts)。同內建插件:有寫入就不寫 memo;失敗只 log。
     let approvalsSettled = true;
     try {
       if (await retireReplacedScriptApprovals(dxRows)) {
         approvalsSettled = false;
-        // 同上:核准清掉了,CSP 白名單的戳也要換 —— 發布到 KV(若有)。
-        publishRequestStamps();
+        // 同上:核准清掉了,這個請求先前算的戳不能再用。
+        forgetRequestStamps();
       }
     } catch (e) {
       console.error("[loader] retiring replaced script approvals failed", e);
       approvalsSettled = false;
       // 一列一個 batch:前面幾列可能已經寫進去了。
-      publishRequestStamps();
+      forgetRequestStamps();
     }
 
     const dx: Extension[] = [];

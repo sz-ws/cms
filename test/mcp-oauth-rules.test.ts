@@ -25,7 +25,7 @@ import {
   matchResource,
   protectedResourceMetadata,
 } from "../src/lib/mcp/site";
-import { isPublicPagePath } from "../src/lib/csp";
+import { PUBLIC_PAGES_SOURCE } from "../src/lib/csp";
 
 const ORIGIN = "https://shop.test";
 const VERIFIER = "a".repeat(20) + "-._~" + "B".repeat(25);
@@ -257,6 +257,10 @@ describe("discovery documents", () => {
   });
 
   it("the consent page gets the enforced public CSP (frame-ancestors 'none')", () => {
-    expect(isPublicPagePath("/oauth/authorize")).toBe(true);
+    // next.config.ts 的 headers() 對 PUBLIC_PAGES_SOURCE 送 enforce 的 policy;它的路徑寫法是
+    // "/:path(<regex>)",這裡把括號裡的 regex 拿出來比對。
+    const pattern = new RegExp(`^/${PUBLIC_PAGES_SOURCE.slice("/:path(".length, -1)}$`);
+    expect(pattern.test("/oauth/authorize")).toBe(true);
+    expect(pattern.test("/admin/oauth")).toBe(false);
   });
 });

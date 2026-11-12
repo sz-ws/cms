@@ -1,8 +1,8 @@
-// 量測用:每個請求在 D1、R2、KV、對外 fetch 各等了多久,寫進回應的 Server-Timing 標頭(瀏覽器開發者工具的
+// 量測用:每個請求在 D1、R2、對外 fetch 各等了多久,寫進回應的 Server-Timing 標頭(瀏覽器開發者工具的
 // Network → Timing 看得到),HTML 串流結束時再印一行完整的 JSON(`wrangler tail` 看得到)。
 // 只在 Worker 變數 CMS_SERVER_TIMING = "1" 時打開(custom-worker.ts);沒設就完全不經過這裡。
 //
-// 做法:把這個請求的 env 換成一份包過的 —— D1、R2、KV binding 外面套一層 Proxy,每次呼叫計數、
+// 做法:把這個請求的 env 換成一份包過的 —— D1、R2 binding 外面套一層 Proxy,每次呼叫計數、
 // 計時。OpenNext 從 fetch 的 env 建請求的 Cloudflare context(getCloudflareContext),所以
 // middleware、頁面、OpenNext 自己的快取(R2 增量快取、D1 tag cache)用的都是包過的這份。
 //
@@ -31,8 +31,6 @@ export interface RequestTiming {
   cache: Bucket;
   /** 媒體檔案(STORAGE)。 */
   r2: Bucket;
-  /** 版本戳的 KV(CMS_KV,src/lib/stamps.ts);沒綁就一直是 0。 */
-  kv: Bucket;
   /** 對外的 fetch 與 service binding(ASSETS、WORKER_SELF_REFERENCE)。 */
   fetch: Bucket;
   cold: boolean;
@@ -45,7 +43,7 @@ export function startTiming(): RequestTiming {
   const cold = firstRequest;
   firstRequest = false;
   const bucket = (): Bucket => ({ n: 0, ms: 0 });
-  return { d1: bucket(), tag: bucket(), cache: bucket(), r2: bucket(), kv: bucket(), fetch: bucket(), cold, start: performance.now() };
+  return { d1: bucket(), tag: bucket(), cache: bucket(), r2: bucket(), fetch: bucket(), cold, start: performance.now() };
 }
 
 const current = new AsyncLocalStorage<RequestTiming>();
@@ -126,20 +124,6 @@ export function wrapR2(bucketBinding: R2Bucket, bucket: Bucket): R2Bucket {
   });
 }
 
-const KV_CALLS = new Set<string | symbol>(["get", "getWithMetadata", "put", "list", "delete"]);
-
-export function wrapKv(namespace: KVNamespace, bucket: Bucket): KVNamespace {
-  return new Proxy(namespace, {
-    get(target, prop) {
-      if (KV_CALLS.has(prop)) {
-        const method = Reflect.get(target, prop, target) as (...args: unknown[]) => Promise<unknown>;
-        return (...args: unknown[]) => timed(bucket, () => method.apply(target, args));
-      }
-      return passThrough(target, prop);
-    },
-  });
-}
-
 function wrapService<T extends { fetch: (...args: never[]) => Promise<Response> }>(service: T, bucket: Bucket): T {
   return new Proxy(service, {
     get(target, prop) {
@@ -156,15 +140,12 @@ function wrapService<T extends { fetch: (...args: never[]) => Promise<Response> 
 export function timedEnv(env: CloudflareEnv, timing: RequestTiming): CloudflareEnv {
   const d1 = (db: D1Database | undefined, bucket: Bucket) => (db ? wrapD1(db, bucket) : db);
   const r2 = (binding: R2Bucket | undefined, bucket: Bucket) => (binding ? wrapR2(binding, bucket) : binding);
-  // CMS_KV 是選用的 binding,型別不在 CloudflareEnv 裡(同 src/lib/stamps.ts 的讀法)。
-  const kv = (env as unknown as { CMS_KV?: KVNamespace }).CMS_KV;
   return {
     ...env,
     DB: d1(env.DB, timing.d1),
     NEXT_TAG_CACHE_D1: d1(env.NEXT_TAG_CACHE_D1, timing.tag),
     NEXT_INC_CACHE_R2_BUCKET: r2(env.NEXT_INC_CACHE_R2_BUCKET, timing.cache),
     STORAGE: r2(env.STORAGE, timing.r2),
-    ...(kv ? { CMS_KV: wrapKv(kv, timing.kv) } : {}),
     ...(env.ASSETS ? { ASSETS: wrapService(env.ASSETS, timing.fetch) } : {}),
     ...(env.WORKER_SELF_REFERENCE ? { WORKER_SELF_REFERENCE: wrapService(env.WORKER_SELF_REFERENCE, timing.fetch) } : {}),
   } as CloudflareEnv;
@@ -173,7 +154,7 @@ export function timedEnv(env: CloudflareEnv, timing: RequestTiming): CloudflareE
 const ms = (value: number) => value.toFixed(1);
 
 export function serverTimingHeader(timing: RequestTiming): string {
-  const entry = (name: keyof Pick<RequestTiming, "d1" | "tag" | "cache" | "r2" | "kv" | "fetch">, what: string) =>
+  const entry = (name: keyof Pick<RequestTiming, "d1" | "tag" | "cache" | "r2" | "fetch">, what: string) =>
     `${name};dur=${ms(timing[name].ms)};desc="${timing[name].n} ${what}"`;
   const parts = [
     `total;dur=${ms(performance.now() - timing.start)}`,
@@ -181,7 +162,6 @@ export function serverTimingHeader(timing: RequestTiming): string {
     entry("tag", "queries"),
     entry("cache", "reads"),
     entry("r2", "calls"),
-    entry("kv", "calls"),
     entry("fetch", "calls"),
   ];
   if (timing.cold) parts.push(`cold;desc="first request in isolate"`);
@@ -199,7 +179,6 @@ export function timingLogLine(request: Request, status: number, timing: RequestT
       tag: bucket(timing.tag),
       cache: bucket(timing.cache),
       r2: bucket(timing.r2),
-      kv: bucket(timing.kv),
       fetch: bucket(timing.fetch),
       cold: timing.cold,
     },

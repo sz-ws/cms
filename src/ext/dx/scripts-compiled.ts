@@ -17,10 +17,9 @@ import type { DeclarativeManifest } from "./manifest";
 //   商店索引、已安裝列表                   —— 一句「已編進網站」取代核准的提示
 // 那些 script 永遠不會輸出,要人核准它只是讓人白看一段程式。
 //
-// 公開頁的 CSP 在 middleware 算。那是另一個 bundle,看不到編進來的程式碼,只看得到核准
-// 紀錄(lib/public-csp.ts)。所以「被取代的 script 沒有有效的核准」是必須維持的狀態,
-// 不然已經不會輸出的 script 的主機還留在白名單上:上面的安裝與核准守住新的寫入,
-// 編進去之前就核准過的,由 loader 在完整載入時清掉(retireReplacedScriptApprovals)。
+// 「被取代的 script 沒有有效的核准」是必須維持的狀態:核准紀錄要說實話(已安裝列表、
+// 核准畫面都讀它)。上面的安裝與核准守住新的寫入,編進去之前就核准過的,由 loader 在完整
+// 載入時清掉(retireReplacedScriptApprovals)。
 //
 // 強化層在 extensions/registry.ts 的 import 鏈上登記,loader 靜態 import 那個檔。
 // 呼叫端要 import 過 @/ext/loader,否則在剛啟動的 isolate 裡查到的是空的。
