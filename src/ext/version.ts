@@ -1880,4 +1880,11 @@
 // entries (`AccountEntries`, resolved by `accountEntriesFor()`) to the browser, so a stored account overview can ask for
 // them after it shows: `{ entries: [{ key, href, label, note }] }`, `private, no-store`; 401 when signed out; `locale`
 // is one of the site's languages (default: the site's), anything else is a 400.
+// Unversioned (2026-11-12): optional split server entry. `worker/create-worker.ts` now builds the `fetch` and
+// `scheduled` both entries share. `worker/split-entry.ts` loads `.open-next/split/worker.js`, which
+// `scripts/split-server-chunks.mjs` writes after `opennextjs-cloudflare build`: the Next server becomes its own
+// module and every webpack chunk and route file a CommonJS module that `new_module_registry` compiles on first
+// use. A site opts in through `wrangler.jsonc` (`main`, the flag, `base_dir`, `find_additional_modules`, `rules`);
+// `custom-worker.ts` stays the default and needs none of it. `scripts/smoke-worker-boot.mjs` boots the built
+// Worker before deploys. `worker/README.md` has the details. Infrastructure only, no API change.
 export const CORE_API_VERSION = "2.0.0";

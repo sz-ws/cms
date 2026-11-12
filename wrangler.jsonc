@@ -2,13 +2,19 @@
   // [site] 這個檔預期逐站不同 —— worker 名稱、D1/R2 的 id 本來就每個站一組。
   // `sz-ws-cms setup` 會自動填入下面的 database_id(只改那幾個值,註解與排版原樣保留)。
   //
-  // 但 "main" 與 "triggers" 是 core 的東西:前者指向 custom-worker.ts(cron 接線的
-  // 唯一入口),後者是排程頻率。動它們之前先讀 custom-worker.ts 的說明。
+  // 但 "main" 與 "triggers" 是 core 的東西:前者是 Worker 入口(cron 接線的唯一入口,
+  // 只在 custom-worker.ts 與選用的 worker/split-entry.ts 之間選),後者是排程頻率。動它們之前
+  // 先讀 custom-worker.ts 與 worker/README.md 的說明。
   "$schema": "node_modules/wrangler/config-schema.json",
   // main 指向 custom-worker.ts,而不是 OpenNext 直接產出的 .open-next/worker.js ——
   // 那個產出物只有 `fetch`,沒有 `scheduled`。custom-worker.ts 原樣 re-export 它的
   // fetch 與 Durable Object class,只多掛一個 scheduled handler(cron extension 的
   // tick)。@opennextjs/cloudflare 的 CLI 不讀也不覆寫這個欄位,產出物一個 byte 都沒動。
+  //
+  // 選用 worker/split-entry.ts 的站:Next server 拆成很多個另外上傳的模組,第一次用到才編譯;
+  // 存起來的公開頁與只跑 middleware 的請求完全不碰 server。要 main、compatibility_flags 的
+  // "new_module_registry"、base_dir / find_additional_modules / rules 三個欄位一起改,
+  // 並在 build 之後先跑 scripts/split-server-chunks.mjs。設定與原因見 worker/README.md。
   "main": "custom-worker.ts",
   // 新 clone 先由 `sz-ws-cms setup --site-slug <slug>` 原子寫入這組名稱;不得在同帳號共用。
   "name": "cms",

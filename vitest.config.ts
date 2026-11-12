@@ -17,7 +17,9 @@ export default defineConfig(async () => {
           // 必須與 wrangler.jsonc 一致,見該檔對這個日期的說明。
           compatibilityDate: "2026-07-01",
           // 必須與 wrangler.jsonc 的 compatibility_flags 一致 —— 不一致的話測試
-          // 跑在一個「和正式站不同的 runtime」上。
+          // 跑在一個「和正式站不同的 runtime」上。例外是 new_module_registry:它只決定
+          // Worker 怎麼載入另外上傳的模組(拆分入口用,見 worker/README.md),測試的模組由
+          // pool 自己載入,不受它影響。
           compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
           bindings: {
             // 與 .dev.vars 同值(32-byte base64);供 AES-GCM secret 加密測試用。
@@ -56,9 +58,9 @@ export default defineConfig(async () => {
         ),
       },
     },
-    // CLI 測試(cli/**)是純 Node,走 vitest.cli.config.ts;絕不進 workers pool。
+    // CLI 測試(cli/**)與建置腳本測試(scripts/**)是純 Node,走 vitest.cli.config.ts;絕不進 workers pool。
     test: {
-      exclude: [...configDefaults.exclude, "cli/**"],
+      exclude: [...configDefaults.exclude, "cli/**", "scripts/**"],
     },
   };
 });

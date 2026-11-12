@@ -6,9 +6,10 @@
 //                        新手不會把那個錯誤連回 quickstart。
 //   cloudflare-env.d.ts  缺 → src/lib/cf.ts 依賴的全域型別不存在,
 //                        typecheck / lint 直接紅,但 next dev 照樣跑,更難聯想。
-//   .open-next/worker.d.ts
-//                        缺 → `next build` 的 type-check 在 custom-worker.ts 紅,
-//                        而它 import 的正是 opennext build 稍後才產出的檔案。
+//   .open-next/worker.d.ts、.open-next/split/worker.d.ts
+//                        缺 → `next build` 的 type-check 在 custom-worker.ts(或
+//                        worker/split-entry.ts)紅,而它們 import 的正是 opennext build
+//                        (與 scripts/split-server-chunks.mjs)稍後才產出的檔案。
 //                        新 clone 因此 100% build 不出來(見下方該段註解)。
 //
 // 同 ensure-licensing-stub.mjs 的哲學:只在檔案缺席時寫,已存在就完全不動。
@@ -17,6 +18,7 @@ import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { WORKER_TYPES_STUB } from "./lib/worker-types-stub.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -119,27 +121,11 @@ if (!existsSync(envTypes)) {
 // 所以在 type-check 前補一份**只有型別、沒有實作**的 stub。真正的 build 會用實作
 // 覆蓋整個目錄;實作一旦存在就不再寫 stub,避免它反過來蓋掉真實型別。
 const openNextDir = join(root, ".open-next");
-const openNextWorker = join(openNextDir, "worker.js");
-const openNextTypes = join(openNextDir, "worker.d.ts");
-if (!existsSync(openNextWorker) && !existsSync(openNextTypes)) {
-  mkdirSync(openNextDir, { recursive: true });
-  writeFileSync(
-    openNextTypes,
-    [
-      "// 由 scripts/ensure-dev-env.mjs 產生的佔位型別,只為了讓第一次 build 的",
-      "// type-check 過得去。`opennextjs-cloudflare build` 會用真正的產出物覆蓋。",
-      "declare const handler: {",
-      "  fetch(",
-      "    request: Request,",
-      "    env: CloudflareEnv,",
-      "    ctx: ExecutionContext,",
-      "  ): Response | Promise<Response>;",
-      "};",
-      "export default handler;",
-      "",
-    ].join("\n"),
-  );
-  console.log(
-    "[dev-env] .open-next/ 尚無產出物 —— 已放置 worker.d.ts 佔位型別供首次 build 使用。",
-  );
+// 兩個入口各 import 一份:custom-worker.ts → .open-next/worker.js;選用的 worker/split-entry.ts →
+// .open-next/split/worker.js(scripts/split-server-chunks.mjs 的產出,它自己也會寫型別)。
+for (const dir of [openNextDir, join(openNextDir, "split")]) {
+  if (existsSync(join(dir, "worker.js")) || existsSync(join(dir, "worker.d.ts"))) continue;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "worker.d.ts"), WORKER_TYPES_STUB);
+  console.log(`[dev-env] ${dir.slice(root.length + 1)}/ 尚無產出物 —— 已放置 worker.d.ts 佔位型別供首次 build 使用。`);
 }

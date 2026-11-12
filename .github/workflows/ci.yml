@@ -22,7 +22,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # OpenNext 的打包與開機檢查比單純 next build 多幾分鐘。
+    timeout-minutes: 30
     steps:
       # 三個 action 都用當前的 major。舊的 v4 一律以 Node 20 宣告,而 GitHub 已經
       # 在 runner 上強制把它們拉到 Node 24 跑,每次 CI 都留一條 deprecation 註記 ——
@@ -64,5 +65,17 @@ jobs:
 
       # 這一步是為了那個「777 個測試全綠但產品 build 不出來」的類別。
       # 測試跑的是原始碼;build 跑的是實際會被部署的那條路徑。
+      # 用 opennextjs-cloudflare build(它先跑 pnpm run build,也就是 next build),
+      # 後面兩步要的正是它的產出。
       - name: Build
-        run: pnpm run build
+        run: pnpm exec opennextjs-cloudflare build
+
+      # 拆分入口(worker/README.md)綁在 OpenNext 與 esbuild 的輸出形狀上。這兩步用 lockfile 裡的
+      # 版本證明:拆分腳本認得這份輸出,拆出來的 Worker 跑得起來。升級 Next / OpenNext 的 PR
+      # 會在這裡先紅,而不是部署時。沒有選用拆分的站,Split 只印一行就結束,Boot 照樣檢查預設入口。
+      # Boot 用 wrangler dev --local 與暫存的本機 D1,不需要 Cloudflare 的 token。
+      - name: Split server
+        run: node scripts/split-server-chunks.mjs
+
+      - name: Boot check
+        run: node scripts/smoke-worker-boot.mjs
