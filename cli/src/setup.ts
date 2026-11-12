@@ -1,14 +1,14 @@
 // `sz-ws-cms setup` —— 從「本機跑得起來」到「線上跑得起來」的引導流程。
 //
-// 取代 DEPLOY.md 的手工步驟:建兩組 D1 + 兩組 R2 + 一個 KV、把回傳的 id 貼回 wrangler.jsonc、
-// 套 migrations、設 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN。
+// 取代 DEPLOY.md 的手工步驟:建 D1 + 兩組 R2、把回傳的 id 貼回 wrangler.jsonc、
+// 在存公開頁的 R2 上設 lifecycle rule、套 migrations、設 SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN。
 //
 // 冪等性怎麼保證的:每一步都先「看帳號上有什麼」再決定要不要動作,而不是記錄自己做過什麼。
 //   - 先把這份 repo 的 site slug 寫成唯一資源名稱;只有這個本地租戶邊界已驗證後,
 //     D1 才用**名字**去 `wrangler d1 list` 找,找到就沿用它的 uuid,不會重建。
 //   - R2 先 `r2 bucket info`;真的去建到已存在的 bucket 也被當成成功。
-//   - KV 跟 D1 一樣用**名字**(cms-<slug>-kv)去 `kv namespace list` 找;KV 的 title 在帳號內
-//     唯一,就算真的去建到同名的也只會拿到 10014,不會出現第二個。
+//   - lifecycle rule 先 `r2 bucket lifecycle list`;已有同名規則、或已有一條會刪掉
+//     incremental-cache/ 的規則就不加(wrangler 的 add 不檢查同名,所以一定要先看)。
 //   - wrangler.jsonc 的值已經對了就完全不產生編輯。
 //   - migrations 本來就有 applied 紀錄表,重跑是 no-op。
 //   - 三把 worker secret 已存在就跳過(**絕不覆寫** —— 換掉任一把都是不可逆的災難,
@@ -23,14 +23,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "./exit.js";
 import { displayWidth, padVisual, type Prompter, type Reporter } from "./ui.js";
-import { WranglerClient, isPlaceholderId, type KvNamespace } from "./wrangler.js";
+import { WranglerClient, type LifecycleRule } from "./wrangler.js";
 import {
   ConfigShapeError,
   readWranglerConfig,
   writeSiteResources,
   writeAccountId,
   writeD1Ids,
-  writeKvNamespace,
   type D1Entry,
   type SiteResources,
   type WranglerConfig,
@@ -192,59 +191,79 @@ export function siteResourcesForSlug(
 }
 
 /**
- * core 讀的 KV binding。沒有它 CMS 的行為與以前完全相同(公開頁直接查 D1),
- * 所以 KV 這一步的每一種失敗都只是警告,見 ensureKvNamespace。
+ * 存公開頁的 R2(OpenNext incremental cache,見 open-next.config.ts)。2.0 起公開頁整頁存在
+ * 這裡,key 是 `incremental-cache/<buildId>/…`:每次部署換 build id,舊的那批就再也不會被讀。
+ * 一條 lifecycle rule 把放滿 30 天的物件刪掉,舊頁面就不會一直累積。還在用的頁面每次內容
+ * 改動都會重新寫入;放滿 30 天沒動過被刪掉的,下一個請求重算一次而已。
  */
-export const KV_BINDING = "CMS_KV";
+export const PAGE_CACHE_BINDING = "NEXT_INC_CACHE_R2_BUCKET";
+export const PAGE_CACHE_PREFIX = "incremental-cache/";
+export const PAGE_CACHE_RULE = "expire-page-cache";
+export const PAGE_CACHE_EXPIRE_DAYS = 30;
+
+/** 1.x 的 setup 建的 KV binding。2.0 的 core 不讀它;setup 只提醒,不刪。 */
+export const LEGACY_KV_BINDING = "CMS_KV";
+
+type LifecyclePlan =
+  /** 設定檔沒有 NEXT_INC_CACHE_R2_BUCKET:沒有地方可以設。 */
+  | { kind: "none" }
+  | { kind: "present"; bucket: string; rule: LifecycleRule }
+  | { kind: "add"; bucket: string }
+  /** 有同名的規則,但它沒有刪掉 incremental-cache/ 底下的舊頁面(停用、範圍不對、動作不是刪除)。只警告,不改。 */
+  | { kind: "mismatch"; bucket: string; rule: LifecycleRule; problems: string[] }
+  /** 還不知道(bucket 狀態不明,或規則清單讀不到):建完 bucket 之後再看一次。 */
+  | { kind: "unknown"; bucket: string; detail: string | null };
 
 /**
- * KV namespace 名稱,跟 D1 / R2 一樣由 slug 衍生:cms-<slug>-kv(共用預設名稱模式是 cms-kv)。
- * 設定檔的 kv_namespaces 只記 binding 與 id、不記名稱,所以這個名字是重跑時
- * 認得回「自己那個 namespace」的唯一依據 —— 不要讓它跟著別的東西變。
+ * 這條規則為什麼沒有刪掉 incremental-cache/ 底下的舊頁面;空陣列 = 會刪。天數不管(站主改過就照他的)。
  */
-export function siteKvName(siteSlug: string | undefined): string {
-  return siteSlug ? `cms-${siteSlug}-kv` : "cms-kv";
-}
-
-interface KvPlan {
-  name: string;
-  /** 帳號上的 KV 清單;null = 查不到,這一輪不動 KV。 */
-  namespaces: KvNamespace[] | null;
-  /** 要寫進 CMS_KV 的既有 id;null = 要新建。 */
-  existingId: string | null;
-  /** 設定檔的 CMS_KV 需不需要改(新增或換 id)。 */
-  needsConfigWrite: boolean;
-  /** 設定檔裡已經有 CMS_KV 這一項(決定計畫說「新增」還是「更新」)。 */
-  hasEntry: boolean;
-}
-
-function planKv(
-  config: WranglerConfig,
-  namespaces: KvNamespace[] | null,
-  isNewScaffold: boolean,
-): KvPlan {
-  const name = siteKvName(config.siteSlug);
-  const entry = config.kv.find((e) => e.binding === KV_BINDING);
-  const currentId = isPlaceholderId(entry?.currentId) ? undefined : entry?.currentId;
-  const base = { name, namespaces, hasEntry: entry !== undefined };
-  if (namespaces === null) return { ...base, existingId: null, needsConfigWrite: false };
-  const named = namespaces.find((n) => n.title === name);
-  if (named) return { ...base, existingId: named.id, needsConfigWrite: currentId !== named.id };
-  // 名字找不到,但設定檔的 CMS_KV 指向帳號上確實存在的 namespace → 那是有人手動接好的,
-  // 沿用它,不要另建一個再把它蓋掉。新 scaffold 例外:從別站 clone 過來的 id 正是
-  // 租戶邊界要擋的東西,一律照名字新建。
-  if (!isNewScaffold && currentId && namespaces.some((n) => n.id === currentId)) {
-    return { ...base, existingId: currentId, needsConfigWrite: false };
+export function pageCacheRuleProblems(rule: LifecycleRule): string[] {
+  const problems: string[] = [];
+  if (!rule.enabled) problems.push("it is disabled");
+  if (!PAGE_CACHE_PREFIX.startsWith(rule.prefix)) {
+    problems.push(`its prefix is ${rule.prefix || "(all prefixes)"}, not ${PAGE_CACHE_PREFIX}`);
   }
-  return { ...base, existingId: null, needsConfigWrite: true };
+  if (!/^expire objects/i.test(rule.action)) problems.push(`its action is "${rule.action || "(none)"}", not expiring objects`);
+  return problems;
+}
+
+/**
+ * 已經處理好的規則:任何一條啟用中、會刪掉 incremental-cache/ 底下物件的規則(prefix 是它的前綴,
+ * 含整個 bucket;同名的優先)。
+ */
+export function pageCacheRule(rules: readonly LifecycleRule[]): LifecycleRule | undefined {
+  const working = rules.filter((r) => pageCacheRuleProblems(r).length === 0);
+  return working.find((r) => r.name === PAGE_CACHE_RULE) ?? working[0];
+}
+
+export function lifecycleFromRules(bucket: string, rules: readonly LifecycleRule[]): LifecyclePlan {
+  const rule = pageCacheRule(rules);
+  if (rule) return { kind: "present", bucket, rule };
+  // 同名的那條在,卻不會刪舊頁面:不能再加一條同名的,也不替站主改掉或刪掉它,只說哪裡不對。
+  const named = rules.find((r) => r.name === PAGE_CACHE_RULE);
+  if (named) return { kind: "mismatch", bucket, rule: named, problems: pageCacheRuleProblems(named) };
+  return { kind: "add", bucket };
+}
+
+/** 同名規則不對時,站主自己修的步驟(先刪掉那條,再加回正確的)。 */
+export function lifecycleMismatchDetail(plan: Extract<LifecyclePlan, { kind: "mismatch" }>): string {
+  return [
+    `${plan.rule.name} does not delete old stored pages: ${plan.problems.join("; ")}.`,
+    "old builds' pages stay in the bucket until it is fixed. setup does not change or remove an existing rule; to replace it:",
+    `  pnpm exec wrangler r2 bucket lifecycle remove ${plan.bucket} --name ${plan.rule.name}`,
+    `  ${manualLifecycleCommand(plan.bucket)}`,
+  ].join("\n");
+}
+
+/** 手動補設的指令(自動那步失敗時印給人看)。 */
+function manualLifecycleCommand(bucket: string): string {
+  return `pnpm exec wrangler r2 bucket lifecycle add ${bucket} ${PAGE_CACHE_RULE} ${PAGE_CACHE_PREFIX} --expire-days ${PAGE_CACHE_EXPIRE_DAYS}`;
 }
 
 /** 失敗訊息裡「修好之後重跑哪一支」—— 受管部署下是 cms deploy,不是另一支指令。 */
 function rerunCommand(o: SetupOptions): string {
   return o.managedDeploy ? "cms deploy" : "sz-ws-cms setup";
 }
-
-const KV_OPTIONAL_NOTE = `${KV_BINDING} is optional: without it the site reads D1 directly, as before.`;
 
 export function validateSiteSlug(siteSlug: string): string | null {
   if (!SITE_SLUG_RE.test(siteSlug)) {
@@ -603,26 +622,45 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     }
   }
 
-  const kvList = await r.task("checking account KV namespaces", () => client.listKv());
-  const kvPlan = planKv(config, kvList.namespaces, prepared.pending !== null);
-  if (kvPlan.namespaces === null) {
-    r.step(
-      "warn",
-      `could not list KV namespaces, skipping ${KV_BINDING}`,
-      [
-        KV_OPTIONAL_NOTE,
-        `rerun \`${rerunCommand(o)}\` once \`wrangler kv namespace list\` works (API tokens need Workers KV Storage permission).`,
-        ...(kvList.detail ? [`wrangler said: ${kvList.detail}`] : []),
-      ].join("\n"),
+  // ---- 3.5. 存公開頁那個 bucket 的 lifecycle rule ----
+  const pageBucket = config.r2.find((b) => b.binding === PAGE_CACHE_BINDING)?.bucketName;
+  let lifecycle: LifecyclePlan = { kind: "none" };
+  if (!pageBucket) {
+    r.step("warn", `no ${PAGE_CACHE_BINDING} in ${relConfig}, skipping the page-cache lifecycle rule`,
+      "public pages are stored in that bucket; restore the binding from the cms template.");
+  } else if (r2States.get(pageBucket) === true) {
+    const listed = await r.task(`checking lifecycle rules of ${pageBucket}`, () =>
+      client.listR2Lifecycle(pageBucket),
     );
-  } else if (kvPlan.existingId) {
-    r.step(
-      kvPlan.needsConfigWrite ? "todo" : "ok",
-      `KV ${kvPlan.name} (${KV_BINDING}) exists`,
-      kvPlan.needsConfigWrite ? `config needs update to ${kvPlan.existingId}` : "config id is correct",
-    );
+    lifecycle = listed.rules
+      ? lifecycleFromRules(pageBucket, listed.rules)
+      : { kind: "unknown", bucket: pageBucket, detail: listed.detail };
+  } else if (r2States.get(pageBucket) === false) {
+    lifecycle = { kind: "add", bucket: pageBucket }; // 新 bucket 還沒有任何規則
   } else {
-    r.step("todo", `KV ${kvPlan.name} (${KV_BINDING}) needs to be created`);
+    lifecycle = { kind: "unknown", bucket: pageBucket, detail: null };
+  }
+  if (lifecycle.kind === "present") {
+    r.step("ok", `R2 ${lifecycle.bucket} lifecycle rule ${lifecycle.rule.name} exists`, lifecycle.rule.action || undefined);
+  } else if (lifecycle.kind === "add") {
+    r.step("todo", `R2 ${lifecycle.bucket} needs lifecycle rule ${PAGE_CACHE_RULE}`,
+      `deletes stored pages under ${PAGE_CACHE_PREFIX} after ${PAGE_CACHE_EXPIRE_DAYS} days (old builds are never read again).`);
+  } else if (lifecycle.kind === "mismatch") {
+    r.step("warn", `R2 ${lifecycle.bucket} lifecycle rule ${lifecycle.rule.name} does not expire stored pages`, lifecycleMismatchDetail(lifecycle));
+  } else if (lifecycle.kind === "unknown" && lifecycle.detail) {
+    r.step("warn", `could not read lifecycle rules of ${lifecycle.bucket}`, `will check again before adding.\n${lifecycle.detail}`);
+  }
+
+  // ---- 3.6. 1.x 留下的 CMS_KV ----
+  // 只提醒,不刪:這支指令只補缺的東西。binding 在 2.0 部署之前拿掉也無妨(core 不讀),
+  // 但 namespace 要等確定不會回滾到 1.x 才刪。
+  const legacyKv = config.kv.find((e) => e.binding === LEGACY_KV_BINDING);
+  if (legacyKv) {
+    r.step("warn", `${LEGACY_KV_BINDING} in ${relConfig} is no longer used`, [
+      "cms 2.0 stores whole public pages and does not read the version stamps in this namespace.",
+      `remove the ${LEGACY_KV_BINDING} entry from kv_namespaces; once 2.0 is live and you will not roll back, delete it:`,
+      `  pnpm exec wrangler kv namespace delete --namespace-id ${legacyKv.currentId ?? "<id>"}`,
+    ].join("\n"));
   }
 
   if (prepared.pending) {
@@ -639,14 +677,6 @@ export async function runSetup(o: SetupOptions): Promise<number> {
       ]);
       return EXIT.SETUP_PREREQ;
     }
-    if (kvPlan.existingId) {
-      r.step("fail", "new scaffold will not claim existing KV namespace on account", kvPlan.name);
-      r.outro([
-        "this means site slug is already in use or the namespace belongs to another site. use a new --site-slug instead.",
-        "to protect tenant data, existing resources are only reused when rerunning an existing repo with same slug.",
-      ]);
-      return EXIT.SETUP_PREREQ;
-    }
   }
 
   // 建立的是「資料庫」不是「binding」—— 合併模式下兩個 binding 共用一個名字,
@@ -656,8 +686,7 @@ export async function runSetup(o: SetupOptions): Promise<number> {
   ).size;
   const willWriteConfig = d1Plans.filter((p) => p.needsConfigWrite).length;
   const willCreateR2 = [...r2States.values()].filter((v) => v !== true).length;
-  const willCreateKv = kvPlan.namespaces !== null && !kvPlan.existingId ? 1 : 0;
-  const willWriteKv = kvPlan.needsConfigWrite ? 1 : 0;
+  const willAddLifecycle = lifecycle.kind === "add" ? 1 : 0;
   const migrationTargets = config.d1.filter((e) => e.hasMigrationsDir);
 
   // ---- 4. 確認 ----
@@ -665,16 +694,17 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     r.note("rehearsal results", [
       `create D1: ${willCreateD1}`,
       `create R2: ${willCreateR2}`,
-      `create KV: ${willCreateKv}`,
       `update database_id in ${relConfig}: ${willWriteConfig} fields`,
-      `${KV_BINDING} binding in ${relConfig}: ${
-        kvPlan.namespaces === null
-          ? "skipped (could not list KV namespaces)"
-          : !kvPlan.needsConfigWrite
-            ? "already correct"
-            : kvPlan.hasEntry
-              ? "update id"
-              : "add"
+      `page-cache lifecycle rule: ${
+        lifecycle.kind === "none"
+          ? `skipped (no ${PAGE_CACHE_BINDING})`
+          : lifecycle.kind === "present"
+            ? `already set (${lifecycle.rule.name})`
+            : lifecycle.kind === "mismatch"
+              ? `${lifecycle.rule.name} exists but does not expire stored pages (${lifecycle.problems.join("; ")}); not changed`
+            : lifecycle.kind === "add"
+              ? `add ${PAGE_CACHE_RULE} to ${lifecycle.bucket} (${PAGE_CACHE_PREFIX}, ${PAGE_CACHE_EXPIRE_DAYS} days)`
+              : "checked once the bucket can be read"
       }`,
       prepared.pending
         ? `set site slug: ${prepared.pending.siteSlug} (atomically updates 7 tenant fields)`
@@ -696,22 +726,21 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     return EXIT.OK;
   }
 
-  if (willCreateD1 + willCreateR2 + willWriteConfig + willCreateKv + willWriteKv === 0) {
+  if (willCreateD1 + willCreateR2 + willWriteConfig + willAddLifecycle === 0) {
     r.step("ok", "resources and config are ready, nothing to create.");
   } else if (!o.assumeYes) {
-    // 只列真的要建的東西:改版前設定好的站重跑時只差一個 KV,
-    // 問「create 0 D1 databases, 0 R2 buckets, 1 KV namespace」只會讓人多讀兩個零。
+    // 只列真的要做的事:1.x 設定好的站重跑時只差一條 lifecycle rule,
+    // 問「create 0 D1 databases, 0 R2 buckets」只會讓人多讀兩個零。
     const creations = [
       willCreateD1 > 0 ? plural(willCreateD1, "D1 database") : null,
       willCreateR2 > 0 ? plural(willCreateR2, "R2 bucket") : null,
-      willCreateKv > 0 ? plural(willCreateKv, "KV namespace") : null,
     ].filter((part): part is string => part !== null);
-    const go = await prompter.confirm(
-      creations.length > 0
-        ? `create ${creations.join(", ")}, and update ${relConfig}?`
-        : `update ${relConfig}?`,
-      true,
-    );
+    const actions = [
+      creations.length > 0 ? `create ${creations.join(", ")}` : null,
+      lifecycle.kind === "add" ? `add the page-cache lifecycle rule to ${lifecycle.bucket}` : null,
+      creations.length > 0 || willWriteConfig > 0 ? `update ${relConfig}` : null,
+    ].filter((part): part is string => part !== null);
+    const go = await prompter.confirm(`${joinActions(actions)}?`, true);
     if (!go) {
       r.step("skip", "cancelled, no resources created, no files modified.");
       r.outro(["to preview what would happen: sz-ws-cms setup --dry-run"]);
@@ -776,8 +805,8 @@ export async function runSetup(o: SetupOptions): Promise<number> {
     r.step("ok", `created R2 ${bucket.bucketName}`);
   }
 
-  // ---- 6.5. KV(選用,失敗只警告)----
-  await ensureKvNamespace(o, kvPlan, relConfig);
+  // ---- 6.5. 存公開頁那個 bucket 的 lifecycle rule(失敗只警告)----
+  await ensurePageCacheLifecycle(o, lifecycle);
 
   // ---- 7. migrations ----
   // 只對宣告了 migrations_dir 的 D1 跑。cms-tag-cache 沒有那個欄位,它的
@@ -940,55 +969,54 @@ async function persistIds(
   }
 }
 
+/** "a" / "a, and b" / "a, b, and c" —— 確認題只列真的要做的事。 */
+function joinActions(actions: readonly string[]): string {
+  if (actions.length <= 1) return actions[0] ?? "continue";
+  return `${actions.slice(0, -1).join(", ")}, and ${actions[actions.length - 1]}`;
+}
+
 /**
- * 建立或認回 CMS_KV 的 namespace,並把 id 寫進設定檔。
+ * 在存公開頁的 bucket 上加 lifecycle rule。
  *
- * 這一步的每一種失敗都只**警告**、不回傳 exit code:沒有 CMS_KV 時 CMS 的行為與以前
- * 完全相同,為了一個選用的快取擋下整個 setup / cms deploy 不划算 —— 尤其 CI 用的
- * API token 常常只給了 D1 / R2 / Workers 權限,改版前能部署的站不該因此部署不了。
- * 重跑會從偵測重新來過,已建好的 namespace 用名字認回來。
+ * 每一種失敗都只**警告**、不回傳 exit code:沒有這條規則站一樣正常,只是舊 build 的頁面
+ * 留在 R2 裡不會被刪。為了它擋下整個 setup / cms deploy 不划算。重跑會從偵測重新來過。
+ * 只加不改:已有同名規則(站主可能改過天數)就照他的;同名的那條不會刪舊頁面時只警告(見 lifecycleFromRules)。
  */
-async function ensureKvNamespace(o: SetupOptions, plan: KvPlan, relConfig: string): Promise<void> {
-  const { reporter: r } = o;
-  if (plan.namespaces === null) return; // 偵測階段已經警告過
+async function ensurePageCacheLifecycle(o: SetupOptions, plan: LifecyclePlan): Promise<void> {
+  const { reporter: r, client } = o;
+  if (plan.kind === "none" || plan.kind === "present" || plan.kind === "mismatch") return;
   const rerun = rerunCommand(o);
+  const manual = `rerun \`${rerun}\`, or add it by hand:\n  ${manualLifecycleCommand(plan.bucket)}`;
 
-  let id = plan.existingId;
-  if (!id) {
-    const created = await r.task(`creating KV ${plan.name}`, () => o.client.createKv(plan.name));
-    if (created.outcome.status === "failed") {
-      r.step("warn", `failed to create KV ${plan.name}, ${KV_BINDING} not bound`,
-        `${created.outcome.detail}\n${KV_OPTIONAL_NOTE} rerun \`${rerun}\` to try again.`);
+  const bucket = plan.bucket;
+  if (plan.kind === "unknown") {
+    // bucket 剛建好或剛才讀不到:現在再看一次,看不到就不加(加了可能是重複的同名規則)。
+    const listed = await r.task(`checking lifecycle rules of ${bucket}`, () => client.listR2Lifecycle(bucket));
+    if (!listed.rules) {
+      r.step("warn", `could not read lifecycle rules of ${bucket}, not adding ${PAGE_CACHE_RULE}`,
+        `${listed.detail ?? ""}\n${manual}`.trim());
       return;
     }
-    id = created.id;
-    if (!id) {
-      // 同名已存在(10014),或建好了但輸出裡撈不到 id —— 兩種都依名稱去清單裡找,不猜。
-      const listed = await r.task(`looking up KV ${plan.name}`, () => o.client.listKv());
-      id = listed.namespaces?.find((n) => n.title === plan.name)?.id ?? null;
-    }
-    if (!id) {
-      r.step("warn", `KV ${plan.name} exists but its id could not be read, ${KV_BINDING} not bound`,
-        `check \`wrangler kv namespace list\`, then rerun \`${rerun}\`.`);
+    const now = lifecycleFromRules(bucket, listed.rules);
+    if (now.kind === "present") {
+      r.step("ok", `R2 ${bucket} lifecycle rule ${now.rule.name} exists`, now.rule.action || undefined);
       return;
     }
-    r.step("ok", created.existed ? `KV ${plan.name} already exists, reusing it` : `created KV ${plan.name}`, id);
+    if (now.kind === "mismatch") {
+      r.step("warn", `R2 ${bucket} lifecycle rule ${now.rule.name} does not expire stored pages`, lifecycleMismatchDetail(now));
+      return;
+    }
   }
 
-  if (!plan.needsConfigWrite) return;
-  try {
-    // 寫入前重讀:前面的 D1 回填剛改過這個檔,用舊內容算出來的位移會落錯地方。
-    const fresh = await readFile(o.configPath, "utf8");
-    const { text, changed } = writeKvNamespace(fresh, KV_BINDING, id);
-    if (changed.length === 0) return;
-    await writeFile(o.configPath, text, "utf8");
-    r.step("ok", `updated ${relConfig}`, `kv_namespaces: ${KV_BINDING} → ${id}`);
-  } catch (e) {
-    r.step("warn", `could not write ${KV_BINDING} to ${relConfig}`, e instanceof Error ? e.message : String(e));
-    r.note(`add this to ${relConfig} by hand`, [
-      `"kv_namespaces": [{ "binding": "${KV_BINDING}", "id": "${id}" }]`,
-    ]);
+  const outcome = await r.task(`adding lifecycle rule ${PAGE_CACHE_RULE} to ${bucket}`, () =>
+    client.addR2LifecycleExpiry(bucket, PAGE_CACHE_RULE, PAGE_CACHE_PREFIX, PAGE_CACHE_EXPIRE_DAYS),
+  );
+  if (outcome.status === "failed") {
+    r.step("warn", `failed to add lifecycle rule ${PAGE_CACHE_RULE} to ${bucket}`, `${outcome.detail}\n${manual}`);
+    return;
   }
+  r.step("ok", `added lifecycle rule ${PAGE_CACHE_RULE} to ${bucket}`,
+    `stored pages under ${PAGE_CACHE_PREFIX} are deleted after ${PAGE_CACHE_EXPIRE_DAYS} days`);
 }
 
 /** 確保三把金鑰存在。回傳要附在收尾訊息裡的有標題區塊。 */

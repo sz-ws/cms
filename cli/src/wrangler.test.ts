@@ -3,7 +3,7 @@ import { recordingExecutor, type ExecResult } from "./exec.js";
 import {
   isPlaceholderId,
   parseCreatedD1Id,
-  parseCreatedKvId,
+  parseLifecycleRules,
   PLACEHOLDER_ID,
   WranglerClient,
 } from "./wrangler.js";
@@ -51,37 +51,43 @@ describe("parseCreatedD1Id", () => {
   });
 });
 
-describe("parseCreatedKvId", () => {
-  const KV = "0f2ac74b498b48028cb68387c421e279";
+/** wrangler 4.160 對一個新 bucket(Cloudflare 自帶的 multipart 規則)加上 setup 那條之後印的樣子。 */
+const LIFECYCLE_LIST = `
+ ⛅️ wrangler 4.160.1
+───────────────────
+Listing lifecycle rules for bucket 'cms-acme-next-cache'...
+name:     Default Multipart Abort Rule
+enabled:  Yes
+prefix:   (all prefixes)
+action:   Abort incomplete multipart uploads after 7 days
 
-  it("認 JSON / JSONC 設定檔會拿到的片段", () => {
-    expect(
-      parseCreatedKvId(`🌀 Creating namespace with title "cms-acme-kv"
-✨ Success!
-To access your new KV Namespace in your Worker, add the following snippet to your configuration file:
-{
-  "kv_namespaces": [
-    {
-      "binding": "cms_acme_kv",
-      "id": "${KV}"
-    }
-  ]
-}`),
-    ).toBe(KV);
+name:     expire-page-cache
+enabled:  Yes
+prefix:   incremental-cache/
+action:   Expire objects after 30 days
+`;
+
+describe("parseLifecycleRules", () => {
+  it("一段一條規則,(all prefixes) 存成空字串", () => {
+    expect(parseLifecycleRules(LIFECYCLE_LIST)).toEqual([
+      { name: "Default Multipart Abort Rule", enabled: true, prefix: "", action: "Abort incomplete multipart uploads after 7 days" },
+      { name: "expire-page-cache", enabled: true, prefix: "incremental-cache/", action: "Expire objects after 30 days" },
+    ]);
   });
 
-  it("認 TOML 設定檔會拿到的片段(區塊與舊版單行兩種)", () => {
-    expect(parseCreatedKvId(`[[kv_namespaces]]\nbinding = "cms_acme_kv"\nid = "${KV}"\n`)).toBe(KV);
-    expect(parseCreatedKvId(`{ binding = "cms_acme_kv", id = "${KV}" }`)).toBe(KV);
+  it("沒有規則 → 空陣列", () => {
+    expect(parseLifecycleRules("Listing lifecycle rules for bucket 'b'...\nThere are no lifecycle rules for bucket 'b'.")).toEqual([]);
   });
 
-  it("preview_id 不是我們要的 namespace", () => {
-    expect(parseCreatedKvId(`{ binding = "X", preview_id = "${KV}" }`)).toBeNull();
-    expect(parseCreatedKvId(`"preview_id": "${KV}"`)).toBeNull();
+  it("帶顏色碼也照樣讀", () => {
+    expect(parseLifecycleRules("\u001b[37mname:\u001b[39m  \u001b[90mx\u001b[39m\nenabled:  No\nprefix:  a/\naction:  Expire objects after 1 days")).toEqual([
+      { name: "x", enabled: false, prefix: "a/", action: "Expire objects after 1 days" },
+    ]);
   });
 
-  it("撈不到就回 null,不拿看起來像 id 的東西(account id 也是 32 位 hex)", () => {
-    expect(parseCreatedKvId(`✨ Success! account ${KV}`)).toBeNull();
+  it("讀不懂(只有 banner、格式變了)回 null,不當成「沒有規則」", () => {
+    expect(parseLifecycleRules(" ⛅️ wrangler 4.160.1\nListing lifecycle rules for bucket 'b'...")).toBeNull();
+    expect(parseLifecycleRules("")).toBeNull();
   });
 });
 
@@ -170,26 +176,18 @@ describe("WranglerClient — 唯讀操作", () => {
     ).resolves.toBeNull();
   });
 
-  it("listKv 解析 JSON 陣列,丟掉形狀不對的項目", async () => {
-    const { client, calls } = makeClient(() =>
-      ok(JSON.stringify([{ id: "a".repeat(32), title: "cms-kv", supports_url_encoding: true }, { bad: 1 }], null, "  ")),
-    );
-    await expect(client.listKv()).resolves.toEqual({
-      namespaces: [{ id: "a".repeat(32), title: "cms-kv" }],
-      detail: null,
-    });
-    expect(calls[0].args).toEqual(["kv", "namespace", "list"]);
+  it("listR2Lifecycle 讀 lifecycle list 的輸出", async () => {
+    const { client, calls } = makeClient(() => ok(LIFECYCLE_LIST));
+    const res = await client.listR2Lifecycle("cms-acme-next-cache");
+    expect(res.rules?.map((r) => r.name)).toEqual(["Default Multipart Abort Rule", "expire-page-cache"]);
+    expect(res.detail).toBeNull();
+    expect(calls[0].args).toEqual(["r2", "bucket", "lifecycle", "list", "cms-acme-next-cache"]);
   });
 
-  it("listKv 前面多印一行提示也照樣解析", async () => {
-    const res = await makeClient(() => ok(`▲ [WARNING] something\n[{"id":"${"b".repeat(32)}","title":"x"}]`)).client.listKv();
-    expect(res.namespaces).toEqual([{ id: "b".repeat(32), title: "x" }]);
-  });
-
-  it("listKv 失敗或非 JSON 回 namespaces:null,並帶回原因 —— 呼叫端不可當成空清單", async () => {
-    for (const make of [() => fail("Authentication error [code: 10000]"), () => ok("not json"), () => ok(`{"x":1}`)]) {
-      const res = await makeClient(make).client.listKv();
-      expect(res.namespaces).toBeNull();
+  it("listR2Lifecycle 失敗或讀不懂回 rules:null,並帶回原因 —— 呼叫端不可當成空清單", async () => {
+    for (const make of [() => fail("Authentication error [code: 10000]"), () => ok("something else")]) {
+      const res = await makeClient(make).client.listR2Lifecycle("b");
+      expect(res.rules).toBeNull();
       expect(res.detail).toBeTruthy();
     }
   });
@@ -198,7 +196,7 @@ describe("WranglerClient — 唯讀操作", () => {
     const { client, calls } = makeClient(() => ok("[]"), true);
     await client.listD1();
     await client.r2Exists("b");
-    await client.listKv();
+    await client.listR2Lifecycle("b");
     expect(calls.length).toBe(3);
   });
 });
@@ -222,24 +220,17 @@ describe("WranglerClient — 寫入操作", () => {
     ).toMatch(/created D1 "cms-db"/);
   });
 
-  it("createKv 成功時回傳 id,指令是 kv namespace create <title>", async () => {
-    const id = "c".repeat(32);
-    const { client, calls } = makeClient(() => ok(`{\n  "kv_namespaces": [{ "binding": "cms_kv", "id": "${id}" }]\n}`));
-    await expect(client.createKv("cms-kv")).resolves.toEqual({ outcome: { status: "done" }, id, existed: false });
-    expect(calls[0].args).toEqual(["kv", "namespace", "create", "cms-kv"]);
+  it("addR2LifecycleExpiry:名稱、prefix、天數都走參數,不帶 --force", async () => {
+    const { client, calls } = makeClient(() => ok("Adding lifecycle rule 'expire-page-cache' to bucket 'b'..."));
+    await expect(client.addR2LifecycleExpiry("b", "expire-page-cache", "incremental-cache/", 30)).resolves.toEqual({ status: "done" });
+    expect(calls[0].args).toEqual([
+      "r2", "bucket", "lifecycle", "add", "b", "expire-page-cache", "incremental-cache/", "--expire-days", "30",
+    ]);
   });
 
-  it("createKv 撞到同名(10014)視為成功,但 id 留給呼叫端用 list 查", async () => {
-    const { client } = makeClient(() =>
-      fail(`✘ [ERROR] A KV namespace with the title "cms-kv" already exists.`),
-    );
-    await expect(client.createKv("cms-kv")).resolves.toEqual({ outcome: { status: "done" }, id: null, existed: true });
-  });
-
-  it("createKv 其他錯誤才算失敗", async () => {
-    const res = await makeClient(() => fail("Authentication error")).client.createKv("cms-kv");
-    expect(res.outcome.status).toBe("failed");
-    expect(res.id).toBeNull();
+  it("addR2LifecycleExpiry 失敗時帶回原因", async () => {
+    const outcome = await makeClient(() => fail("Authentication error")).client.addR2LifecycleExpiry("b", "n", "p/", 30);
+    expect(outcome).toEqual({ status: "failed", detail: "Authentication error" });
   });
 
   it("createR2 把 already exists 視為成功(冪等)", async () => {
@@ -279,7 +270,7 @@ describe("WranglerClient — 寫入操作", () => {
     expect(await client.createR2("b")).toEqual({ status: "planned" });
     expect(await client.putSecret("K", "v")).toEqual({ status: "planned" });
     expect(await client.applyMigrations("cms-db")).toEqual({ status: "planned" });
-    expect((await client.createKv("cms-kv")).outcome).toEqual({ status: "planned" });
+    expect(await client.addR2LifecycleExpiry("b", "n", "p/", 30)).toEqual({ status: "planned" });
     expect(calls).toEqual([]);
   });
 

@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { recordingExecutor, type ExecResult, type RecordedCall } from "./exec.js";
 import { PLACEHOLDER_ID, WranglerClient } from "./wrangler.js";
-import { readWranglerConfig } from "./wrangler-config.js";
 import {
   runSetup,
-  KV_BINDING,
+  LEGACY_KV_BINDING,
+  PAGE_CACHE_RULE,
   SECRETS_KEY,
   AUTH_PEPPER,
   SETUP_TOKEN,
@@ -18,17 +18,17 @@ import { EXIT } from "./exit.js";
 
 const DB_UUID = "11111111-2222-3333-4444-555555555555";
 const TAG_UUID = "66666666-7777-8888-9999-aaaaaaaaaaaa";
-// KV namespace id 是 32 位 hex(不是 UUID)。
+// 1.x 的 setup 寫進設定檔的 KV namespace id(32 位 hex)。
 const KV_ID = "aaaabbbbccccddddeeeeffff00001111";
-const KV_ID_2 = "22223333444455556666777788889999";
 
-/** 照 wrangler 4 `kv namespace create` 對 JSONC 設定檔印出來的樣子。 */
-const kvCreatedOutput = (title: string, id: string) => `Resource location: remote
-🌀 Creating namespace with title "${title}"
-✨ Success!
-To access your new KV Namespace in your Worker, add the following snippet to your configuration file:
-${JSON.stringify({ kv_namespaces: [{ binding: title.replace(/-/g, "_"), id }] }, null, 2)}
-`;
+/** 照 wrangler 4.160 `r2 bucket lifecycle list` 印出來的樣子。新 bucket 自帶 multipart 那條。 */
+function lifecycleListOutput(bucket: string, ours: boolean): string {
+  const rules = [
+    "name:     Default Multipart Abort Rule\nenabled:  Yes\nprefix:   (all prefixes)\naction:   Abort incomplete multipart uploads after 7 days",
+    ...(ours ? [`name:     ${PAGE_CACHE_RULE}\nenabled:  Yes\nprefix:   incremental-cache/\naction:   Expire objects after 30 days`] : []),
+  ];
+  return ` ⛅️ wrangler 4.160.1\nListing lifecycle rules for bucket '${bucket}'...\n${rules.join("\n\n")}\n`;
+}
 
 const CONFIG = `{
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -62,13 +62,13 @@ interface FakeAccount {
   r2Existing?: string[];
   secrets?: string[] | "error";
   createdD1Uuid?: string;
-  /** 帳號上既有的 KV namespace;"error" = `kv namespace list` 失敗(例:token 沒有 KV 權限)。 */
-  kv?: { id: string; title: string }[] | "error";
-  createdKvId?: string;
+  /** 已經有 expire-page-cache 規則的 bucket;"error" = `lifecycle list` 失敗。加了之後同一個假帳號記得住。 */
+  lifecycle?: string[] | "error";
   failOn?: (args: readonly string[]) => ExecResult | undefined;
 }
 
 function fakeWrangler(account: FakeAccount = {}) {
+  const lifecycle = account.lifecycle === "error" ? "error" : new Set(account.lifecycle ?? []);
   return recordingExecutor((_cmd, args) => {
     const override = account.failOn?.(args);
     if (override) return override;
@@ -93,17 +93,13 @@ function fakeWrangler(account: FakeAccount = {}) {
         : fail("The specified bucket does not exist");
     }
     if (key.startsWith("r2 bucket create")) return ok("");
-    if (key.startsWith("kv namespace list")) {
-      if (account.kv === "error") return fail("Authentication error [code: 10000]");
-      return ok(JSON.stringify(account.kv ?? [], null, "  "));
+    if (key.startsWith("r2 bucket lifecycle list")) {
+      if (lifecycle === "error") return fail("Authentication error [code: 10000]");
+      return ok(lifecycleListOutput(args[4], lifecycle.has(args[4])));
     }
-    if (key.startsWith("kv namespace create")) {
-      const title = args[3];
-      // 跟真的 Cloudflare 一樣:同帳號同 title 只能有一個(錯誤 10014)。
-      if (account.kv !== "error" && (account.kv ?? []).some((n) => n.title === title)) {
-        return fail(`✘ [ERROR] A KV namespace with the title "${title}" already exists.`);
-      }
-      return ok(kvCreatedOutput(title, account.createdKvId ?? KV_ID));
+    if (key.startsWith("r2 bucket lifecycle add")) {
+      if (lifecycle !== "error") lifecycle.add(args[4]);
+      return ok(`Adding lifecycle rule '${args[5]}' to bucket '${args[4]}'...`);
     }
     if (key.startsWith("secret list")) {
       if (account.secrets === undefined || account.secrets === "error") {
@@ -234,7 +230,10 @@ describe("runSetup — 全新帳號的完整流程", () => {
     expect(sent).toContain("d1 create cms-tag-cache");
     expect(sent).toContain("r2 bucket create cms-storage");
     expect(sent).toContain("r2 bucket create cms-next-cache");
-    expect(sent).toContain("kv namespace create cms-kv");
+    // 新 bucket 還沒有任何規則:建好之後直接加。
+    expect(sent).toContain(`r2 bucket lifecycle add cms-next-cache ${PAGE_CACHE_RULE} incremental-cache/ --expire-days 30`);
+    expect(sent.indexOf("r2 bucket create cms-next-cache")).toBeLessThan(sent.findIndex((s) => s.startsWith("r2 bucket lifecycle add")));
+    expect(sent.some((s) => s.startsWith("kv "))).toBe(false);
     expect(sent).toContain(`secret put ${SECRETS_KEY}`);
     // pepper 必須跟 SECRETS_KEY 一樣是全新站台的預設產物 —— 漏掉它,第一批
     // 密碼就會以無 pepper 的形式落地,事後只能靠逐一重設密碼補回來。
@@ -248,7 +247,7 @@ describe("runSetup — 全新帳號的完整流程", () => {
     const written = await readFile(configPath, "utf8");
     expect(written).not.toContain(PLACEHOLDER_ID);
     expect(written).toContain(`"database_id": "${DB_UUID}"`);
-    expect(readWranglerConfig(written).kv).toEqual([{ binding: KV_BINDING, currentId: KV_ID }]);
+    expect(written).not.toContain("kv_namespaces");
     // 別人維護的欄位原封不動。
     expect(written).toContain(`"main": "custom-worker.ts"`);
     expect(written).toContain(`"triggers": { "crons": ["* * * * *"] }`);
@@ -365,7 +364,7 @@ describe("runSetup — site slug 租戶邊界", () => {
           { name: "cms-client-a-tag-cache", uuid: DB_UUID },
         ],
         r2Existing: ["cms-client-a-storage", "cms-client-a-next-cache"],
-        kv: [{ id: KV_ID, title: "cms-client-a-kv" }],
+        lifecycle: ["cms-client-a-next-cache"],
         secrets: [SECRETS_KEY],
       },
     });
@@ -374,7 +373,7 @@ describe("runSetup — site slug 租戶邊界", () => {
     expect(await readFile(configPath, "utf8")).toBe(afterFirst);
     expect(argsOf(second.calls).some((s) => s.startsWith("d1 create"))).toBe(false);
     expect(argsOf(second.calls).some((s) => s.startsWith("r2 bucket create"))).toBe(false);
-    expect(argsOf(second.calls).some((s) => s.startsWith("kv namespace create"))).toBe(false);
+    expect(argsOf(second.calls).some((s) => s.startsWith("r2 bucket lifecycle add"))).toBe(false);
   });
 
   it("預設 cms 名稱在未明示單站模式時拒絕", async () => {
@@ -427,7 +426,7 @@ describe("runSetup — 冪等 / 可重跑", () => {
         { name: "cms-tag-cache", uuid: TAG_UUID },
       ],
       r2Existing: ["cms-storage", "cms-next-cache"],
-      kv: [{ id: KV_ID, title: "cms-kv" }],
+      lifecycle: ["cms-next-cache"],
       secrets: [SECRETS_KEY, AUTH_PEPPER, SETUP_TOKEN],
     };
     const first = await setup({ account });
@@ -441,7 +440,7 @@ describe("runSetup — 冪等 / 可重跑", () => {
     const sent = argsOf(second.calls);
     expect(sent.some((s) => s.startsWith("d1 create"))).toBe(false);
     expect(sent.some((s) => s.startsWith("r2 bucket create"))).toBe(false);
-    expect(sent.some((s) => s.startsWith("kv namespace create"))).toBe(false);
+    expect(sent.some((s) => s.startsWith("r2 bucket lifecycle add"))).toBe(false);
     expect(sent.some((s) => s.startsWith("secret put"))).toBe(false);
   });
 
@@ -538,18 +537,16 @@ describe("runSetup — dry-run", () => {
     // 唯讀偵測有跑(不跑的話印出來的計畫是編的)。
     expect(sent).toContain("d1 list --json");
     expect(sent.some((s) => s.startsWith("r2 bucket info"))).toBe(true);
-    expect(sent).toContain("kv namespace list");
     // 寫入類一次都沒送出。
     expect(sent.some((s) => s.startsWith("d1 create"))).toBe(false);
     expect(sent.some((s) => s.startsWith("r2 bucket create"))).toBe(false);
-    expect(sent.some((s) => s.startsWith("kv namespace create"))).toBe(false);
+    expect(sent.some((s) => s.startsWith("r2 bucket lifecycle add"))).toBe(false);
     expect(sent.some((s) => s.startsWith("secret put"))).toBe(false);
     expect(sent.some((s) => s.startsWith("d1 migrations"))).toBe(false);
 
     expect(out).toContain("create D1: 2");
     expect(out).toContain("create R2: 2");
-    expect(out).toContain("create KV: 1");
-    expect(out).toContain(`${KV_BINDING} binding in wrangler.jsonc: add`);
+    expect(out).toContain(`page-cache lifecycle rule: add ${PAGE_CACHE_RULE} to cms-next-cache (incremental-cache/, 30 days)`);
     expect(out).toContain("nothing changed");
   });
 });
@@ -895,12 +892,12 @@ describe("runSetup — 合併模式的計畫顯示", () => {
   });
 });
 
-// ---- CMS_KV ------------------------------------------------------------------
-// 選用的 KV binding:公開頁從它讀版本戳。setup 用名字(cms-<slug>-kv)認回自己的
-// namespace,把 id 寫進 kv_namespaces 裡 CMS_KV 那一項,其他 binding 一律不碰。
+// ---- page-cache lifecycle rule / 1.x 留下的 CMS_KV ----------------------------
+// 2.0 把公開頁整頁存在 NEXT_INC_CACHE_R2_BUCKET。setup 在那個 bucket 上加一條規則,
+// 把 incremental-cache/ 底下放滿 30 天的物件刪掉;只加不改、不建 KV。
 
-/** 改版前就設定好的站:slug 化的名稱、真實的 D1 id,但還沒有 kv_namespaces。 */
-function preKvSiteConfig(): string {
+/** 1.x 設定好的站:slug 化的名稱、真實的 D1 id。 */
+function v1SiteConfig(): string {
   return CONFIG.replace(`"name": "cms"`, `"name": "cms-client-a"`)
     .replace(`"service": "cms"`, `"service": "cms-client-a"`)
     .replace(`"CMS_SITE_SLUG": ""`, `"CMS_SITE_SLUG": "client-a"`)
@@ -910,216 +907,190 @@ function preKvSiteConfig(): string {
     .replace(`"cms-next-cache"`, `"cms-client-a-next-cache"`);
 }
 
-const PRE_KV_ACCOUNT: FakeAccount = {
+/** 1.x 的 setup 會插在 r2_buckets 後面的那一段。 */
+function withLegacyKv(config: string): string {
+  return config.replace(
+    /\n}\n$/,
+    `,\n  // CMS_KV(選用):公開頁從這裡讀「版本戳」\n  "kv_namespaces": [\n    { "binding": "CMS_KV", "id": "${KV_ID}" }\n  ]\n}\n`,
+  );
+}
+
+const V1_ACCOUNT: FakeAccount = {
   d1: [{ name: "cms-client-a-db", uuid: DB_UUID }],
   r2Existing: ["cms-client-a-storage", "cms-client-a-next-cache"],
   secrets: [SECRETS_KEY, AUTH_PEPPER, SETUP_TOKEN],
 };
 
-/** before → after 只能是一段連續的插入;回傳插進來的那段。原文有任何一個字被改就失敗。 */
-function insertedText(before: string, after: string): string {
-  let head = 0;
-  while (head < before.length && before[head] === after[head]) head++;
-  let tail = 0;
-  while (
-    tail < before.length - head &&
-    before[before.length - 1 - tail] === after[after.length - 1 - tail]
-  ) {
-    tail++;
-  }
-  expect(head + tail).toBe(before.length);
-  return after.slice(head, after.length - tail);
-}
+const lifecycleAdds = (calls: RecordedCall[]) =>
+  argsOf(calls).filter((s) => s.startsWith("r2 bucket lifecycle add"));
 
-const kvCreates = (calls: RecordedCall[]) =>
-  argsOf(calls).filter((s) => s.startsWith("kv namespace create"));
-
-describe("runSetup — CMS_KV", () => {
-  it("全新站:建 cms-<slug>-kv,binding 插在 r2_buckets 之後,原文與註解一個字都沒動", async () => {
-    const { code, calls, out } = await setup({
-      allowSharedDefaultNames: false,
-      siteSlug: "acme",
-      skipMigrations: true,
-      skipSecrets: true,
-    });
-    expect(code).toBe(EXIT.OK);
-    expect(kvCreates(calls)).toEqual(["kv namespace create cms-acme-kv"]);
-    expect(out).toContain("created KV cms-acme-kv");
-
-    const written = await readFile(configPath, "utf8");
-    expect(readWranglerConfig(written).kv).toEqual([{ binding: KV_BINDING, currentId: KV_ID }]);
-    expect(written.indexOf('"kv_namespaces"')).toBeGreaterThan(written.indexOf('"r2_buckets"'));
-    expect(written).toContain("// main 指向 custom-worker.ts");
-    expect(written).toContain("// 第二個佔位值");
-    expect(written).toContain(
-      `  "kv_namespaces": [\n    { "binding": "CMS_KV", "id": "${KV_ID}" }\n  ]\n}`,
-    );
-  });
-
-  it("改版前設定好的站重跑 setup:只補 KV,D1 / R2 不動,設定檔只多一段", async () => {
-    const before = preKvSiteConfig();
+describe("runSetup — page-cache lifecycle rule", () => {
+  it("1.x 的站重跑 setup:只問、只加這一條規則,D1 / R2 / 設定檔都不動", async () => {
+    const before = v1SiteConfig();
     await writeFile(configPath, before, "utf8");
-    const { code, calls, prompter } = await setup({
+    const { code, calls, prompter, out } = await setup({
       allowSharedDefaultNames: false,
       assumeYes: false,
       answers: [true],
-      account: PRE_KV_ACCOUNT,
+      account: V1_ACCOUNT,
     });
     expect(code).toBe(EXIT.OK);
-    // 只問真的要做的事,不唸「0 D1 databases, 0 R2 buckets」。
-    expect(prompter.asked[0]).toBe("create 1 KV namespace, and update wrangler.jsonc?");
-    expect(kvCreates(calls)).toEqual(["kv namespace create cms-client-a-kv"]);
-    expect(argsOf(calls).some((s) => /^(d1 create|r2 bucket create|secret put)/.test(s))).toBe(false);
-
-    const added = insertedText(before, await readFile(configPath, "utf8"));
-    expect(added).toContain(`"kv_namespaces": [`);
-    expect(added).toContain(`{ "binding": "CMS_KV", "id": "${KV_ID}" }`);
-  });
-
-  it("帳號上已經有同名 namespace:用 list 認回 id,不再建一個", async () => {
-    await writeFile(configPath, preKvSiteConfig(), "utf8");
-    const { code, calls, out } = await setup({
-      allowSharedDefaultNames: false,
-      account: { ...PRE_KV_ACCOUNT, kv: [{ id: KV_ID_2, title: "cms-client-a-kv" }] },
-    });
-    expect(code).toBe(EXIT.OK);
-    expect(argsOf(calls)).toContain("kv namespace list");
-    expect(kvCreates(calls)).toEqual([]);
-    expect(out).toContain("KV cms-client-a-kv (CMS_KV) exists");
-    expect(readWranglerConfig(await readFile(configPath, "utf8")).kv).toEqual([
-      { binding: KV_BINDING, currentId: KV_ID_2 },
+    expect(prompter.asked[0]).toBe("add the page-cache lifecycle rule to cms-client-a-next-cache?");
+    expect(lifecycleAdds(calls)).toEqual([
+      `r2 bucket lifecycle add cms-client-a-next-cache ${PAGE_CACHE_RULE} incremental-cache/ --expire-days 30`,
     ]);
+    // 只對存公開頁的 bucket,不碰媒體 bucket。
+    expect(argsOf(calls)).not.toContain("r2 bucket lifecycle list cms-client-a-storage");
+    expect(argsOf(calls).some((s) => /^(d1 create|r2 bucket create|secret put|kv )/.test(s))).toBe(false);
+    expect(await readFile(configPath, "utf8")).toBe(before);
+    expect(out).toContain(`added lifecycle rule ${PAGE_CACHE_RULE} to cms-client-a-next-cache`);
   });
 
-  it("create 撞到同名(10014)不算失敗:改用 list 依名稱查 id", async () => {
-    await writeFile(configPath, preKvSiteConfig(), "utf8");
-    let kvLists = 0;
+  it("規則已在:不問、不加", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
+    const { code, calls, prompter, out } = await setup({
+      allowSharedDefaultNames: false,
+      assumeYes: false,
+      account: { ...V1_ACCOUNT, lifecycle: ["cms-client-a-next-cache"] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(prompter.asked).toEqual([]);
+    expect(lifecycleAdds(calls)).toEqual([]);
+    expect(out).toContain(`R2 cms-client-a-next-cache lifecycle rule ${PAGE_CACHE_RULE} exists`);
+  });
+
+  it("重跑兩次只加一次", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
+    const { executor, calls } = fakeWrangler(V1_ACCOUNT);
+    const run = () =>
+      runSetup({
+        cwd: repo, configPath, dryRun: false, interactive: false, assumeYes: true,
+        skipMigrations: true, skipSecrets: true, env: {},
+        client: new WranglerClient({ exec: executor, cwd: repo, cmd: "wrangler", prefix: [], dryRun: false }),
+        reporter: createReporter({ write: () => {}, animate: false, styles: makeStyles(false) }),
+        prompter: scriptedPrompter([]),
+      });
+    expect(await run()).toBe(EXIT.OK);
+    expect(await run()).toBe(EXIT.OK);
+    expect(lifecycleAdds(calls)).toHaveLength(1);
+  });
+
+  it("站主自己設過一條會刪 incremental-cache/ 的規則(名字不同、天數不同):照他的", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
     const { code, calls, out } = await setup({
       allowSharedDefaultNames: false,
       account: {
-        ...PRE_KV_ACCOUNT,
-        failOn: (args) => {
-          // 第一次 list 還看不到(例:另一個行程剛好同時在建),create 才撞到同名。
-          if (args.join(" ") !== "kv namespace list") return undefined;
-          kvLists++;
-          return ok(kvLists === 1 ? "[]" : JSON.stringify([{ id: KV_ID_2, title: "cms-client-a-kv" }]));
-        },
-        kv: [{ id: KV_ID_2, title: "cms-client-a-kv" }],
+        ...V1_ACCOUNT,
+        failOn: (args) =>
+          args.join(" ").startsWith("r2 bucket lifecycle list")
+            ? ok("name:  old-pages\nenabled:  Yes\nprefix:  incremental-cache/\naction:  Expire objects after 7 days\n")
+            : undefined,
       },
     });
     expect(code).toBe(EXIT.OK);
-    expect(kvLists).toBe(2);
-    expect(kvCreates(calls)).toEqual(["kv namespace create cms-client-a-kv"]);
-    expect(out).toContain("KV cms-client-a-kv already exists, reusing it");
-    expect(readWranglerConfig(await readFile(configPath, "utf8")).kv).toEqual([
-      { binding: KV_BINDING, currentId: KV_ID_2 },
-    ]);
+    expect(lifecycleAdds(calls)).toEqual([]);
+    expect(out).toContain("lifecycle rule old-pages exists");
   });
 
-  it("重跑:第二次不再建 namespace,也不重複寫 binding", async () => {
-    await writeFile(configPath, preKvSiteConfig(), "utf8");
-    const first = await setup({ allowSharedDefaultNames: false, account: PRE_KV_ACCOUNT });
-    expect(first.code).toBe(EXIT.OK);
-    expect(kvCreates(first.calls)).toHaveLength(1);
-    const afterFirst = await readFile(configPath, "utf8");
-
-    const second = await setup({
-      allowSharedDefaultNames: false,
-      account: { ...PRE_KV_ACCOUNT, kv: [{ id: KV_ID, title: "cms-client-a-kv" }] },
-    });
-    expect(second.code).toBe(EXIT.OK);
-    expect(kvCreates(second.calls)).toEqual([]);
-    const afterSecond = await readFile(configPath, "utf8");
-    expect(afterSecond).toBe(afterFirst);
-    expect(afterSecond.match(/"kv_namespaces"/g)).toHaveLength(1);
-    expect(afterSecond.match(/CMS_KV/g)).toHaveLength(2); // 一次在註解、一次在 binding
-  });
-
-  it("既有 CMS_KV 的 id 過期:只換那個 id,其他 KV binding 與註解原樣", async () => {
-    const before = preKvSiteConfig().replace(
-      /\n}\n$/,
-      `,
-  "kv_namespaces": [
-    // 別人的 binding,setup 不該碰。
-    { "binding": "SESSIONS", "id": "${KV_ID_2}" },
-    // 這一項由 setup 管理。
-    { "binding": "CMS_KV", "id": "00000000000000000000000000000000" }
-  ]
-}
-`,
-    );
-    await writeFile(configPath, before, "utf8");
-    const { code, calls } = await setup({
-      allowSharedDefaultNames: false,
-      account: { ...PRE_KV_ACCOUNT, kv: [{ id: KV_ID, title: "cms-client-a-kv" }] },
-    });
-    expect(code).toBe(EXIT.OK);
-    expect(kvCreates(calls)).toEqual([]);
-    const written = await readFile(configPath, "utf8");
-    expect(written).toBe(before.replace("00000000000000000000000000000000", KV_ID));
-  });
-
-  it("手動接好的 CMS_KV(名稱不同但 id 確實在帳號上):沿用,不另建", async () => {
-    const before = preKvSiteConfig().replace(
-      /\n}\n$/,
-      `,\n  "kv_namespaces": [{ "binding": "CMS_KV", "id": "${KV_ID_2}" }]\n}\n`,
-    );
-    await writeFile(configPath, before, "utf8");
-    const { code, calls } = await setup({
-      allowSharedDefaultNames: false,
-      account: { ...PRE_KV_ACCOUNT, kv: [{ id: KV_ID_2, title: "hand-made" }] },
-    });
-    expect(code).toBe(EXIT.OK);
-    expect(kvCreates(calls)).toEqual([]);
-    expect(await readFile(configPath, "utf8")).toBe(before);
-  });
-
-  it("新的 clone 撞到同 slug 的 KV 時拒絕認領,且不改設定檔", async () => {
-    const before = await readFile(configPath, "utf8");
+  // 同名的那條在,卻不會刪掉舊頁面:不能再加同名的,也不替站主改或刪,警告哪裡不對、給手動修法。
+  it("同名規則停用、範圍不對或不是刪除:不加、不改,警告實際的差異與手動修法", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
     const { code, calls, out } = await setup({
       allowSharedDefaultNames: false,
-      siteSlug: "client-a",
-      account: { kv: [{ id: KV_ID, title: "cms-client-a-kv" }] },
+      account: {
+        ...V1_ACCOUNT,
+        failOn: (args) =>
+          args.join(" ").startsWith("r2 bucket lifecycle list")
+            ? ok(`name:  ${PAGE_CACHE_RULE}\nenabled:  No\nprefix:  media/\naction:  Abort incomplete multipart uploads after 7 days\n`)
+            : undefined,
+      },
     });
-    expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out).toContain("will not claim existing KV namespace");
-    expect(await readFile(configPath, "utf8")).toBe(before);
-    expect(argsOf(calls).some((s) => /create/.test(s))).toBe(false);
-  });
-
-  it("查不到 KV 清單(token 沒有 KV 權限):只警告、跳過 KV,其餘照常完成", async () => {
-    const { code, calls, out } = await setup({ account: { kv: "error", secrets: [] } });
     expect(code).toBe(EXIT.OK);
-    expect(kvCreates(calls)).toEqual([]);
-    expect(argsOf(calls)).toContain("d1 create cms-db");
-    expect(out).toContain(`could not list KV namespaces, skipping ${KV_BINDING}`);
-    expect(out).toContain("Workers KV Storage");
-    expect(await readFile(configPath, "utf8")).not.toContain("kv_namespaces");
+    expect(lifecycleAdds(calls)).toEqual([]);
+    expect(argsOf(calls).some((s) => s.startsWith("r2 bucket lifecycle remove"))).toBe(false);
+    expect(out).toContain(`lifecycle rule ${PAGE_CACHE_RULE} does not expire stored pages`);
+    expect(out).toContain("it is disabled");
+    expect(out).toContain("its prefix is media/, not incremental-cache/");
+    expect(out).toContain('its action is "Abort incomplete multipart uploads after 7 days", not expiring objects');
+    expect(out).toContain(`pnpm exec wrangler r2 bucket lifecycle remove cms-client-a-next-cache --name ${PAGE_CACHE_RULE}`);
+    expect(out).toContain(`pnpm exec wrangler r2 bucket lifecycle add cms-client-a-next-cache ${PAGE_CACHE_RULE} incremental-cache/ --expire-days 30`);
   });
 
-  it("KV 建立失敗只警告,不讓 setup 失敗,也不寫半套 binding", async () => {
+  it("同名規則不對,但另一條規則會刪 incremental-cache/:照那一條,不警告", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
+    const { code, calls, out } = await setup({
+      allowSharedDefaultNames: false,
+      account: {
+        ...V1_ACCOUNT,
+        failOn: (args) =>
+          args.join(" ").startsWith("r2 bucket lifecycle list")
+            ? ok(`name:  ${PAGE_CACHE_RULE}\nenabled:  No\nprefix:  incremental-cache/\naction:  Expire objects after 30 days\n\nname:  everything\nenabled:  Yes\nprefix:  (all prefixes)\naction:  Expire objects after 90 days\n`)
+            : undefined,
+      },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(lifecycleAdds(calls)).toEqual([]);
+    expect(out).toContain("lifecycle rule everything exists");
+    expect(out).not.toContain("does not expire stored pages");
+  });
+
+  it("讀不到規則清單:不加(可能變成重複的同名規則),只警告,setup 照常完成", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
+    const { code, calls, out } = await setup({
+      allowSharedDefaultNames: false,
+      account: { ...V1_ACCOUNT, lifecycle: "error" },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(lifecycleAdds(calls)).toEqual([]);
+    expect(out).toContain(`could not read lifecycle rules of cms-client-a-next-cache, not adding ${PAGE_CACHE_RULE}`);
+    expect(out).toContain("wrangler r2 bucket lifecycle add cms-client-a-next-cache");
+  });
+
+  it("加規則失敗只警告,不讓 setup 失敗,並給手動指令", async () => {
     const { code, out } = await setup({
       account: {
         secrets: [],
-        failOn: (args) =>
-          args.join(" ").startsWith("kv namespace create") ? fail("rate limited") : undefined,
+        failOn: (args) => (args.join(" ").startsWith("r2 bucket lifecycle add") ? fail("rate limited") : undefined),
       },
     });
     expect(code).toBe(EXIT.OK);
-    expect(out).toContain(`failed to create KV cms-kv, ${KV_BINDING} not bound`);
+    expect(out).toContain(`failed to add lifecycle rule ${PAGE_CACHE_RULE} to cms-next-cache`);
     expect(out).toContain("rerun `sz-ws-cms setup`");
-    expect(await readFile(configPath, "utf8")).not.toContain("kv_namespaces");
   });
 
-  it("受管部署下的 KV 警告叫人重跑 cms deploy,不提另一支指令", async () => {
+  it("受管部署下的警告叫人重跑 cms deploy,不提另一支指令", async () => {
     const { code, out } = await setup({
       managedDeploy: true,
       skipMigrations: true,
       skipSecrets: true,
-      account: { kv: "error" },
+      account: {
+        failOn: (args) => (args.join(" ").startsWith("r2 bucket lifecycle add") ? fail("rate limited") : undefined),
+      },
     });
     expect(code).toBe(EXIT.OK);
     expect(out).toContain("rerun `cms deploy`");
     expect(out).not.toContain("sz-ws-cms setup");
+  });
+});
+
+describe("runSetup — 1.x 留下的 CMS_KV", () => {
+  it("提醒移除並給刪除指令,但設定檔一個字都不動、不呼叫任何 kv 指令", async () => {
+    const before = withLegacyKv(v1SiteConfig());
+    await writeFile(configPath, before, "utf8");
+    const { code, calls, out } = await setup({
+      allowSharedDefaultNames: false,
+      account: { ...V1_ACCOUNT, lifecycle: ["cms-client-a-next-cache"] },
+    });
+    expect(code).toBe(EXIT.OK);
+    expect(out).toContain(`${LEGACY_KV_BINDING} in wrangler.jsonc is no longer used`);
+    expect(out).toContain(`wrangler kv namespace delete --namespace-id ${KV_ID}`);
+    expect(argsOf(calls).some((s) => s.startsWith("kv "))).toBe(false);
+    expect(await readFile(configPath, "utf8")).toBe(before);
+  });
+
+  it("沒有 CMS_KV 就不提", async () => {
+    await writeFile(configPath, v1SiteConfig(), "utf8");
+    const { out } = await setup({ allowSharedDefaultNames: false, account: V1_ACCOUNT });
+    expect(out).not.toContain(LEGACY_KV_BINDING);
   });
 });
