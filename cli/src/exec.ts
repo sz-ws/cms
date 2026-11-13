@@ -81,6 +81,28 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
   return out;
 }
 
+/**
+ * 要執行的程式不存在(spawn 回 ENOENT)。所有子程序都從 spawnExecutor 出去,所以只在這裡
+ * 把 Node 的原始錯誤換成帶程式名稱的錯誤;frame/output.ts 再把它翻成有下一步的 CliError,
+ * 使用者永遠不會看到一行 `spawn pnpm ENOENT`。
+ */
+export class ProgramMissingError extends Error {
+  readonly program: string;
+  readonly command: string;
+
+  constructor(command: string) {
+    const program = path.basename(command);
+    super(`${program} is not installed or not on PATH`);
+    this.name = "ProgramMissingError";
+    this.program = program;
+    this.command = command;
+  }
+}
+
+export function isProgramMissing(e: unknown): e is ProgramMissingError {
+  return e instanceof ProgramMissingError;
+}
+
 export const spawnExecutor: Executor = (cmd, args, opts) =>
   new Promise((resolve, reject) => {
     const child = spawn(cmd, [...args], {
@@ -99,7 +121,7 @@ export const spawnExecutor: Executor = (cmd, args, opts) =>
     child.stderr?.on("data", (c: Buffer) => {
       stderr += c.toString("utf8");
     });
-    child.on("error", reject);
+    child.on("error", (e: NodeJS.ErrnoException) => reject(e.code === "ENOENT" ? new ProgramMissingError(cmd) : e));
     child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
 
     // stdin 一律關閉:wrangler 的互動確認(例:d1 migrations apply)在非 TTY 下會自動跳過,

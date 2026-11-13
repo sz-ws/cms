@@ -86,7 +86,34 @@ export interface AccountReads {
   kvList(): Promise<KvNamespace[]>;
   /** Secret names only; null when the Worker does not exist. */
   secretNames(worker: string): Promise<string[] | null>;
+  /** The bucket's lifecycle rules as Cloudflare returns them. */
+  r2LifecycleRules(bucket: string): Promise<LifecycleRule[]>;
+  /** Rows of a query; reads and writes both go through here. */
+  d1Query(databaseId: string, sql: string): Promise<Record<string, unknown>[]>;
 }
+
+/** An R2 lifecycle rule in the API's own shape (kept whole so a replace keeps it intact). */
+export interface LifecycleRule {
+  id: string;
+  enabled: boolean;
+  conditions?: { prefix?: string };
+  deleteObjectsTransition?: { condition?: { type?: string; maxAge?: number } };
+  [other: string]: unknown;
+}
+
+/** Writes scoped to one account. Only `cms deploy` and `cms secrets` call these. */
+export interface AccountWrites {
+  d1Create(name: string): Promise<D1Info>;
+  r2Create(name: string): Promise<void>;
+  /** Replaces every rule of the bucket: pass the existing ones plus the new one. */
+  r2SetLifecycleRules(bucket: string, rules: readonly LifecycleRule[]): Promise<void>;
+  /** Sets one secret; the value never appears on a command line. */
+  putSecret(worker: string, name: string, value: string): Promise<void>;
+  /** Send 100% of traffic to a version that was uploaded but not deployed. */
+  promote(worker: string, versionId: string): Promise<void>;
+}
+
+export type AccountApi = AccountReads & AccountWrites;
 
 export interface CloudflarePort {
   readiness(): Promise<Readiness>;
@@ -96,7 +123,7 @@ export interface CloudflarePort {
   /** Run cf's browser login; the child gets the terminal. */
   login(): Promise<boolean>;
   whoami(): Promise<Identity>;
-  account(id: string): AccountReads;
+  account(id: string): AccountApi;
 }
 
 /** Why a remote call failed. Mapped to CliError codes by the caller-facing layer. */

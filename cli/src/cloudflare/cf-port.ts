@@ -1,7 +1,7 @@
 // CloudflarePort on top of Cloudflare's `cf` CLI: one child process per call,
 // JSON read from stdout, failures classified from stderr, one retry policy.
 //
-// cf commands used (all read-only except `auth login` and the install):
+// cf commands used. Reads:
 //   cf --version
 //   cf auth whoami
 //   cf auth login                                   (terminal handed to cf)
@@ -13,14 +13,31 @@
 //   cf d1 migrations list <database-id> --dir <dir>
 //   cf r2 buckets list --name-contains <bucket>
 //   cf kv namespaces list --per-page 100
-// The account goes in CLOUDFLARE_ACCOUNT_ID (cf has no account flag).
+//   cf r2 buckets lifecycle get <bucket>
+//   cf d1 query <database-id> --sql <sql>              (also the two writes deploy makes)
+// Writes (only `cms deploy` and `cms secrets`):
+//   cf auth login                                      (terminal handed to cf)
+//   cf d1 create --name <name>
+//   cf r2 buckets create --name <name>
+//   cf r2 buckets lifecycle update <bucket> --rules @<file> -f
+//   cf workers secrets update <name> --worker <w> --body @<file>   (0600 file, deleted after)
+//   cf workers deployments create --worker <w> --strategy percentage --versions <json>
+// The account goes in CLOUDFLARE_ACCOUNT_ID (cf has no account flag). Creates are
+// not retried: a create that reached Cloudflare and then lost its answer would
+// otherwise fail as "already exists" on the second try.
 
-import type { Executor } from "../exec.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { isProgramMissing, type Executor } from "../exec.js";
 import { findCf, installPlanFor } from "./cf-binary.js";
 import { failureFrom, firstJsonValue } from "./cf-output.js";
 import {
   CloudflareError,
+  type AccountApi,
   type AccountReads,
+  type AccountWrites,
+  type LifecycleRule,
   type AuthSource,
   type CloudflarePort,
   type Deployment,
@@ -107,19 +124,21 @@ class CfRunner {
     private readonly command: () => Promise<string>,
   ) {}
 
-  /** Run a read and return its JSON. Transient failures are retried. */
-  async json(args: readonly string[], accountId?: string): Promise<unknown> {
+  /** Run a command and return its JSON. Transient failures are retried unless `once`. */
+  async json(args: readonly string[], accountId?: string, opts: { once?: boolean; optionalJson?: boolean } = {}): Promise<unknown> {
     const cmd = await this.command();
     const env: Record<string, string> = { CF_QUIET: "1", NO_COLOR: "1", ...(accountId ? { CLOUDFLARE_ACCOUNT_ID: accountId } : {}) };
-    return withRetry(async () => {
+    const attempt = async () => {
       const r = await this.o.exec(cmd, args, { cwd: this.o.cwd, env }).catch((e: unknown) => {
+        if (isProgramMissing(e)) throw e;
         throw new CloudflareError("TRANSIENT", e instanceof Error ? e.message : String(e));
       });
       if (r.code !== 0) throw failureFrom(r.stderr, r.code);
       const value = firstJsonValue(r.stdout);
-      if (value === undefined) throw new CloudflareError("FAILED", `cf ${args.slice(0, 3).join(" ")} printed no JSON`);
+      if (value === undefined && !opts.optionalJson) throw new CloudflareError("FAILED", `cf ${args.slice(0, 3).join(" ")} printed no JSON`);
       return value;
-    }, this.o.sleep);
+    };
+    return opts.once ? attempt() : withRetry(attempt, this.o.sleep);
   }
 
   /** Run with the terminal handed over; only the exit code is known. */
@@ -177,7 +196,53 @@ function accountReads(run: CfRunner, accountId: string): AccountReads {
           .map((s) => str(asRecord(s).name) ?? "")
           .filter((n) => n !== ""),
       ),
+    r2LifecycleRules: async (bucket) =>
+      asArray(asRecord(await get(["r2", "buckets", "lifecycle", "get", bucket])).rules).map(
+        (r) => asRecord(r) as LifecycleRule,
+      ),
+    d1Query: async (databaseId, sql) =>
+      asArray(asRecord(asArray(await get(["d1", "query", databaseId, "--sql", sql]))[0]).results).map(asRecord),
   };
+}
+
+/** A private temp file for a request body, removed after the call. */
+async function withBodyFile<T>(content: unknown, fn: (file: string) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(path.join(tmpdir(), "cms-cf-"));
+  const file = path.join(dir, "body.json");
+  try {
+    await writeFile(file, JSON.stringify(content), { mode: 0o600 });
+    return await fn(file);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function accountWrites(run: CfRunner, accountId: string): AccountWrites {
+  const send = (args: readonly string[], once = false) => run.json(args, accountId, { once, optionalJson: true });
+  return {
+    d1Create: async (name) => {
+      const d = asRecord(await run.json(["d1", "create", "--name", name], accountId, { once: true }));
+      const id = str(d.uuid) ?? str(d.id);
+      if (!id) throw new CloudflareError("FAILED", `cf d1 create did not return the id of ${name}`);
+      return { id, name };
+    },
+    r2Create: async (name) => void (await send(["r2", "buckets", "create", "--name", name], true)),
+    r2SetLifecycleRules: (bucket, rules) =>
+      withBodyFile(rules, async (file) => void (await send(["r2", "buckets", "lifecycle", "update", bucket, "--rules", `@${file}`, "-f"]))),
+    putSecret: (worker, name, value) =>
+      withBodyFile({ name, type: "secret_text", text: value }, async (file) =>
+        void (await send(["workers", "secrets", "update", name, "--worker", worker, "--body", `@${file}`])),
+      ),
+    promote: async (worker, versionId) =>
+      void (await send([
+        "workers", "deployments", "create", "--worker", worker, "--strategy", "percentage",
+        "--versions", JSON.stringify([{ version_id: versionId, percentage: 100 }]),
+      ])),
+  };
+}
+
+function accountApi(run: CfRunner, accountId: string): AccountApi {
+  return { ...accountReads(run, accountId), ...accountWrites(run, accountId) };
 }
 
 export function createCfPort(o: CfPortOptions): CloudflarePort {
@@ -207,6 +272,6 @@ export function createCfPort(o: CfPortOptions): CloudflarePort {
         throw e;
       }
     },
-    account: (id) => accountReads(run, id),
+    account: (id) => accountApi(run, id),
   };
 }

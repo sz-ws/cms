@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { childEnv, spawnExecutor } from "./exec.js";
+import { childEnv, ProgramMissingError, spawnExecutor } from "./exec.js";
 
 const ADDED = ["CMS_ADMIN_PASSWORD", "CMS_ADMIN_EMAIL", "CMS_SETUP_TOKEN", "CMS_SITE_SLUG"];
 
@@ -45,5 +45,14 @@ describe("spawnExecutor", () => {
       { cwd: process.cwd(), inheritStdio: true },
     );
     expect(result).toEqual({ code: 3, stdout: "", stderr: "" });
+  });
+});
+
+describe("spawnExecutor — 程式不存在", () => {
+  // 只在這一層把 ENOENT 換成帶名字的錯誤;上層再翻成有下一步的 CliError。
+  it("回 ProgramMissingError,不是原始的 spawn … ENOENT", async () => {
+    const error = await spawnExecutor("/nonexistent/bin/pnpm", ["install"], { cwd: process.cwd() }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProgramMissingError);
+    expect(error).toMatchObject({ program: "pnpm" });
   });
 });

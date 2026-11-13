@@ -3,7 +3,10 @@
 
 import {
   CloudflareError,
+  type AccountApi,
   type AccountReads,
+  type AccountWrites,
+  type LifecycleRule,
   type CloudflarePort,
   type D1Info,
   type Deployment,
@@ -26,6 +29,8 @@ export interface FakeCloudflare {
   /** What readiness becomes after install() (default: ready). */
   afterInstall?: Readiness;
   installSucceeds?: boolean;
+  /** Thrown by install() (e.g. the package manager is missing). */
+  installError?: Error;
   identity: Identity;
   /** Identity after login() (default: unchanged). */
   afterLogin?: Identity;
@@ -38,6 +43,12 @@ export interface FakeCloudflare {
   kv: KvNamespace[];
   /** Throw this from every account read (e.g. a transient error). */
   failReads?: CloudflareError;
+  /** Lifecycle rules per bucket. */
+  lifecycle?: Record<string, LifecycleRule[]>;
+  /** Answers d1Query: rows for a database id and SQL (default: no rows). */
+  query?: (databaseId: string, sql: string) => Record<string, unknown>[];
+  /** Throw this from the write whose call text starts with the key (e.g. "promote"). */
+  failWrites?: Record<string, CloudflareError>;
 }
 
 export interface FakePort extends CloudflarePort {
@@ -80,7 +91,40 @@ function reads(port: FakePort, accountId: string): AccountReads {
     r2Exists: (bucket) => read(`r2 ${bucket}`, () => s.r2.includes(bucket)),
     kvList: () => read("kvList", () => [...s.kv]),
     secretNames: (name) => read(`secrets ${name}`, () => (worker(name) ? [...worker(name).secrets] : null)),
+    r2LifecycleRules: (bucket) => read(`lifecycle ${bucket}`, () => [...(s.lifecycle?.[bucket] ?? [])]),
+    d1Query: (id, sql) => read(`query ${id} ${sql}`, () => s.query?.(id, sql) ?? []),
   };
+}
+
+/** Writes change the fake state, so a test can read what a deploy left behind. */
+function writes(port: FakePort, accountId: string): AccountWrites {
+  const s = port.state;
+  const write = async <T>(call: string, fn: () => T): Promise<T> => {
+    port.calls.push(`${call} @${accountId}`);
+    const failure = Object.entries(s.failWrites ?? {}).find(([key]) => call.startsWith(key))?.[1];
+    if (failure) throw failure;
+    return fn();
+  };
+  return {
+    d1Create: (name) =>
+      write(`d1Create ${name}`, () => {
+        const db = { id: `id-${name}`, name };
+        s.d1.push(db);
+        return db;
+      }),
+    r2Create: (name) => write(`r2Create ${name}`, () => void s.r2.push(name)),
+    r2SetLifecycleRules: (bucket, rules) =>
+      write(`r2SetLifecycleRules ${bucket} ${rules.map((r) => r.id).join(",")}`, () => {
+        s.lifecycle = { ...s.lifecycle, [bucket]: [...rules] };
+      }),
+    putSecret: (worker, name) =>
+      write(`putSecret ${worker} ${name}`, () => void s.workers[worker]?.secrets.push(name)),
+    promote: (worker, versionId) => write(`promote ${worker} ${versionId}`, () => undefined),
+  };
+}
+
+function api(port: FakePort, accountId: string): AccountApi {
+  return { ...reads(port, accountId), ...writes(port, accountId) };
 }
 
 export function createFakePort(state: FakeCloudflare): FakePort {
@@ -92,6 +136,7 @@ export function createFakePort(state: FakeCloudflare): FakePort {
     installPlan: () => plan,
     install: async () => {
       port.calls.push("install");
+      if (state.installError) throw state.installError;
       if (state.installSucceeds === false) return false;
       state.readiness = state.afterInstall ?? { state: "ready", version: "1.0.0-beta.32", command: "cf", untested: false };
       return true;
@@ -106,7 +151,7 @@ export function createFakePort(state: FakeCloudflare): FakePort {
       port.calls.push("whoami");
       return state.identity;
     },
-    account: (id) => reads(port, id),
+    account: (id) => api(port, id),
   };
   return port;
 }

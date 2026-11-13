@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -205,5 +206,33 @@ describe("cf port", () => {
       "cf auth login",
       `pnpm add -D cf@${CF_TESTED}`,
     ]);
+  });
+
+  it("writes: creates are sent once, secrets travel in a private file, never in argv", async () => {
+    const seenBodies: string[] = [];
+    const calls: Call[] = [];
+    const exec: Executor = async (cmd, args, opts) => {
+      calls.push({ cmd, args: [...args], env: opts.env, inherit: false });
+      const body = args.find((a) => a.startsWith("@"));
+      if (body) seenBodies.push(await import("node:fs/promises").then((fs) => fs.readFile(body.slice(1), "utf8")));
+      if (args[0] === "--version") return version;
+      if (args.join(" ") === "d1 create --name cms-acme-db") return ok({ uuid: "new-db", name: "cms-acme-db" });
+      if (args[0] === "r2" && args[2] === "create") return apiError(10013, "busy", "500 Internal Server Error");
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const api = createCfPort({ exec, cwd: dir, nodeVersion: "v22.12.0", sleep: noSleep }).account("acc1");
+    expect(await api.d1Create("cms-acme-db")).toEqual({ id: "new-db", name: "cms-acme-db" });
+    await expect(api.r2Create("cms-acme-storage")).rejects.toMatchObject({ failure: "TRANSIENT" });
+    expect(calls.filter((c) => c.args[0] === "r2")).toHaveLength(1);
+    await api.putSecret("cms-acme", "SECRETS_KEY", "s3cr3t-value");
+    const put = calls.find((c) => c.args[1] === "secrets")!;
+    expect(put.args.slice(0, 5)).toEqual(["workers", "secrets", "update", "SECRETS_KEY", "--worker"]);
+    expect(put.args.join(" ")).not.toContain("s3cr3t-value");
+    expect(JSON.parse(seenBodies[0])).toEqual({ name: "SECRETS_KEY", type: "secret_text", text: "s3cr3t-value" });
+    expect(existsSync(put.args[put.args.length - 1].slice(1))).toBe(false);
+    await api.r2SetLifecycleRules("cms-acme-next-cache", [{ id: "expire-page-cache", enabled: true }]);
+    expect(calls[calls.length - 1].args).toEqual(expect.arrayContaining(["lifecycle", "update", "cms-acme-next-cache", "-f"]));
+    await api.promote("cms-acme", "v9");
+    expect(calls[calls.length - 1].args).toEqual(["workers", "deployments", "create", "--worker", "cms-acme", "--strategy", "percentage", "--versions", '[{"version_id":"v9","percentage":100}]']);
   });
 });
