@@ -11,6 +11,9 @@ import { defineValueSlot, type SlotRegistry } from "./slots";
 //
 // 沒有這個之前,畫總覽的那一頁要自己知道有哪些插件、各自去問它們的內部函式。
 //
+// 2.x:存起來的公開頁不能在伺服器上看是誰登入,總覽頁在畫面出現之後由瀏覽器問 GET /api/account/entries?locale=…
+// (src/app/api/account/entries/route.ts),拿到的跟 accountEntriesFor() 一樣。
+//
 // 插件這樣加:
 //   fill(AccountEntries, (entries) => [...entries, { key: "orders", href: "/shop/orders", label: "我的訂單", note }])
 // 一定要 append(`[...entries, X]`),不要整包換掉。

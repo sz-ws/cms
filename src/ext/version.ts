@@ -1876,4 +1876,8 @@
 // group the same frame. A request read on a stored page (`NEXT_STATIC_GEN_BAILOUT`) now passes through slot fills
 // instead of falling back to the default content (`ext/next-signals.ts`). src/ext/META.md, "A site supplies its own
 // public pages".
+// 2.0.0 (same release, before it shipped): `GET /api/account/entries?locale=<locale>` gives the signed-in person's account
+// entries (`AccountEntries`, resolved by `accountEntriesFor()`) to the browser, so a stored account overview can ask for
+// them after it shows: `{ entries: [{ key, href, label, note }] }`, `private, no-store`; 401 when signed out; `locale`
+// is one of the site's languages (default: the site's), anything else is a 400.
 export const CORE_API_VERSION = "2.0.0";

@@ -1,6 +1,9 @@
 # api META
 
 - All server-side endpoints.
+- `account/*`: the signed-in person's own account: `identities` (linked sign-ins), `avatar`, and
+  `entries` (their account entries from the `AccountEntries` slot, for a stored account overview
+  that asks after it shows; 2.x).
 - `admin/attention`: which admin pages have something waiting, for the dot in the sidebar; any
   signed-in person, only for pages they can open (1.77.0).
 - `auth/*`: session login/logout.
