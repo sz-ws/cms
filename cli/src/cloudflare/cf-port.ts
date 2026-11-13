@@ -21,7 +21,11 @@
 //   cf r2 buckets create --name <name>
 //   cf r2 buckets lifecycle update <bucket> --rules @<file> -f
 //   cf workers secrets update <name> --worker <w> --body @<file>   (0600 file, deleted after)
-//   cf workers deployments create --worker <w> --strategy percentage --versions <json>
+//   cf workers deployments create --worker <w> --strategy percentage --versions <json>   (also rollback)
+//   cf workers secrets delete <name> --worker <w> -f
+//   cf workers delete <w> -f, cf d1 delete <id> -f, cf r2 buckets delete <b> -f, cf kv namespaces delete <id> -f
+// More reads: cf r2 objects list --bucket-name <b> --per-page 1, and
+//   cf o11y telemetry query --view events --preview ... (Workers Logs; --preview saves no query)
 // The account goes in CLOUDFLARE_ACCOUNT_ID (cf has no account flag). Creates are
 // not retried: a create that reached Cloudflare and then lost its answer would
 // otherwise fail as "already exists" on the second try.
@@ -38,6 +42,7 @@ import {
   type AccountReads,
   type AccountWrites,
   type LifecycleRule,
+  type LogEvent,
   type AuthSource,
   type CloudflarePort,
   type Deployment,
@@ -202,6 +207,50 @@ function accountReads(run: CfRunner, accountId: string): AccountReads {
       ),
     d1Query: async (databaseId, sql) =>
       asArray(asRecord(asArray(await get(["d1", "query", databaseId, "--sql", sql]))[0]).results).map(asRecord),
+    ...logAndObjectReads(get),
+  };
+}
+
+export function logEventFrom(raw: unknown): LogEvent {
+  const e = asRecord(raw);
+  const meta = asRecord(e["$metadata"]);
+  const workers = asRecord(e["$workers"]);
+  return {
+    time: typeof e.timestamp === "number" ? e.timestamp : Number(meta.timestampNs ?? 0) / 1e6,
+    level: str(meta.level) ?? "",
+    message: str(meta.error) ?? str(meta.message) ?? "",
+    trigger: str(meta.trigger),
+    outcome: str(workers.outcome),
+    requestId: str(meta.requestId),
+    versionId: str(asRecord(workers.scriptVersion).id),
+  };
+}
+
+/** Errors: the Worker's events at level error, or invocations whose outcome is not ok. */
+function errorFilters(worker: string): string {
+  return JSON.stringify([
+    { key: "$metadata.service", operation: "eq", type: "string", value: worker },
+    {
+      kind: "group",
+      filterCombination: "or",
+      filters: [
+        { key: "$metadata.level", operation: "eq", type: "string", value: "error" },
+        { key: "$workers.outcome", operation: "neq", type: "string", value: "ok" },
+      ],
+    },
+  ]);
+}
+
+function logAndObjectReads(get: (args: readonly string[]) => Promise<unknown>): Pick<AccountReads, "r2HasObjects" | "recentErrors"> {
+  return {
+    r2HasObjects: async (bucket) => asArray(await get(["r2", "objects", "list", "--bucket-name", bucket, "--per-page", "1"])).length > 0,
+    // --preview runs the query without saving it on the account.
+    recentErrors: async (worker, fromMs, toMs, limit) =>
+      asArray(asRecord(asRecord(await get([
+        "o11y", "telemetry", "query", "--query-id", "cms-logs", "--view", "events", "--preview",
+        "--limit", String(limit), "--timeframe-from", String(fromMs), "--timeframe-to", String(toMs),
+        "--parameters-filters", errorFilters(worker),
+      ])).events).events).map(logEventFrom).sort((a, b) => b.time - a.time),
   };
 }
 
@@ -238,6 +287,18 @@ function accountWrites(run: CfRunner, accountId: string): AccountWrites {
         "workers", "deployments", "create", "--worker", worker, "--strategy", "percentage",
         "--versions", JSON.stringify([{ version_id: versionId, percentage: 100 }]),
       ])),
+    ...deletes(send),
+  };
+}
+
+/** Deletes are sent once (-f: cf's own confirmation is replaced by ours). */
+function deletes(send: (args: readonly string[], once?: boolean) => Promise<unknown>): Pick<AccountWrites, "deleteSecret" | "deleteWorker" | "d1Delete" | "r2Delete" | "kvDelete"> {
+  return {
+    deleteSecret: async (worker, name) => void (await send(["workers", "secrets", "delete", name, "--worker", worker, "-f"], true)),
+    deleteWorker: async (worker) => void (await send(["workers", "delete", worker, "-f"], true)),
+    d1Delete: async (id) => void (await send(["d1", "delete", id, "-f"], true)),
+    r2Delete: async (bucket) => void (await send(["r2", "buckets", "delete", bucket, "-f"], true)),
+    kvDelete: async (id) => void (await send(["kv", "namespaces", "delete", id, "-f"], true)),
   };
 }
 

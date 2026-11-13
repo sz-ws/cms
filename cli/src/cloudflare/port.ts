@@ -90,6 +90,22 @@ export interface AccountReads {
   r2LifecycleRules(bucket: string): Promise<LifecycleRule[]>;
   /** Rows of a query; reads and writes both go through here. */
   d1Query(databaseId: string, sql: string): Promise<Record<string, unknown>[]>;
+  /** True when the bucket holds at least one object. */
+  r2HasObjects(bucket: string): Promise<boolean>;
+  /** Error-level log events and failed invocations of the Worker (Workers Logs), newest first. */
+  recentErrors(worker: string, fromMs: number, toMs: number, limit: number): Promise<LogEvent[]>;
+}
+
+export interface LogEvent {
+  /** Unix milliseconds. */
+  time: number;
+  level: string;
+  message: string;
+  /** e.g. "GET /path" or the cron pattern. */
+  trigger?: string;
+  outcome?: string;
+  requestId?: string;
+  versionId?: string;
 }
 
 /** An R2 lifecycle rule in the API's own shape (kept whole so a replace keeps it intact). */
@@ -101,7 +117,7 @@ export interface LifecycleRule {
   [other: string]: unknown;
 }
 
-/** Writes scoped to one account. Only `cms deploy` and `cms secrets` call these. */
+/** Writes scoped to one account: deploy, secret, rollback and destroy. */
 export interface AccountWrites {
   d1Create(name: string): Promise<D1Info>;
   r2Create(name: string): Promise<void>;
@@ -109,8 +125,15 @@ export interface AccountWrites {
   r2SetLifecycleRules(bucket: string, rules: readonly LifecycleRule[]): Promise<void>;
   /** Sets one secret; the value never appears on a command line. */
   putSecret(worker: string, name: string, value: string): Promise<void>;
-  /** Send 100% of traffic to a version that was uploaded but not deployed. */
+  /** Send 100% of traffic to a version (deploy's promote and rollback). */
   promote(worker: string, versionId: string): Promise<void>;
+  deleteSecret(worker: string, name: string): Promise<void>;
+  /** Deletes the Worker with its versions, deployments and custom domains. */
+  deleteWorker(worker: string): Promise<void>;
+  d1Delete(databaseId: string): Promise<void>;
+  /** Fails unless the bucket is empty. */
+  r2Delete(bucket: string): Promise<void>;
+  kvDelete(namespaceId: string): Promise<void>;
 }
 
 export type AccountApi = AccountReads & AccountWrites;

@@ -7,6 +7,7 @@ import {
   type AccountReads,
   type AccountWrites,
   type LifecycleRule,
+  type LogEvent,
   type CloudflarePort,
   type D1Info,
   type Deployment,
@@ -47,6 +48,10 @@ export interface FakeCloudflare {
   lifecycle?: Record<string, LifecycleRule[]>;
   /** Answers d1Query: rows for a database id and SQL (default: no rows). */
   query?: (databaseId: string, sql: string) => Record<string, unknown>[];
+  /** Buckets that hold objects. */
+  nonEmpty?: string[];
+  /** Answers recentErrors. */
+  logs?: LogEvent[];
   /** Throw this from the write whose call text starts with the key (e.g. "promote"). */
   failWrites?: Record<string, CloudflareError>;
 }
@@ -93,6 +98,8 @@ function reads(port: FakePort, accountId: string): AccountReads {
     secretNames: (name) => read(`secrets ${name}`, () => (worker(name) ? [...worker(name).secrets] : null)),
     r2LifecycleRules: (bucket) => read(`lifecycle ${bucket}`, () => [...(s.lifecycle?.[bucket] ?? [])]),
     d1Query: (id, sql) => read(`query ${id} ${sql}`, () => s.query?.(id, sql) ?? []),
+    r2HasObjects: (bucket) => read(`objects ${bucket}`, () => (s.nonEmpty ?? []).includes(bucket)),
+    recentErrors: (name, from, to, limit) => read(`logs ${name} ${to - from} ${limit}`, () => (s.logs ?? []).slice(0, limit)),
   };
 }
 
@@ -120,6 +127,18 @@ function writes(port: FakePort, accountId: string): AccountWrites {
     putSecret: (worker, name) =>
       write(`putSecret ${worker} ${name}`, () => void s.workers[worker]?.secrets.push(name)),
     promote: (worker, versionId) => write(`promote ${worker} ${versionId}`, () => undefined),
+    deleteSecret: (worker, name) =>
+      write(`deleteSecret ${worker} ${name}`, () => {
+        const w = s.workers[worker];
+        if (w) w.secrets = w.secrets.filter((n) => n !== name);
+      }),
+    deleteWorker: (worker) =>
+      write(`deleteWorker ${worker}`, () => {
+        s.workers = Object.fromEntries(Object.entries(s.workers).filter(([k]) => k !== worker));
+      }),
+    d1Delete: (id) => write(`d1Delete ${id}`, () => void (s.d1 = s.d1.filter((d) => d.id !== id))),
+    r2Delete: (bucket) => write(`r2Delete ${bucket}`, () => void (s.r2 = s.r2.filter((b) => b !== bucket))),
+    kvDelete: (id) => write(`kvDelete ${id}`, () => void (s.kv = s.kv.filter((n) => n.id !== id))),
   };
 }
 

@@ -235,4 +235,33 @@ describe("cf port", () => {
     await api.promote("cms-acme", "v9");
     expect(calls[calls.length - 1].args).toEqual(["workers", "deployments", "create", "--worker", "cms-acme", "--strategy", "percentage", "--versions", '[{"version_id":"v9","percentage":100}]']);
   });
+
+  it("logs, object checks and deletes: the cf commands and their parsing", async () => {
+    const event = { timestamp: 1000, $metadata: { level: "error", error: "boom", trigger: "GET /x", requestId: "r1" }, $workers: { outcome: "exception", scriptVersion: { id: "v1" } } };
+    const { exec, calls } = scripted({
+      "cf --version": version,
+      "cf r2 objects list --bucket-name cms-acme-media --per-page 1": ok([{ key: "a" }]),
+      "cf r2 objects list --bucket-name cms-acme-cache --per-page 1": ok([]),
+    });
+    const logsExec: Executor = async (cmd, args, opts) => (args[0] === "o11y" ? ok({ events: { events: [event, { ...event, timestamp: 2000 }] } }) : exec(cmd, args, opts));
+    const api = createCfPort({ exec: logsExec, cwd: dir, nodeVersion: "v22.12.0", sleep: noSleep }).account("acc1");
+    expect(await api.r2HasObjects("cms-acme-media")).toBe(true);
+    expect(await api.r2HasObjects("cms-acme-cache")).toBe(false);
+    const events = await api.recentErrors("cms-acme", 0, 5000, 10);
+    expect(events.map((e) => e.time)).toEqual([2000, 1000]);
+    expect(events[0]).toMatchObject({ level: "error", message: "boom", trigger: "GET /x", outcome: "exception", versionId: "v1" });
+    const d = createCfPort({ exec, cwd: dir, nodeVersion: "v22.12.0", sleep: noSleep }).account("acc1");
+    await d.deleteSecret("cms-acme", "EXT_X");
+    await d.deleteWorker("cms-acme");
+    await d.d1Delete("db-1");
+    await d.r2Delete("cms-acme-media");
+    await d.kvDelete("kv-1");
+    expect(calls.slice(-5).map((c) => c.args.join(" "))).toEqual([
+      "workers secrets delete EXT_X --worker cms-acme -f",
+      "workers delete cms-acme -f",
+      "d1 delete db-1 -f",
+      "r2 buckets delete cms-acme-media -f",
+      "kv namespaces delete kv-1 -f",
+    ]);
+  });
 });
