@@ -118,6 +118,11 @@ export type SlotLayer = "agency" | "site";
 
 const LAYER_RANK: Record<SlotLayer | "plugin", number> = { plugin: 0, agency: 1, site: 2 };
 
+/** 層的高低:一般插件 0、代理商 1、站台 2。填插槽由低到高(高的後填、蓋得過);公開頁的網址由高到低先問。 */
+export function layerRank(layer: SlotLayer | undefined): number {
+  return LAYER_RANK[layer ?? "plugin"];
+}
+
 export interface SlotSource {
   extId: string;
   layer?: SlotLayer;
@@ -184,7 +189,7 @@ export class SlotRegistry {
     this.onError = onError;
     const ordered = sources
       .map((source, index) => ({ source, index }))
-      .sort((a, b) => LAYER_RANK[a.source.layer ?? "plugin"] - LAYER_RANK[b.source.layer ?? "plugin"] || a.index - b.index);
+      .sort((a, b) => layerRank(a.source.layer) - layerRank(b.source.layer) || a.index - b.index);
     for (const { source } of ordered) {
       for (const entry of source.fills ?? []) {
         this.fills.set(entry.slotId, [...(this.fills.get(entry.slotId) ?? []), { extId: source.extId, layer: source.layer ?? "plugin", fill: entry }]);

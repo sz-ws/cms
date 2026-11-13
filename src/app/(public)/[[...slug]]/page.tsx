@@ -1,7 +1,11 @@
 import type { ComponentType } from "react";
+import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
+import { PublicMetadata, PublicViewport } from "@/ext/core-slots";
 import { getExtRuntime, type ExtRuntime } from "@/ext/loader";
 import { decodePathSegments } from "@/ext/dx/route-matcher";
+import { matchPublicRoute, runPublicSteps, type PublicPageRoute, type PublicRouteMatch } from "@/ext/public-pages";
 import { getSetting } from "@/lib/settings";
 
 // 2.0:公開頁算一次、整頁存起來(OpenNext 的 R2 增量快取),之後由快取攔截直接回應,
@@ -12,13 +16,18 @@ import { getSetting } from "@/lib/settings";
 //     在第一次被造訪時才算並存起來。OpenNext 只攔截這種形狀的動態路由(prerender manifest
 //     裡 fallback 是 null)。
 //   - revalidate = false:不依時間重算,只在失效時重算(依時間重算要 queue,這裡不用)。
-//   - dynamic = "error":頁面、layout 或任何插件的元件在渲染時讀了 cookies()、headers()、
+//   - dynamic = "error":頁面、layout、metadata 或任何插件的元件在渲染時讀了 cookies()、headers()、
 //     searchParams,就直接報錯,而不是悄悄把整頁變成每次即時算。存起來的頁面對每個訪客都
 //     一樣;因人而異的東西(登入狀態、購物車)在頁面出現之後由 client 元件問伺服器(server action
 //     或 API route)。什麼時候需要問、怎麼問:src/ext/META.md 的「Public pages」。
 //
 // 首頁也在這裡(slug 是 undefined):以前 `/` 是同層的 page.tsx,optional catch-all 因此不能用;
 // 兩個合成一個,`/` 才能跟其他公開頁一樣被存起來。
+//
+// 2.x:站台自己的頁面也走這裡,不另開路由檔、不刪這個檔(src/ext/META.md「A site supplies its own public
+// pages」):網址與 metadata 是 PublicRoute(接得住 [] 的是首頁,站台的先問),每一頁的 metadata / viewport
+// 再流過值的插槽 PublicMetadata / PublicViewport。外框(插槽 PublicFrame)在 (public)/layout.tsx,換頁時不重新
+// 掛載;404 是 (public)/not-found.tsx。派送規則在 ext/public-pages.ts。
 export const dynamic = "error";
 export const dynamicParams = true;
 export const revalidate = false;
@@ -26,32 +35,55 @@ export function generateStaticParams(): { slug: string[] }[] {
   return [];
 }
 
-// OG image metadata: declarative extensions that declare `og.image.template` are
-// expected to provide their own `generateMetadata()` within an extension-specific
-// route file (or via a future adaptive metadata middleware). The
-// `/api/og/<extId>/<type>` endpoint itself is generic and stays in this file.
-export default async function PublicPage({
-  params,
-}: {
-  params: Promise<{ slug?: string[] }>;
-}) {
-  const { slug } = await params;
+type Params = Promise<{ slug?: string[] }>;
+
+interface Resolved {
+  rt: ExtRuntime;
+  /** 解碼後的段;壞掉的 `%` 序列是 null。 */
+  segments: string[] | null;
+  hit: PublicRouteMatch | null;
+}
+
+// 頁面與 metadata 各問一次,同一次渲染裡只算一次(cache 以參數比對,所以傳字串)。
+// Next 交來的段是 percent-encoded 的(/news/春季新品 進來是 %E6%98%A5…);所有 matcher 看到的一律是
+// 解碼後的字串,中文 slug 才對得上 contents.slug。壞掉的 `%` 序列 → 404(見 decodePathSegments)。
+const resolve = cache(async (key: string): Promise<Resolved> => {
   const rt = await getExtRuntime();
-  assertNoRetryableFailure(rt);
-  if (!slug || slug.length === 0) return <HomePage />;
-  // Next 交來的段是 percent-encoded 的(/news/春季新品 進來是 %E6%98%A5…);所有
-  // matcher 看到的一律是解碼後的字串,中文 slug 才對得上 contents.slug。壞掉的
-  // `%` 序列 → 404(見 decodePathSegments)。
-  const segments = decodePathSegments(slug);
+  const segments = decodePathSegments(JSON.parse(key) as string[]);
+  return { rt, segments, hit: segments ? matchPublicRoute(rt.enabled, segments) : null };
+});
+
+const resolveParams = async (params: Params) => resolve(JSON.stringify((await params).slug ?? []));
+
+function routeOf({ segments, hit }: Resolved): PublicPageRoute {
+  if (segments && hit) return segments.length === 0 ? { kind: "home", path: segments, ext: hit.ext.id } : { kind: "page", path: segments, ext: hit.ext.id };
+  if (segments && segments.length === 0) return { kind: "home", path: segments, ext: null };
+  return { kind: "not-found", path: segments, ext: null };
+}
+
+// route 沒給 metadata、也沒有人填 PublicMetadata = 回 {}:head 跟沒有這個函式時一樣。
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const resolved = await resolveParams(params);
+  const { rt, hit } = resolved;
+  const base = hit?.route.metadata ? await hit.route.metadata(hit.params) : {};
+  return runPublicSteps(base, rt.slots.value(PublicMetadata, []), { route: routeOf(resolved) });
+}
+
+export async function generateViewport({ params }: { params: Params }): Promise<Viewport> {
+  const resolved = await resolveParams(params);
+  return runPublicSteps<Viewport, { route: PublicPageRoute }>({}, resolved.rt.slots.value(PublicViewport, []), { route: routeOf(resolved) });
+}
+
+export default async function PublicPage({ params }: { params: Params }) {
+  const resolved = await resolveParams(params);
+  assertNoRetryableFailure(resolved.rt);
+  const { segments, hit } = resolved;
   if (!segments) notFound();
-  for (const ext of rt.enabled)
-    for (const route of ext.publicRoutes ?? []) {
-      const m = route.match(segments);
-      if (m) {
-        const C = route.component;
-        return <C params={m} />;
-      }
-    }
+  if (hit) {
+    const C = hit.route.component;
+    return <C params={hit.params} />;
+  }
+  if (segments.length === 0) return <HomePage />;
   notFound();
 }
 
@@ -66,7 +98,7 @@ function assertNoRetryableFailure(rt: ExtRuntime): void {
   }
 }
 
-// 03 §6:首頁用 filter:publicHome 取得要渲染的 component,
+// 03 §6:沒有 route 接首頁時,用 filter:publicHome 取得要渲染的 component,
 // 無則顯示內建的極簡歡迎頁(站名 + 描述,來自 settings)。
 async function HomePage() {
   const rt = await getExtRuntime();

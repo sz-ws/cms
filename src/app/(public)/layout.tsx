@@ -1,84 +1,20 @@
-import type { ComponentType, ReactNode } from "react";
-import { getExtRuntime } from "@/ext/loader";
-import { normalizePublicWidgets } from "@/ext/public-widgets";
-import { getSiteNoticeWindow } from "@/lib/site-notice-server";
-import { SiteNoticeBar } from "./site-notice";
+import type { ReactNode } from "react";
+import { FramedPublicPage } from "@/components/PublicFrame";
 
-// 2.0:沒有路由設定 —— 公開頁的快取規則寫在 [[...slug]]/page.tsx(dynamic = "error" 等)。
-// 這裡渲染的東西會跟著頁面一起存起來,所以同樣不能讀 cookies()、headers()。
+// [core] 不要在客戶站改這個檔。
+//
+// 公開站的外框(公告、頁首、頁尾、浮層)。外框放在 layout 裡,在公開頁之間換頁時不會重新掛載。
+// 樣子由插槽決定(components/PublicFrame.tsx、core-slots.ts 的 PublicFrame),不改這個檔:
+//
+//   - 只要加頁首頁尾:extension 註冊 filter:publicHeader / filter:publicFooter;
+//     浮層用 filter:publicWidgets(一定要 append:`(w) => [...w, MyWidget]`)。
+//   - 整個外框自己畫:站台層插件 fill(PublicFrame, { replace: MyFrame }),MyFrame({ notice, children })。
+//     layout 不知道網址;要照網址換樣子的,在 client 元件裡用 usePathname()(src/ext/META.md
+//     「A site supplies its own public pages」)。
+//
+// 這裡渲染的東西會跟著每一頁一起存起來,所以不能讀 cookies()、headers();也不設路由設定
+// (dynamic、revalidate 只寫在頁面上;寫在這裡會蓋過或混進頁面的)。
 
-// ─────────────────────────────────────────────────────────────────────────────
-// [site-seam] 這裡是給站台外框用的接縫 —— 優先用 filter 提供,不得已才改這個檔。
-//
-// 公開站的外框(header / nav / footer 等每個站台各自不同的東西)。
-//
-// 這個檔案存在的理由:在它出現之前,一個用這套 CMS 架起來的站要放自己的頁首頁尾,
-// 只能去改 src/ 底下的 core 檔案 —— 而那正是讓「日後把 core 的修正 merge 回客戶站」
-// 變成解衝突地獄的原因。有了這一層,站台外框有了自己的家。
-//
-// 【放什麼在這裡】
-// 兩種做法,優先選第一種:
-//
-//   1)【建議】用 extension 提供,不要改這個檔。
-//      在你的 extension 裡註冊 filter,回傳一個 React component:
-//
-//        hooks.addFilter("filter:publicHeader", () => MyHeader);
-//        hooks.addFilter("filter:publicFooter", () => MyFooter);
-//
-//      這樣 core 與客戶站的分歧維持在零,`git merge upstream/main` 永遠不會衝突。
-//      同一套機制首頁已經在用了(filter:publicHome,見 ./page.tsx)。
-//
-//      不佔版位的浮層(購買通知、cookie 橫幅、回到頂端)走另一個插槽,值是陣列:
-//
-//        hooks.addFilter("filter:publicWidgets", (w) => [...w, MyWidget]);
-//
-//      一定要 append(`[...w, X]`)不要整包換掉,否則會把別的 extension 的浮層吃掉。
-//
-//   2)【退而求其次】真的需要這個站獨有、又不值得包成 extension 的東西,才直接改
-//      下面的 JSX。改了就要有心理準備:core 之後動到這個檔時要手動合併。
-//
-// 【不要放什麼】
-//   - `<html>` / `<body>` / 字體 / 全域 CSS —— 那些在 src/app/layout.tsx(root)。
-//   - 站名、描述、favicon 之類的 metadata —— 走 settings(core.siteTitle 等),
-//     root layout 的 generateMetadata() 已經在讀。
-//   - 後台的東西 —— 那在 src/app/(admin)/。這裡只包公開路由。
-// ─────────────────────────────────────────────────────────────────────────────
-
-export default async function PublicLayout({
-  children,
-}: Readonly<{ children: ReactNode }>) {
-  const rt = await getExtRuntime();
-
-  // 兩個 filter 都預設 null = 不渲染。沒有任何 extension 註冊時,公開站就是
-  // 「只有內容、沒有外框」—— 對還沒設計過頁首頁尾的新站來說是正確的預設。
-  //
-  // publicWidgets(1.24.0)是浮層插槽,預設空陣列。與上面兩個不同的是它**累加**:
-  // extension 約定寫 `(w) => [...w, MyWidget]`,所以多個浮層可以共存,且不受
-  // 安裝順序影響。core 不替它們加任何容器 —— 每個 widget 自己決定角落與 z-index。
-  //
-  // 1.56.0:網站公告(設定 → 網站公告)畫在最上方、頁首之前;沒開是 null。
-  // 2.0:有日期的公告由瀏覽器決定出不出現(存起來的頁面不能帶時鐘,見 site-notice.tsx)。
-  const [header, footer, widgets, notice] = await Promise.all([
-    rt.hooks.applyFilters<ComponentType | null>("filter:publicHeader", null),
-    rt.hooks.applyFilters<ComponentType | null>("filter:publicFooter", null),
-    rt.hooks.applyFilters<unknown>("filter:publicWidgets", []),
-    getSiteNoticeWindow(),
-  ]);
-
-  const Header = header;
-  const Footer = footer;
-  // 回傳值來自別人寫的 handler,不保證是陣列 —— 收斂理由見 ext/public-widgets.ts。
-  const Widgets = normalizePublicWidgets(widgets);
-
-  return (
-    <div className="flex min-h-screen flex-col">
-      {notice && <SiteNoticeBar notice={notice} />}
-      {Header && <Header />}
-      <div className="flex-1">{children}</div>
-      {Footer && <Footer />}
-      {Widgets.map((W, i) => (
-        <W key={i} />
-      ))}
-    </div>
-  );
+export default function PublicLayout({ children }: Readonly<{ children: ReactNode }>) {
+  return <FramedPublicPage>{children}</FramedPublicPage>;
 }

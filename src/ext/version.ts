@@ -1864,4 +1864,16 @@
 // API …; this core provides 2.0.0"), its routes, hooks and jobs are absent, and enabling or installing it is refused.
 // Sites: bind no KV, keep the two cache bindings, add the R2 lifecycle rule (`cms setup` does it); DEPLOY.md,
 // "Upgrading a 1.x site to 2.0".
+// 2.0.0 (same release, before it shipped): A site supplies its own public pages through the one stored route instead of
+// deleting it. `PublicRoute.metadata?(params)` gives a page its own metadata (generateMetadata on the catch-all); a route
+// matching `[]` is the home page (then `filter:publicHome`, then the welcome page); URLs are matched site layer first,
+// then agency, then plain plugins (load order within a layer). New core slots (`ext/core-slots.ts`): value slots
+// `PublicMetadata` / `PublicViewport` (lists of steps `(value, { route })` run after the route's metadata), view slots
+// `PublicFrame` (props `{ notice, children }`, rendered by `(public)/layout.tsx` so it persists across navigation;
+// default = the former layout markup; a frame that differs by URL uses `usePathname()` in a client component) and
+// `PublicNotFound` (content of the new `(public)/not-found.tsx`). Changed: the public 404 is now drawn inside the public
+// frame (before: the root 404 outside it). `components/PublicFrame.tsx` (`FramedPublicPage`) gives a site's own route
+// group the same frame. A request read on a stored page (`NEXT_STATIC_GEN_BAILOUT`) now passes through slot fills
+// instead of falling back to the default content (`ext/next-signals.ts`). src/ext/META.md, "A site supplies its own
+// public pages".
 export const CORE_API_VERSION = "2.0.0";

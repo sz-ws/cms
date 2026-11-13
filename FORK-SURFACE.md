@@ -48,7 +48,7 @@ grep -rn "\[site\]\|\[site-seam\]\|\[core\] 不要" src/ extensions/ wrangler.js
 |---|---|
 | `src/app/layout.tsx` | 站名/描述 → settings(`core.siteTitle`);樣式 → `site.css` |
 | `src/app/globals.css` | → `site.css`。⚠️ 它的 `@source` 指令刪掉會讓每頁 500 |
-| `src/app/(public)/layout.tsx` | 頁首頁尾 → 在你的 extension 註冊 `filter:publicHeader` / `filter:publicFooter` |
+| `src/app/(public)/` 底下的檔(路由、layout、404) | 頁首頁尾 → 在你的 extension 註冊 `filter:publicHeader` / `filter:publicFooter`。自己的首頁、自己的頁面、整個外框、404 → 站台層插件(`layer: "site"`)的 `publicRoutes` 與插槽 `PublicFrame` / `PublicNotFound` / `PublicMetadata` / `PublicViewport`(`src/ext/META.md`「A site supplies its own public pages」)。不刪這些檔,也不在 `/` 另開路由檔:Next 不准第二個 `/` 跟 optional catch-all 並存,刪了則每次升級都衝突,core 公開頁的修正也到不了你的頁面 |
 | `src/lib/`、`src/ext/`、`src/components/` | 整個 core。要改行為就開 extension |
 | `migrations/` | 你的表 → 走 extension 的 migration,不要往這個共用序列加號 |
 

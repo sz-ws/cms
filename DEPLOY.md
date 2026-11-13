@@ -182,7 +182,8 @@ serving normally, just without `width`/`height` attributes in the markup.
 ## Public pages are stored whole
 
 Public pages (everything the catch-all `src/app/(public)/[[...slug]]` serves: the
-home page, plugin public routes, declarative list / detail / form views) and
+home page, plugin public routes, a site layer's own pages and 404s, declarative list /
+detail / form views; see `src/ext/META.md`, "A site supplies its own public pages") and
 `/login` are rendered on their first request, stored in `NEXT_INC_CACHE_R2_BUCKET`
 and then answered by OpenNext's cache interception without running the Next
 server: one R2 read and one D1 query per request. `open-next.config.ts` sets this

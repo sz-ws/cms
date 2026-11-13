@@ -16,11 +16,15 @@
     `defineSlot` declare a named place, a plugin's `fills` fill it (`fill(slot, …)`), and the request's
     `ExtRuntime.slots` resolves it. Order follows `Extension.layer`: plain plugins, then "agency", then
     "site"; a layer is on when compiled in, without being enabled. `account-entries.ts` is the slot for the entries of a signed-in person's account area (plus how to read them), `after-sign-in.ts` is the slot through which a plugin asks a member for one more step right after sign-in (read by `/api/auth/continue`; staff are never detoured), `admin-attention.ts` is the slot through which a plugin says which admin pages have something waiting (the dot in the sidebar; see its own entry below), `site-path.ts` checks a supplied address; `core-slots.ts` holds core's own slots
-    (admin sidebar sections and items, admin status sets, and one slot per admin content list and edit
-    page); UI slots are placed with `components/Slot.tsx` (server) and `components/SlotRegion.tsx`
+    (admin sidebar sections and items, admin status sets, one slot per admin content list and edit
+    page, and the public-page slots `PublicMetadata`, `PublicViewport`, `PublicFrame`, `PublicNotFound`); UI slots are placed with `components/Slot.tsx` (server) and `components/SlotRegion.tsx`
     (client). `services.slots` is the same registry for jobs and API handlers; `slots.explain(slot)` says
     who filled what. Slots are for changing a lower layer; services (payment, stock, checkout fields)
     stay capabilities. `CMS_LAYER_FILLS=off` (Worker variable) skips the fills of both layers.
+  - `public-pages.ts` (2.x): how a public URL is answered — `matchPublicRoute()` (site, then agency, then
+    plain plugins; `[]` is the home page), the `PublicPageRoute` metadata steps are told, and
+    the step runner. The page is `app/(public)/[[...slug]]/page.tsx`; the frame is drawn by `app/(public)/layout.tsx`
+    through `components/PublicFrame.tsx` (`FramedPublicPage`). See "A site supplies its own public pages".
   - `admin-attention.ts` (1.77.0): the value slot `AdminAttention` (`admin.sidebar.attention`) — which admin
     pages have something waiting for the owner. A plugin appends `{ href, count() }` in its `fills`:
     `fill(AdminAttention, (sources) => [...sources, { href: "/admin/ext/my-plugin", count: () => countWaiting() }])`.
@@ -122,7 +126,8 @@
 ## Public pages
 
 A public page — a `PublicRoute`, the `publicHome` / `publicHeader` / `publicFooter` /
-`publicWidgets` filters, a declarative list, detail or form view — is rendered once, stored
+`publicWidgets` filters, the `PublicFrame` / `PublicNotFound` / `PublicMetadata` / `PublicViewport`
+slots, a declarative list, detail or form view — is rendered once, stored
 whole and sent to every visitor from the page cache without running the Next server
 (`src/app/(public)/[[...slug]]/page.tsx`, `lib/public-cache.ts`). Decide before you write the
 page whether it asks the server anything after it shows, in this order:
@@ -192,6 +197,104 @@ page whether it asks the server anything after it shows, in this order:
 
 Requires coreApi `^2.0.0`.
 
+## A site supplies its own public pages
+
+A site that wants its own home page, its own storefront pages or its own look does it from its
+site-layer plugin (`layer: "site"`; an agency layer works the same way). Every public URL still
+renders through core's one stored route, `src/app/(public)/[[...slug]]/page.tsx`, so the site's
+pages are stored, refreshed, previewed and 404'd exactly like core's, and get core's later fixes.
+**Do not delete or shadow that file, and do not add a route file at `/`** (Next refuses a second
+`/` next to the optional catch-all). The pieces (`ext/public-pages.ts`, `ext/core-slots.ts`):
+
+- **Pages: `publicRoutes`.** `{ match(segments), component({ params }), metadata?(params) }`.
+  - A route whose `match` accepts `[]` is the home page. With none, `filter:publicHome` renders
+    the home, then the built-in welcome page.
+  - URLs are asked layer by layer: site, then agency, then plain plugins. Within a layer the
+    load order is kept. So a site route overrides a plugin's URL (a site's own `/shop/cart`).
+  - To hide a plugin URL, match it and call `notFound()` in the component.
+  - Nested and paginated paths are just segments (`/blog/page/2`), not `?page=`.
+- **Per-page metadata: `PublicRoute.metadata(params)`.** Returns a Next `Metadata` (title,
+  description, canonical, robots, Open Graph). It is computed and stored with the page. Without
+  it the page adds nothing; only the root layout's site title and description apply. Core adds
+  no default canonical. JSON-LD is part of the page: print `<script type="application/ld+json">`
+  in the component.
+- **Site-wide metadata: value slots `PublicMetadata` and `PublicViewport`.**
+  - Each holds a list of steps, `(metadata, { route }) => Metadata | Promise<Metadata>`. `route` is
+    `{ kind: "home" | "page" | "not-found", path, ext }`: the decoded segments and the id of the
+    plugin whose route answered (`null` for the `publicHome` filter and the welcome page). The steps
+    run after the route's own metadata, in fill order. Use them for a title suffix, a share image,
+    `noindex` for some URLs, or `themeColor`.
+  - Always append: `fill(PublicMetadata, (steps) => [...steps, myStep])`. A step may be async (read
+    settings).
+  - A step that throws fails that render with a 500. Nothing is stored, and the next visitor
+    renders again. A page with missing metadata is never stored.
+  - Limit: `kind: "not-found"` (no route answered, or a broken `%` sequence) only reaches the
+    browser after load. Next puts a 404's metadata in the page payload, and the HTML `<head>` keeps
+    the site title plus `noindex`, so crawlers see the site title.
+  - Limit: a route that answers a URL only to hide it with `notFound()` is still `kind: "page"` to
+    the steps. Declare no `metadata` on such a route.
+- **Frame: view slot `PublicFrame`, rendered by `(public)/layout.tsx`.** The layout persists across
+  client-side navigation, so a header, a marquee or audio in the frame keeps running when the
+  visitor moves between public pages.
+  - Props: `{ notice, children }`. `notice` is the site announcement window or `null`. A layout does
+    not know the URL, so the frame gets no route information from the server.
+  - Default, without a fill: announcement bar + `filter:publicHeader` + content +
+    `filter:publicFooter` + `filter:publicWidgets`, the same markup as before.
+  - `fill(PublicFrame, { replace: MyFrame })` draws the whole frame. It places the announcement
+    itself, or leaves it out. Use `noticeRevealScript` and `SiteNoticeSync` (`lib/site-notice.ts`,
+    `app/(public)/site-notice-sync.tsx`) to keep a dated announcement decided by the browser.
+  - `filter:publicWidgets` overlays are still drawn by core, after a replaced frame.
+  - `wrap` gets the default frame as `children`.
+  - **A frame that differs by URL** (a bare home, framed inner pages, a window around some plugin
+    pages) decides in a client component with `usePathname()` or `useSelectedLayoutSegments()`
+    (`next/navigation`). Client components render on the server too, so the stored HTML of each
+    URL already has its frame. Keep the same element types for pages that share a frame, so their
+    header stays mounted. Pattern (also in `test/fixtures/public-frame/`):
+
+    ```tsx
+    // site-frame.tsx (the fill, a server component)
+    export function SiteFrame({ notice, children }: PublicFrameProps) {
+      return <PathFrame notice={notice ? <SiteNoticeBar notice={notice} /> : null}>{children}</PathFrame>;
+    }
+    // path-frame.tsx
+    "use client";
+    export function PathFrame({ notice, children }: { notice: ReactNode; children: ReactNode }) {
+      if (usePathname() === "/") return <div className="my-site">{children}{notice}</div>;
+      return <div className="my-site"><SiteHeader />{notice}{children}<SiteFooter /></div>;
+    }
+    ```
+  - A frame needs no other information. Which plugin answers a URL and which URLs are hidden are
+    the site's own route decisions, so it can name those paths. A 404's look belongs in
+    `PublicNotFound`, not in the frame.
+- **404: `(public)/not-found.tsx`.**
+  - URLs no route answers, broken `%` sequences and a route's own `notFound()` render the view slot
+    `PublicNotFound` inside the layout's frame. The default content is core's 404 message.
+  - **Changed in 2.x:** the 404 used to be core's root `not-found.tsx`, outside the public frame.
+    With the default frame it now has the announcement, `publicHeader`, `publicFooter` and
+    `publicWidgets` around the same message.
+- **Stored-page rules apply to all of it.** `match`, `component`, `metadata`, the steps and the
+  fills, including client components in the frame, run in the render that is stored for every
+  visitor. They must not read `cookies()`, `headers()`, `searchParams`, the session or the clock
+  ("Public pages" above).
+  - The route is `dynamic = "error"`, so a read fails that request loudly. `next dev` shows it;
+    production answers 500 and stores nothing.
+  - A fill that does this is not silently replaced by the default content either
+    (`ext/next-signals.ts`).
+- **A site layer's CSS reaches every page, the admin included.** The extension registry is part of
+  every route, so a stylesheet imported by a site plugin module is linked on `/admin` and `/login`
+  too. Scope every rule under the site's own class (e.g. `.my-site …`), set on the frame's root.
+- **A page that must differ per visitor and cannot ask from the browser:** add a route file for
+  that one static path in the site's own route group (`src/app/(site)/member/page.tsx` with
+  `export const dynamic = "force-dynamic"`).
+  - Give the group a layout that renders the same frame:
+    `export default function Layout({ children }) { return <FramedPublicPage>{children}</FramedPublicPage>; }`
+    (`components/PublicFrame.tsx`). Moving between that group and the public pages changes the
+    layout, so the frame mounts again there.
+  - It is not stored; every request runs the Next server. Prefer a stored page that asks from a
+    client component.
+- `CMS_LAYER_FILLS=off` turns off the layers' fills (frame, 404, metadata steps), not their
+  routes.
+
 ## Moving a plugin from 1.x to 2.0
 
 A plugin whose `coreApi` range does not include 2.0.0 (every `^1.x` range) is not loaded on a 2.0
@@ -199,8 +302,9 @@ core: `/admin/extensions` lists it as unavailable ("Requires core API ^1.x; this
 2.0.0"), its public routes, API routes, hooks, jobs and slot fills are absent, and enabling or
 installing it is refused. To move one:
 
-1. **Public output reads no request.** In `PublicRoute` components and the `publicHome`,
-   `publicHeader`, `publicFooter` and `publicWidgets` filters, remove `cookies()`, `headers()`,
+1. **Public output reads no request.** In `PublicRoute` components (and their `metadata`), the
+   `publicHome`, `publicHeader`, `publicFooter` and `publicWidgets` filters and fills of the
+   public slots, remove `cookies()`, `headers()`,
    `connection()`, `searchParams`, `getSessionUser()` and decisions on the current time. Move what
    differs per visitor into a client component that asks after the page shows (points 2 and 3
    above). Pages under `next dev` show the error at once; check every public route there.

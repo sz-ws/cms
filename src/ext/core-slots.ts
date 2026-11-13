@@ -1,6 +1,7 @@
 import type { AdminMenuItem, AdminNavSection } from "./admin-menu";
 import type { CollectionViewProps } from "./dx/views/CollectionView";
 import type { FormViewPageProps } from "./dx/views/FormViewPage";
+import type { PublicFrameProps, PublicMetadataStep, PublicViewportStep } from "./public-pages";
 import type { ResolvedStatusSets } from "./record-status";
 import { defineSlot, defineValueSlot, type ViewSlot } from "./slots";
 
@@ -57,3 +58,26 @@ export function adminCollectionSlot(contentType: string): ViewSlot<CollectionVie
 export function adminFormSlot(contentType: string): ViewSlot<FormViewPageProps> {
   return defineSlot<FormViewPageProps>(`admin.form.${contentType}`);
 }
+
+// ---- 公開頁(2.x;怎麼用見 src/ext/META.md「A site supplies its own public pages」與 ext/public-pages.ts) ----
+
+/**
+ * 每一頁的 metadata 最後流過的步驟(PublicMetadataStep)。route 自己的 metadata 先算,再照填的先後一步一步改:
+ * 站台的標題後綴、分享圖、不收錄某些網址…。預設沒有步驟 = metadata 就是 route 給的(沒給就什麼都不加)。
+ * 一定要 append:`fill(PublicMetadata, (steps) => [...steps, myStep])`。
+ */
+export const PublicMetadata = defineValueSlot<PublicMetadataStep[]>("public.metadata");
+
+/** 每一頁的 viewport(themeColor、colorScheme…),規矩同 PublicMetadata。預設沒有步驟。 */
+export const PublicViewport = defineValueSlot<PublicViewportStep[]>("public.viewport");
+
+/**
+ * 公開頁的外框,由 (public)/layout.tsx 畫:換頁時不重新掛載。props:{ notice, children }(layout 不知道網址;
+ * 照網址換樣子的外框在 client 元件裡用 usePathname(),見 src/ext/META.md)。預設是公告列 + filter:publicHeader +
+ * 內容 + filter:publicFooter + filter:publicWidgets。換掉(replace)的話整個外框由填的元件畫,公告放不放、放哪裡
+ * 也由它決定;filter:publicWidgets 的浮層照樣由核心畫在外框後面。包起來(wrap)的拿到的 children 是預設的外框。
+ */
+export const PublicFrame = defineSlot<PublicFrameProps>("public.frame");
+
+/** 404 的內容((public)/not-found.tsx,在外框裡)。預設是核心的 404:大字 404、一句話、回首頁。 */
+export const PublicNotFound = defineSlot("public.not-found");

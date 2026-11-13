@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ComponentType } from "react";
 import { z } from "zod";
 import type { SessionUser } from "@/lib/auth";
@@ -157,8 +158,19 @@ export interface PublicRoute {
   // 約束:segments 是免登入、外部完全可控的輸入,且每個公開 request 會跑過所有
   // enabled 模組的所有 matcher——match 必須是 O(segments) 的純字串段比較,
   // 禁止對 segments 執行 regex(ReDoS 面)或任何 I/O
+  // 2.x:空的 segments([])是首頁。接得住 [] 的 route 就是首頁(沒有人接才輪到 filter:publicHome、
+  // 再來是內建的歡迎頁)。先問哪一個插件照層:站台("site")、代理商("agency")、一般插件,同一層照載入順序
+  // (ext/public-pages.ts)。所以站台的 route 蓋得過插件的同一個網址;要讓一個網址打不開,站台接住它、
+  // component 裡 notFound()。
   match: (segments: string[]) => Record<string, string> | null;
   component: ComponentType<{ params: Record<string, string> }>;
+  /**
+   * 2.x:這一頁的 metadata(title、description、canonical、robots、Open Graph…),跟頁面一起算、一起存。
+   * 拿到的 params 跟 component 一樣。不寫 = 這一頁不加任何 metadata(只有根 layout 的站名與描述)。
+   * 跟 component 同一個規矩:不讀 cookies()、headers()、searchParams;丟錯的話這一次是 500、不存。
+   * 站台對每一頁都要做的調整(標題後綴、分享圖、不收錄某些網址)走值的插槽 PublicMetadata(core-slots.ts)。
+   */
+  metadata?: (params: Record<string, string>) => Metadata | Promise<Metadata>;
 }
 
 // core-v2 §2.2:code extension 可註冊替代 provider。
@@ -679,6 +691,7 @@ const adminPageSchema = lazySchema(() => z.object({
 const publicRouteSchema = lazySchema(() => z.object({
   match: fn(),
   component: fn(),
+  metadata: fn().optional(),
 }));
 
 // spec-extension-jobs.md:job id 規則比 extension id 寬(允許單字元)。
