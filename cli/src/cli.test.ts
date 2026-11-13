@@ -478,13 +478,18 @@ describe("run — help / version", () => {
     expect(stdoutOut()).toContain("Usage:");
     expect(out()).toBe("");
   });
+  // 0.9 起總覽只列指令與共用旗標(一個畫面);各指令的旗標在 `cms help <指令>`。
   it("--help 同時涵蓋 add 與 setup", async () => {
     await run(["--help"], repoDir);
     const help = stdoutOut();
-    expect(help).toContain("cms add <id>");
+    expect(help).toContain("cms add");
     expect(help).toContain("cms setup");
-    expect(help).toContain("--skip-migrations");
     expect(help).toContain("--json");
+    expect(help).toContain("cms help <command>");
+  });
+  it("cms help setup 列出 setup 的旗標", async () => {
+    await run(["help", "setup"], repoDir);
+    expect(stdoutOut()).toContain("--skip-migrations");
   });
   it("--version 走 stdout 且帶套件名", async () => {
     const code = await run(["--version"], repoDir);
@@ -542,9 +547,16 @@ describe("run — --json", () => {
 });
 
 describe("run — 指令派送", () => {
-  it("未知指令仍是 exit 1", async () => {
-    expect(await run(["frobnicate"], repoDir)).toBe(EXIT.NOT_FOUND);
-    expect(errOut()).toContain("unknown command");
+  // 0.9 起未知指令是用法錯誤:結束代碼 2,附最接近的指令,不再整頁倒出說明。
+  it("未知指令是 exit 2,附建議", async () => {
+    expect(await run(["setpu"], repoDir)).toBe(2);
+    expect(errOut()).toContain("Unknown command");
+    expect(errOut()).toContain("cms setup");
+    expect(errOut()).not.toContain("Usage:");
+  });
+  it("0.x 指令打錯旗標:維持 exit 1,指出最接近的旗標", async () => {
+    expect(await run(["setup", "--skip-migration"], repoDir)).toBe(EXIT.NOT_FOUND);
+    expect(errOut()).toContain("did you mean --skip-migrations?");
   });
 
   it("setup 走 setup 流程 —— 沒有 wrangler 設定檔就 exit 7", async () => {

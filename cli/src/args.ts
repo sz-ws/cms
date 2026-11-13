@@ -55,7 +55,7 @@ export interface ParsedArgs {
   error?: string;
 }
 
-const FLAGS_WITH_VALUE = new Set([
+export const FLAGS_WITH_VALUE = new Set([
   "--source",
   "--token",
   "--config",
@@ -64,6 +64,11 @@ const FLAGS_WITH_VALUE = new Set([
   "--template",
   "--ref",
 ]);
+
+/** 解析中途出錯時仍帶上指令名稱,錯誤訊息才能指向那支指令的說明。 */
+function withCommand(out: ParsedArgs, argv: readonly string[]): ParsedArgs {
+  return { ...out, command: argv.find((a) => !a.startsWith("-")) };
+}
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
@@ -121,7 +126,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("-")) {
         out.error = `flag ${arg} requires a value`;
-        return out;
+        return withCommand(out, argv);
       }
       if (arg === "--source") out.source = value;
       if (arg === "--token") out.token = value;
@@ -147,7 +152,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       out.ref = arg.slice("--ref=".length);
     } else if (arg.startsWith("-")) {
       out.error = `unknown flag: ${arg}`;
-      return out;
+      return withCommand(out, argv);
     } else {
       positionals.push(arg);
     }

@@ -9,6 +9,10 @@
 //              `pnpm run deploy` 的 postdeploy hook 跑的就是這一支。
 //   preflight  deploy 前的唯讀盤點:extension 宣告了哪些 settings、哪些還沒填
 //              (見 preflight.ts)。`--gate` 給 predeploy 用。
+//
+// 0.9 起:status / doctor / login / version list / logs、help 與未知指令走新的骨架
+// (commands/router.ts:一張指令表驅動解析、說明與 `help --json`,JSON 信封與新的
+// 結束代碼)。上面這幾支 0.x 指令仍走這個檔與 args.ts,行為與結束代碼不變。
 
 import { readFile, writeFile, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -48,106 +52,21 @@ import { runPreflight } from "./preflight.js";
 import {
   runCreate,
   nextSteps as createNextSteps,
-  DEFAULT_TEMPLATE,
 } from "./create.js";
 import { configureExtension } from "./configure.js";
 import { createUi, type UiBundle, type UiEvent } from "./ui.js";
+import { runNew } from "./commands/router.js";
+import { findCommand } from "./frame/commands.js";
+import { renderGlobalHelp } from "./frame/help.js";
+import { nearest } from "./frame/suggest.js";
 
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
 export { EXIT } from "./exit.js";
 
 export const DEFAULT_CONFIG_FILE = "wrangler.jsonc";
-
-const USAGE = `@sz.ws/cms v${VERSION} — sz.ws CMS command-line tool
-
-Usage:
-  cms create <dir> [options]    scaffold a new CMS project (clones the template)
-  cms setup [options]           connect this repo to your Cloudflare account
-  cms deploy [options]          provision, build, migrate, deploy and verify this site
-  cms secrets [options]         ensure SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN exist
-                                on the deployed Worker (run by the postdeploy hook)
-  cms add <id>[@<version>]      install a code extension (a version the registry kept for older cores)
-  cms preflight [options]       list extension settings that are still unset
-  cms help                      show this help
-  cms version                   show version
-
-create options:
-  --template <url>              template git URL
-                                (default ${DEFAULT_TEMPLATE};
-                                 or set SZWS_CMS_TEMPLATE)
-  --ref <branch|tag>            clone a specific branch or tag
-  --skip-git-init               keep the template .git instead of resetting it
-  --deploy                     continue through deployment and first-admin setup
-
-setup / deploy options:
-  --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
-  --site-slug <slug>            new site id (3–48 lowercase alnum/hyphen);
-                                Worker, D1 and R2 names derive from it
-  --allow-shared-default-names  allow the shipped shared names (cms, cms-db, …);
-                                single-site or dev accounts only — on a
-                                multi-tenant account this causes cross-site access
-  --separate-tag-cache          give the OpenNext tag cache its own D1 instead of
-                                sharing the main one (uses 2 D1 slots per site;
-                                Free plan allows 10 per account)
-  --skip-migrations             skip applying migrations/
-  --skip-secrets                skip setting SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN
-                                (pnpm run deploy fills them in afterwards anyway)
-
-secrets options:
-  --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
-  --dry-run                     report which keys are missing, generate nothing
-
-deploy options:
-  --site-url <https://origin>    URL for verification (default: deployed workers.dev URL)
-                                deploy always applies migrations and verifies secrets
-
-add options:
-  --source <url>                registry base URL
-                                (default ${DEFAULT_SOURCE})
-  --token <t>                   registry access token (private repos)
-  --force                       overwrite existing extensions/<id>/
-  --skip-core-check             skip coreApi compatibility check (use with caution)
-
-preflight options:
-  --config <path>               wrangler config file path (default ./${DEFAULT_CONFIG_FILE})
-  --gate                        exit non-zero when a required setting is missing
-                                (used by the repo's predeploy hook)
-
-shared options:
-  --dry-run                     list what would be done; create nothing, write nothing
-  --yes, -y                     skip all confirmations (CI use)
-  --non-interactive             no prompts (add: implies --force; setup: same as --yes)
-  --json                        stdout gets a single machine-readable JSON
-                                human output goes to stderr as normal
-
-examples:
-  npx @sz.ws/cms create acme-taipei
-  npx @sz.ws/cms create acme-taipei --deploy
-  npx @sz.ws/cms create acme-taipei --template https://github.com/me/my-fork.git
-  npx @sz.ws/cms setup --site-slug acme-taipei
-  npx @sz.ws/cms deploy --site-slug acme-taipei
-  npx @sz.ws/cms setup --dry-run
-  npx @sz.ws/cms secrets
-  npx @sz.ws/cms secrets --dry-run
-  npx @sz.ws/cms add blog
-  npx @sz.ws/cms add cron --token "$SZWS_REGISTRY_TOKEN"
-  npx @sz.ws/cms preflight
-  npx @sz.ws/cms preflight --gate
-
-environment variables:
-  SZWS_REGISTRY_TOKEN           registry access token (same as --token)
-  SZWS_CMS_TEMPLATE             default template URL for the create command
-  CLOUDFLARE_ACCOUNT_ID         specify which account to use when logged in to multiple
-  CMS_ADMIN_EMAIL              first deployment: administrator email
-  CMS_ADMIN_NAME               first deployment: administrator name
-  CMS_ADMIN_PASSWORD           first deployment: password (never pass on command line)
-  CMS_SITE_TITLE               first deployment: site title
-  CMS_SETUP_TOKEN              resume a first setup previously started outside cms deploy
-
-docs: https://sz.ws`;
 
 // 輸出分流(對齊 @sz-ws/drop):**人看的東西一律 stderr**,stdout 只留給結果。
 // 原本 log() 寫 stdout,於是 `cms add blog | something` 拿到的是進度訊息而不是
@@ -238,6 +157,9 @@ function nextSteps(
 }
 
 export async function run(argv: string[], cwd: string): Promise<number> {
+  // 新骨架先看:表上的新指令、help、未知指令由它處理;回 undefined 才是 0.x 指令。
+  const routed = await runNew(argv, cwd, VERSION);
+  if (routed !== undefined) return routed;
   const args = parseArgs(argv);
 
   // --version / --help 是「被問就答」,答案本身就是結果 —— 這兩個照樣走 stdout,
@@ -247,7 +169,7 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     return EXIT.OK;
   }
   if (args.help) {
-    process.stdout.write(`${USAGE}\n`);
+    process.stdout.write(`${renderGlobalHelp(VERSION)}\n`);
     return EXIT.OK;
   }
 
@@ -276,8 +198,11 @@ let setupEvents: UiEvent[] | null = null;
 
 async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
   if (args.error) {
+    // 不再整頁倒出說明:指出錯在哪、最接近的旗標,和去哪裡看完整用法。結束代碼維持 0.x 的 1。
     err(`✗ ${args.error}`);
-    err(USAGE);
+    const hint = legacyFlagHint(args.command, args.error);
+    if (hint) err(`  ${hint}`);
+    err(`  run \`cms help${args.command ? ` ${args.command}` : ""}\` for the flags.`);
     return EXIT.NOT_FOUND;
   }
   if (args.command === "create") return runCreateCommand(args, cwd);
@@ -286,13 +211,22 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
   if (args.command === "secrets") return runSecretsCommand(args, cwd);
   if (args.command === "preflight") return runPreflightCommand(args, cwd);
   if (args.command !== "add") {
+    // 走不到:未知指令已由 runNew 以結束代碼 2 回報。留著是為了型別上的完整。
     err(`✗ unknown command: ${args.command ?? "(none)"}`);
-    err(USAGE);
     return EXIT.NOT_FOUND;
   }
   return runAdd(args, cwd);
 }
 
+
+/** 0.x 指令打錯旗標時,從指令表找最接近的那一個。 */
+function legacyFlagHint(command: string | undefined, error: string): string | undefined {
+  const flag = /unknown flag: (--[\w-]+)/.exec(error)?.[1];
+  const spec = command ? findCommand(command) : undefined;
+  if (!flag || !spec) return undefined;
+  const suggestion = nearest(flag, spec.flags.map((f) => `--${f.name}`));
+  return suggestion ? `did you mean ${suggestion}?` : undefined;
+}
 
 /**
  * `create` 的接線。這是使用者碰到的第一個指令,所以錯誤訊息要能自己走完 ——
@@ -516,7 +450,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   }
   if (!id) {
     err("✗ missing <id>");
-    err(USAGE);
+    err("  usage: cms add <id>[@<version>] [flags]   (cms help add)");
     return EXIT.NOT_FOUND;
   }
   if (!ID_RE.test(id)) {
