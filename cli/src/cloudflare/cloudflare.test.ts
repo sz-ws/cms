@@ -123,7 +123,7 @@ describe("cf binary", () => {
     await writeFile(path.join(dir, "package.json"), "{}");
     expect(installPlanFor(dir).display).toBe(`npm install --save-dev cf@${CF_TESTED}`);
     await writeFile(path.join(dir, "pnpm-lock.yaml"), "");
-    expect(installPlanFor(dir)).toEqual({ display: `pnpm add -D cf@${CF_TESTED}`, cmd: "pnpm", args: ["add", "-D", `cf@${CF_TESTED}`] });
+    expect(installPlanFor(dir)).toEqual({ display: `pnpm add -D cf@${CF_TESTED}`, cmd: "pnpm", args: ["add", "-D", `cf@${CF_TESTED}`], env: { COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" } });
   });
 });
 
@@ -206,6 +206,8 @@ describe("cf port", () => {
       "cf auth login",
       `pnpm add -D cf@${CF_TESTED}`,
     ]);
+    // Corepack must not stop the install with its own download question.
+    expect(calls.find((c) => path.basename(c.cmd) === "pnpm")?.env).toEqual({ COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" });
   });
 
   it("writes: creates are sent once, secrets travel in a private file, never in argv", async () => {
@@ -263,5 +265,35 @@ describe("cf port", () => {
       "r2 buckets delete cms-acme-media -f",
       "kv namespaces delete kv-1 -f",
     ]);
+  });
+
+  it("purge: keys are listed by --start-after and deleted from a private body file", async () => {
+    const seen: string[] = [];
+    const calls: string[][] = [];
+    const exec: Executor = async (_cmd, args) => {
+      calls.push([...args]);
+      const body = args.find((a) => a.startsWith("@"));
+      if (body) seen.push(await import("node:fs/promises").then((fs) => fs.readFile(body.slice(1), "utf8")));
+      if (args[0] === "--version") return version;
+      if (args[0] === "r2" && args[2] === "list") return ok([{ key: "a/1" }, { key: "a/2" }]);
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const api = createCfPort({ exec, cwd: dir, nodeVersion: "v22.12.0", sleep: noSleep }).account("acc1");
+    expect(await api.r2ListKeys("cms-acme-next-cache", 1000, "a/0")).toEqual(["a/1", "a/2"]);
+    await api.r2DeleteKeys("cms-acme-next-cache", ["a/1", "a/2"]);
+    expect(calls[1]).toEqual(["r2", "objects", "list", "--bucket-name", "cms-acme-next-cache", "--per-page", "1000", "--start-after", "a/0"]);
+    expect(calls[2].slice(0, 5)).toEqual(["r2", "objects", "bulk-delete", "--bucket-name", "cms-acme-next-cache"]);
+    expect(calls[2]).toContain("-f");
+    expect(JSON.parse(seen[0])).toEqual(["a/1", "a/2"]);
+  });
+
+  it("reads a version's secrets and a deployment's trigger", async () => {
+    const { secretNamesOf, deploymentsFrom } = await import("./cf-port.js");
+    expect(secretNamesOf({ bindings: [{ name: "SECRETS_KEY", type: "secret_text" }, { name: "DB", type: "d1" }], env: { AUTH_PEPPER: { type: "secret_text" } } })).toEqual(["AUTH_PEPPER", "SECRETS_KEY"]);
+    expect(deploymentsFrom({ deployments: [{ id: "d", annotations: { "workers/triggered_by": "secret" }, versions: [] }] })[0].triggeredBy).toBe("secret");
+    const { exec, calls } = scripted({ "cf --version": version, "cf workers versions get v1 --worker cms-acme": ok({ bindings: [{ name: "SETUP_TOKEN", type: "secret_text" }] }) });
+    const api = createCfPort({ exec, cwd: dir, nodeVersion: "v22.12.0", sleep: noSleep }).account("acc1");
+    expect(await api.versionSecrets("cms-acme", "v1")).toEqual(["SETUP_TOKEN"]);
+    expect(calls[calls.length - 1].args).toEqual(["workers", "versions", "get", "v1", "--worker", "cms-acme"]);
   });
 });

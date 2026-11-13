@@ -15,6 +15,14 @@ export const CF_PACKAGE = "cf";
 export const CF_TESTED = "1.0.0-beta.32";
 export const CF_MIN = "1.0.0-beta.32";
 
+/**
+ * For every package-manager child process: Corepack (which runs pnpm and yarn for
+ * projects that pin "packageManager") would otherwise stop and ask before it
+ * downloads the pinned version. The person already agreed to the install, and
+ * without a terminal nobody could answer.
+ */
+export const PACKAGE_MANAGER_ENV: Readonly<Record<string, string>> = { COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" };
+
 /** cf declares Node 22 or newer. */
 export const NODE_MIN_MAJOR = 22;
 
@@ -101,10 +109,10 @@ export function detectPackageManager(cwd: string): PackageManager {
 export function installPlanFor(cwd: string): InstallPlan {
   const spec = `${CF_PACKAGE}@${CF_TESTED}`;
   if (!existsSync(path.join(cwd, "package.json"))) {
-    return { display: `npm install -g ${spec}`, cmd: "npm", args: ["install", "-g", spec] };
+    return { display: `npm install -g ${spec}`, cmd: "npm", args: ["install", "-g", spec], env: PACKAGE_MANAGER_ENV };
   }
   const manager = detectPackageManager(cwd);
   const args =
     manager === "npm" ? ["install", "--save-dev", spec] : manager === "bun" ? ["add", "-d", spec] : ["add", "-D", spec];
-  return { display: [manager, ...args].join(" "), cmd: manager, args };
+  return { display: [manager, ...args].join(" "), cmd: manager, args, env: PACKAGE_MANAGER_ENV };
 }

@@ -50,6 +50,10 @@ export interface FakeCloudflare {
   query?: (databaseId: string, sql: string) => Record<string, unknown>[];
   /** Buckets that hold objects. */
   nonEmpty?: string[];
+  /** Secret names per version id (versionSecrets); default: the Worker's current secrets. */
+  versionSecrets?: Record<string, string[]>;
+  /** Object keys per bucket, sorted. */
+  objects?: Record<string, string[]>;
   /** Answers recentErrors. */
   logs?: LogEvent[];
   /** Throw this from the write whose call text starts with the key (e.g. "promote"). */
@@ -98,7 +102,10 @@ function reads(port: FakePort, accountId: string): AccountReads {
     secretNames: (name) => read(`secrets ${name}`, () => (worker(name) ? [...worker(name).secrets] : null)),
     r2LifecycleRules: (bucket) => read(`lifecycle ${bucket}`, () => [...(s.lifecycle?.[bucket] ?? [])]),
     d1Query: (id, sql) => read(`query ${id} ${sql}`, () => s.query?.(id, sql) ?? []),
-    r2HasObjects: (bucket) => read(`objects ${bucket}`, () => (s.nonEmpty ?? []).includes(bucket)),
+    versionSecrets: (name, id) => read(`versionSecrets ${name} ${id}`, () => [...(s.versionSecrets?.[id] ?? worker(name)?.secrets ?? [])].sort()),
+    r2HasObjects: (bucket) => read(`objects ${bucket}`, () => (s.objects?.[bucket] ?? []).length > 0 || (s.nonEmpty ?? []).includes(bucket)),
+    r2ListKeys: (bucket, limit, after) =>
+      read(`keys ${bucket} ${limit}${after ? ` after ${after}` : ""}`, () => (s.objects?.[bucket] ?? []).filter((k) => !after || k > after).slice(0, limit)),
     recentErrors: (name, from, to, limit) => read(`logs ${name} ${to - from} ${limit}`, () => (s.logs ?? []).slice(0, limit)),
   };
 }
@@ -132,12 +139,16 @@ function writes(port: FakePort, accountId: string): AccountWrites {
         const w = s.workers[worker];
         if (w) w.secrets = w.secrets.filter((n) => n !== name);
       }),
-    deleteWorker: (worker) =>
-      write(`deleteWorker ${worker}`, () => {
+    deleteWorker: (worker, withReferences) =>
+      write(`deleteWorker ${worker}${withReferences ? " with-references" : ""}`, () => {
         s.workers = Object.fromEntries(Object.entries(s.workers).filter(([k]) => k !== worker));
       }),
     d1Delete: (id) => write(`d1Delete ${id}`, () => void (s.d1 = s.d1.filter((d) => d.id !== id))),
     r2Delete: (bucket) => write(`r2Delete ${bucket}`, () => void (s.r2 = s.r2.filter((b) => b !== bucket))),
+    r2DeleteKeys: (bucket, keys) =>
+      write(`r2DeleteKeys ${bucket} ${keys.length}`, () => {
+        s.objects = { ...s.objects, [bucket]: (s.objects?.[bucket] ?? []).filter((k) => !keys.includes(k)) };
+      }),
     kvDelete: (id) => write(`kvDelete ${id}`, () => void (s.kv = s.kv.filter((n) => n.id !== id))),
   };
 }

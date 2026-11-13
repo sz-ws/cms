@@ -8,6 +8,7 @@
 //   cf workers get <worker>
 //   cf workers deployments list --worker <w> --per-page <n>
 //   cf workers versions list --worker <w> --per-page <n>
+//   cf workers versions get <version-id> --worker <w>   (the secrets a version carries)
 //   cf workers secrets list --worker <w>
 //   cf d1 list --per-page 100
 //   cf d1 migrations list <database-id> --dir <dir>
@@ -15,7 +16,7 @@
 //   cf kv namespaces list --per-page 100
 //   cf r2 buckets lifecycle get <bucket>
 //   cf d1 query <database-id> --sql <sql>              (also the two writes deploy makes)
-// Writes (only `cms deploy` and `cms secrets`):
+// Writes (deploy, secret, rollback, destroy):
 //   cf auth login                                      (terminal handed to cf)
 //   cf d1 create --name <name>
 //   cf r2 buckets create --name <name>
@@ -24,7 +25,8 @@
 //   cf workers deployments create --worker <w> --strategy percentage --versions <json>   (also rollback)
 //   cf workers secrets delete <name> --worker <w> -f
 //   cf workers delete <w> -f, cf d1 delete <id> -f, cf r2 buckets delete <b> -f, cf kv namespaces delete <id> -f
-// More reads: cf r2 objects list --bucket-name <b> --per-page 1, and
+//   cf r2 objects bulk-delete --bucket-name <b> --body @<keys.json> -f        (destroy --purge-objects)
+// More reads: cf r2 objects list --bucket-name <b> --per-page <n> [--start-after <key>], and
 //   cf o11y telemetry query --view events --preview ... (Workers Logs; --preview saves no query)
 // The account goes in CLOUDFLARE_ACCOUNT_ID (cf has no account flag). Creates are
 // not retried: a create that reached Cloudflare and then lost its answer would
@@ -100,6 +102,7 @@ export function deploymentsFrom(value: unknown): Deployment[] {
     return {
       id: str(d.id) ?? "",
       createdOn: str(d.created_on) ?? "",
+      triggeredBy: str(asRecord(d.annotations)["workers/triggered_by"]),
       versions: asArray(d.versions).map((v) => ({
         versionId: str(asRecord(v).version_id) ?? "",
         percentage: Number(asRecord(v).percentage ?? 0),
@@ -147,8 +150,8 @@ class CfRunner {
   }
 
   /** Run with the terminal handed over; only the exit code is known. */
-  async interactive(cmd: string, args: readonly string[]): Promise<boolean> {
-    const r = await this.o.exec(cmd, args, { cwd: this.o.cwd, inheritStdio: true });
+  async interactive(cmd: string, args: readonly string[], env?: Readonly<Record<string, string>>): Promise<boolean> {
+    const r = await this.o.exec(cmd, args, { cwd: this.o.cwd, inheritStdio: true, ...(env ? { env } : {}) });
     return r.code === 0;
   }
 }
@@ -173,6 +176,7 @@ function accountReads(run: CfRunner, accountId: string): AccountReads {
           name: str(w.name) ?? name,
           workersDevUrl: sub.enabled === true ? str(sub.url) : undefined,
           deployedOn: str(w.deployed_on),
+          referencedBy: asArray(asRecord(w.references).workers).map((r) => str(asRecord(r).name) ?? "").filter((n) => n !== ""),
         };
       }),
     deployments: (worker, limit) =>
@@ -211,6 +215,14 @@ function accountReads(run: CfRunner, accountId: string): AccountReads {
   };
 }
 
+/** Secret names from a version: its bindings (or env) of type secret_text. */
+export function secretNamesOf(version: unknown): string[] {
+  const v = asRecord(version);
+  const fromBindings = asArray(v.bindings).map(asRecord).filter((b) => b.type === "secret_text").map((b) => str(b.name) ?? "");
+  const fromEnv = Object.entries(asRecord(v.env)).filter(([, b]) => asRecord(b).type === "secret_text").map(([name]) => name);
+  return [...new Set([...fromBindings, ...fromEnv])].filter((n) => n !== "").sort();
+}
+
 export function logEventFrom(raw: unknown): LogEvent {
   const e = asRecord(raw);
   const meta = asRecord(e["$metadata"]);
@@ -241,9 +253,15 @@ function errorFilters(worker: string): string {
   ]);
 }
 
-function logAndObjectReads(get: (args: readonly string[]) => Promise<unknown>): Pick<AccountReads, "r2HasObjects" | "recentErrors"> {
+function logAndObjectReads(get: (args: readonly string[]) => Promise<unknown>): Pick<AccountReads, "versionSecrets" | "r2HasObjects" | "r2ListKeys" | "recentErrors"> {
   return {
+    versionSecrets: async (worker, versionId) => secretNamesOf(await get(["workers", "versions", "get", versionId, "--worker", worker])),
     r2HasObjects: async (bucket) => asArray(await get(["r2", "objects", "list", "--bucket-name", bucket, "--per-page", "1"])).length > 0,
+    // Paging by --start-after (the last key seen): cf prints the cursor only on stderr.
+    r2ListKeys: async (bucket, limit, startAfter) =>
+      asArray(await get(["r2", "objects", "list", "--bucket-name", bucket, "--per-page", String(limit), ...(startAfter ? ["--start-after", startAfter] : [])]))
+        .map((o) => str(asRecord(o).key) ?? "")
+        .filter((k) => k !== ""),
     // --preview runs the query without saving it on the account.
     recentErrors: async (worker, fromMs, toMs, limit) =>
       asArray(asRecord(asRecord(await get([
@@ -292,13 +310,17 @@ function accountWrites(run: CfRunner, accountId: string): AccountWrites {
 }
 
 /** Deletes are sent once (-f: cf's own confirmation is replaced by ours). */
-function deletes(send: (args: readonly string[], once?: boolean) => Promise<unknown>): Pick<AccountWrites, "deleteSecret" | "deleteWorker" | "d1Delete" | "r2Delete" | "kvDelete"> {
+function deletes(send: (args: readonly string[], once?: boolean) => Promise<unknown>): Pick<AccountWrites, "deleteSecret" | "deleteWorker" | "d1Delete" | "r2Delete" | "r2DeleteKeys" | "kvDelete"> {
   return {
     deleteSecret: async (worker, name) => void (await send(["workers", "secrets", "delete", name, "--worker", worker, "-f"], true)),
-    deleteWorker: async (worker) => void (await send(["workers", "delete", worker, "-f"], true)),
+    deleteWorker: async (worker, withReferences) =>
+      void (await send(["workers", "delete", worker, "-f", ...(withReferences ? ["--delete-with-references"] : [])], true)),
     d1Delete: async (id) => void (await send(["d1", "delete", id, "-f"], true)),
     r2Delete: async (bucket) => void (await send(["r2", "buckets", "delete", bucket, "-f"], true)),
     kvDelete: async (id) => void (await send(["kv", "namespaces", "delete", id, "-f"], true)),
+    // Keys go in a body file (they can be long and many); deleting a missing key is harmless, so retries are fine.
+    r2DeleteKeys: (bucket, keys) =>
+      withBodyFile(keys, async (file) => void (await send(["r2", "objects", "bulk-delete", "--bucket-name", bucket, "--body", `@${file}`, "-f"]))),
   };
 }
 
@@ -320,7 +342,7 @@ export function createCfPort(o: CfPortOptions): CloudflarePort {
     installPlan: () => installPlanFor(o.cwd),
     install: async () => {
       const plan = installPlanFor(o.cwd);
-      const ok = await run.interactive(plan.cmd, plan.args);
+      const ok = await run.interactive(plan.cmd, plan.args, plan.env);
       readiness = undefined; // look again: it is installed now, or still missing
       return ok;
     },

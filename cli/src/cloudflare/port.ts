@@ -37,6 +37,8 @@ export interface InstallPlan {
   display: string;
   cmd: string;
   args: string[];
+  /** Extra environment for the package manager (see PACKAGE_MANAGER_ENV). */
+  env?: Readonly<Record<string, string>>;
 }
 
 export interface WorkerInfo {
@@ -44,12 +46,16 @@ export interface WorkerInfo {
   /** workers.dev URL when the subdomain is enabled. */
   workersDevUrl?: string;
   deployedOn?: string;
+  /** Workers whose bindings point at this one (a site's own WORKER_SELF_REFERENCE lists itself). */
+  referencedBy?: string[];
 }
 
 export interface Deployment {
   id: string;
   createdOn: string;
   versions: { versionId: string; percentage: number }[];
+  /** annotations["workers/triggered_by"]: "secret" for a secret change, else "deployment", "upload", … */
+  triggeredBy?: string;
 }
 
 export interface WorkerVersion {
@@ -90,8 +96,15 @@ export interface AccountReads {
   r2LifecycleRules(bucket: string): Promise<LifecycleRule[]>;
   /** Rows of a query; reads and writes both go through here. */
   d1Query(databaseId: string, sql: string): Promise<Record<string, unknown>[]>;
+  /**
+   * Secret names a version carries. Cloudflare keeps secrets per version: every
+   * secret change makes a new version (and deployment) with the new set.
+   */
+  versionSecrets(worker: string, versionId: string): Promise<string[]>;
   /** True when the bucket holds at least one object. */
   r2HasObjects(bucket: string): Promise<boolean>;
+  /** Up to `limit` object keys in key order, after `startAfter` when given. */
+  r2ListKeys(bucket: string, limit: number, startAfter?: string): Promise<string[]>;
   /** Error-level log events and failed invocations of the Worker (Workers Logs), newest first. */
   recentErrors(worker: string, fromMs: number, toMs: number, limit: number): Promise<LogEvent[]>;
 }
@@ -128,11 +141,16 @@ export interface AccountWrites {
   /** Send 100% of traffic to a version (deploy's promote and rollback). */
   promote(worker: string, versionId: string): Promise<void>;
   deleteSecret(worker: string, name: string): Promise<void>;
-  /** Deletes the Worker with its versions, deployments and custom domains. */
-  deleteWorker(worker: string): Promise<void>;
+  /**
+   * Deletes the Worker with its versions, deployments and custom domains.
+   * withReferences: delete even though Workers reference it (only ever itself, see destroy).
+   */
+  deleteWorker(worker: string, withReferences?: boolean): Promise<void>;
   d1Delete(databaseId: string): Promise<void>;
   /** Fails unless the bucket is empty. */
   r2Delete(bucket: string): Promise<void>;
+  /** Deletes 1 to 1000 objects in one request. */
+  r2DeleteKeys(bucket: string, keys: readonly string[]): Promise<void>;
   kvDelete(namespaceId: string): Promise<void>;
 }
 
