@@ -4,6 +4,12 @@ CLI for the open-source sz.ws CMS. Each user deploys to their own Cloudflare acc
 
 | Command | Purpose |
 |---|---|
+| `cms status` | Read-only report: account and auth source, live version, URLs, D1 / R2 (ok / missing), leftover KV, pending migrations, managed secrets (names only), plugins |
+| `cms doctor` | Checks with pass / warn / fail, each with a hint and the next command; includes the `preflight` settings checks. Exit 10 when a check fails |
+| `cms login` | Sign in to Cloudflare through `cf`; reports where auth comes from when already signed in |
+| `cms version list` | Uploaded Worker versions, newest first, with each one's share of traffic |
+| `cms logs` | Live tail through the project's `wrangler tail` until Ctrl-C |
+| `cms help [command]` | Help; `cms help --json` prints every command, flag, env variable, exit code and error code as data |
 | `cms create <dir> --deploy` | Clone the project and continue through deployment and first-admin setup |
 | `cms deploy` | Install dependencies, provision resources, build, apply migrations, deploy, initialize the site, and verify readiness |
 | `cms setup` | Connect repo to your Cloudflare account: create D1 / R2, fill ids back into `wrangler.jsonc`, set the page-cache lifecycle rule, apply migrations, set three secrets (`SECRETS_KEY`, `AUTH_PEPPER`, `SETUP_TOKEN`) |
@@ -12,6 +18,67 @@ CLI for the open-source sz.ws CMS. Each user deploys to their own Cloudflare acc
 | `cms preflight` | Read-only: list extension settings that are still unset. `--gate` exits non-zero on missing required ones (used by the repo's `predeploy`) |
 
 Deployment supports non-interactive execution (`--yes` / `--non-interactive`) and `--dry-run`.
+
+## For agents and scripts (0.9)
+
+```bash
+cms help --json        # every command, flag, env variable, exit code and error code
+cms status --json      # what exists on Cloudflare for this site
+cms doctor --json      # what is wrong, and the command that fixes it
+```
+
+`status`, `doctor`, `login`, `version list` and `logs` run on one declarative command table: the same table drives the parser, `cms help` and `cms help --json`, so help cannot drift from what the CLI accepts. The 0.x commands below are listed in that table too and keep their own flags, output and exit codes.
+
+**Never prompts without a person.** The new commands are non-interactive when stdin or stdout is not a TTY, when `CI` is set, or with `--json`. A missing input is then an error with a code, never a prompt.
+
+**One JSON object with `--json`.** stdout is exactly:
+
+```json
+{
+  "ok": false,
+  "command": "status",
+  "data": null,
+  "plan": [],
+  "warnings": [],
+  "error": {
+    "code": "AUTH_REQUIRED",
+    "message": "Not signed in to Cloudflare.",
+    "hint": "Run `cms login` in a terminal, or set CLOUDFLARE_API_TOKEN to an API token (for CI and agents).",
+    "next": ["cms login"]
+  }
+}
+```
+
+Prose (prompts, progress, warnings) goes to stderr. `cms logs --json` is the exception: stdout is wrangler's stream of JSON events, one per line.
+
+**Exit codes of the new commands** (the string `error.code` carries the detail; `cms help --json` lists every code):
+
+| Code | Meaning |
+|---|---|
+| 0 | Success, including nothing to do |
+| 1 | Operation failed (`CONFIG_MISSING`, `WORKER_NOT_FOUND`, `CF_FAILED`, …) |
+| 2 | Usage error: unknown command or flag, bad value — with "did you mean" |
+| 3 | Needs the user: `AUTH_REQUIRED`, `CF_MISSING`, `NODE_TOO_OLD`, `ACCOUNT_AMBIGUOUS`, … |
+| 4 | Refused for safety |
+| 5 | `TRANSIENT`: Cloudflare kept failing after retries; safe to run again |
+| 10 | `doctor` found failing checks |
+| 130 | Cancelled (Ctrl-C at a prompt) |
+
+An unknown command now exits 2 for every command, with a suggestion instead of the whole help.
+
+### Cloudflare access through `cf`
+
+The new commands read Cloudflare through `cf`, Cloudflare's own CLI (npm package `cf`, needs Node 22+). The CLI uses the site's `node_modules/.bin/cf` first, then `cf` on `PATH`. `cf` is still a beta whose commands change between releases, so the CLI checks its version: older than `1.0.0-beta.32` is refused (`CF_VERSION_UNSUPPORTED`), newer runs with a warning.
+
+- **`cf` missing.** In a terminal the CLI asks once and installs it as a devDependency with the project's package manager (`pnpm add -D cf@1.0.0-beta.32` when there is a `pnpm-lock.yaml`). Answering No exits 3 and prints the command. Without a terminal: `CF_MISSING`, with the install command in `error.next`.
+- **Not signed in.** In a terminal the CLI offers to run `cf auth login` (the browser flow). Answering No exits 3 and explains `CLOUDFLARE_API_TOKEN`. Without a terminal: `AUTH_REQUIRED`. `cms status` and `cms login` say where auth comes from ("signed in through cf", or "API token from CLOUDFLARE_API_TOKEN").
+- **Account.** `--account`, then `CLOUDFLARE_ACCOUNT_ID`, then `account_id` in `wrangler.jsonc`, then the only account the login can see. With several and none chosen: a numbered list in a terminal (Ctrl-C cancels, nothing is written), `ACCOUNT_AMBIGUOUS` with the accounts in `data` otherwise.
+- **Retries.** Rate limits, 5xx responses, dropped connections and Cloudflare's intermittent 7403 are retried twice (after 1 s and 3 s). If they persist, `status` reports the item as unknown with a `READ_FAILED` warning; other commands exit 5.
+- **Read-only.** These commands send only reads (`cf auth whoami`, `workers get`, `workers deployments list`, `workers versions list`, `workers secrets list` — names only, `d1 list`, `d1 migrations list`, `r2 buckets list`, `kv namespaces list`). An API token for them needs read access to Workers Scripts, D1, Workers R2 Storage and Workers KV Storage.
+
+`cms logs` is a thin pass-through to the project's `wrangler tail` (`cf` has no live tail for Workers), so it uses wrangler's own login or `CLOUDFLARE_API_TOKEN`. Arguments after `--` go to `wrangler tail` unchanged: `cms logs -- --status error`.
+
+A 1.x site's leftover KV namespace (`<worker>-kv`, or an id still under `kv_namespaces`) shows in `status` as "not used by 2.0, safe to delete" and as a warning in `doctor`; nothing deletes it.
 
 ## One-command deployment
 
