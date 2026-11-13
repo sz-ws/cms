@@ -10,7 +10,13 @@ CLI for the open-source sz.ws CMS. Each user deploys to their own Cloudflare acc
 | `cms doctor` | Checks with pass / warn / fail, each with a hint and the next command, plugin settings included. Exit 10 when a check fails |
 | `cms login` | Sign in to Cloudflare through `cf`; reports where auth comes from when already signed in |
 | `cms version list` | Uploaded Worker versions, newest first, with each one's share of traffic |
-| `cms logs` | Live tail through the project's `wrangler tail` until Ctrl-C |
+| `cms logs` | Live tail through the project's `wrangler tail` until Ctrl-C; `--since 1h` lists recent errors from Workers Logs instead |
+| `cms rollback [version-id]` | Send all traffic back to an earlier version (the previous one by default); plan, then confirm |
+| `cms domain list` / `add <host>` / `remove <host>` | Custom domains declared in `wrangler.jsonc`; applied at the next `cms deploy` |
+| `cms secret list` / `set <NAME>` / `delete <NAME>` | Worker secrets; values only from stdin or a hidden prompt; managed secrets refused |
+| `cms ci token` | The API token permissions the site's commands need, and which command needs which |
+| `cms ci init` | Write `.github/workflows/cms.yml` to deploy or roll back by hand from GitHub Actions |
+| `cms destroy` | Delete the site's Worker, D1, R2 buckets and declared KV after typing the Worker name |
 | `cms plugin add <id>` | Install a code plugin: fetch files from a registry → `extensions/<id>/` → patch `extensions/registry.ts`, then ask for its settings |
 | `cms help [command]` | Help; `cms help --json` prints every command, flag, env variable, exit code and error code as data |
 
@@ -58,7 +64,7 @@ Prose (prompts, progress, warnings) goes to stderr. `cms logs --json` is the exc
 | 1 | Operation failed (`CONFIG_MISSING`, `WORKER_NOT_FOUND`, `CF_FAILED`, …) |
 | 2 | Usage error: unknown command or flag, bad value — with "did you mean" |
 | 3 | Needs the user: `AUTH_REQUIRED`, `CF_MISSING`, `NODE_TOO_OLD`, `ACCOUNT_AMBIGUOUS`, `PACKAGE_MANAGER_MISSING`, `DEPENDENCIES_MISSING`, `GIT_MISSING`, … |
-| 4 | Refused for safety (`NAME_IN_USE`) |
+| 4 | Refused for safety (`NAME_IN_USE`, `MANAGED_SECRET`, `BUCKET_NOT_EMPTY`) |
 | 5 | `TRANSIENT`: Cloudflare kept failing after retries; safe to run again |
 | 10 | `doctor` found failing checks |
 | 130 | Cancelled: No to the plan, or Ctrl-C |
@@ -73,7 +79,7 @@ Commands read and change Cloudflare through `cf`, Cloudflare's own CLI (npm pack
 - **Not signed in.** In a terminal the CLI offers to run `cf auth login` (the browser flow). Answering No exits 3 and explains `CLOUDFLARE_API_TOKEN`. Without a terminal: `AUTH_REQUIRED`. `cms status` and `cms login` say where auth comes from ("signed in through cf", or "API token from CLOUDFLARE_API_TOKEN").
 - **Account.** `--account`, then `CLOUDFLARE_ACCOUNT_ID`, then `account_id` in `wrangler.jsonc`, then the only account the login can see. With several and none chosen: a numbered list in a terminal (Ctrl-C cancels, nothing is written), `ACCOUNT_AMBIGUOUS` with the accounts in `data` otherwise.
 - **Retries.** Rate limits, 5xx responses, dropped connections and Cloudflare's intermittent 7403 are retried twice (after 1 s and 3 s). If they persist, `status` reports the item as unknown with a `READ_FAILED` warning; other commands exit 5.
-- **Reads and writes.** `status`, `doctor`, `version list` and `deploy --dry-run` send only reads (`cf auth whoami`, `workers get`, `workers deployments list`, `workers versions list`, `workers secrets list` — names only, `d1 list`, `d1 migrations list`, `d1 query` with a `SELECT`, `r2 buckets list`, `r2 buckets lifecycle get`, `kv namespaces list`); an API token for them needs read access to Workers Scripts, D1, Workers R2 Storage and Workers KV Storage. `cms deploy` and `cms secrets` also write (listed under `cms deploy`) and need edit access to the same.
+- **Reads and writes.** `status`, `doctor`, `version list`, `secret list`, `logs --since` and every `--dry-run` send only reads (`cf auth whoami`, `workers get`, `workers deployments list`, `workers versions list`, `workers secrets list` — names only, `d1 list`, `d1 migrations list`, `d1 query` with a `SELECT`, `r2 buckets list`, `r2 buckets lifecycle get`, `kv namespaces list`); an API token for them needs read access to Workers Scripts, D1, Workers R2 Storage and Workers KV Storage. `cms deploy`, `cms secrets`, `cms secret set/delete`, `cms rollback` and `cms destroy` also write (see `cms ci token` for the exact permissions).
 
 `cms logs` is a thin pass-through to the project's `wrangler tail` (`cf` has no live tail for Workers), so it uses wrangler's own login or `CLOUDFLARE_API_TOKEN`. Arguments after `--` go to `wrangler tail` unchanged: `cms logs -- --status error`.
 
@@ -127,6 +133,22 @@ For a site whose Worker does not exist yet, the order 0.x used and proved stays:
 Ctrl-C stops at the current step and lists the completed ones (exit 130). Every step checks before it acts, so running `cms deploy` again continues from what is missing. An interrupted first-admin setup resumes from `.cms/bootstrap.json` (the setup token only, 0600) or from `CMS_SETUP_TOKEN`.
 
 `--site-url https://www.example.com` sets `core.siteUrl` and the check URL when the site has a custom domain; otherwise the workers.dev URL is used and `core.siteUrl` is set to it only if it was unset. A plugin's required setting that is empty stops the deploy before anything changes (`SETTINGS_MISSING`).
+
+# Day-to-day commands
+
+**`cms rollback [version-id]`** sends 100% of traffic to an earlier version with the same call `cms deploy` uses to promote (`cf workers deployments create`). Without an id it picks the version that was live in the deployment before the current one; an id may be given in full or by its first 8+ characters (`cms version list`). The plan warns (`SCHEMA_AHEAD`) when migrations were recorded in `d1_migrations` after that version was uploaded: its code will run against the newer schema, and migrations are not rolled back. `--dry-run` and `--yes` work as in `deploy`; No exits 130.
+
+**`cms domain list | add <host> | remove <host>`** edit `routes` in `wrangler.jsonc` (`{ "pattern": "<host>", "custom_domain": true }`, comments kept) and nothing else. Cloudflare attaches the domain at the next `cms deploy`. `core.siteUrl` is never changed here: when a new domain becomes the main address, change it in admin → Settings (`cms deploy` only sets it while it is empty). Without `"workers_dev": true`, declaring routes turns the workers.dev address off; `add` warns. A removed domain may stay attached after the next deploy; detach it in the dashboard if so.
+
+**`cms secret list | set <NAME> | delete <NAME>`** go through `cf workers secrets`. A value comes from stdin (`printf %s "$VALUE" | cms secret set NAME`) or a hidden prompt; there is no flag for it, and no output contains it. Replacing or deleting asks first (`--yes` in CI). `SECRETS_KEY`, `AUTH_PEPPER` and `SETUP_TOKEN` are refused with exit 4 (`MANAGED_SECRET`): the first two can never change without breaking stored settings or every password, and `SETUP_TOKEN` is only ever generated when missing.
+
+**`cms logs --since <15m|2h|3d>`** lists the Worker's errors (level `error`, or an invocation whose outcome is not `ok`) from Workers Logs through `cf o11y telemetry query --preview` (no saved query). Workers Logs keeps 7 days, so 7d is the limit; `--limit` caps the events (default 50). Observability must be on for the Worker (`"observability": { "enabled": true }`).
+
+**`cms ci token`** prints the permissions of an account API token for this site, derived from the commands: Workers Scripts Write, D1 Write, Workers R2 Storage Write, Workers KV Storage Read (Write for destroy of a 1.x namespace), Account Settings Read, Workers Observability Read and Workers Tail Read; with custom domains also Workers Routes Write, DNS Write and Zone Read on those zones. It creates nothing: `cf accounts tokens create` describes its policy resources only as `{...}`, so the CLI does not build tokens.
+
+**`cms ci init`** writes `.github/workflows/cms.yml`: a `workflow_dispatch` workflow that installs the dependencies and `cf`, then runs `deploy --yes --json`, or `rollback [id] --yes --json`, with the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. An existing file is kept unless `--force`.
+
+**`cms destroy`** deletes, in this order, the Worker (and with it its custom domains), the D1 database named by id in `wrangler.jsonc`, the R2 buckets named there, and KV namespaces whose ids are there. Nothing else on the account is touched. A bucket that still holds objects stops the whole command before anything is deleted (`BUCKET_NOT_EMPTY`, exit 4); emptying it is up to you. In a terminal you type the Worker name; otherwise `--yes --confirm <worker-name>` is required (`--yes` alone exits 3). The plan suggests `wrangler d1 export` first. A failed delete reports what was already deleted.
 
 # `cms init <dir>`
 
