@@ -35,6 +35,8 @@ export interface Deps {
   sleep?: (ms: number) => Promise<void>;
   /** Subscribe to Ctrl-C; returns the unsubscribe function. */
   onInterrupt?: (handler: () => void) => () => void;
+  /** All of stdin, for values that must not be on the command line (secrets). */
+  readStdin?: () => Promise<string>;
 }
 
 export interface Warning {
@@ -90,8 +92,15 @@ export interface Ctx {
   fetch: typeof globalThis.fetch;
   sleep: (ms: number) => Promise<void>;
   onInterrupt: (handler: () => void) => () => void;
+  readStdin: () => Promise<string>;
   /** The same context for another site directory (init --deploy). */
   inDir(dir: string, argv: readonly string[]): Ctx;
+}
+
+async function processStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk as Buffer));
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function processInterrupt(handler: () => void): () => void {
@@ -146,6 +155,7 @@ export function createContext(
     fetch: deps.fetch ?? globalThis.fetch,
     sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
     onInterrupt: deps.onInterrupt ?? processInterrupt,
+    readStdin: deps.readStdin ?? processStdin,
     inDir: (other, again) => createContext(deps, { ...parsed, notices: [], values: { ...parsed.values, dir: undefined } }, other, again),
   };
 }

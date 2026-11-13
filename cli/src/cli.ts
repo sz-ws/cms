@@ -45,7 +45,9 @@ import { findCommand } from "./frame/commands.js";
 import { renderGlobalHelp } from "./frame/help.js";
 import { nearest } from "./frame/suggest.js";
 
-export const VERSION = "0.10.0";
+// 版號住在 version.ts(指令也要用,避免與 cli.ts 循環引用);這裡 re-export,既有契約不變。
+export { VERSION } from "./version.js";
+import { VERSION } from "./version.js";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。

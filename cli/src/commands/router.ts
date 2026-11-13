@@ -20,6 +20,11 @@ import { runVersionList } from "./versions.js";
 import { runDeploy } from "./deploy/deploy.js";
 import { runInit } from "./init.js";
 import { runPreflightCommand, runSecretsCommand } from "./kept.js";
+import { runCiInit, runCiToken } from "./ci.js";
+import { runDestroy } from "./destroy.js";
+import { runDomainAdd, runDomainList, runDomainRemove } from "./domain.js";
+import { runRollback } from "./rollback.js";
+import { runSecretDelete, runSecretList, runSecretSet } from "./secret.js";
 
 type Handler = (ctx: Ctx) => Promise<Outcome | undefined>;
 
@@ -34,6 +39,16 @@ const HANDLERS: Record<string, Handler> = {
   create: runInit,
   secrets: runSecretsCommand,
   preflight: runPreflightCommand,
+  rollback: runRollback,
+  "domain list": runDomainList,
+  "domain add": runDomainAdd,
+  "domain remove": runDomainRemove,
+  "secret list": runSecretList,
+  "secret set": runSecretSet,
+  "secret delete": runSecretDelete,
+  "ci token": runCiToken,
+  "ci init": runCiInit,
+  destroy: runDestroy,
 };
 
 function moved(io: Io, spec: CommandSpec, json: boolean): number {

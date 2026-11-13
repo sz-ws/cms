@@ -5,6 +5,7 @@ import type { Ctx, Outcome, PlanItem } from "../../frame/context.js";
 import { CliError } from "../../frame/errors.js";
 import { toCliError } from "../../frame/output.js";
 import { againCommand } from "../connect.js";
+import { confirmPlan } from "../confirm.js";
 import { apply, stateOf, type Progress } from "./apply.js";
 import { inspect, type Inspection } from "./inspect.js";
 import { buildPlan, renderPlan } from "./plan.js";
@@ -33,26 +34,6 @@ function wranglerWarnings(ctx: Ctx, i: Inspection): void {
   if (i.wranglerSignedIn === false) ctx.warn("WRANGLER_SIGNED_OUT", "wrangler is not signed in; cms deploy offers its login before building.");
 }
 
-async function confirm(ctx: Ctx, plan: PlanItem[]): Promise<void> {
-  if (ctx.values.yes === true) return;
-  if (!ctx.interactive) {
-    throw new CliError({
-      code: "CONFIRMATION_REQUIRED",
-      message: `The plan has ${plan.length} changes and nobody can confirm them here.`,
-      hint: "Read it with --dry-run, then run again with --yes.",
-      next: [`${againCommand(ctx)} --dry-run`, `${againCommand(ctx)} --yes`],
-      data: { plan },
-    });
-  }
-  if (!(await ctx.prompt.confirm("Apply this plan?", true))) {
-    throw new CliError({
-      code: "CANCELLED",
-      message: "Nothing was changed.",
-      hint: "Run `cms deploy` again when you are ready. See the plan without being asked: cms deploy --dry-run",
-    });
-  }
-}
-
 function failed(e: unknown, progress: Progress, steps: Steps, again: string): CliError {
   const error = toCliError(e, again);
   const state = stateOf(progress);
@@ -75,7 +56,7 @@ export async function runDeploy(ctx: Ctx): Promise<Outcome> {
     return { data: { ...summary(i, plan), dryRun: true }, plan, text: [...renderPlan(plan, ctx.out), "", "   Dry run: nothing was changed."].join("\n") };
   }
   if (!ctx.json) ctx.say(["", ...renderPlan(plan, ctx.err), ""].join("\n"));
-  await confirm(ctx, plan);
+  await confirmPlan(ctx, plan);
   const steps = new Steps(ctx, new DeployLog(i.site.dir, ctx.io.now()), againCommand(ctx));
   const progress: Progress = { config: false, resources: false, migrated: false, live: false };
   try {

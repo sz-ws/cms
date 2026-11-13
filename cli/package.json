@@ -1,6 +1,6 @@
 {
   "name": "@sz.ws/cms",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "CLI for sz.ws CMS — `status` and `doctor` show a site's state on Cloudflare, `setup` wires the repo to your Cloudflare account, `secrets` fills in the managed Worker keys after a deploy, `add` installs code extensions, `preflight` checks settings before deploy.",
   "type": "module",
   "bin": {

@@ -4,6 +4,7 @@
 
 import { DEFAULT_TEMPLATE } from "../create.js";
 import { DEFAULT_SOURCE } from "../registry.js";
+import { OPERATIONS } from "./commands-operations.js";
 import type { CommandSpec, FlagSpec } from "./spec.js";
 
 const SITE_ERRORS = ["CONFIG_MISSING", "CONFIG_INVALID"] as const;
@@ -224,13 +225,17 @@ const READ_COMMANDS: readonly CommandSpec[] = [
     notes: [
       "With --json, stdout is a stream of JSON events (one per line), not one envelope.",
       "Arguments after `--` go to `wrangler tail` unchanged, e.g. `cms logs -- --status error`.",
+      "--since reads errors (level error, or a failed invocation) through cf's Workers Logs query; observability must be on for the Worker.",
     ],
     positionals: [],
-    flags: [],
+    flags: [
+      { name: "since", type: "string", valueName: "duration", summary: "recent errors from Workers Logs instead of a live tail: 15m, 2h, 3d (at most 7d)" },
+      { name: "limit", type: "number", valueName: "n", default: 50, summary: "with --since: how many events (1-500)" },
+    ],
     mutates: "none",
-    examples: ["cms logs", "cms logs --json", "cms logs -- --status error --method POST"],
+    examples: ["cms logs", "cms logs --since 1h", "cms logs --since 1d --json", "cms logs -- --status error --method POST"],
     exitCodes: [0, 1, 2, 130],
-    errorCodes: [...SITE_ERRORS, "WRANGLER_FAILED"],
+    errorCodes: [...SITE_ERRORS, "WRANGLER_FAILED", "BAD_VALUE", ...CONNECT_ERRORS],
     parser: "table",
   },
 ];
@@ -247,7 +252,7 @@ const HELP: CommandSpec = {
   parser: "table",
 };
 
-export const COMMANDS: readonly CommandSpec[] = [...SITE_COMMANDS, ...READ_COMMANDS, ...PLUGIN_COMMANDS, HELP, ...KEPT];
+export const COMMANDS: readonly CommandSpec[] = [...SITE_COMMANDS, ...READ_COMMANDS, ...OPERATIONS, ...PLUGIN_COMMANDS, HELP, ...KEPT];
 
 export function findCommand(name: string): CommandSpec | undefined {
   return COMMANDS.find((c) => c.name === name);
