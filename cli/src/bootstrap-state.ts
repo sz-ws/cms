@@ -2,6 +2,30 @@ import { mkdir, readFile, writeFile, lstat, chmod, rm, rename, rmdir } from "nod
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
+async function noSymlinkAt(target: string): Promise<void> {
+  try {
+    if ((await lstat(target)).isSymbolicLink()) throw new Error(`${path.basename(target)} must not be a symlink.`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+/**
+ * 確保 .gitignore 有 /.cms/。.cms/ 放的是首次 setup token 與部署紀錄,都不該進版控。
+ * 只比最後一行的話,任何寫在 .gitignore 中間的 /.cms/ 都會被漏掉,
+ * 於是每一次重跑都再追加一行。整份掃過去才是冪等的。
+ */
+export async function ensureCmsIgnored(cwd: string): Promise<void> {
+  const ignore = path.join(cwd, ".gitignore");
+  await noSymlinkAt(ignore);
+  let text = "";
+  try { text = await readFile(ignore, "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  if (!text.split(/\r?\n/).some((line) => line.trim() === "/.cms/")) {
+    await writeFile(ignore, `${text}${text.endsWith("\n") || !text ? "" : "\n"}/.cms/\n`, "utf8");
+  }
+}
+
 /** 只保存首次 setup token，不保存密碼、AUTH_PEPPER 或 SECRETS_KEY。 */
 export function bootstrapState(cwd: string, workerName: string, databaseId: string) {
   const dir = path.join(cwd, ".cms");
@@ -27,16 +51,7 @@ export function bootstrapState(cwd: string, workerName: string, databaseId: stri
       }
     },
     async save(token: string): Promise<void> {
-      const ignore = path.join(cwd, ".gitignore");
-      await noSymlink(ignore);
-      let text = "";
-      try { text = await readFile(ignore, "utf8"); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-      // 只比最後一行的話,任何寫在 .gitignore 中間的 /.cms/ 都會被漏掉,
-      // 於是每一次重跑都再追加一行。整份掃過去才是冪等的。
-      if (!text.split(/\r?\n/).some((line) => line.trim() === "/.cms/")) {
-        await writeFile(ignore, `${text}${text.endsWith("\n") || !text ? "" : "\n"}/.cms/\n`, "utf8");
-      }
+      await ensureCmsIgnored(cwd);
       await noSymlink(dir);
       await mkdir(dir, { recursive: true, mode: 0o700 });
       await chmod(dir, 0o700);

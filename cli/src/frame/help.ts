@@ -37,6 +37,9 @@ function flagLine(flag: FlagSpec): string {
   return `  ${pad(flagLabel(flag), 34)}${flag.summary}${tail}`;
 }
 
+const KEPT_NAMES = new Set(["create", "setup", "secrets", "preflight", "add"]);
+const kept = (c: CommandSpec) => KEPT_NAMES.has(c.name);
+
 /** `cms`, `cms help`, `cms --help`: one screen. */
 export function renderGlobalHelp(version: string): string {
   const width = Math.max(...COMMANDS.map((c) => c.name.length)) + 4;
@@ -52,10 +55,11 @@ export function renderGlobalHelp(version: string): string {
     "",
     "Usage: cms <command> [flags]",
     "",
-    ...section("Site", COMMANDS.filter((c) => c.parser === "table" && c.name !== "help")),
-    ...section("Setup and plugins (0.x commands)", COMMANDS.filter((c) => c.parser === "legacy")),
+    ...section("Site", COMMANDS.filter((c) => c.parser === "table" && c.name !== "help" && !kept(c))),
+    ...section("Plugins", COMMANDS.filter((c) => c.name.startsWith("plugin "))),
     ...section("Help", COMMANDS.filter((c) => c.name === "help")),
-    "Global flags (status, doctor, login, version list, logs)",
+    ...section("0.x names, kept for one release", COMMANDS.filter(kept)),
+    "Global flags (every command except plugin add)",
     ...GLOBAL_FLAGS.map(flagLine),
     "",
     "Environment",
@@ -107,6 +111,8 @@ function commandJson(spec: CommandSpec) {
     ...(spec.notes ? { notes: spec.notes } : {}),
     mutates: spec.mutates,
     output: spec.parser === "table" ? "envelope" : "legacy",
+    ...(spec.aliasOf ? { aliasOf: spec.aliasOf } : {}),
+    ...(spec.movedTo ? { movedTo: spec.movedTo } : {}),
     positionals: spec.positionals,
     flags: spec.flags.map(flagJson),
     examples: spec.examples,
@@ -123,7 +129,7 @@ export function helpJson(version: string, only?: CommandSpec) {
     note: AGENT_NOTE,
     output: {
       envelope: "commands with output \"envelope\" print one JSON object with --json: {ok, command, data, plan, warnings, error{code,message,hint,next}}",
-      legacy: "0.x commands print {ok, exitCode, command, events|messages} with --json and keep their own exit codes",
+      legacy: "plugin add (and its old name add) prints {ok, exitCode, command, events|messages} with --json and keeps its own exit codes",
       interactive: "never prompts when stdin or stdout is not a TTY, when CI is set, or with --json",
     },
     globalFlags: GLOBAL_FLAGS.map(flagJson),

@@ -1,144 +1,156 @@
-// The command table. Every command is listed here, including the 0.x ones that
-// keep their own parser (parser: "legacy"), so `cms help` and `cms help --json`
-// always describe exactly what the CLI accepts.
+// The command table. Every command is listed here, including `plugin add` (which
+// keeps its own parser, parser: "legacy") and the 0.x names kept for one release,
+// so `cms help` and `cms help --json` always describe exactly what the CLI accepts.
 
 import { DEFAULT_TEMPLATE } from "../create.js";
 import { DEFAULT_SOURCE } from "../registry.js";
 import type { CommandSpec, FlagSpec } from "./spec.js";
 
-const CONFIG_FLAG: FlagSpec = {
-  name: "config",
-  type: "string",
-  valueName: "path",
-  default: "wrangler.jsonc",
-  summary: "wrangler config file path",
-};
-const DRY_RUN: FlagSpec = { name: "dry-run", type: "boolean", summary: "list what would be done; create nothing, write nothing" };
-const YES: FlagSpec = { name: "yes", short: "y", type: "boolean", summary: "skip all confirmations (CI use)" };
-const NON_INTERACTIVE: FlagSpec = { name: "non-interactive", type: "boolean", summary: "no prompts (add: implies --force; setup: same as --yes)" };
+const SITE_ERRORS = ["CONFIG_MISSING", "CONFIG_INVALID"] as const;
+
+const DRY_RUN: FlagSpec = { name: "dry-run", type: "boolean", summary: "do every read and show the plan; change nothing" };
+const YES: FlagSpec = { name: "yes", short: "y", type: "boolean", summary: "accept the plan without asking (CI, agents)" };
 const LEGACY_JSON: FlagSpec = { name: "json", type: "boolean", summary: "stdout gets one JSON transcript; human output stays on stderr" };
-const SITE_SLUG: FlagSpec = { name: "site-slug", type: "string", valueName: "slug", summary: "site id (3-48 lowercase alnum/hyphen); Worker, D1 and R2 names derive from it" };
-const SHARED_NAMES: FlagSpec = { name: "allow-shared-default-names", type: "boolean", summary: "allow the shipped shared names (cms, cms-db, ...); single-site or dev accounts only" };
-const SEPARATE_TAG_CACHE: FlagSpec = { name: "separate-tag-cache", type: "boolean", summary: "give the OpenNext tag cache its own D1 (2 D1 per site)" };
+const NAME: FlagSpec = { name: "name", type: "string", valueName: "name", env: "CMS_SITE_NAME", summary: "site name for a new site (3-48 lowercase letters, digits, hyphens); Worker, D1 and R2 names derive from it" };
 
-/** Exit codes of the 0.x commands (exit.ts), kept as they are. */
-const LEGACY_SETUP_EXITS = [0, 7, 8, 9] as const;
+const DEPLOY_FLAGS: readonly FlagSpec[] = [
+  NAME,
+  { name: "site-url", type: "string", valueName: "https://origin", summary: "the site's URL for core.siteUrl and the check (default: the workers.dev URL)" },
+  { name: "admin-email", type: "string", valueName: "email", env: "CMS_ADMIN_EMAIL", summary: "first deploy: the first administrator's email" },
+  { name: "admin-name", type: "string", valueName: "name", env: "CMS_ADMIN_NAME", summary: "first deploy: the first administrator's name" },
+  { name: "site-title", type: "string", valueName: "title", env: "CMS_SITE_TITLE", summary: "first deploy: the site title" },
+  DRY_RUN,
+  YES,
+];
 
-const LEGACY: readonly CommandSpec[] = [
+const DEPLOY_ERRORS = [
+  "PROJECT_INVALID", "CONFIG_MISSING", "CONFIG_INVALID", "INPUT_REQUIRED", "SETTINGS_MISSING", "NAME_IN_USE", "CONFIRMATION_REQUIRED",
+  "NODE_TOO_OLD", "CF_MISSING", "CF_VERSION_UNSUPPORTED", "AUTH_REQUIRED", "AUTH_INVALID", "PERMISSION_DENIED", "ACCOUNT_AMBIGUOUS",
+  "DEPENDENCIES_FAILED", "CONFIG_WRITE_FAILED", "RESOURCE_FAILED", "BUILD_FAILED", "UPLOAD_REJECTED", "MIGRATION_FAILED",
+  "PROMOTE_FAILED", "DEPLOY_FAILED", "SECRETS_UNREADABLE", "SECRETS_FAILED", "SITE_URL_UNKNOWN", "ADMIN_FAILED", "HTTP_CHECK_FAILED",
+  "TRANSIENT", "CF_FAILED", "FLAG_REMOVED", "CANCELLED",
+];
+
+const INIT_FLAGS: readonly FlagSpec[] = [
+  { name: "template", type: "string", valueName: "url", default: DEFAULT_TEMPLATE, env: "SZWS_CMS_TEMPLATE", summary: "template git URL" },
+  { name: "ref", type: "string", valueName: "branch|tag", summary: "clone this branch or tag instead of the newest release tag" },
+  { name: "skip-git-init", type: "boolean", summary: "keep the template's .git instead of starting a new history" },
+  { name: "deploy", type: "boolean", summary: "continue with cms deploy in the new directory (its name becomes the site name)" },
+  ...DEPLOY_FLAGS.filter((f) => f.name !== "name"),
+];
+
+const INIT_ERRORS = ["BAD_VALUE", "INPUT_REQUIRED", "DEST_EXISTS", "GIT_MISSING", "CLONE_FAILED", ...DEPLOY_ERRORS];
+
+const PLUGIN_ADD_FLAGS: readonly FlagSpec[] = [
+  { name: "source", type: "string", valueName: "url", default: DEFAULT_SOURCE, summary: "registry base URL" },
+  { name: "token", type: "string", valueName: "t", env: "SZWS_REGISTRY_TOKEN", secret: true, summary: "registry access token (prefer the env variable)" },
+  { name: "force", type: "boolean", summary: "overwrite an existing extensions/<id>/" },
+  { name: "skip-core-check", type: "boolean", summary: "skip the coreApi compatibility check" },
+  { name: "config", type: "string", valueName: "path", default: "wrangler.jsonc", summary: "wrangler config file path" },
+  { name: "dry-run", type: "boolean", summary: "list what would be done; write nothing" },
+  { name: "yes", short: "y", type: "boolean", summary: "skip the settings questions" },
+  { name: "non-interactive", type: "boolean", summary: "no prompts; implies --force" },
+  LEGACY_JSON,
+];
+
+const SITE_COMMANDS: readonly CommandSpec[] = [
   {
-    name: "create",
-    summary: "Scaffold a new CMS project by cloning the template",
-    positionals: [{ name: "dir", required: true, summary: "directory to create" }],
-    flags: [
-      { name: "template", type: "string", valueName: "url", default: DEFAULT_TEMPLATE, env: "SZWS_CMS_TEMPLATE", summary: "template git URL" },
-      { name: "ref", type: "string", valueName: "branch|tag", summary: "clone a specific branch or tag" },
-      { name: "skip-git-init", type: "boolean", summary: "keep the template .git instead of resetting it" },
-      { name: "deploy", type: "boolean", summary: "continue through deployment and first-admin setup" },
-      SITE_SLUG,
-      DRY_RUN,
-      YES,
-      NON_INTERACTIVE,
-      LEGACY_JSON,
-    ],
+    name: "init",
+    summary: "Create a new site project from the newest release of the template",
+    notes: ["Clones the newest release tag; when the template has none, its default branch (and says so). No Cloudflare calls unless --deploy."],
+    positionals: [{ name: "dir", required: false, summary: "directory to create (asked for when missing)" }],
+    flags: INIT_FLAGS,
     mutates: "local",
-    examples: ["cms create acme", "cms create acme --deploy", "cms create acme --template https://example.com/fork.git"],
-    exitCodes: [0, 1, 2, 3, 7],
-    errorCodes: [],
-    parser: "legacy",
-  },
-  {
-    name: "setup",
-    summary: "Connect this repo to your Cloudflare account (D1, R2, ids, migrations, secrets)",
-    positionals: [],
-    flags: [
-      CONFIG_FLAG,
-      SITE_SLUG,
-      SHARED_NAMES,
-      SEPARATE_TAG_CACHE,
-      { name: "skip-migrations", type: "boolean", summary: "skip applying migrations/" },
-      { name: "skip-secrets", type: "boolean", summary: "skip setting SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN" },
-      DRY_RUN,
-      YES,
-      NON_INTERACTIVE,
-      LEGACY_JSON,
-    ],
-    mutates: "remote",
-    examples: ["cms setup --site-slug acme", "cms setup --dry-run"],
-    exitCodes: LEGACY_SETUP_EXITS,
-    errorCodes: [],
-    parser: "legacy",
+    examples: ["cms init acme", "cms init acme --deploy", "cms init acme --ref v2.0.0 --dry-run"],
+    exitCodes: [0, 1, 2, 3, 4, 5, 130],
+    errorCodes: INIT_ERRORS,
+    parser: "table",
   },
   {
     name: "deploy",
-    summary: "Provision, build, migrate, deploy and verify this site",
-    notes: ["Never rotates SECRETS_KEY or AUTH_PEPPER. First deploy reads CMS_ADMIN_EMAIL, CMS_ADMIN_NAME, CMS_ADMIN_PASSWORD and CMS_SITE_TITLE."],
-    positionals: [],
-    flags: [
-      CONFIG_FLAG,
-      SITE_SLUG,
-      { name: "site-url", type: "string", valueName: "https://origin", summary: "URL for verification (default: the deployed workers.dev URL)" },
-      SHARED_NAMES,
-      SEPARATE_TAG_CACHE,
-      DRY_RUN,
-      YES,
-      NON_INTERACTIVE,
-      LEGACY_JSON,
+    summary: "Converge the site: resources, build, upload, migrate, go live, secrets, first admin, check",
+    notes: [
+      "Shows the plan and asks before changing anything; --dry-run stops after the plan, --yes accepts it.",
+      "An existing Worker gets a new version that goes live only after the migrations. Never rotates SECRETS_KEY or AUTH_PEPPER.",
+      "Passwords only through the environment (CMS_ADMIN_PASSWORD) or a hidden prompt. Step output goes to .cms/logs/.",
+      "Builds and uploads with the project's OpenNext and wrangler, so wrangler must be signed in too (or CLOUDFLARE_API_TOKEN set).",
     ],
-    mutates: "remote",
-    examples: ["cms deploy --site-slug acme", "cms deploy --dry-run"],
-    exitCodes: LEGACY_SETUP_EXITS,
-    errorCodes: [],
-    parser: "legacy",
-  },
-  {
-    name: "secrets",
-    summary: "Ensure SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN exist on the deployed Worker (run by the postdeploy hook)",
-    notes: ["Existing keys are never overwritten."],
     positionals: [],
-    flags: [CONFIG_FLAG, { name: "dry-run", type: "boolean", summary: "report which keys are missing, generate nothing" }, LEGACY_JSON],
+    flags: DEPLOY_FLAGS,
     mutates: "remote",
-    examples: ["cms secrets", "cms secrets --dry-run"],
-    exitCodes: LEGACY_SETUP_EXITS,
-    errorCodes: [],
-    parser: "legacy",
+    examples: ["cms deploy --dry-run", "cms deploy", "cms deploy --name acme --yes --json", "cms deploy --site-url https://www.example.com"],
+    exitCodes: [0, 1, 2, 3, 4, 5, 130],
+    errorCodes: DEPLOY_ERRORS,
+    parser: "table",
   },
+];
+
+const PLUGIN_COMMANDS: readonly CommandSpec[] = [
   {
-    name: "add",
+    name: "plugin add",
     summary: "Install a code plugin from a registry",
-    usage: "cms add <id>[@<version>] [flags]",
+    usage: "cms plugin add <id>[@<version>] [flags]",
     positionals: [{ name: "id", required: true, summary: "plugin id, optionally @<version> kept for older cores" }],
-    flags: [
-      { name: "source", type: "string", valueName: "url", default: DEFAULT_SOURCE, summary: "registry base URL" },
-      { name: "token", type: "string", valueName: "t", env: "SZWS_REGISTRY_TOKEN", secret: true, summary: "registry access token (prefer the env variable)" },
-      { name: "force", type: "boolean", summary: "overwrite an existing extensions/<id>/" },
-      { name: "skip-core-check", type: "boolean", summary: "skip the coreApi compatibility check" },
-      CONFIG_FLAG,
-      DRY_RUN,
-      YES,
-      NON_INTERACTIVE,
-      LEGACY_JSON,
-    ],
+    flags: PLUGIN_ADD_FLAGS,
     mutates: "local",
-    examples: ["cms add blog", "cms add blog@1.2.0 --dry-run"],
+    examples: ["cms plugin add blog", "cms plugin add blog@1.2.0 --dry-run"],
     exitCodes: [0, 1, 2, 3, 4, 6, 11],
     errorCodes: [],
     parser: "legacy",
   },
+];
+
+/** 0.x names kept for one release. */
+const KEPT: readonly CommandSpec[] = [
+  {
+    name: "create",
+    summary: "Old name of `cms init` (prints a notice)",
+    positionals: [{ name: "dir", required: false, summary: "directory to create" }],
+    flags: INIT_FLAGS,
+    mutates: "local",
+    examples: ["cms init acme"],
+    exitCodes: [0, 1, 2, 3, 4, 5, 130],
+    errorCodes: INIT_ERRORS,
+    parser: "table",
+    aliasOf: "init",
+  },
+  {
+    name: "setup",
+    summary: "Folded into `cms deploy`: see the plan with `cms deploy --dry-run`",
+    positionals: [],
+    flags: [],
+    mutates: "none",
+    examples: ["cms deploy --dry-run", "cms deploy"],
+    exitCodes: [2],
+    errorCodes: ["COMMAND_MOVED"],
+    parser: "table",
+    movedTo: ["cms deploy --dry-run", "cms deploy"],
+  },
+  {
+    name: "secrets",
+    summary: "Create any missing SECRETS_KEY / AUTH_PEPPER / SETUP_TOKEN on the deployed Worker (old postdeploy hooks call it)",
+    notes: ["cms deploy does this itself. Existing keys are never overwritten; a new SETUP_TOKEN is printed once on stderr."],
+    positionals: [],
+    flags: [DRY_RUN],
+    mutates: "remote",
+    examples: ["cms secrets", "cms secrets --dry-run --json"],
+    exitCodes: [0, 1, 2, 3, 5, 130],
+    errorCodes: [...SITE_ERRORS, "SECRETS_UNREADABLE", "SECRETS_FAILED", "AUTH_REQUIRED", "CF_MISSING", "ACCOUNT_AMBIGUOUS"],
+    parser: "table",
+  },
   {
     name: "preflight",
-    summary: "List plugin settings that are still unset (cms doctor includes this)",
+    summary: "The plugin-settings checks of `cms doctor` (old predeploy hooks call it)",
+    notes: ["With --gate, exits 10 when a required setting is empty. Without a Cloudflare login, secret settings show as unverifiable, not missing."],
     positionals: [],
-    flags: [
-      CONFIG_FLAG,
-      { name: "gate", type: "boolean", summary: "exit 10 when a required setting is missing (predeploy hook)" },
-      LEGACY_JSON,
-    ],
+    flags: [{ name: "gate", type: "boolean", summary: "exit 10 when a required setting is missing" }],
     mutates: "none",
     examples: ["cms preflight", "cms preflight --gate"],
-    exitCodes: [0, 10],
-    errorCodes: [],
-    parser: "legacy",
+    exitCodes: [0, 1, 2, 10],
+    errorCodes: [...SITE_ERRORS, "CHECKS_FAILED"],
+    parser: "table",
   },
+  { ...PLUGIN_COMMANDS[0], name: "add", summary: "Old name of `cms plugin add`", usage: "cms add <id>[@<version>] [flags]", examples: ["cms plugin add blog"], aliasOf: "plugin add" },
 ];
 
 const CONNECT_ERRORS = [
@@ -154,9 +166,8 @@ const CONNECT_ERRORS = [
   "CANCELLED",
 ] as const;
 
-const SITE_ERRORS = ["CONFIG_MISSING", "CONFIG_INVALID"] as const;
 
-const NEW: readonly CommandSpec[] = [
+const READ_COMMANDS: readonly CommandSpec[] = [
   {
     name: "status",
     summary: "What exists: account, Worker, live version, URLs, resources, secrets, migrations, plugins",
@@ -236,7 +247,7 @@ const HELP: CommandSpec = {
   parser: "table",
 };
 
-export const COMMANDS: readonly CommandSpec[] = [...NEW, ...LEGACY, HELP];
+export const COMMANDS: readonly CommandSpec[] = [...SITE_COMMANDS, ...READ_COMMANDS, ...PLUGIN_COMMANDS, HELP, ...KEPT];
 
 export function findCommand(name: string): CommandSpec | undefined {
   return COMMANDS.find((c) => c.name === name);
@@ -251,8 +262,10 @@ export const ENVIRONMENT: readonly { name: string; summary: string }[] = [
   { name: "CLOUDFLARE_ACCOUNT_ID", summary: "which account to use when the login sees several" },
   { name: "CI", summary: "when set, never prompt" },
   { name: "NO_COLOR", summary: "disable colours" },
-  { name: "SZWS_REGISTRY_TOKEN", summary: "registry access token for `cms add`" },
-  { name: "SZWS_CMS_TEMPLATE", summary: "default template URL for `cms create`" },
-  { name: "CMS_ADMIN_EMAIL / CMS_ADMIN_NAME / CMS_ADMIN_PASSWORD / CMS_SITE_TITLE", summary: "first deploy: the first administrator and site title (never pass the password on the command line)" },
-  { name: "CMS_SETUP_TOKEN", summary: "resume a first setup started outside `cms deploy`" },
+  { name: "CMS_SITE_NAME", summary: "site name for a new site (same as --name)" },
+  { name: "CMS_ADMIN_EMAIL / CMS_ADMIN_NAME / CMS_SITE_TITLE", summary: "first deploy: the first administrator and site title (same as the flags)" },
+  { name: "CMS_ADMIN_PASSWORD", summary: "first deploy: the administrator password; never on the command line" },
+  { name: "CMS_SETUP_TOKEN", summary: "resume a first setup whose SETUP_TOKEN value is not in .cms/" },
+  { name: "SZWS_REGISTRY_TOKEN", summary: "registry access token for `cms plugin add`" },
+  { name: "SZWS_CMS_TEMPLATE", summary: "default template URL for `cms init`" },
 ];

@@ -4,7 +4,7 @@ import { COMMANDS, findCommand } from "./commands.js";
 import { CliError } from "./errors.js";
 import { helpJson, renderCommandHelp, renderGlobalHelp } from "./help.js";
 import { parseCommand, resolveCommand } from "./parse.js";
-import { AGENT_NOTE, ERROR_CODES, EXIT_CODE_MEANINGS } from "./spec.js";
+import { AGENT_NOTE, ERROR_CODES, EXIT_CODE_MEANINGS, FLAG_ALIASES, GLOBAL_FLAGS } from "./spec.js";
 import { editDistance, nearest } from "./suggest.js";
 
 function parseError(fn: () => unknown): CliError {
@@ -98,12 +98,16 @@ describe("command table", () => {
   it("lists every command once, including the 0.x ones", () => {
     const names = COMMANDS.map((c) => c.name);
     expect(new Set(names).size).toBe(names.length);
-    for (const name of ["create", "setup", "deploy", "secrets", "preflight", "add", "status", "doctor", "login", "version list", "logs", "help"]) {
+    for (const name of ["init", "deploy", "plugin add", "create", "setup", "secrets", "preflight", "add", "status", "doctor", "login", "version list", "logs", "help"]) {
       expect(names).toContain(name);
     }
   });
-  it("describes every value flag the 0.x parser accepts", () => {
-    const tableFlags = new Set(COMMANDS.flatMap((c) => c.flags.map((f) => `--${f.name}`)));
+  it("accepts every value flag the 0.x parser knew, as a flag or an alias", () => {
+    const tableFlags = new Set([
+      ...COMMANDS.flatMap((c) => c.flags.map((f) => `--${f.name}`)),
+      ...GLOBAL_FLAGS.map((f) => `--${f.name}`),
+      ...Object.keys(FLAG_ALIASES).map((f) => `--${f}`),
+    ]);
     for (const flag of FLAGS_WITH_VALUE) expect(tableFlags).toContain(flag);
   });
   it("only names error codes that exist", () => {
@@ -121,7 +125,7 @@ describe("help", () => {
     const text = renderGlobalHelp("9.9.9");
     expect(text.split("\n")[2]).toBe(AGENT_NOTE);
     for (const c of COMMANDS) expect(text).toContain(`cms ${c.name}`);
-    expect(text).not.toContain("--skip-migrations");
+    expect(text).not.toContain("--skip-core-check");
   });
   it("renders a command with flags, examples and exit codes", () => {
     const text = renderCommandHelp(findCommand("version list")!);
@@ -131,9 +135,9 @@ describe("help", () => {
     expect(text).toContain("Exit codes");
     expect(text).toContain("cms version list --limit 3 --json");
   });
-  it("renders a 0.x command with its own exit numbering", () => {
-    const text = renderCommandHelp(findCommand("setup")!);
-    expect(text).toContain("--skip-migrations");
+  it("renders the plugin installer with its own exit numbering", () => {
+    const text = renderCommandHelp(findCommand("plugin add")!);
+    expect(text).toContain("--skip-core-check");
     expect(text).toContain("0.x numbering");
   });
   it("gives the whole table as data", () => {

@@ -1,6 +1,6 @@
 {
   "name": "@sz.ws/cms",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "CLI for sz.ws CMS — `status` and `doctor` show a site's state on Cloudflare, `setup` wires the repo to your Cloudflare account, `secrets` fills in the managed Worker keys after a deploy, `add` installs code extensions, `preflight` checks settings before deploy.",
   "type": "module",
   "bin": {
@@ -18,7 +18,8 @@
   },
   "scripts": {
     "start": "node ./dist/cli.js",
-    "build": "tsc -p tsconfig.json",
+    "clean": "node --input-type=module -e \"import('node:fs').then((fs) => fs.rmSync('dist', { recursive: true, force: true }))\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "npm run build"
   },

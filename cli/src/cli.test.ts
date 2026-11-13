@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { run, EXIT, isDirectRun, VERSION } from "./cli.js";
-import { parseArgs } from "./args.js";
 
 const REGISTRY_HEADER = `import type { Extension } from "@/ext/types";\n`;
 const emptyRegistry =
@@ -487,9 +486,9 @@ describe("run — help / version", () => {
     expect(help).toContain("--json");
     expect(help).toContain("cms help <command>");
   });
-  it("cms help setup 列出 setup 的旗標", async () => {
-    await run(["help", "setup"], repoDir);
-    expect(stdoutOut()).toContain("--skip-migrations");
+  it("cms help plugin add 列出安裝器的旗標", async () => {
+    await run(["help", "plugin", "add"], repoDir);
+    expect(stdoutOut()).toContain("--skip-core-check");
   });
   it("--version 走 stdout 且帶套件名", async () => {
     const code = await run(["--version"], repoDir);
@@ -554,23 +553,21 @@ describe("run — 指令派送", () => {
     expect(errOut()).toContain("cms setup");
     expect(errOut()).not.toContain("Usage:");
   });
-  it("0.x 指令打錯旗標:維持 exit 1,指出最接近的旗標", async () => {
-    expect(await run(["setup", "--skip-migration"], repoDir)).toBe(EXIT.NOT_FOUND);
-    expect(errOut()).toContain("did you mean --skip-migrations?");
+  it("外掛安裝器打錯旗標:維持 exit 1,指出最接近的旗標", async () => {
+    expect(await run(["add", "demoext", "--skip-core-chek"], repoDir)).toBe(EXIT.NOT_FOUND);
+    expect(errOut()).toContain("did you mean --skip-core-check?");
   });
 
-  it("setup 走 setup 流程 —— 沒有 wrangler 設定檔就 exit 7", async () => {
-    // repoDir 是個沒有 wrangler.jsonc 的臨時目錄,所以會停在前置檢查,
-    // 一次 wrangler 都不會被叫到(絕不能真的去動 Cloudflare 帳號)。
-    const code = await run(["setup"], repoDir);
-    expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out()).toContain("wrangler.jsonc");
+  // 0.10 起 setup 併入 deploy:結束代碼 2,指向 `cms deploy --dry-run`,不碰任何帳號。
+  it("setup 指向 cms deploy", async () => {
+    expect(await run(["setup"], repoDir)).toBe(2);
+    expect(errOut()).toContain("cms deploy --dry-run");
   });
 
-  it("setup --config 指到不存在的檔一樣是 exit 7", async () => {
-    const code = await run(["setup", "--config", "nope.jsonc"], repoDir);
-    expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out()).toContain("nope.jsonc");
+  it("plugin add 與舊名 add 走同一個安裝器", async () => {
+    const code = await run(["plugin", "add", "demoext", "--source", regUrl], repoDir);
+    expect(code).toBe(EXIT.OK);
+    expect(await readFile(path.join(repoDir, "extensions", "registry.ts"), "utf8")).toContain("demoext");
   });
 });
 
@@ -675,79 +672,6 @@ describe("run add — manifest settings", () => {
 // 這裡只跑「沒有 secret 型設定」的情境 —— 那條路徑保證不會 spawn 任何 wrangler,
 // 所以測試絕對碰不到真的 Cloudflare 帳號。有 secret 的情境走注入的 Executor,
 // 全部在 preflight.test.ts。
-
-describe("run preflight", () => {
-  async function seedManifest(settings: unknown[]): Promise<void> {
-    await writeFile(path.join(repoDir, "wrangler.jsonc"), WRANGLER_FIXTURE, "utf8");
-    await mkdir(path.join(repoDir, "extensions", "thing"), { recursive: true });
-    await writeFile(
-      path.join(repoDir, "extensions", "thing", "manifest.json"),
-      JSON.stringify({ id: "thing", settings }),
-      "utf8",
-    );
-  }
-
-  it("--gate 缺必填 → 非零退出", async () => {
-    await seedManifest([
-      { key: "needed", label: "Needed", type: "text", default: "", required: true },
-    ]);
-    const code = await run(["preflight", "--gate"], repoDir);
-    expect(code).toBe(EXIT.PREFLIGHT_BLOCKED);
-    expect(out()).toContain("EXT_THING_NEEDED");
-  });
-
-  it("不給 --gate 時純列出,一律零退出", async () => {
-    await seedManifest([
-      { key: "needed", label: "Needed", type: "text", default: "", required: true },
-    ]);
-    expect(await run(["preflight"], repoDir)).toBe(EXIT.OK);
-  });
-
-  it("填好了 → --gate 零退出", async () => {
-    await seedManifest([
-      { key: "needed", label: "Needed", type: "text", default: "", required: true },
-    ]);
-    await writeFile(
-      path.join(repoDir, "wrangler.jsonc"),
-      WRANGLER_FIXTURE.replace('"vars": {', '"vars": { "EXT_THING_NEEDED": "ok",'),
-      "utf8",
-    );
-    expect(await run(["preflight", "--gate"], repoDir)).toBe(EXIT.OK);
-  });
-
-  it("--json 時 stdout 只有一份機器可讀的 JSON", async () => {
-    await seedManifest([
-      { key: "needed", label: "Needed", type: "text", default: "", required: true },
-    ]);
-    const code = await run(["preflight", "--gate", "--json"], repoDir);
-    const parsed = JSON.parse(stdoutOut()) as { ok: boolean; exitCode: number; command: string };
-    expect(parsed.command).toBe("preflight");
-    expect(parsed.exitCode).toBe(code);
-    expect(parsed.ok).toBe(false);
-  });
-});
-
-// 目錄名的字元規則比 site slug 寬(兩個字就成立、結尾可以是連字號),而 --deploy
-// 會把目錄名直接當 slug 用。等 clone 完幾十 MB 才被 setup 擋下來,那次抓取是白費的。
-describe("run — create --deploy 的 slug 前置檢查", () => {
-  it("目錄名當不了 site slug 時,clone 之前就停下來", async () => {
-    const args = parseArgs(["create", "ab", "--deploy"]);
-    expect(args).toMatchObject({ command: "create", id: "ab", deployAfterCreate: true });
-    expect(args.siteSlug).toBeUndefined();
-    const code = await run(["create", "ab", "--deploy", "--non-interactive"], repoDir);
-    expect(code).toBe(EXIT.SETUP_PREREQ);
-    expect(out()).toContain("--site-slug");
-    expect(out()).toContain("site slug must be");
-    await expect(stat(path.join(repoDir, "ab"))).rejects.toThrow();
-  });
-
-  // 對照組:合法的名字照樣往下走(--dry-run 讓它停在真的 clone 之前)。
-  it("合法的名字不受影響", async () => {
-    const code = await run(["create", "ab-c", "--deploy", "--dry-run", "--non-interactive"], repoDir);
-    expect(code).toBe(EXIT.OK);
-    expect(out()).not.toContain("cannot be used as the Cloudflare site slug");
-  });
-});
 
 describe("run add — paid extensions", () => {
   it("access other than granted → exit 11 before fetching anything", async () => {

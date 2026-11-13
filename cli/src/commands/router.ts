@@ -17,6 +17,9 @@ import { runLoginCommand } from "./login.js";
 import { runLogs } from "./logs.js";
 import { runStatus } from "./status.js";
 import { runVersionList } from "./versions.js";
+import { runDeploy } from "./deploy/deploy.js";
+import { runInit } from "./init.js";
+import { runPreflightCommand, runSecretsCommand } from "./kept.js";
 
 type Handler = (ctx: Ctx) => Promise<Outcome | undefined>;
 
@@ -26,7 +29,22 @@ const HANDLERS: Record<string, Handler> = {
   login: runLoginCommand,
   "version list": runVersionList,
   logs: runLogs,
+  deploy: runDeploy,
+  init: runInit,
+  create: runInit,
+  secrets: runSecretsCommand,
+  preflight: runPreflightCommand,
 };
+
+function moved(io: Io, spec: CommandSpec, json: boolean): number {
+  const error = new CliError({
+    code: "COMMAND_MOVED",
+    message: `\`cms ${spec.name}\` is now part of \`cms deploy\`.`,
+    hint: "See what it would do with --dry-run; it asks before changing anything.",
+    next: [...(spec.movedTo ?? [])],
+  });
+  return emit({ io, json, command: spec.name, err: makeStyles(false) }, undefined, [], error);
+}
 
 export function processIo(): Io {
   return {
@@ -71,9 +89,10 @@ function unknownCommand(io: Io, input: string, suggestion: string | undefined, j
   return emit({ io, json, command: input, err: makeStyles(false) }, undefined, [], error);
 }
 
-async function runTable(spec: CommandSpec, rest: string[], cwd: string, deps: Deps, version: string): Promise<number> {
+async function runTable(spec: CommandSpec, rest: string[], cwd: string, deps: Deps, version: string, argv: readonly string[]): Promise<number> {
   const { io } = deps;
   const json = rest.includes("--json");
+  if (spec.movedTo && !rest.some((a) => WANTS_HELP.has(a))) return moved(io, spec, json);
   let parsed;
   try {
     parsed = parseCommand(spec, rest, io.env);
@@ -82,7 +101,7 @@ async function runTable(spec: CommandSpec, rest: string[], cwd: string, deps: De
   }
   if (spec.name === "help") return helpCommand(io, version, parsed.positionals, parsed.values.json === true);
   if (parsed.values.help === true) return helpCommand(io, version, [spec.name], parsed.values.json === true);
-  const ctx = createContext(deps, parsed, cwd);
+  const ctx = createContext(deps, parsed, cwd, argv);
   const target = { io, json: ctx.json, command: spec.name, err: ctx.err };
   try {
     const outcome = await HANDLERS[spec.name](ctx);
@@ -112,7 +131,9 @@ export async function runNew(argv: readonly string[], cwd: string, version: stri
     return unknownCommand(deps.io, r.input, r.suggestion, json);
   }
   if (r.spec.parser === "legacy") {
-    return r.rest.some((a) => WANTS_HELP.has(a)) ? helpCommand(deps.io, version, [r.spec.name], json) : undefined;
+    if (r.rest.some((a) => WANTS_HELP.has(a))) return helpCommand(deps.io, version, [r.spec.name], json);
+    if (r.spec.aliasOf) deps.io.err(`\`cms ${r.spec.name}\` is now \`cms ${r.spec.aliasOf}\`.\n`);
+    return undefined;
   }
-  return runTable(r.spec, r.rest, cwd, deps, version);
+  return runTable(r.spec, r.rest, cwd, deps, version, argv);
 }

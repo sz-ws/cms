@@ -14,10 +14,23 @@ export interface Choice<T> {
 export interface Prompt {
   confirm(question: string, defaultYes: boolean): Promise<boolean>;
   select<T>(question: string, choices: readonly Choice<T>[]): Promise<T>;
+  text(question: string): Promise<string>;
+  /** Not echoed; the answer never reaches a log, a transcript or JSON. */
+  secret(question: string): Promise<string>;
 }
 
-async function ask(query: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+async function ask(query: string, hidden = false): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  if (hidden) {
+    // readline has no "no echo" switch: let the prompt through once, swallow the redraws.
+    const internal = rl as unknown as { _writeToOutput?: (chunk: string) => void };
+    let shown = false;
+    internal._writeToOutput = (chunk: string) => {
+      if (shown) return;
+      shown = true;
+      process.stderr.write(chunk);
+    };
+  }
   const abort = new AbortController();
   rl.on("SIGINT", () => abort.abort());
   rl.on("close", () => abort.abort());
@@ -29,6 +42,7 @@ async function ask(query: string): Promise<string> {
   } finally {
     rl.removeAllListeners("close");
     rl.close();
+    if (hidden) process.stderr.write("\n");
   }
 }
 
@@ -51,6 +65,8 @@ export function createTtyPrompt(s: StyleSet): Prompt {
         process.stderr.write(`   ${s.yellow(`Enter a number from 1 to ${choices.length}.`)}\n`);
       }
     },
+    text: (question) => ask(`${s.cyan("?")}  ${question}  ${s.dim("›")} `),
+    secret: (question) => ask(`${s.cyan("?")}  ${question} ${s.dim("(hidden)")}  ${s.dim("›")} `, true),
   };
 }
 
@@ -60,6 +76,12 @@ export const noPrompt: Prompt = {
     return Promise.reject(new Error(`internal: prompt while non-interactive: ${question}`));
   },
   select(question) {
+    return Promise.reject(new Error(`internal: prompt while non-interactive: ${question}`));
+  },
+  text(question) {
+    return Promise.reject(new Error(`internal: prompt while non-interactive: ${question}`));
+  },
+  secret(question) {
     return Promise.reject(new Error(`internal: prompt while non-interactive: ${question}`));
   },
 };

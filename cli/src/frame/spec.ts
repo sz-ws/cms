@@ -61,6 +61,10 @@ export interface CommandSpec {
   parser: "table" | "legacy";
   /** Usage line override for legacy commands whose shape the table cannot express. */
   usage?: string;
+  /** An old name: runs this command after a one-line notice. */
+  aliasOf?: string;
+  /** Folded into other commands: always exits 2 and names them in next. */
+  movedTo?: readonly string[];
 }
 
 /** Exit codes of the commands on the new frame. Fixed across commands. */
@@ -116,6 +120,31 @@ export const ERROR_CODES: readonly ErrorCodeSpec[] = [
   { code: "LOGIN_FAILED", exit: 1, meaning: "Signing in did not complete" },
   { code: "WRANGLER_FAILED", exit: 1, meaning: "A wrangler command failed" },
   { code: "UNEXPECTED", exit: 1, meaning: "A bug in this CLI; the message says what happened" },
+  { code: "FLAG_REMOVED", exit: 2, meaning: "The flag no longer exists; the message says what replaced it" },
+  { code: "COMMAND_MOVED", exit: 2, meaning: "The command was folded into another one; next names it" },
+  { code: "CONFIRMATION_REQUIRED", exit: 3, meaning: "The plan changes things and --yes was not given while non-interactive" },
+  { code: "SETTINGS_MISSING", exit: 3, meaning: "A plugin's required setting is empty" },
+  { code: "GIT_MISSING", exit: 3, meaning: "git is not installed" },
+  { code: "PACKAGE_MANAGER_MISSING", exit: 3, meaning: "The project's package manager (pnpm, yarn, bun or npm) is not installed" },
+  { code: "DEPENDENCIES_MISSING", exit: 3, meaning: "A tool the project provides (wrangler, opennextjs-cloudflare) is not installed; install the dependencies" },
+  { code: "PROGRAM_MISSING", exit: 3, meaning: "Another program the command needs is not installed" },
+  { code: "NAME_IN_USE", exit: 4, meaning: "A new site's resource names already exist on the account" },
+  { code: "PROJECT_INVALID", exit: 1, meaning: "The directory is not a CMS project (package.json, Next.js, OpenNext)" },
+  { code: "DEST_EXISTS", exit: 1, meaning: "The target directory exists and is not empty" },
+  { code: "CLONE_FAILED", exit: 1, meaning: "git clone failed" },
+  { code: "DEPENDENCIES_FAILED", exit: 1, meaning: "Installing the locked dependencies failed" },
+  { code: "CONFIG_WRITE_FAILED", exit: 1, meaning: "wrangler.jsonc could not be written" },
+  { code: "RESOURCE_FAILED", exit: 1, meaning: "Creating a D1 database or an R2 bucket failed" },
+  { code: "BUILD_FAILED", exit: 1, meaning: "The OpenNext build failed; the live site is unchanged" },
+  { code: "UPLOAD_REJECTED", exit: 1, meaning: "Cloudflare rejected the new version; the live site is unchanged" },
+  { code: "MIGRATION_FAILED", exit: 1, meaning: "Applying migrations failed" },
+  { code: "PROMOTE_FAILED", exit: 1, meaning: "The uploaded version could not be made live" },
+  { code: "DEPLOY_FAILED", exit: 1, meaning: "The first upload of the Worker failed" },
+  { code: "SECRETS_UNREADABLE", exit: 1, meaning: "The Worker's secret names could not be read, so nothing was written" },
+  { code: "SECRETS_FAILED", exit: 1, meaning: "A managed secret could not be set" },
+  { code: "SITE_URL_UNKNOWN", exit: 1, meaning: "The deployed URL could not be determined; pass --site-url" },
+  { code: "ADMIN_FAILED", exit: 1, meaning: "Creating the first administrator failed" },
+  { code: "HTTP_CHECK_FAILED", exit: 1, meaning: "The deployed login page did not answer HTTP 200" },
   { code: "TRANSIENT", exit: 5, meaning: "Cloudflare kept failing with a temporary error" },
   { code: "CHECKS_FAILED", exit: 10, meaning: "At least one doctor check failed" },
   { code: "CANCELLED", exit: 130, meaning: "Cancelled by the user" },
@@ -133,6 +162,20 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
   { name: "account", type: "string", valueName: "id", env: "CLOUDFLARE_ACCOUNT_ID", summary: "Cloudflare account id (else account_id in wrangler.jsonc, else the only one)" },
   { name: "help", short: "h", type: "boolean", summary: "show help for the command" },
 ];
+
+/** Flags of 0.x commands that no longer exist, with what to do instead. */
+export const REMOVED_FLAGS: Readonly<Record<string, string>> = {
+  "allow-shared-default-names": "Shared default names are no longer deployed: give the site a name with --name.",
+  "separate-tag-cache": "New sites share one D1 between the site and the tag cache; sites set up with a separate one keep it.",
+  "skip-migrations": "cms deploy always applies migrations, after the build and before the new version goes live.",
+  "skip-secrets": "cms deploy always checks the managed secrets; it only creates missing ones and never rotates.",
+};
+
+/** Old flag names still accepted for one release. A notice is printed when one is used. */
+export const FLAG_ALIASES: Readonly<Record<string, { to: string; notice?: string }>> = {
+  "site-slug": { to: "name", notice: "--site-slug is now --name." },
+  "non-interactive": { to: "yes" },
+};
 
 export const AGENT_NOTE =
   "Agents: `cms help --json` lists everything; start with `cms status` or `cms doctor`; add `--json` to any new command.";

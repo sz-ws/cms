@@ -1,5 +1,9 @@
 // deploy 之後的收尾:跑 `sz-ws-cms secrets`,把三把受管金鑰補到剛上線的 Worker 上。
 //
+// 0.10 起 `cms deploy` 自己會補金鑰,這個 repo 的 package.json 已不再掛這支。留著是給
+// package.json 還寫著 `"postdeploy": "node scripts/postdeploy.mjs"` 的既有站台:
+// `secrets` 仍是一支可用的指令(改走 cf),所以舊的 hook 照樣有效。
+//
 // 為什麼非得在 deploy 之後不可:`wrangler secret put` 需要一個已經存在的 Worker。
 // 第一次 `sz-ws-cms setup` 的時候還沒有,所以那三把一定掛不上去。舊流程是叫使用者
 // 「deploy 完再跑一次 setup」—— 那個往返很反直覺,而且 setup 的其他步驟第二次跑
@@ -32,7 +36,9 @@ const MANAGED_SECRETS = ["SECRETS_KEY", "AUTH_PEPPER", "SETUP_TOKEN"];
 function needsBuild() {
   if (!existsSync(entry)) return true;
   const builtAt = statSync(entry).mtimeMs;
-  return readdirSync(srcDir)
+  // recursive:CLI 的原始碼從 0.9 起分在子目錄(frame/、commands/、cloudflare/…)。
+  return readdirSync(srcDir, { recursive: true })
+    .map(String)
     .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
     .some((f) => statSync(join(srcDir, f)).mtimeMs > builtAt);
 }

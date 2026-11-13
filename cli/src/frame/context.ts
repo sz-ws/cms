@@ -29,6 +29,12 @@ export interface Deps {
   cloudflare(cwd: string): CloudflarePort;
   /** Overrides the terminal prompt (tests). */
   prompt?: Prompt;
+  /** HTTP for the first-admin setup and the readiness check (default: global fetch). */
+  fetch?: typeof globalThis.fetch;
+  /** Waits between retries (tests pass one that does not wait). */
+  sleep?: (ms: number) => Promise<void>;
+  /** Subscribe to Ctrl-C; returns the unsubscribe function. */
+  onInterrupt?: (handler: () => void) => () => void;
 }
 
 export interface Warning {
@@ -53,6 +59,8 @@ export interface Outcome {
 }
 
 export interface Ctx {
+  /** What the person typed after `cms`, for "run it again" suggestions. */
+  argv: readonly string[];
   spec: CommandSpec;
   values: FlagValues;
   /** Flags given on the command line (not filled from env or defaults). */
@@ -77,6 +85,18 @@ export interface Ctx {
   say(line: string): void;
   /** Spinner on a TTY while fn runs; nothing otherwise. */
   progress<T>(label: string, fn: () => Promise<T>): Promise<T>;
+  /** True while a spinner may redraw a line on stderr. */
+  animate: boolean;
+  fetch: typeof globalThis.fetch;
+  sleep: (ms: number) => Promise<void>;
+  onInterrupt: (handler: () => void) => () => void;
+  /** The same context for another site directory (init --deploy). */
+  inDir(dir: string, argv: readonly string[]): Ctx;
+}
+
+function processInterrupt(handler: () => void): () => void {
+  process.on("SIGINT", handler);
+  return () => void process.off("SIGINT", handler);
 }
 
 function colorAllowed(env: NodeJS.ProcessEnv): boolean {
@@ -89,8 +109,9 @@ export function isInteractive(io: Io, json: boolean): boolean {
 
 export function createContext(
   deps: Deps,
-  parsed: { spec: CommandSpec; values: FlagValues; explicit: ReadonlySet<string>; positionals: string[]; passthrough: string[] },
+  parsed: { spec: CommandSpec; values: FlagValues; explicit: ReadonlySet<string>; positionals: string[]; passthrough: string[]; notices?: string[] },
   baseDir: string,
+  argv: readonly string[],
 ): Ctx {
   const { io } = deps;
   const json = parsed.values.json === true;
@@ -100,9 +121,12 @@ export function createContext(
   const reporter = createReporter({ write: io.err, animate, styles: errStyles });
   const dir = typeof parsed.values.dir === "string" ? path.resolve(baseDir, parsed.values.dir) : baseDir;
   let port: CloudflarePort | undefined;
-  const warnings: Warning[] = [];
+  const warnings: Warning[] = (parsed.notices ?? []).map((message) => ({ code: "FLAG_RENAMED", message }));
+  const { notices: _notices, ...rest } = parsed;
+  void _notices;
   return {
-    ...parsed,
+    ...rest,
+    argv,
     cwd: dir,
     json,
     interactive,
@@ -118,5 +142,10 @@ export function createContext(
     },
     say: (line) => io.err(`${line}\n`),
     progress: (label, fn) => (animate ? reporter.task(label, fn) : fn()),
+    animate,
+    fetch: deps.fetch ?? globalThis.fetch,
+    sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    onInterrupt: deps.onInterrupt ?? processInterrupt,
+    inDir: (other, again) => createContext(deps, { ...parsed, notices: [], values: { ...parsed.values, dir: undefined } }, other, again),
   };
 }

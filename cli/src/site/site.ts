@@ -7,8 +7,7 @@ import path from "node:path";
 import { readCoreApiVersion } from "../coreapi.js";
 import { CliError } from "../frame/errors.js";
 import { getMember, getStringMember, parseJsonc, type JsoncNode } from "../jsonc.js";
-import { isPlaceholderId } from "../wrangler.js";
-import { readWranglerConfig } from "../wrangler-config.js";
+import { isPlaceholderId, readWranglerConfig } from "../wrangler-config.js";
 import { readPlugins, type PluginInfo } from "./plugins.js";
 
 export interface SiteRoute {
@@ -95,7 +94,7 @@ function groupR2(config: ReturnType<typeof readWranglerConfig>): SiteR2[] {
   return [...byName.values()];
 }
 
-async function readConfigText(configPath: string): Promise<string> {
+export async function readConfigText(configPath: string): Promise<string> {
   try {
     return await readFile(configPath, "utf8");
   } catch {
@@ -110,7 +109,11 @@ async function readConfigText(configPath: string): Promise<string> {
 
 export async function readSite(dir: string, configFile: string): Promise<Site> {
   const configPath = path.resolve(dir, configFile);
-  const text = await readConfigText(configPath);
+  return siteFromText(dir, configPath, await readConfigText(configPath));
+}
+
+/** The site as a given wrangler.jsonc text declares it (deploy plans on a renamed copy). */
+export async function siteFromText(dir: string, configPath: string, text: string): Promise<Site> {
   let root: JsoncNode;
   let config: ReturnType<typeof readWranglerConfig>;
   try {

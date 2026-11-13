@@ -2,7 +2,10 @@
 // --json, otherwise the result text on stdout and prose (warnings, errors) on
 // stderr. Also maps Cloudflare failures onto the CLI's error codes.
 
+import path from "node:path";
+import { detectPackageManager } from "../cloudflare/cf-binary.js";
 import { CloudflareError } from "../cloudflare/port.js";
+import { isProgramMissing, type ProgramMissingError } from "../exec.js";
 import type { StyleSet } from "../ui.js";
 import type { Io, Outcome, Warning } from "./context.js";
 import { CliError } from "./errors.js";
@@ -98,9 +101,45 @@ export function fromCloudflare(e: CloudflareError, again: string): CliError {
   }
 }
 
+const PACKAGE_MANAGERS: Readonly<Record<string, string[]>> = {
+  pnpm: ["corepack enable pnpm", "npm install -g pnpm"],
+  yarn: ["corepack enable yarn", "npm install -g yarn"],
+  bun: ["npm install -g bun"],
+  npm: [],
+};
+
+/** A program that could not be started, with what to install. The one place ENOENT becomes words. */
+export function fromMissingProgram(e: ProgramMissingError, again: string): CliError {
+  const { program, command } = e;
+  const binDir = path.dirname(command);
+  if (path.basename(binDir) === ".bin" && path.basename(path.dirname(binDir)) === "node_modules") {
+    const project = path.dirname(path.dirname(binDir));
+    const manager = detectPackageManager(project);
+    return new CliError({
+      code: "DEPENDENCIES_MISSING",
+      message: `The project's ${program} is not installed (${path.relative(project, command)} is missing).`,
+      hint: "Install the project's dependencies, then run the command again.",
+      next: [manager === "npm" ? "npm ci" : `${manager} install`, again],
+    });
+  }
+  if (program in PACKAGE_MANAGERS) {
+    return new CliError({
+      code: "PACKAGE_MANAGER_MISSING",
+      message: program === "npm" ? "npm is not installed; it comes with Node.js." : `${program} is not installed; this project uses it (its lockfile says so).`,
+      hint: program === "npm" ? "Install Node.js 22 or newer." : `Install ${program}, then run the command again.`,
+      next: [...PACKAGE_MANAGERS[program], again],
+    });
+  }
+  if (program === "git") {
+    return new CliError({ code: "GIT_MISSING", message: "git is not installed or not on PATH.", hint: "Install git, then run the command again.", next: [again] });
+  }
+  return new CliError({ code: "PROGRAM_MISSING", message: `${program} is not installed or not on PATH.`, hint: `Install ${program}, then run the command again.`, next: [again] });
+}
+
 /** Anything thrown by a command, as a CliError. */
 export function toCliError(e: unknown, again: string): CliError {
   if (e instanceof CliError) return e;
   if (e instanceof CloudflareError) return fromCloudflare(e, again);
+  if (isProgramMissing(e)) return fromMissingProgram(e, again);
   return new CliError({ code: "UNEXPECTED", message: e instanceof Error ? e.message : String(e), exit: EXIT_CODE.FAILED });
 }

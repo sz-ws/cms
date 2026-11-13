@@ -14,8 +14,17 @@ import type { AccountRef, CloudflarePort, Identity, Readiness } from "../cloudfl
 import type { Ctx } from "../frame/context.js";
 import { CliError } from "../frame/errors.js";
 
+function shellQuote(arg: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The command the person ran, flags included, for "run it again" in `next`.
+ * Dropping flags is the dangerous direction: `cms deploy --dry-run` must never
+ * come back as `cms deploy`.
+ */
 export function againCommand(ctx: Ctx): string {
-  return `cms ${ctx.spec.name}${ctx.json ? " --json" : ""}`;
+  return ["cms", ...ctx.argv].map(shellQuote).join(" ");
 }
 
 function missingCf(ctx: Ctx, plan: string): CliError {

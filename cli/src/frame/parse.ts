@@ -8,7 +8,7 @@
 import { parseArgs } from "node:util";
 import { COMMANDS } from "./commands.js";
 import { CliError } from "./errors.js";
-import { GLOBAL_FLAGS, type CommandSpec, type FlagSpec } from "./spec.js";
+import { FLAG_ALIASES, GLOBAL_FLAGS, REMOVED_FLAGS, type CommandSpec, type FlagSpec } from "./spec.js";
 import { nearest } from "./suggest.js";
 
 export type FlagValues = Record<string, string | number | boolean | undefined>;
@@ -21,6 +21,8 @@ export interface ParsedCommand {
   positionals: string[];
   /** Everything after a bare `--`, passed through unchanged. */
   passthrough: string[];
+  /** Deprecation notices (an old flag name was used). */
+  notices: string[];
 }
 
 /** Every flag that takes a value, across all commands, so the command scan can skip values. */
@@ -30,6 +32,7 @@ function valueFlagNames(): Set<string> {
     if (flag.type === "boolean") continue;
     names.add(`--${flag.name}`);
     if (flag.short) names.add(`-${flag.short}`);
+    for (const [from, alias] of Object.entries(FLAG_ALIASES)) if (alias.to === flag.name) names.add(`--${from}`);
   }
   return names;
 }
@@ -128,29 +131,55 @@ function withDefaults(values: FlagValues, flags: readonly FlagSpec[], env: NodeJ
   return out;
 }
 
+function removedFlag(name: string, spec: CommandSpec): CliError {
+  return new CliError({
+    code: "FLAG_REMOVED",
+    message: `--${name} was removed.`,
+    hint: REMOVED_FLAGS[name],
+    next: [`cms help ${spec.name}`],
+  });
+}
+
+/** Aliases whose target this command has, as extra parseArgs options of the same type. */
+function aliasesOf(flags: readonly FlagSpec[]): Map<string, FlagSpec> {
+  return new Map(
+    Object.entries(FLAG_ALIASES)
+      .map(([from, a]) => [from, flags.find((f) => f.name === a.to)] as const)
+      .filter((e): e is readonly [string, FlagSpec] => e[1] !== undefined),
+  );
+}
+
 /** Parse argv (without the command words) against a table command. */
 export function parseCommand(spec: CommandSpec, rest: readonly string[], env: NodeJS.ProcessEnv): ParsedCommand {
   const flags = flagsOf(spec);
-  const options = Object.fromEntries(
-    flags.map((f) => [f.name, { type: f.type === "boolean" ? "boolean" : "string", ...(f.short ? { short: f.short } : {}) }]),
-  ) as Record<string, { type: "boolean" | "string"; short?: string }>;
+  const aliases = aliasesOf(flags);
+  const option = (f: FlagSpec) => ({ type: f.type === "boolean" ? "boolean" : "string", ...(f.short ? { short: f.short } : {}) });
+  const options = Object.fromEntries([
+    ...flags.map((f) => [f.name, option(f)]),
+    ...[...aliases].map(([from, f]) => [from, { type: option(f).type }]),
+  ]) as Record<string, { type: "boolean" | "string"; short?: string }>;
   const { tokens } = parseArgs({ args: [...rest], options, strict: false, allowPositionals: true, tokens: true });
 
   const values: FlagValues = {};
   const positionals: string[] = [];
   const passthrough: string[] = [];
+  const notices: string[] = [];
   let afterTerminator = false;
   for (const token of tokens) {
     if (token.kind === "option-terminator") afterTerminator = true;
     else if (token.kind === "positional") (afterTerminator ? passthrough : positionals).push(token.value);
     else {
-      const flag = flags.find((f) => f.name === token.name);
+      if (REMOVED_FLAGS[token.name] && !flags.some((f) => f.name === token.name)) throw removedFlag(token.name, spec);
+      const alias = aliases.get(token.name);
+      const flag = alias ?? flags.find((f) => f.name === token.name);
       if (!flag) throw unknownFlag(token.rawName, spec);
+      const notice = alias ? FLAG_ALIASES[token.name].notice : undefined;
+      if (notice) notices.push(notice);
       values[flag.name] = coerce(flag, token.value, spec);
     }
   }
   checkPositionals(spec, positionals);
-  return { spec, values: withDefaults(values, flags, env), explicit: new Set(Object.keys(values)), positionals, passthrough };
+  return { spec, values: withDefaults(values, flags, env), explicit: new Set(Object.keys(values)), positionals, passthrough, notices };
 }
 
 function checkPositionals(spec: CommandSpec, positionals: readonly string[]): void {

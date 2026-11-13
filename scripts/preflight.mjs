@@ -1,5 +1,9 @@
 // predeploy 的最後一關:跑 `sz-ws-cms preflight --gate`。
 //
+// 0.10 起 `cms deploy` 自己會檢查外掛設定,這個 repo 的 predeploy 已不再呼叫這支。留著是給
+// package.json 還掛著它的既有站台:`preflight --gate` 現在是 `cms doctor` 的設定檢查,
+// 缺必填照樣 exit 10。
+//
 // 它擋的是「extension 宣告了必填設定,但 wrangler.jsonc 的 vars / Worker secret 裡
 // 找不到」。沒有這一關的話,那些站台會 deploy 得很順利,然後在第一個真實請求上
 // 才用一個跟原因無關的錯誤炸掉。
@@ -15,7 +19,7 @@
 //                      (真的壞掉的話,後面的 next build 也會自己炸。)
 //
 // 未登入 Cloudflare 不會擋:preflight 查不到 secret 清單時會降級成「無法驗證」,
-// 詳見 cli/src/preflight.ts 的 gateVerdict()。
+// 詳見 cli/src/preflight.ts 的檔頭。
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -29,7 +33,9 @@ const srcDir = join(root, "cli", "src");
 function needsBuild() {
   if (!existsSync(entry)) return true;
   const builtAt = statSync(entry).mtimeMs;
-  return readdirSync(srcDir)
+  // recursive:CLI 的原始碼從 0.9 起分在子目錄(frame/、commands/、cloudflare/…)。
+  return readdirSync(srcDir, { recursive: true })
+    .map(String)
     .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
     .some((f) => statSync(join(srcDir, f)).mtimeMs > builtAt);
 }

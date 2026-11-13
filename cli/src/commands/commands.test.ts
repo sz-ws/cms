@@ -91,6 +91,8 @@ function harness(state: FakeCloudflare, o: { tty?: boolean; env?: NodeJS.Process
       const answer = next(q);
       return choices.find((c) => c.value === answer)!.value;
     },
+    text: async (q) => String(next(q)),
+    secret: async (q) => String(next(q)),
   };
   const io: Io = {
     out: (t) => void (stdout += t),
@@ -428,8 +430,8 @@ describe("help, unknown commands and flags", () => {
     expect(await run(h, ["help", "version", "list"])).toBe(0);
     expect(h.out()).toContain("cms version list [flags]");
     const legacy = harness(healthy());
-    expect(await run(legacy, ["setup", "--help"])).toBe(0);
-    expect(legacy.out()).toContain("--skip-migrations");
+    expect(await run(legacy, ["plugin", "add", "--help"])).toBe(0);
+    expect(legacy.out()).toContain("--skip-core-check");
   });
 
   it("unknown command: exit 2 with a suggestion, no help dump", async () => {
@@ -448,9 +450,11 @@ describe("help, unknown commands and flags", () => {
     expect(h.err()).toContain("Did you mean --json?");
   });
 
-  it("leaves 0.x commands and `cms version` to the 0.x dispatcher", async () => {
+  it("leaves the plugin installer and `cms version` to cli.ts", async () => {
     const h = harness(healthy());
-    expect(await run(h, ["setup", "--dry-run"])).toBeUndefined();
+    expect(await run(h, ["plugin", "add", "blog"])).toBeUndefined();
+    expect(await run(h, ["add", "blog"])).toBeUndefined();
+    expect(h.err()).toContain("`cms add` is now `cms plugin add`.");
     expect(await run(h, ["version"])).toBeUndefined();
     expect(await run(h, ["--version"])).toBeUndefined();
   });

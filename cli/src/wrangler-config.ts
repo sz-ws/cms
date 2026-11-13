@@ -20,7 +20,13 @@ import {
   type JsoncNode,
   type Span,
 } from "./jsonc.js";
-import { isPlaceholderId } from "./wrangler.js";
+
+/** 範本裡尚未建立的 D1 id。 */
+export const PLACEHOLDER_ID = "00000000-0000-0000-0000-000000000000";
+
+export function isPlaceholderId(id: string | undefined): boolean {
+  return id === undefined || id.trim() === "" || id === PLACEHOLDER_ID;
+}
 
 export interface D1Entry {
   binding: string;

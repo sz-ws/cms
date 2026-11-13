@@ -10,7 +10,7 @@ import {
   writeD1Ids,
   writeVars,
 } from "./wrangler-config.js";
-import { PLACEHOLDER_ID } from "./wrangler.js";
+import { PLACEHOLDER_ID } from "./wrangler-config.js";
 
 // 刻意複製正式 wrangler.jsonc 的形狀:註解壓在欄位上、兩組 D1(只有第一組有
 // migrations_dir)、兩組 R2、還有絕對不能被動到的 main / triggers。

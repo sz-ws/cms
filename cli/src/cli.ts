@@ -1,18 +1,13 @@
 #!/usr/bin/env node
 // sz-ws-cms —— sz.ws CMS 的命令列工具。
 //
-//   add <id>   code-extension 安裝器:讀 registry 索引 → 抓 extensions/<id>/files/*
-//              → 寫本機 extensions/<id>/ → patch extensions/registry.ts。
-//   setup      把 repo 接上自己的 Cloudflare 帳號:建 D1 / R2、設公開頁 bucket 的 lifecycle rule、回填 wrangler.jsonc、
-//              套 migrations、設 SECRETS_KEY(見 setup.ts)。
-//   secrets    確保三把受管金鑰在**已部署的** Worker 上存在(見 secrets.ts)。
-//              `pnpm run deploy` 的 postdeploy hook 跑的就是這一支。
-//   preflight  deploy 前的唯讀盤點:extension 宣告了哪些 settings、哪些還沒填
-//              (見 preflight.ts)。`--gate` 給 predeploy 用。
+// 指令表(frame/commands.ts)上的指令由 commands/router.ts 處理:一張表驅動解析、
+// 說明與 `help --json`,JSON 信封與固定的結束代碼。這個檔只剩外掛安裝器:
 //
-// 0.9 起:status / doctor / login / version list / logs、help 與未知指令走新的骨架
-// (commands/router.ts:一張指令表驅動解析、說明與 `help --json`,JSON 信封與新的
-// 結束代碼)。上面這幾支 0.x 指令仍走這個檔與 args.ts,行為與結束代碼不變。
+//   plugin add <id>   讀 registry 索引 → 抓 extensions/<id>/files/* → 寫本機
+//   (舊名 add)       extensions/<id>/ → patch extensions/registry.ts → 問設定。
+//
+// 安裝器的參數解析(args.ts)、輸出與結束代碼(exit.ts)維持 0.x 的樣子。
 
 import { readFile, writeFile, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -43,24 +38,14 @@ import {
 } from "./coreapi.js";
 import { patchRegistryContent, camelCaseId } from "./patch.js";
 import { EXIT } from "./exit.js";
-import { resolveWranglerCommand, spawnExecutor } from "./exec.js";
-import { WranglerClient } from "./wrangler.js";
-import { runSetup, validateSiteSlug } from "./setup.js";
-import { runDeploy } from "./deploy.js";
-import { runSecrets } from "./secrets.js";
-import { runPreflight } from "./preflight.js";
-import {
-  runCreate,
-  nextSteps as createNextSteps,
-} from "./create.js";
 import { configureExtension } from "./configure.js";
-import { createUi, type UiBundle, type UiEvent } from "./ui.js";
+import { createUi, type UiEvent } from "./ui.js";
 import { runNew } from "./commands/router.js";
 import { findCommand } from "./frame/commands.js";
 import { renderGlobalHelp } from "./frame/help.js";
 import { nearest } from "./frame/suggest.js";
 
-export const VERSION = "0.9.0";
+export const VERSION = "0.10.0";
 
 // 結束狀態碼定義搬到 exit.ts(setup.ts 也要用,避免循環相依);
 // 這裡 re-export,`import { EXIT } from "./cli.js"` 的既有契約不變。
@@ -160,7 +145,9 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   // 新骨架先看:表上的新指令、help、未知指令由它處理;回 undefined 才是 0.x 指令。
   const routed = await runNew(argv, cwd, VERSION);
   if (routed !== undefined) return routed;
-  const args = parseArgs(argv);
+  // `plugin add <id>` 與舊名 `add <id>` 走同一個安裝器;args.ts 認的是後者。
+  const pluginAt = argv.indexOf("plugin");
+  const args = parseArgs(pluginAt >= 0 && argv[pluginAt + 1] === "add" ? argv.filter((_, i) => i !== pluginAt) : argv);
 
   // --version / --help 是「被問就答」,答案本身就是結果 —— 這兩個照樣走 stdout,
   // 否則 `cms version` 沒辦法被 shell 取值,那是這類指令唯一的用途。
@@ -205,11 +192,6 @@ async function dispatch(args: ParsedArgs, cwd: string): Promise<number> {
     err(`  run \`cms help${args.command ? ` ${args.command}` : ""}\` for the flags.`);
     return EXIT.NOT_FOUND;
   }
-  if (args.command === "create") return runCreateCommand(args, cwd);
-  if (args.command === "setup") return runSetupCommand(args, cwd);
-  if (args.command === "deploy") return runDeployCommand(args, cwd);
-  if (args.command === "secrets") return runSecretsCommand(args, cwd);
-  if (args.command === "preflight") return runPreflightCommand(args, cwd);
   if (args.command !== "add") {
     // 走不到:未知指令已由 runNew 以結束代碼 2 回報。留著是為了型別上的完整。
     err(`✗ unknown command: ${args.command ?? "(none)"}`);
@@ -226,208 +208,6 @@ function legacyFlagHint(command: string | undefined, error: string): string | un
   if (!flag || !spec) return undefined;
   const suggestion = nearest(flag, spec.flags.map((f) => `--${f.name}`));
   return suggestion ? `did you mean ${suggestion}?` : undefined;
-}
-
-/**
- * `create` 的接線。這是使用者碰到的第一個指令,所以錯誤訊息要能自己走完 ——
- * 目錄已存在就告訴他換一個名字,git 不在就講清楚是 git 不是網路。
- */
-async function runCreateCommand(args: ParsedArgs, cwd: string): Promise<number> {
-  const dir = args.id; // positional:cms create <dir>
-  if (!dir) {
-    err("✗ missing directory name");
-    err("  usage: cms create <dir> [--template <url>] [--ref <branch|tag>]");
-    return EXIT.NOT_FOUND;
-  }
-
-  // --deploy 之後 runDeployCommand 沿用同一個 ui,所以互動性判定要跟它一致 ——
-  // 各自算一次的話,`create … --deploy --yes` 會在 create 階段冒出 deploy 不會問的提示。
-  const ui = createUi({
-    interactive: args.deployAfterCreate
-      ? !(args.yes || args.nonInteractive) && process.stdin.isTTY === true
-      : process.stdin.isTTY === true && !args.nonInteractive,
-    json: args.json,
-  });
-  setupEvents = ui.events;
-  ui.reporter.intro("cms create", dir);
-
-  // 目錄名的字元規則比 site slug 寬(允許兩個字、允許結尾連字號),而 --deploy 會把
-  // 目錄名直接當 slug 用。等 clone 完幾十 MB 再被 setup 擋下來,那次抓取完全是白費的。
-  if (args.deployAfterCreate && !args.siteSlug) {
-    const invalid = validateSiteSlug(dir);
-    if (invalid) {
-      ui.reporter.step("fail", `"${dir}" cannot be used as the Cloudflare site slug`, invalid);
-      ui.reporter.outro([
-        "nothing was cloned. either pick a slug-safe directory name, or keep this one and name the site explicitly:",
-        `  cms create ${dir} --deploy --site-slug <slug>`,
-      ]);
-      return EXIT.SETUP_PREREQ;
-    }
-  }
-
-  const result = await runCreate({
-    dir,
-    cwd,
-    exec: spawnExecutor,
-    reporter: ui.reporter,
-    // 優先序:旗標 > 環境變數 > 內建預設。搬家時不必等發版。
-    template: args.template ?? process.env.SZWS_CMS_TEMPLATE,
-    ref: args.ref,
-    dryRun: args.dryRun,
-    skipGitInit: args.skipGitInit,
-  });
-
-  if (!result.ok) {
-    ui.reporter.step("fail", result.message ?? "create failed");
-    switch (result.reason) {
-      case "dest_exists":
-        return EXIT.DEST_EXISTS;
-      case "invalid_dir":
-        return EXIT.NOT_FOUND;
-      case "git_missing":
-        return EXIT.SETUP_PREREQ;
-      default:
-        return EXIT.FETCH_FAILED;
-    }
-  }
-
-  if (args.dryRun) {
-    if (args.deployAfterCreate) ui.reporter.note("after creation", ["cms deploy will install dependencies and complete deployment and first-admin setup."]);
-    ui.reporter.outro(["dry run — nothing was created"]);
-    return EXIT.OK;
-  }
-
-  ui.reporter.step("ok", `created ${dir}/`);
-  if (args.deployAfterCreate) {
-    return runDeployCommand({ ...args, siteSlug: args.siteSlug ?? dir }, result.dest!, ui);
-  }
-  ui.reporter.outro(createNextSteps(dir));
-  return EXIT.OK;
-}
-
-/**
- * `setup` 的接線:把真實的 spawn executor 包成 WranglerClient,再交給純流程邏輯。
- * 流程本身(setup.ts)完全不知道子程序長什麼樣,所以測試注入假的就能整條跑完。
- */
-async function runSetupCommand(args: ParsedArgs, cwd: string): Promise<number> {
-  const { cmd, prefix } = resolveWranglerCommand(cwd);
-  const assumeYes = args.yes || args.nonInteractive;
-  const ui = createUi({
-    interactive: !assumeYes && process.stdin.isTTY === true,
-    json: args.json,
-  });
-  setupEvents = ui.events;
-  const configPath = args.config
-    ? path.resolve(cwd, args.config)
-    : path.join(cwd, DEFAULT_CONFIG_FILE);
-
-  return runSetup({
-    cwd,
-    separateTagCache: args.separateTagCache,
-    interactive: !assumeYes && process.stdin.isTTY === true,
-    configPath,
-    client: new WranglerClient({
-      exec: spawnExecutor,
-      cwd,
-      cmd,
-      prefix,
-      dryRun: args.dryRun,
-      // wrangler 的 --config 只在使用者明確指定時才傳,否則沿用它自己的搜尋規則。
-      configPath: args.config ? configPath : undefined,
-    }),
-    reporter: ui.reporter,
-    prompter: ui.prompter,
-    dryRun: args.dryRun,
-    assumeYes,
-    skipMigrations: args.skipMigrations,
-    skipSecrets: args.skipSecrets,
-    siteSlug: args.siteSlug,
-    allowSharedDefaultNames: args.allowSharedDefaultNames,
-  });
-}
-
-/**
- * `existing` 是 `create --deploy` 傳進來的同一份 UI。各自 createUi 一次的話,
- * --json 的事件流會被第二份覆蓋掉(create 階段的事件整段消失),文字模式也會多出
- * 一組重複的介紹。同一次執行只該有一個 UI。
- */
-async function runDeployCommand(args: ParsedArgs, cwd: string, existing?: UiBundle): Promise<number> {
-  const assumeYes = args.yes || args.nonInteractive;
-  const interactive = !assumeYes && process.stdin.isTTY === true;
-  const ui = existing ?? createUi({ interactive, json: args.json });
-  setupEvents = ui.events;
-  const configPath = path.resolve(cwd, args.config ?? DEFAULT_CONFIG_FILE);
-  // 固定使用專案的 Wrangler；deploy 會先安裝 lockfile 中的依賴。
-  const client = new WranglerClient({
-    exec: spawnExecutor, cwd, cmd: path.join(cwd, "node_modules", ".bin", "wrangler"),
-    prefix: [], dryRun: args.dryRun, configPath,
-  });
-  return runDeploy({
-    cwd, configPath, client, reporter: ui.reporter, prompter: ui.prompter,
-    exec: spawnExecutor, dryRun: args.dryRun, assumeYes, interactive,
-    skipMigrations: args.skipMigrations, skipSecrets: args.skipSecrets,
-    siteSlug: args.siteSlug, siteUrl: args.siteUrl,
-    separateTagCache: args.separateTagCache,
-    allowSharedDefaultNames: args.allowSharedDefaultNames,
-  });
-}
-
-/**
- * `secrets` 的接線。
- *
- * 刻意**不接 prompter**:這支指令的正常呼叫者是 `pnpm run deploy` 的 postdeploy
- * hook,那裡沒有人在鍵盤前面。它做的事只有一件(補齊缺的受管金鑰),而那件事在
- * 任何情況下都是正確的 —— 沒有需要問的選擇。
- */
-async function runSecretsCommand(args: ParsedArgs, cwd: string): Promise<number> {
-  const { cmd, prefix } = resolveWranglerCommand(cwd);
-  const ui = createUi({ interactive: false, json: args.json });
-  setupEvents = ui.events;
-  const configPath = args.config ? path.resolve(cwd, args.config) : undefined;
-
-  return runSecrets({
-    client: new WranglerClient({
-      exec: spawnExecutor,
-      cwd,
-      cmd,
-      prefix,
-      dryRun: args.dryRun,
-      configPath,
-    }),
-    reporter: ui.reporter,
-    dryRun: args.dryRun,
-  });
-}
-
-/**
- * `preflight` 的接線。跟 setup 同一套:真的 spawn 包成 WranglerClient,流程本身
- * (preflight.ts)只看得到介面,所以測試注入假的就跑得完,不會碰到真帳號。
- *
- * dryRun 固定 false —— preflight 只有唯讀操作,而唯讀在 dry-run 下本來就照跑
- * (見 wrangler.ts 檔頭)。傳 true 只會讓語意變模糊。
- */
-async function runPreflightCommand(args: ParsedArgs, cwd: string): Promise<number> {
-  const { cmd, prefix } = resolveWranglerCommand(cwd);
-  const ui = createUi({ interactive: false, json: args.json });
-  setupEvents = ui.events;
-  const configPath = args.config
-    ? path.resolve(cwd, args.config)
-    : path.join(cwd, DEFAULT_CONFIG_FILE);
-
-  return runPreflight({
-    extensionsDir: path.join(cwd, "extensions"),
-    configPath,
-    client: new WranglerClient({
-      exec: spawnExecutor,
-      cwd,
-      cmd,
-      prefix,
-      dryRun: false,
-      configPath: args.config ? configPath : undefined,
-    }),
-    reporter: ui.reporter,
-    gate: args.gate,
-  });
 }
 
 /**
