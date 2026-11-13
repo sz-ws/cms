@@ -37,6 +37,8 @@ export interface Site {
   routes: SiteRoute[];
   d1: SiteD1[];
   r2: SiteR2[];
+  /** Workers Logs keeps recent events (observability.enabled or observability.logs.enabled). */
+  logsEnabled: boolean;
   /** KV namespace ids still declared (core 2.0 does not use KV). */
   kvIds: string[];
   coreVersion: string | null;
@@ -57,6 +59,16 @@ function readRoutes(root: JsoncNode): SiteRoute[] {
   const single = getMember(root, "route")?.value;
   const nodes = routes?.kind === "array" ? routes.items : single ? [single] : [];
   return nodes.map(routeFrom).filter((r): r is SiteRoute => r !== undefined);
+}
+
+function flag(node: JsoncNode | undefined, key: string): boolean {
+  const v = node ? getMember(node, key)?.value : undefined;
+  return v?.kind === "boolean" && v.value;
+}
+
+function logsEnabled(root: JsoncNode): boolean {
+  const o11y = getMember(root, "observability")?.value;
+  return flag(o11y, "enabled") || flag(o11y ? getMember(o11y, "logs")?.value : undefined, "enabled");
 }
 
 function migrationsDirs(root: JsoncNode): Map<string, string> {
@@ -136,6 +148,7 @@ export async function siteFromText(dir: string, configPath: string, text: string
     routes,
     d1: groupD1(config, migrationsDirs(root)),
     r2: groupR2(config),
+    logsEnabled: logsEnabled(root),
     kvIds: config.kv.map((k) => k.currentId).filter((id): id is string => !!id && !isPlaceholderId(id)),
     coreVersion: await readCoreApiVersion(dir),
     plugins: await readPlugins(dir),

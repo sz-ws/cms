@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { detectPackageManager } from "../../cloudflare/cf-binary.js";
+import { detectPackageManager, PACKAGE_MANAGER_ENV } from "../../cloudflare/cf-binary.js";
 import { firstJsonValue } from "../../cloudflare/cf-output.js";
 import type { Executor, ExecResult } from "../../exec.js";
 import type { DeployLog } from "./steps.js";
@@ -48,7 +48,7 @@ export function installCommand(dir: string): { cmd: string; args: string[] } {
 
 export async function installDependencies(p: Project): Promise<void> {
   const { cmd, args } = installCommand(p.dir);
-  await run(p, cmd, args);
+  await run(p, cmd, args, PACKAGE_MANAGER_ENV);
 }
 
 /** wrangler's own login: build and upload go through it. */
@@ -77,6 +77,32 @@ export interface WranglerRecord {
   message?: string;
 }
 
+export function parseRecords(text: string): WranglerRecord[] {
+  return text
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .flatMap((l) => {
+      try {
+        return [JSON.parse(l) as WranglerRecord];
+      } catch {
+        return [];
+      }
+    });
+}
+
+/**
+ * Success is the child's exit code; callers then require the record they need.
+ * Every wrangler process OpenNext starts shares the output file, and some of them
+ * fail on purpose (its "create the D1 table if necessary" step runs an ALTER TABLE
+ * that fails when the column exists, and carries on). So a command-failed record
+ * alone means nothing; it only supplies the message when the step itself failed.
+ */
+export function stepRecords(records: readonly WranglerRecord[], failure: unknown): WranglerRecord[] {
+  if (failure === undefined) return [...records];
+  const failed = records.filter((r) => r.type === "command-failed").pop();
+  throw new Error(failed?.message ?? (failure instanceof Error ? failure.message : String(failure)));
+}
+
 async function withRecords(p: Project, fn: (env: Record<string, string>) => Promise<unknown>): Promise<WranglerRecord[]> {
   const file = `${p.log.file}.wrangler.ndjson`;
   await rm(file, { force: true });
@@ -84,11 +110,7 @@ async function withRecords(p: Project, fn: (env: Record<string, string>) => Prom
   await fn({ WRANGLER_OUTPUT_FILE_PATH: file }).catch((e: unknown) => {
     failure = e;
   });
-  const text = await readFile(file, "utf8").catch(() => "");
-  const records = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as WranglerRecord);
-  const failed = records.find((r) => r.type === "command-failed");
-  if (failure !== undefined || failed) throw new Error(failed?.message ?? (failure instanceof Error ? failure.message : String(failure)));
-  return records;
+  return stepRecords(parseRecords(await readFile(file, "utf8").catch(() => "")), failure);
 }
 
 /** Upload a new version that does not take traffic. Returns its id. */

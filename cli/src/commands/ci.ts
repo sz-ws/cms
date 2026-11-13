@@ -61,7 +61,24 @@ function cliCommand(dir: string): string {
   return existsSync(path.join(dir, "scripts", "cms.mjs")) ? "node scripts/cms.mjs" : `npx --yes @sz.ws/cms@${VERSION}`;
 }
 
-export function workflowText(cli: string, install: string): string {
+/** The same major versions as this repository's own CI (.github/workflows/ci.yml); a test keeps them in step. */
+export const ACTIONS = {
+  checkout: "actions/checkout@v7",
+  setupNode: "actions/setup-node@v7",
+  pnpm: "pnpm/action-setup@v6",
+} as const;
+
+export interface WorkflowSetup {
+  cli: string;
+  install: string;
+  /** pnpm/action-setup reads the version from package.json's packageManager. */
+  pnpm: boolean;
+  /** The site pins Node in .node-version. */
+  nodeVersionFile: boolean;
+}
+
+export function workflowText(o: WorkflowSetup): string {
+  const node = o.nodeVersionFile ? "node-version-file: .node-version" : "node-version: 22";
   return `# Deploy or roll back this site by hand: Actions → cms → Run workflow.
 # Written by \`cms ci init\`. Needs two repository secrets:
 #   CLOUDFLARE_API_TOKEN   permissions: see \`cms ci token\`
@@ -93,17 +110,16 @@ jobs:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ${ACTIONS.checkout}
+${o.pnpm ? `      - uses: ${ACTIONS.pnpm}\n` : ""}      - uses: ${ACTIONS.setupNode}
         with:
-          node-version: 22
-      - run: corepack enable
-      - run: ${install}
+          ${node}
+      - run: ${o.install}
       - run: npm install -g cf@${CF_TESTED}
       - if: inputs.action == 'deploy'
-        run: ${cli} deploy --yes --json
+        run: ${o.cli} deploy --yes --json
       - if: inputs.action == 'rollback'
-        run: ${cli} rollback \${{ inputs.version }} --yes --json
+        run: ${o.cli} rollback \${{ inputs.version }} --yes --json
 `;
 }
 
@@ -114,7 +130,12 @@ export async function runCiInit(ctx: Ctx): Promise<Outcome> {
     throw new CliError({ code: "DEST_EXISTS", message: `${shown} already exists; it was not changed.`, hint: "Overwrite it with --force.", next: [`cms ci init --force`] });
   }
   const { cmd, args } = installCommand(ctx.cwd);
-  const text = workflowText(cliCommand(ctx.cwd), [cmd, ...args].join(" "));
+  const text = workflowText({
+    cli: cliCommand(ctx.cwd),
+    install: [cmd, ...args].join(" "),
+    pnpm: cmd === "pnpm",
+    nodeVersionFile: existsSync(path.join(ctx.cwd, ".node-version")),
+  });
   const dryRun = ctx.values["dry-run"] === true;
   if (!dryRun) {
     await mkdir(path.dirname(file), { recursive: true });

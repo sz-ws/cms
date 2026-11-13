@@ -151,6 +151,23 @@ describe("cms domain", () => {
     text = await readFile(path.join(site, "wrangler.jsonc"), "utf8");
     expect(text).toContain('"routes": [{ "pattern": "shop.example.com", "custom_domain": true }]');
     expect(JSON.parse(text.replace(/\/\/.*$/gm, ""))).toBeTruthy();
+    await run(harness(cloud()), ["domain", "remove", "shop.example.com"]);
+    expect(await readFile(path.join(site, "wrangler.jsonc"), "utf8")).toBe(CONFIG);
+  });
+
+  it("add then remove gives the file back byte for byte, also when routes would be the last member", async () => {
+    const minimal = `{\n  "name": "cms-acme"\n}\n`;
+    await writeFile(path.join(site, "wrangler.jsonc"), minimal);
+    await run(harness(cloud()), ["domain", "add", "www.example.com"]);
+    expect(await readFile(path.join(site, "wrangler.jsonc"), "utf8")).toBe(`{\n  "name": "cms-acme",\n  "routes": [{ "pattern": "www.example.com", "custom_domain": true }]\n}\n`);
+    await run(harness(cloud()), ["domain", "remove", "www.example.com"]);
+    expect(await readFile(path.join(site, "wrangler.jsonc"), "utf8")).toBe(minimal);
+  });
+
+  it("removing a domain keeps the other routes", async () => {
+    await writeFile(path.join(site, "wrangler.jsonc"), CONFIG.replace('  "workers_dev": true,\n', '  "workers_dev": true,\n  "routes": ["example.com/api/*", { "pattern": "www.example.com", "custom_domain": true }],\n'));
+    await run(harness(cloud()), ["domain", "remove", "www.example.com"]);
+    expect(await readFile(path.join(site, "wrangler.jsonc"), "utf8")).toContain('"routes": ["example.com/api/*"],');
   });
 
   it("refuses URLs and workers.dev, reports an unknown host, and --dry-run writes nothing", async () => {
@@ -219,6 +236,31 @@ describe("cms secret", () => {
   });
 });
 
+describe("Cloudflare refusing secret changes while a version is not live", () => {
+  it("secret set and delete give VERSION_NOT_LIVE (exit 4) with cms deploy first", async () => {
+    const { CloudflareError } = await import("../cloudflare/port.js");
+    const refusal = new CloudflareError("FAILED", "[10215] Secret edit failed. The latest version of your Worker isn't currently deployed.", 10215, 400);
+    for (const argv of [["secret", "set", "EXT_NEW", "--yes", "--json"], ["secret", "delete", "EXT_SHOP_KEY", "--yes", "--json"]]) {
+      const state = cloud();
+      state.failWrites = { putSecret: refusal, deleteSecret: refusal };
+      const h = harness(state, { stdin: "v" });
+      expect(await run(h, argv)).toBe(4);
+      expect(json(h).error).toMatchObject({ code: "VERSION_NOT_LIVE", next: ["cms deploy", `cms ${argv.join(" ")}`] });
+      expect(json(h).error.message).toContain("[10215]");
+    }
+  });
+
+  it("the managed-secrets check gives the same error", async () => {
+    const { CloudflareError } = await import("../cloudflare/port.js");
+    const state = cloud();
+    state.workers["cms-acme"].secrets = [];
+    state.failWrites = { putSecret: new CloudflareError("FAILED", "[10215] Secret edit failed.", 10215, 400) };
+    const h = harness(state);
+    expect(await run(h, ["secrets", "--json"])).toBe(4);
+    expect(json(h).error).toMatchObject({ code: "VERSION_NOT_LIVE", next: ["cms deploy", "cms secrets --json"] });
+  });
+});
+
 describe("cms logs --since", () => {
   it("parses durations up to 7 days", () => {
     expect(sinceMs("15m")).toBe(900_000);
@@ -235,6 +277,19 @@ describe("cms logs --since", () => {
     expect(h.out()).toBe("2026-11-14 11:59:00Z  error  GET /x [exception]  boom\n");
     expect(h.port.calls).toContain(`logs cms-acme 3600000 50 @${ACCOUNT}`);
     expect(await run(harness(cloud()), ["logs", "--since", "a week"])).toBe(2);
+  });
+
+  it("warns when Workers Logs is not enabled instead of reading as all clear", async () => {
+    const h = harness(cloud());
+    expect(await run(h, ["logs", "--since", "1h", "--json"])).toBe(0);
+    expect(json(h).warnings.map((w: { code: string }) => w.code)).toEqual(["LOGS_NOT_ENABLED"]);
+    const off = harness(cloud());
+    await run(off, ["logs", "--since", "1h"]);
+    expect(off.out()).toContain("Nothing recorded for cms-acme: Workers Logs is not enabled.");
+    await writeFile(path.join(site, "wrangler.jsonc"), CONFIG.replace('  "workers_dev": true,\n', '  "workers_dev": true,\n  "observability": { "enabled": true },\n'));
+    const on = harness(cloud());
+    await run(on, ["logs", "--since", "1h", "--json"]);
+    expect(json(on).warnings).toEqual([]);
   });
 });
 
@@ -268,6 +323,21 @@ describe("cms ci", () => {
     expect(await run(again, ["ci", "init", "--json"])).toBe(1);
     expect(json(again).error.code).toBe("DEST_EXISTS");
     expect(await run(harness(cloud()), ["ci", "init", "--force"])).toBe(0);
+  });
+
+  it("uses the same action versions as this repository's own CI", async () => {
+    const { ACTIONS } = await import("./ci.js");
+    const repoCi = await readFile(path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..", "..", ".github", "workflows", "ci.yml"), "utf8");
+    for (const action of Object.values(ACTIONS)) {
+      const name = action.split("@")[0];
+      const major = new RegExp(`uses: ${name.replace("/", "\\/")}@(v\\d+)`).exec(repoCi)?.[1];
+      expect(`${name}@${major}`).toBe(action);
+    }
+    await writeFile(path.join(site, "pnpm-lock.yaml"), "");
+    await run(harness(cloud()), ["ci", "init"]);
+    const text = await readFile(path.join(site, ".github", "workflows", "cms.yml"), "utf8");
+    for (const action of Object.values(ACTIONS)) expect(text).toContain(`uses: ${action}`);
+    expect(text).not.toContain("corepack");
   });
 
   it("init --dry-run writes nothing", async () => {
@@ -345,5 +415,87 @@ describe("help covers the new commands", () => {
     const h = harness(cloud());
     expect(await run(h, ["secret", "lsit"])).toBe(2);
     expect(h.err()).toContain("cms secret list");
+  });
+});
+
+describe("rollback and per-version secrets (the sequence seen on a real site)", () => {
+  const id = (p: string) => `${p}-0000-0000-0000-000000000000`;
+  const ALL = ["AUTH_PEPPER", "SECRETS_KEY", "SETUP_TOKEN"];
+  // Newest first: three secret-change deployments, our "Go live", the first wrangler deploy.
+  function realSite(): FakeCloudflare {
+    const state = cloud();
+    const rows: [string, string, string[]][] = [
+      ["020644e9", "secret", ALL],
+      ["d2fc4d1d", "secret", ["AUTH_PEPPER", "SECRETS_KEY"]],
+      ["27507765", "secret", ["SECRETS_KEY"]],
+      ["63c3c433", "deployment", []],
+      ["3ba97ab1", "upload", []],
+    ];
+    state.workers["cms-acme"].deployments = rows.map(([v, by], i) => ({ id: `d${i}`, createdOn: `2026-11-14T0${9 - i}:00:00Z`, triggeredBy: by, versions: [{ versionId: id(v), percentage: 100 }] }));
+    state.workers["cms-acme"].versions = rows.map(([v], i) => ({ id: id(v), createdOn: `2026-11-14T0${9 - i}:00:00Z` }));
+    state.workers["cms-acme"].secrets = [...ALL];
+    state.versionSecrets = Object.fromEntries(rows.map(([v, , s]) => [id(v), s]));
+    state.query = () => [];
+    return state;
+  }
+
+  it("the default target is the previous code, and it is refused because it lacks the live secrets", async () => {
+    const h = harness(realSite());
+    expect(await run(h, ["rollback", "--yes", "--json"])).toBe(4);
+    const e = json(h);
+    expect(e.error.code).toBe("SECRETS_DIFFER");
+    expect(e.error.message).toContain("Version 3ba97ab1 does not have AUTH_PEPPER, SECRETS_KEY, SETUP_TOKEN");
+    expect(e.data.missing).toEqual(ALL);
+    expect(h.port.calls).toContain(`versionSecrets cms-acme ${id("3ba97ab1")} @${ACCOUNT}`);
+    expect(writes(h.port)).toEqual([]);
+  });
+
+  it("an explicit id that lacks a secret is refused too, before asking", async () => {
+    const h = harness(realSite(), { tty: true, answers: [] });
+    expect(await run(h, ["rollback", "d2fc4d1d"])).toBe(4);
+    expect(h.err()).toContain("does not have SETUP_TOKEN");
+    expect(writes(h.port)).toEqual([]);
+  });
+
+  it("rolling forward to a version with more secrets is allowed", async () => {
+    const state = realSite();
+    const w = state.workers["cms-acme"];
+    w.deployments = [{ id: "back", createdOn: "2026-11-14T10:00:00Z", triggeredBy: "rollback", versions: [{ versionId: id("d2fc4d1d"), percentage: 100 }] }, ...w.deployments];
+    const h = harness(state);
+    expect(await run(h, ["rollback", "020644e9", "--yes", "--json"])).toBe(0);
+    expect(writes(h.port)).toEqual([`promote cms-acme ${id("020644e9")} @${ACCOUNT}`]);
+  });
+
+  it("in the steady state (every version carries the secrets) rollback goes to the previous code", async () => {
+    const state = realSite();
+    state.versionSecrets = Object.fromEntries(Object.keys(state.versionSecrets ?? {}).map((k) => [k, ALL]));
+    const w = state.workers["cms-acme"];
+    w.versions = [{ id: id("77777777"), createdOn: "2026-11-15T09:00:00Z" }, ...w.versions];
+    w.deployments = [{ id: "new", createdOn: "2026-11-15T09:00:00Z", triggeredBy: "deployment", versions: [{ versionId: id("77777777"), percentage: 100 }] }, ...w.deployments];
+    state.versionSecrets = { ...state.versionSecrets, [id("77777777")]: ALL };
+    const h = harness(state);
+    expect(await run(h, ["rollback", "--dry-run", "--json"])).toBe(0);
+    expect(json(h).data).toMatchObject({ from: id("77777777"), to: id("63c3c433") });
+  });
+
+  it("with no earlier code deployment: NOTHING_TO_ROLL_BACK", async () => {
+    const state = realSite();
+    state.workers["cms-acme"].deployments = state.workers["cms-acme"].deployments.slice(0, 4);
+    const h = harness(state);
+    expect(await run(h, ["rollback", "--json"])).toBe(1);
+    expect(json(h).error.code).toBe("NOTHING_TO_ROLL_BACK");
+  });
+
+  it("status and doctor report the live version's secrets, and those only the newest version has", async () => {
+    const state = realSite();
+    const w = state.workers["cms-acme"];
+    w.deployments = [{ id: "back", createdOn: "2026-11-14T10:00:00Z", triggeredBy: "rollback", versions: [{ versionId: id("d2fc4d1d"), percentage: 100 }] }, ...w.deployments];
+    const h = harness(state);
+    await run(h, ["status"]);
+    expect(h.out()).toContain("2 of 3 set on the live version, missing SETUP_TOKEN (SETUP_TOKEN only on the newest version, not live)");
+    expect(h.err()).toContain("The newest version of cms-acme has SETUP_TOKEN, but the live version does not");
+    const d = harness(state);
+    await run(d, ["doctor", "--json"]);
+    expect(json(d).data.checks.find((c: { id: string }) => c.id === "secrets")).toMatchObject({ status: "fail", detail: "not on the live version: SETUP_TOKEN", next: ["cms deploy"] });
   });
 });

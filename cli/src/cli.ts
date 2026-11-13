@@ -232,7 +232,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   }
   if (!id) {
     err("✗ missing <id>");
-    err("  usage: cms add <id>[@<version>] [flags]   (cms help add)");
+    err("  usage: cms plugin add <id>[@<version>] [flags]   (cms help plugin add)");
     return EXIT.NOT_FOUND;
   }
   if (!ID_RE.test(id)) {
@@ -248,7 +248,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   if (!(await exists(registryPath))) {
     err(
       "✗ could not find extensions/registry.ts" +
-        " — make sure you are running `sz-ws-cms add` from the CMS repo root.",
+        " — make sure you are running `cms plugin add` from the CMS repo root.",
     );
     return EXIT.PATCH_FAILED;
   }
@@ -280,7 +280,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
         err(
           "  this registry may be a private repo (GitHub returns 404 for unauthorized private raw). provide a token:",
         );
-        err("    sz-ws-cms add <id> --token <your-token>");
+        err("    cms plugin add <id> --token <your-token>");
         err("    or set env var SZWS_REGISTRY_TOKEN=<your-token>");
         err("  GitHub PAT or Gitea deploy token both work (sent as `Authorization: token <t>`).");
         return EXIT.FETCH_FAILED;
@@ -337,7 +337,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
   if (isEnhancement && (entry.files ?? []).length === 0) {
     log(`"${id}" is a declarative extension (kind=${entry.kind}).`);
     log(
-      "declarative extensions are hot-installed via admin UI (Browse → Install), `sz-ws-cms add` not needed.",
+      "declarative extensions are hot-installed via admin UI (Browse → Install), `cms plugin add` not needed.",
     );
     return EXIT.OK;
   }
@@ -380,7 +380,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
           : undefined;
       if (older) {
         err(`  the registry kept a version that works on this core:`);
-        err(`    sz-ws-cms add ${id}@${older.version}`);
+        err(`    cms plugin add ${id}@${older.version}`);
       }
       err("  blocking now because after install, rebuild, and deploy, enable would fail anyway");
       err("  with CoreApiIncompatible from enableExtension() — fail fast instead.");
@@ -563,7 +563,7 @@ async function runAdd(args: ParsedArgs, cwd: string): Promise<number> {
  * 裝完之後問一輪 manifest 的 settings[]。
  *
  * 失敗一律不影響 `add` 的結果:檔案已經落地、registry.ts 已經接好,那才是這個
- * 指令的契約。設定沒填完的話 `sz-ws-cms preflight` 會再擋一次,不需要在這裡把
+ * 指令的契約。設定沒填完的話 `cms doctor` / `cms deploy` 會再擋一次,不需要在這裡把
  * 一次成功的安裝翻成失敗。
  */
 async function runConfigure(args: ParsedArgs, cwd: string, id: string): Promise<void> {
@@ -587,7 +587,7 @@ async function runConfigure(args: ParsedArgs, cwd: string, id: string): Promise<
     });
   } catch (e) {
     warn(`⚠ settings step failed: ${e instanceof Error ? e.message : String(e)}`);
-    warn("  the extension itself is installed; run `sz-ws-cms preflight` to see what is still unset.");
+    warn("  the extension itself is installed; run `cms doctor` to see what is still unset.");
   }
 }
 

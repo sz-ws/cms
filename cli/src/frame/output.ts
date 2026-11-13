@@ -71,7 +71,18 @@ const PERMISSIONS_HINT =
   "An API token needs read access to Workers Scripts, D1, Workers R2 Storage and Workers KV Storage on this account.";
 
 /** Map a remote failure onto the CLI's error codes. `again` is the command to re-run. */
+/** Cloudflare refuses secret changes while the newest uploaded version is not the live one. */
+export const VERSION_NOT_LIVE_CODE = 10215;
+
 export function fromCloudflare(e: CloudflareError, again: string): CliError {
+  if (e.apiCode === VERSION_NOT_LIVE_CODE) {
+    return new CliError({
+      code: "VERSION_NOT_LIVE",
+      message: `Cloudflare refuses to change secrets: the newest uploaded version of the Worker is not live (${e.message.slice(0, 200)}).`,
+      hint: "A deploy did not finish: a version was uploaded but not promoted. Finish the deploy, then run the command again.",
+      next: [...new Set(["cms deploy", again])],
+    });
+  }
   switch (e.failure) {
     case "AUTH_REQUIRED":
       return new CliError({

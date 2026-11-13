@@ -25,6 +25,8 @@ import { runDestroy } from "./destroy.js";
 import { runDomainAdd, runDomainList, runDomainRemove } from "./domain.js";
 import { runRollback } from "./rollback.js";
 import { runSecretDelete, runSecretList, runSecretSet } from "./secret.js";
+import { runPluginConfigure, runPluginList, runPluginRemove } from "./plugins.js";
+import { runUpgrade } from "./upgrade.js";
 
 type Handler = (ctx: Ctx) => Promise<Outcome | undefined>;
 
@@ -49,6 +51,10 @@ const HANDLERS: Record<string, Handler> = {
   "ci token": runCiToken,
   "ci init": runCiInit,
   destroy: runDestroy,
+  "plugin list": runPluginList,
+  "plugin configure": runPluginConfigure,
+  "plugin remove": runPluginRemove,
+  upgrade: runUpgrade,
 };
 
 function moved(io: Io, spec: CommandSpec, json: boolean): number {

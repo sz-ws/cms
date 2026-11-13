@@ -10,6 +10,7 @@ import { cancelled } from "../../frame/errors.js";
 import type { Prompt } from "../../frame/prompt.js";
 import { runNew } from "../router.js";
 import { newestReleaseTag } from "../init.js";
+import { parseRecords, stepRecords } from "./project.js";
 
 const TEMPLATE = (names: { worker: string; slug: string; db: string; storage: string; cache: string; id?: string }) => `{
   // comments stay
@@ -505,5 +506,79 @@ describe("missing programs and re-run suggestions", () => {
     const h = harness(existingWorker(), projectExec({ fail: "opennextjs-cloudflare build" }).exec);
     expect(await run(h, ["deploy", "--yes", "--json"])).toBe(1);
     expect(JSON.parse(h.out()).error.next).toEqual(["cms deploy --yes --json"]);
+  });
+});
+
+// What a real OpenNext upload/deploy leaves in WRANGLER_OUTPUT_FILE_PATH: its
+// "create the D1 table if necessary" step runs an ALTER TABLE through wrangler that
+// fails when the column exists (expected, it carries on), then the real upload.
+const INNER_FAILURE = [
+  { type: "wrangler-session", version: 1 },
+  { type: "command-failed", version: 1, code: 7500, message: "A request to the Cloudflare API (/accounts/x/d1/database/y/query) failed." },
+  { type: "wrangler-session", version: 1 },
+];
+
+function recordsExec(final: object, exitCode: number, onDeploy?: () => void): Executor {
+  return async (cmd, args, opts) => {
+    const out = opts.env?.WRANGLER_OUTPUT_FILE_PATH;
+    const tool = path.basename(cmd);
+    if (out && tool === "opennextjs-cloudflare" && (args[0] === "upload" || args[0] === "deploy")) {
+      for (const r of [...INNER_FAILURE, final]) appendFileSync(out, `${JSON.stringify(r)}\n`);
+      if (exitCode === 0) onDeploy?.();
+      return { code: exitCode, stdout: "", stderr: exitCode === 0 ? "" : "✘ [ERROR] upload failed" };
+    }
+    return projectExec().exec(cmd, args, opts);
+  };
+}
+
+describe("wrangler output records", () => {
+  it("parses records and judges the step by its exit code, not by an inner command-failed", () => {
+    const records = parseRecords([...INNER_FAILURE, { type: "version-upload", version_id: "v-ok" }].map((r) => JSON.stringify(r)).join("\n") + "\nnot json\n");
+    expect(stepRecords(records, undefined).map((r) => r.type)).toEqual(["wrangler-session", "command-failed", "wrangler-session", "version-upload"]);
+    expect(() => stepRecords(records, new Error("exit 1"))).toThrow("A request to the Cloudflare API");
+    expect(() => stepRecords([], new Error("exit 1"))).toThrow("exit 1");
+  });
+
+  it("an upload that exits 0 after an inner failure succeeds with the right version id", async () => {
+    await makeSite(ACME);
+    const h = harness(existingWorker(), recordsExec({ type: "version-upload", version_id: "the-real-version" }, 0));
+    expect(await run(h, ["deploy", "--yes", "--json"])).toBe(0);
+    expect(JSON.parse(h.out()).data.versionId).toBe("the-real-version");
+    expect(h.port.calls).toContainEqual(`promote cms-acme the-real-version @${ACCOUNT}`);
+  });
+
+  it("an upload that exits 1 fails with the last command-failed message", async () => {
+    await makeSite(ACME);
+    const h = harness(existingWorker(), recordsExec({ type: "command-failed", message: "Your Worker exceeded the size limit" }, 1));
+    expect(await run(h, ["deploy", "--yes", "--json"])).toBe(1);
+    const e = JSON.parse(h.out());
+    expect(e.error.code).toBe("UPLOAD_REJECTED");
+    expect(e.error.message).toContain("Your Worker exceeded the size limit");
+  });
+
+  it("a first deploy that exits 0 after an inner failure is live", async () => {
+    await makeSite(FRESH);
+    const state = freshAccount();
+    const exec = recordsExec({ type: "deploy", version_id: "first", targets: ["https://cms-acme.example.workers.dev"] }, 0, () => {
+      state.workers["cms-acme"] = { name: "cms-acme", deployments: [], versions: [], secrets: [] };
+    });
+    const h = harness(state, exec, { env: ADMIN_ENV });
+    expect(await run(h, ["deploy", "--name", "acme", "--yes", "--json"])).toBe(0);
+    expect(JSON.parse(h.out()).data).toMatchObject({ versionId: "first", url: "https://cms-acme.example.workers.dev" });
+  });
+
+  it("a first deploy that exits 1 fails with the record's message", async () => {
+    await makeSite(FRESH);
+    const h = harness(freshAccount(), recordsExec({ type: "command-failed", message: "Upload rejected" }, 1), { env: ADMIN_ENV });
+    expect(await run(h, ["deploy", "--name", "acme", "--yes", "--json"])).toBe(1);
+    expect(JSON.parse(h.out()).error).toMatchObject({ code: "DEPLOY_FAILED" });
+    expect(JSON.parse(h.out()).error.message).toContain("Upload rejected");
+  });
+
+  it("the dependency install runs without Corepack's download question", async () => {
+    await makeSite(ACME);
+    const { exec, calls } = projectExec();
+    await run(harness(existingWorker(), exec), ["deploy", "--yes", "--json"]);
+    expect(calls.find((c) => c.line.startsWith("pnpm install"))?.env).toMatchObject({ COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" });
   });
 });

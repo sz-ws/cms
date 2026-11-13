@@ -48,9 +48,13 @@ async function accountChecks(ctx: Ctx, port: CloudflarePort, site: Site, identit
   const data = await ctx.progress("Reading Cloudflare", () =>
     gatherStatus(ctx, { site, reads: port.account(account.id), account, auth: identity.source ?? { kind: "other", label: "" }, cfVersion }),
   );
+  const logs: Check = site.logsEnabled
+    ? { id: "logs", status: "pass", title: "Workers Logs", detail: "enabled" }
+    : { id: "logs", status: "warn", title: "Workers Logs", detail: "not enabled; cms logs --since has nothing to read", hint: 'Add "observability": { "enabled": true } to wrangler.jsonc and deploy. The live tail (cms logs) works without it.' };
   return [
     { id: "account", status: "pass", title: "Account", detail: account.name },
     ...siteChecks(data),
+    logs,
     ...(await settingsChecks(site.dir, site.configPath, data.secrets.names)),
   ];
 }

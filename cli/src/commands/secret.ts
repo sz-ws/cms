@@ -41,7 +41,7 @@ function nameArgument(ctx: Ctx): string {
     throw new CliError({
       code: "MANAGED_SECRET",
       message: `${name} is managed by cms and is not changed or deleted by hand.`,
-      hint: `${WHY[name]} cms deploy (or cms secrets) creates it only when it is missing.`,
+      hint: `${WHY[name]} cms deploy creates it only when it is missing.`,
       next: ["cms secret list"],
     });
   }

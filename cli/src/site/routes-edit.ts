@@ -59,16 +59,36 @@ export function addCustomDomain(text: string, host: string): string {
 
 /** Remove the route whose pattern is `host`; unchanged text when there is none. */
 export function removeRoute(text: string, host: string): string {
-  const routes = getMember(parseJsonc(text), "routes")?.value;
-  if (routes?.kind !== "array") return text;
+  const member = getMember(parseJsonc(text), "routes");
+  const routes = member?.value;
+  if (!member || routes?.kind !== "array") return text;
   const index = routes.items.findIndex((n) => routeOf(n)?.pattern === host);
   if (index < 0) return text;
+  if (routes.items.length === 1) return removeMember(text, member.keySpan.start, routes.span.end);
   const item = routes.items[index];
   const next = routes.items[index + 1];
   const previous = routes.items[index - 1];
   // Take the separating comma with it: up to the next item, or back to the previous one.
-  const span = next ? { start: item.span.start, end: next.span.start } : previous ? { start: previous.span.end, end: item.span.end } : { start: routes.span.start, end: routes.span.end };
-  return applyEdits(text, [{ span, replacement: next || previous ? "" : "[]" }]);
+  const span = next ? { start: item.span.start, end: next.span.start } : { start: previous.span.end, end: item.span.end };
+  return applyEdits(text, [{ span, replacement: "" }]);
+}
+
+/**
+ * Remove a whole top-level member with its line: the exact reverse of how
+ * addCustomDomain inserts "routes", so add then remove gives the file back.
+ */
+function removeMember(text: string, keyStart: number, valueEnd: number): string {
+  let start = keyStart;
+  while (start > 0 && (text[start - 1] === " " || text[start - 1] === "\t")) start--;
+  if (text[start - 1] === "\n") start--;
+  if (text[start - 1] === "\r") start--;
+  const comma = commaAfter(text, valueEnd);
+  if (comma !== null) return applyEdits(text, [{ span: { start, end: comma + 1 }, replacement: "" }]);
+  // The last member: its separating comma is the one before it.
+  let before = start;
+  while (before > 0 && /\s/.test(text[before - 1])) before--;
+  if (text[before - 1] === ",") before--;
+  return applyEdits(text, [{ span: { start: before, end: valueEnd }, replacement: "" }]);
 }
 
 /** The position of the comma that follows a value, or null when it is the last member. */

@@ -70,8 +70,12 @@ function secretChecks(data: StatusData): Check[] {
     return [{ id: "secrets", status: "warn", title: "Managed secrets", detail: "could not be read", next: ["cms status"] }];
   }
   const missing = data.secrets.managed.filter((m) => m.set === false).map((m) => m.name);
+  const notLive = data.secrets.managed.filter((m) => m.set === false && data.secrets.notLive.includes(m.name));
+  if (notLive.length > 0) {
+    return [{ id: "secrets", status: "fail", title: "Managed secrets", detail: `not on the live version: ${missing.join(", ")}`, hint: "The newest version has them but is not live (an unfinished deploy or a rollback).", next: ["cms deploy"] }];
+  }
   return missing.length > 0
-    ? [{ id: "secrets", status: "fail", title: "Managed secrets", detail: `missing ${missing.join(", ")}`, hint: "Existing keys are never overwritten.", next: ["cms secrets"] }]
+    ? [{ id: "secrets", status: "fail", title: "Managed secrets", detail: `missing ${missing.join(", ")}`, hint: "cms deploy creates the missing ones; existing keys are never overwritten.", next: ["cms deploy"] }]
     : [{ id: "secrets", status: "pass", title: "Managed secrets", detail: `${data.secrets.managed.length} of ${data.secrets.managed.length} set` }];
 }
 
@@ -82,7 +86,7 @@ export function siteChecks(data: StatusData): Check[] {
   return [core, ...resourceChecks(data), ...secretChecks(data)];
 }
 
-/** Plugin settings, as `cms preflight` judges them, from vars and the Worker's secret names. */
+/** Plugin settings (preflight.ts judges them), from vars and the Worker's secret names. */
 export async function settingsChecks(siteDir: string, configPath: string, secretNames: readonly string[] | null): Promise<Check[]> {
   const { extensions, errors } = await collectAllSettings(path.join(siteDir, "extensions"));
   const vars = readVars(await readFile(configPath, "utf8"));

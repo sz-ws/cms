@@ -7,7 +7,9 @@
 //     dies after the write still has the only copy
 
 import type { AccountApi } from "../cloudflare/port.js";
+import { CloudflareError } from "../cloudflare/port.js";
 import { CliError } from "../frame/errors.js";
+import { fromCloudflare, VERSION_NOT_LIVE_CODE } from "../frame/output.js";
 import { MANAGED_SECRETS, defaultSecretGenerator } from "../secrets.js";
 
 export interface ManagedSecretsResult {
@@ -52,6 +54,7 @@ export async function ensureManagedSecrets(api: AccountApi, worker: string, o: M
     try {
       await api.putSecret(worker, spec.name, value);
     } catch (e) {
+      if (e instanceof CloudflareError && e.apiCode === VERSION_NOT_LIVE_CODE) throw fromCloudflare(e, o.again);
       throw new CliError({
         code: "SECRETS_FAILED",
         message: `Could not set ${spec.name}: ${e instanceof Error ? e.message : String(e)}`,

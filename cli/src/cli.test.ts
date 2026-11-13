@@ -721,7 +721,7 @@ describe("run — add <id>@<version>:registry 為舊 core 留的版本", () => {
   it("最新版不相容時,指出這個 core 能裝的那一版", async () => {
     const code = await run(["add", "oldcoreext", "--source", regUrl], repoDir);
     expect(code).toBe(EXIT.CORE_INCOMPATIBLE);
-    expect(errOut()).toContain("sz-ws-cms add oldcoreext@1.5.0");
+    expect(errOut()).toContain("cms plugin add oldcoreext@1.5.0");
   });
 
   it("指定那一版:從 versions/1.5.0/files 抓", async () => {

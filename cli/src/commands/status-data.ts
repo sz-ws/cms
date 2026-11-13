@@ -31,7 +31,11 @@ export interface StatusData {
   urls: string[];
   resources: ResourceRow[];
   /** Names only; values are never read. names is null when they could not be read. */
-  secrets: { names: string[] | null; managed: { name: string; set: boolean | null }[] };
+  /**
+   * The live version's secrets: Cloudflare keeps secrets per version, and the newest
+   * version is not always the live one. notLive: on the newest version but not live.
+   */
+  secrets: { names: string[] | null; managed: { name: string; set: boolean | null }[]; notLive: string[] };
   plugins: { id: string; version: string | null }[];
 }
 
@@ -116,6 +120,19 @@ function liveOf(deployments: Deployment[] | null | undefined): StatusData["live"
   return { versionId: main?.versionId ?? "", deployedAt: latest.createdOn, versions: latest.versions };
 }
 
+/** The secret names of the live version, and those only the newest version has. */
+async function liveSecrets(ctx: Ctx, site: Site, reads: AccountReads, remote: RemoteReads): Promise<{ secrets: string[] | null | undefined; notLive: string[] }> {
+  const live = liveOf(remote.deployments)?.versionId;
+  if (!live || !remote.secrets) return { secrets: remote.secrets, notLive: [] };
+  const names = await tolerant(ctx, "the live version's secrets", () => reads.versionSecrets(site.workerName, live));
+  if (names === undefined) return { secrets: remote.secrets, notLive: [] };
+  const notLive = remote.secrets.filter((n) => !names.includes(n));
+  if (notLive.length > 0) {
+    ctx.warn("SECRETS_NOT_LIVE", `The newest version of ${site.workerName} has ${notLive.join(", ")}, but the live version does not (an unfinished deploy or a rollback). Run cms deploy.`);
+  }
+  return { secrets: names, notLive };
+}
+
 export interface StatusInput {
   site: Site;
   reads: AccountReads;
@@ -128,7 +145,7 @@ export async function gatherStatus(ctx: Ctx, input: StatusInput): Promise<Status
   const { site, reads } = input;
   const remote = await readRemote(ctx, site, reads);
   const resources = [workerRow(site, remote), ...(await d1Rows(ctx, site, reads, remote)), ...r2Rows(site, remote), ...kvRows(site, remote)];
-  const secrets = remote.secrets;
+  const { secrets, notLive } = await liveSecrets(ctx, site, reads, remote);
   return {
     site: { worker: site.workerName, core: site.coreVersion, config: path.relative(site.dir, site.configPath) },
     account: { id: input.account.id, name: input.account.name, from: input.account.from },
@@ -139,6 +156,7 @@ export async function gatherStatus(ctx: Ctx, input: StatusInput): Promise<Status
     resources,
     secrets: {
       names: secrets ?? null,
+      notLive,
       managed: MANAGED_SECRETS.map((m) => ({ name: m.name, set: secrets === undefined || secrets === null ? null : secrets.includes(m.name) })),
     },
     plugins: site.plugins.map((p) => ({ id: p.id, version: p.version ?? null })),

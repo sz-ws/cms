@@ -125,7 +125,7 @@ export async function configureExtension(
           }`,
       ),
       "",
-      "rerun `sz-ws-cms preflight` after filling them in.",
+      "run `cms doctor` after filling them in.",
     ]);
     return { ...EMPTY, secretCommands: secretKeys.map(secretPutCommand) };
   }

@@ -5,6 +5,7 @@
 import { DEFAULT_TEMPLATE } from "../create.js";
 import { DEFAULT_SOURCE } from "../registry.js";
 import { OPERATIONS } from "./commands-operations.js";
+import { PLUGIN_COMMANDS_MORE } from "./commands-plugins.js";
 import type { CommandSpec, FlagSpec } from "./spec.js";
 
 const SITE_ERRORS = ["CONFIG_MISSING", "CONFIG_INVALID"] as const;
@@ -184,7 +185,7 @@ const READ_COMMANDS: readonly CommandSpec[] = [
   {
     name: "doctor",
     summary: "Checks with pass / warn / fail, each with a hint and the next command",
-    notes: ["Includes the plugin-settings checks of `cms preflight`. Exits 10 when a check fails."],
+    notes: ["Includes the plugin-settings checks (formerly `cms preflight`). Exits 10 when a check fails."],
     positionals: [],
     flags: [],
     mutates: "none",
@@ -252,7 +253,7 @@ const HELP: CommandSpec = {
   parser: "table",
 };
 
-export const COMMANDS: readonly CommandSpec[] = [...SITE_COMMANDS, ...READ_COMMANDS, ...OPERATIONS, ...PLUGIN_COMMANDS, HELP, ...KEPT];
+export const COMMANDS: readonly CommandSpec[] = [...SITE_COMMANDS, ...READ_COMMANDS, ...OPERATIONS, ...PLUGIN_COMMANDS, ...PLUGIN_COMMANDS_MORE, HELP, ...KEPT];
 
 export function findCommand(name: string): CommandSpec | undefined {
   return COMMANDS.find((c) => c.name === name);

@@ -41,8 +41,10 @@ function secretsLine(data: StatusData): string {
   const managed = data.secrets.managed;
   if (managed.some((m) => m.set === null)) return "unknown (the Worker's secrets could not be read)";
   const missing = managed.filter((m) => !m.set).map((m) => m.name);
-  const count = `${managed.length - missing.length} of ${managed.length} set`;
-  return missing.length > 0 ? `${count}, missing ${missing.join(", ")}` : count;
+  const count = `${managed.length - missing.length} of ${managed.length} set on the live version`;
+  const notLive = missing.filter((n) => data.secrets.notLive.includes(n));
+  const extra = notLive.length > 0 ? ` (${notLive.join(", ")} only on the newest version, not live)` : "";
+  return missing.length > 0 ? `${count}, missing ${missing.join(", ")}${extra}` : count;
 }
 
 export function renderStatus(data: StatusData, s: StyleSet, now: Date): string {

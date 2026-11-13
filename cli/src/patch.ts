@@ -115,3 +115,34 @@ export function patchRegistryContent(
     alreadyUpToDate: !importAdded && !arrayAdded,
   };
 }
+
+export interface UnpatchResult {
+  content: string;
+  importRemoved: boolean;
+  arrayRemoved: boolean;
+}
+
+/**
+ * patchRegistryContent 的反向:拿掉 `import { ident } from "./id";`(或強化層的
+ * `import "./id";`)整行,並把 ident 從 registry 陣列移除。陣列那一行的排版契約
+ * (`export const registry: Extension[] = [a, b];` 單行)維持不變。
+ * 不做磁碟 I/O —— 呼叫端負責讀寫。
+ */
+export function unpatchRegistryContent(content: string, id: string): UnpatchResult {
+  const ident = camelCaseId(id);
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const importRe = new RegExp(`^import (?:\\{\\s*${ident}\\s*\\} from )?["']\\./${escaped}["'];\\r?\\n?`, "gm");
+  let out = content.replace(importRe, "");
+  const importRemoved = out !== content;
+  let arrayRemoved = false;
+  const arrayMatch = out.match(REGISTRY_ARRAY_RE);
+  if (arrayMatch) {
+    const items = arrayMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
+    const kept = items.filter((item) => item !== ident);
+    if (kept.length !== items.length) {
+      out = out.replace(arrayMatch[0], `export const registry: Extension[] = [${kept.join(", ")}];`);
+      arrayRemoved = true;
+    }
+  }
+  return { content: out, importRemoved, arrayRemoved };
+}

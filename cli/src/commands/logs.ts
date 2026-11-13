@@ -17,6 +17,9 @@ export function tailArgs(worker: string, json: boolean, passthrough: readonly st
   return ["tail", worker, "--format", json ? "json" : "pretty", "--config", configPath, ...passthrough];
 }
 
+export const LOGS_NOT_ENABLED =
+  'Workers Logs is not enabled in wrangler.jsonc, so recent events are not kept and "no errors" proves nothing. Add "observability": { "enabled": true } and deploy; the live tail (cms logs) works without it.';
+
 const UNITS: Record<string, number> = { m: 60_000, h: 3_600_000, d: 86_400_000 };
 /** Workers Logs keeps events for 7 days. */
 const MAX_SINCE_MS = 7 * 86_400_000;
@@ -38,10 +41,12 @@ async function recentErrors(ctx: Ctx, site: Site): Promise<Outcome> {
   if (span === null || !Number.isInteger(limit) || limit < 1 || limit > 500) {
     throw new CliError({ code: "BAD_VALUE", message: "--since takes 15m, 2h or 3d (at most 7d); --limit 1-500.", next: ["cms logs --since 15m"] });
   }
+  if (!site.logsEnabled) ctx.warn("LOGS_NOT_ENABLED", LOGS_NOT_ENABLED);
   const { port, account } = await connect(ctx, site.accountId);
   const now = ctx.io.now().getTime();
   const events = await ctx.progress("Reading Workers Logs", () => port.account(account.id).recentErrors(site.workerName, now - span, now, limit));
-  const text = events.length === 0 ? `No errors from ${site.workerName} in the last ${String(ctx.values.since)}.` : events.map(line).join("\n");
+  const none = site.logsEnabled ? `No errors from ${site.workerName} in the last ${String(ctx.values.since)}.` : `Nothing recorded for ${site.workerName}: Workers Logs is not enabled.`;
+  const text = events.length === 0 ? none : events.map(line).join("\n");
   return { data: { worker: site.workerName, since: ctx.values.since, events }, text };
 }
 

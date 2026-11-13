@@ -316,6 +316,7 @@ describe("cms doctor", () => {
     expect(e.ok).toBe(true);
     expect(e.data.summary.fail).toBe(0);
     expect(e.data.checks.find((c: { id: string }) => c.id === "setting:EXT_BLOG_API_KEY")).toBeUndefined();
+    expect(e.data.checks.find((c: { id: string }) => c.id === "logs")).toMatchObject({ status: "warn", detail: expect.stringContaining("not enabled") });
   });
 
   it("reports a missing cf as a failing check instead of stopping, and never prompts", async () => {
@@ -332,7 +333,8 @@ describe("cms doctor", () => {
     state.workers["cms-acme"].secrets = ["SECRETS_KEY"];
     const h = harness(state);
     expect(await run(h, ["doctor", "--json"])).toBe(10);
-    expect(envelope(h).error.next).toContain("cms secrets");
+    expect(envelope(h).error.next).toContain("cms deploy");
+    expect(envelope(h).error.next).not.toContain("cms secrets");
   });
 
   it("checks config even when Cloudflare is out of reach", async () => {
