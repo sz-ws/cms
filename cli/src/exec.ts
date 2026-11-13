@@ -31,6 +31,11 @@ export interface ExecOptions {
    * 只能靠 exit code 判斷。所以**不要**拿它跑需要解析輸出的指令。
    */
   inheritStdio?: boolean;
+  /**
+   * 疊加在繼承環境之上的變數(例:對 cf 指定 CLOUDFLARE_ACCOUNT_ID)。
+   * 只加不減:childEnv() 濾掉的管理員密碼不會因此回來。
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 export type Executor = (
@@ -82,7 +87,7 @@ export const spawnExecutor: Executor = (cmd, args, opts) =>
       cwd: opts.cwd,
       // Windows 上 npx 是 npx.cmd,不透過 shell 會找不到(同 scripts/ensure-dev-env.mjs)。
       shell: process.platform === "win32",
-      env: childEnv(),
+      env: { ...childEnv(), ...opts.env },
       stdio: opts.inheritStdio === true ? "inherit" : ["pipe", "pipe", "pipe"],
     });
 
