@@ -3,14 +3,15 @@
 Run these from the repository root. Assumes the project already runs locally
 (`pnpm dev` works) and you have a Cloudflare account.
 
-The CLI can now complete the flow below, including first-admin setup:
+The CLI completes the flow below, including first-admin setup. It shows a plan
+and asks before changing anything:
 
 ```bash
-pnpm cli:build
-node cli/dist/cli.js deploy --site-slug my-site
+pnpm run deploy --dry-run         # the plan; changes nothing
+pnpm run deploy                   # same as node scripts/cms.mjs deploy
 ```
 
-This uses your own Cloudflare account. The new CLI flow is currently a local development change, not an npm release. See [CLI deployment options](cli/README.md#one-command-deployment) for custom domains, CI credentials, and interrupted-run recovery. The following sections document the individual operations for reference.
+This uses your own Cloudflare account. The CLI is built from `cli/` on first use; it is not an npm release yet. See [`cms deploy`](cli/README.md#cms-deploy) for the order of steps, CI credentials and interrupted-run recovery. The following sections document the individual operations for reference.
 
 ## 1. Log in
 
@@ -46,9 +47,9 @@ days is rendered again on its next request. See
 [Public pages are stored whole](#public-pages-are-stored-whole).
 
 Want the tag cache in its own database — a multi-tenant account, or a hard
-boundary between your schema and OpenNext's? `cms setup --separate-tag-cache`
-creates a second `cms-tag-cache` database instead; by hand that is one more
-`wrangler d1 create cms-tag-cache`, and its id goes in the second placeholder.
+boundary between your schema and OpenNext's? Create a second `cms-<name>-tag-cache`
+database by hand (`wrangler d1 create`) and put its name and id in the second
+entry; `cms deploy` keeps a site set up that way.
 
 ## 3. Wire the IDs
 
@@ -119,10 +120,10 @@ pnpm exec wrangler secret put SETUP_TOKEN   # paste the value
 > you need to see — you type it into the `/setup` form. Once the first admin
 > exists the endpoint returns 403 forever, so the token stops mattering.
 
-`sz-ws-cms setup` generates and sets all three for you, and prints `SETUP_TOKEN`
-(only that one — the other two never need to be seen by a human). It cannot do so on the very
-first run — the Worker does not exist yet, so there is nothing to attach a
-secret to. Deploy once, then re-run `setup`; it skips everything already done.
+`cms deploy` generates and sets the missing ones right after the Worker exists,
+and uses `SETUP_TOKEN` itself to create the first admin; it never rotates an
+existing one. `cms secrets` does the same check on its own and prints a newly
+created `SETUP_TOKEN` once.
 
 ## 5. Migrate and deploy
 
@@ -263,9 +264,9 @@ is missing at any point:
      policy now (below).
    - Keep `NEXT_INC_CACHE_R2_BUCKET` and `NEXT_TAG_CACHE_D1`. If you removed
      either, put it back from the template.
-6. **Lifecycle rule:** run `cms setup` again (or `cms deploy`, which runs it). It
-   adds the rule to the page-cache bucket and leaves everything else as it is;
-   it also warns about a leftover `CMS_KV` entry. By hand, the
+6. **Lifecycle rule:** `cms deploy` adds it to the page-cache bucket (next to
+   the bucket's other rules) and leaves everything else as it is; `cms status`
+   and `cms doctor` report a leftover `<worker>-kv` namespace. By hand, the
    `wrangler r2 bucket lifecycle add` command from step 2 above.
 7. **Your own pages.** The root layout no longer sets `force-dynamic`. A page you
    added under `src/app` outside the public catch-all that reads the database,
@@ -330,10 +331,10 @@ scripts load from are no longer enforced by the header. The
   "unmet peer" line when the pair drifts — treat that as a build blocker, not a
   warning, and bump both or neither.
 - `pnpm exec wrangler deploy --dry-run` gives you a config and bundle preflight before the real deploy.
-- `node cli/dist/cli.js deploy --dry-run` is a different thing: it reports the deployment plan and reads what already exists on your account. It runs the project's own Wrangler, so it needs `pnpm install` to have finished; on a fresh clone it stops with exit 7 and tells you. `cms deploy` without `--dry-run` installs first, so it works on a fresh clone.
+- `cms deploy --dry-run` is a different thing: it reads what exists on your account through `cf` and prints the plan (`--json` returns it as `plan[]`). It sends no write and installs nothing; on a fresh clone it warns that wrangler's sign-in is checked after the real run installs dependencies.
 - `migrations/` are applied to `cms-db` only. The tag cache binding points at the same database by default, and it declares no `migrations_dir` — its one table comes from OpenNext.
 - After `opennextjs-cloudflare build`, run `pnpm exec wrangler deploy --dry-run` and check **Total Upload**, the uncompressed Worker bundle size. Since [September 4, 2026](https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/), both Free and Paid plans allow **64 MiB uncompressed**; the former compressed-size limits and this project's 8 MB compressed gate no longer apply. The gzip figure is informational. Continue checking startup time (1 second) and runtime memory (128 MB); larger bundles do not increase those limits.
-- Optional split server: `worker/split-entry.ts` is the same Worker as `custom-worker.ts` (both build their `fetch` and `scheduled` with `worker/create-worker.ts`), but the Next server is uploaded as its own module and every webpack chunk and route file as a further CommonJS module, each compiled the first time a request needs it. Requests answered by middleware or by the stored-page cache never load the server. The default entry stays `custom-worker.ts` and needs nothing extra. A site opts in by setting `main` in `wrangler.jsonc` to `worker/split-entry.ts`, adding `new_module_registry` to `compatibility_flags`, and adding `base_dir: ".open-next/split"`, `find_additional_modules: true` and the two `rules` listed in `worker/README.md`. `pnpm preview` and `pnpm deploy` run `scripts/split-server-chunks.mjs` after `opennextjs-cloudflare build` (a site that builds elsewhere, such as Workers Builds, runs it between build and deploy); it does nothing unless `main` is the split entry, and it stops the deploy when the build output does not have the shape it expects. `pnpm worker:smoke` (`scripts/smoke-worker-boot.mjs`) boots the built Worker with `wrangler dev --local` on a throwaway local D1 and checks `/`, `/admin`, `/robots.txt`, `/login`, a plugin page (`/shop/cart`, with the compiled-in shop enabled), two API routes and `/__scheduled`, so each check loads a different set of modules; CI runs both. Re-check the split on every OpenNext or Next upgrade. See `worker/README.md`.
+- Optional split server: `worker/split-entry.ts` is the same Worker as `custom-worker.ts` (both build their `fetch` and `scheduled` with `worker/create-worker.ts`), but the Next server is uploaded as its own module and every webpack chunk and route file as a further CommonJS module, each compiled the first time a request needs it. Requests answered by middleware or by the stored-page cache never load the server. The default entry stays `custom-worker.ts` and needs nothing extra. A site opts in by setting `main` in `wrangler.jsonc` to `worker/split-entry.ts`, adding `new_module_registry` to `compatibility_flags`, and adding `base_dir: ".open-next/split"`, `find_additional_modules: true` and the two `rules` listed in `worker/README.md`. `pnpm preview` and `cms deploy` run `scripts/split-server-chunks.mjs` after `opennextjs-cloudflare build` (a site that builds elsewhere, such as Workers Builds, runs it between build and deploy); it does nothing unless `main` is the split entry, and it stops the deploy when the build output does not have the shape it expects. `pnpm worker:smoke` (`scripts/smoke-worker-boot.mjs`) boots the built Worker with `wrangler dev --local` on a throwaway local D1 and checks `/`, `/admin`, `/robots.txt`, `/login`, a plugin page (`/shop/cart`, with the compiled-in shop enabled), two API routes and `/__scheduled`, so each check loads a different set of modules; CI runs both. Re-check the split on every OpenNext or Next upgrade. See `worker/README.md`.
 - Schema changes are hand-written SQL in `migrations/`; `db:generate` is disabled on
   purpose. Scaffold the next migration with `pnpm db:new <slug>`, mirror the DDL in
   `src/lib/schema.ts` (same names, same columns), and verify with

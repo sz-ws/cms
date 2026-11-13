@@ -110,7 +110,7 @@ manifest can use uploads, email or AI without knowing what's behind them.
 
 ## Deploying
 
-See [DEPLOY.md](./DEPLOY.md). `cms deploy` (or `cms setup` and `pnpm run deploy`)
+See [DEPLOY.md](./DEPLOY.md). `cms deploy` (`pnpm run deploy` runs it) shows a plan and
 does it against your own Cloudflare account: one D1 database, two R2 buckets
 (media, and the stored public pages with a 30-day lifecycle rule), three
 secrets. Public pages are rendered once, stored whole and answered without
