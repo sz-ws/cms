@@ -26,14 +26,22 @@ const wrangler = path.join(root, "node_modules", "wrangler", "bin", "wrangler.js
 const READY_TIMEOUT_MS = 180_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
+// shop 有沒有編進這個站:看 extensions/registry.ts 最下面 `export const registry` 那一行的陣列
+// (那一行的排版是 CLI 的公開契約,所以讀得到)。
+const HAS_SHOP = /^export const registry\b[^=]*=\s*\[[^\]]*\bshop\b/m.test(
+  readFileSync(path.join(root, "extensions", "registry.ts"), "utf8"),
+);
+
 // 每一項:路徑、預期狀態碼、(可選)預期轉址到的路徑。不跟隨轉址。
 // - `/`:需要 Next server 的頁面
 // - `/admin`:只跑 middleware(沒登入 → 307 到 /login)
 // - `/robots.txt`:路由處理器
 // - `/api/search`:API 路由;沒登入回 401,而且不會碰到後台資料
 // - `/login`:另一個存起來的頁面(後台那一組的 layout 與元件,跟公開頁是不同的模組)
-// - `/shop/cart`:插件的公開頁(shop 在下面的 SEED 裡啟用;插件元件是另一批模組)
+// - `/shop/cart`:插件的公開頁(插件元件是另一批模組)
 // - `/api/ext/shop/checkout-visitor`:插件 API 的分派路由(公開;沒登入回 signedIn: false)
+//   這兩項看站有沒有把 shop 編進來(HAS_SHOP):有 → 在下面的 SEED 裡啟用,預期 200;
+//   沒有(這個 repo 的預設 registry)→ 預期 404。兩種情況都會載入那條路由的模組,5xx 一律算失敗。
 // - `/__scheduled`:`scheduled` handler 存在而且跑得完(wrangler dev --test-scheduled)
 // 拆分入口每個路由的模組要到第一次被請求才編譯,所以每一項盡量走不同的一組模組。
 const CHECKS = [
@@ -42,12 +50,12 @@ const CHECKS = [
   { path: "/robots.txt", status: 200 },
   { path: "/api/search?q=smoke", status: 401 },
   { path: "/login", status: 200 },
-  { path: "/shop/cart", status: 200 },
-  { path: "/api/ext/shop/checkout-visitor", status: 200 },
+  { path: "/shop/cart", status: HAS_SHOP ? 200 : 404 },
+  { path: "/api/ext/shop/checkout-visitor", status: HAS_SHOP ? 200 : 404 },
   { path: "/__scheduled?cron=*+*+*+*+*", status: 200 },
 ];
 
-// 本機 D1 套完 migrations 之後先啟用 shop(編進來的插件,coreApi ^2.0.0),上面才有插件的頁面與 API 可打。
+// 站有編 shop 進來時,本機 D1 套完 migrations 之後先啟用它(coreApi ^2.0.0),上面才有插件的頁面與 API 可打。
 const SEED = "INSERT INTO extensions (id, enabled, version, installed_at, updated_at) VALUES ('shop', 1, '0.0.0', 0, 0)";
 
 function parseArgs(argv) {
@@ -81,6 +89,7 @@ function applyMigrations(config, persistTo) {
     [wrangler, "d1", "migrations", "apply", "DB", "--local", "--config", config, "--persist-to", persistTo],
     { cwd: root, stdio: ["ignore", "ignore", "pipe"], env: wranglerEnv() },
   );
+  if (!HAS_SHOP) return;
   execFileSync(
     process.execPath,
     [wrangler, "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistTo, "--command", SEED],
