@@ -115,6 +115,9 @@
   - `payment-kit/report-spec.ts` (1.63.0): what a transfer report asks for (reference with label and
     digits, payer name, either, both) — `ManualPaymentProvider.reportSpec()`, default 帳號末五碼 / 5.
     `commerce-kit/transfer-legacy.ts` keeps the old `last5` body field until 2.0.
+  - `PaymentProvider.checkReady()` (2.1.0, optional): can the method take a checkout right now
+    (`not_configured` otherwise). Asked by a caller that writes an order before `createCheckout`;
+    payment-kit passes on the manual provider's `ready` option and a gateway adapter's `checkReady`.
   - `commerce-kit/money.ts`: `formatMoney(amount, currency)` on `lib/units.ts`; client components read the
     site currency from `components/CurrencyProvider.tsx` (root layout), server tables render `MoneyText`.
   - `commerce-kit/shipping-engine.ts`: `regions` in the shipping config (≤ 60) with `DEFAULT_REGIONS`

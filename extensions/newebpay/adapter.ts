@@ -5,7 +5,11 @@ import type {
   PaymentGatewayAdapter,
 } from "@/ext/payment-kit";
 import { timingSafeEqual } from "@/ext/payment-kit";
-import type { CheckoutRequest, CheckoutSession } from "@/ext/capabilities";
+import type {
+  CheckoutRequest,
+  CheckoutSession,
+  PaymentReadiness,
+} from "@/ext/capabilities";
 import type { CoreServices } from "@/ext/services";
 import {
   decryptTradeInfo,
@@ -89,6 +93,13 @@ class NewebPayAdapter implements PaymentGatewayAdapter {
       hashIv,
       env: env === "prod" ? "prod" : "test",
     };
+  }
+
+  /** 0.4.0(core 2.1.0):商店金鑰設定齊不齊,和 buildCheckout 同一份檢查。 */
+  async checkReady(): Promise<PaymentReadiness> {
+    return (await this.loadConfig())
+      ? { ok: true }
+      : { ok: false, error: "not_configured" };
   }
 
   async buildCheckout(

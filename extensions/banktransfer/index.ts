@@ -1,7 +1,7 @@
 import { defineExtension } from "@/ext/types";
 import { createManualPaymentProvider, normalizeReportSpec } from "@/ext/payment-kit";
 import type { ManualInstructionsResult, TransferReportSpec } from "@/ext/payment-kit";
-import type { CheckoutRequest } from "@/ext/capabilities";
+import type { CheckoutRequest, PaymentReadiness } from "@/ext/capabilities";
 import type { CoreServices } from "@/ext/services";
 import { formatMoney } from "@/ext/commerce-kit/money";
 import { getSiteCurrency } from "@/lib/units-server";
@@ -30,30 +30,47 @@ async function readReportSpec(services: CoreServices): Promise<TransferReportSpe
   return normalizeReportSpec({ ask, reference: { label, digits } });
 }
 
-async function buildInstructions(
-  services: CoreServices,
-  req: CheckoutRequest,
-): Promise<ManualInstructionsResult> {
+interface Account {
+  bankName: string;
+  bankCode: string;
+  accountNumber: string;
+  accountName: string;
+}
+
+/** 收款帳戶(去掉頭尾空白)。銀行名稱、帳號、戶名缺一個 → null;銀行代碼可留空。 */
+async function readAccount(services: CoreServices): Promise<Account | null> {
   // ScopedSettings 收**完整** key(ext.<extId>.<key>)—— 只給區域名會 throw。
-  const [bankName, bankCode, accountNumber, accountName, currency] = await Promise.all([
+  const [bankName, bankCode, accountNumber, accountName] = (await Promise.all([
     services.settings.get<string>("ext.banktransfer.bankName", ""),
     services.settings.get<string>("ext.banktransfer.bankCode", ""),
     services.settings.get<string>("ext.banktransfer.accountNumber", ""),
     services.settings.get<string>("ext.banktransfer.accountName", ""),
-    getSiteCurrency(),
-  ]);
-  if (!bankName.trim() || !accountNumber.trim() || !accountName.trim()) {
-    return { ok: false, error: "not_configured" };
-  }
+  ])).map((value) => String(value ?? "").trim());
+  if (!bankName || !accountNumber || !accountName) return null;
+  return { bankName, bankCode, accountNumber, accountName };
+}
+
+/**
+ * 0.3.0(core 2.1.0 的 checkReady):收款帳戶填好沒有。先成立訂單、後取付款指示的一方(訂單管理插件)
+ * 在寫入訂單之前問,沒填好不成立訂單。和付款指示讀同一份帳戶。
+ */
+async function checkReady(services: CoreServices): Promise<PaymentReadiness> {
+  return (await readAccount(services)) ? { ok: true } : { ok: false, error: "not_configured" };
+}
+
+async function buildInstructions(
+  services: CoreServices,
+  req: CheckoutRequest,
+): Promise<ManualInstructionsResult> {
+  const [account, currency] = await Promise.all([readAccount(services), getSiteCurrency()]);
+  if (!account) return { ok: false, error: "not_configured" };
+  const { bankName, bankCode, accountNumber, accountName } = account;
   return {
     ok: true,
     instructions: [
-      {
-        label: "銀行",
-        value: bankCode.trim() ? `${bankName.trim()}（${bankCode.trim()}）` : bankName.trim(),
-      },
-      { label: "帳號", value: accountNumber.trim() },
-      { label: "戶名", value: accountName.trim() },
+      { label: "銀行", value: bankCode ? `${bankName}（${bankCode}）` : bankName },
+      { label: "帳號", value: accountNumber },
+      { label: "戶名", value: accountName },
       { label: "金額", value: formatMoney(req.amount, currency) },
       { label: "訂單編號", value: req.orderNo },
     ],
@@ -69,9 +86,11 @@ export const banktransfer = defineExtension({
   // 0.2.0(core 1.63.0):客人回報匯款要填什麼是這裡的設定(reportSpec):參考碼(名稱、位數)、
   // 匯款人姓名、擇一或兩個都要,預設是以前的帳號末五碼、5 位數字;付款指示的金額照站台幣別寫。部署後就能改
   // (讀設定不看資料庫記的版本);「套用更新」只寫入這三個設定的預設值、記下版本。
-  version: "0.2.0",
-  // ^2.0.0:core 2.0(公開頁整頁存起來)。只換範圍,插件版本不變。
-  coreApi: "^2.0.0",
+  // 0.3.0(core 2.1.0):收款帳戶沒填好時,訂單成立之前回答 not_configured(checkReady)。以前訂單管理插件
+  // 先成立訂單、預留庫存,取付款指示時才知道,客人看到「付款方式尚未設定完成」,庫存被那張訂單佔到付款期限。
+  version: "0.3.0",
+  // ^2.1.0:checkReady 與 payment-kit 的 ready 選項是 core 2.1.0 新增。
+  coreApi: "^2.1.0",
   description:
     "匯款收款（不經金流）：結帳時出示收款帳號，款項由後台人工對帳後入帳。",
   icon: "landmark",
@@ -182,6 +201,7 @@ export const banktransfer = defineExtension({
           table: ORDERS_TABLE,
           instructions: (req) => buildInstructions(services, req),
           reportSpec: () => readReportSpec(services),
+          ready: () => checkReady(services),
         }),
     },
   ],

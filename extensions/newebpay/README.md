@@ -51,6 +51,12 @@ adapter 對回原本的訂單(先找完全相同的,再找開頭相同的唯一�
 藍新回呼的 TradeInfo 是 32 bytes 一塊補齊的 PKCS7(官方範例 `addpadding($string, $blocksize = 32)`),
 `crypto.ts` 的 `decryptTradeInfo` 自己去填充,不交給 WebCrypto 檢查(0.2.1)。
 
+## 金鑰沒設定好時(0.4.0)
+
+商店代號、HashKey、HashIV 缺一個或長度不對時,adapter 的 `checkReady()` 回 `not_configured`,和 `buildCheckout`
+同一份檢查(core 2.1.0 的 `PaymentProvider.checkReady`)。先成立訂單、後建付款的插件(例如商城營運)在寫入訂單與
+預留庫存之前問,金鑰沒設定好時不成立訂單。
+
 ## 付款之後客人回到哪裡
 
 ReturnURL 與 ClientBackURL(付款頁的「返回商店」)預設是 kit 的結果頁與首頁。認得這張訂單的插件填 core

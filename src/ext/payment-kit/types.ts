@@ -1,4 +1,8 @@
-import type { CheckoutRequest, CheckoutSession } from "../capabilities";
+import type {
+  CheckoutRequest,
+  CheckoutSession,
+  PaymentReadiness,
+} from "../capabilities";
 
 // payment-kit:多金流共用引擎的 adapter 契約。
 //
@@ -46,6 +50,12 @@ export interface PaymentGatewayAdapter {
     req: CheckoutRequest,
     urls: GatewayUrls,
   ): Promise<CheckoutSession>;
+
+  /**
+   * 2.1.0(選填):現在能不能建立結帳(金鑰設定齊不齊),和 buildCheckout 同一份檢查;設定缺失回
+   * { ok:false, error:"not_configured" }。只讀。有實作,kit 才提供 PaymentProvider.checkReady。
+   */
+  checkReady?(): Promise<PaymentReadiness>;
 
   /** 回呼驗簽 —— 這是 ingress 的唯一認證,fail closed(設定缺失一律 false)。 */
   verifyCallback(rawBody: string): Promise<boolean>;

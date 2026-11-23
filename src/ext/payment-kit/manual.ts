@@ -4,6 +4,7 @@ import type {
   CheckoutSession,
   ManualInstructionLine,
   PaymentProvider,
+  PaymentReadiness,
 } from "../capabilities";
 import type { CoreServices } from "../services";
 import { settlePayment, TABLE_RE, type SettleOutcome } from "./settle";
@@ -45,6 +46,11 @@ export interface ManualPaymentProviderOptions {
    * 1.63.0:付款人回報匯款要填什麼(讀自家 settings;規則見 report-spec.ts)。沒給 = 預設的帳號末五碼。
    */
   reportSpec?: () => Promise<TransferReportSpec>;
+  /**
+   * 2.1.0:現在能不能收款(讀自家 settings,和 instructions() 同一份檢查)。設定缺失回
+   * { ok:false, error:"not_configured" }。有給,provider 才有 checkReady()。
+   */
+  ready?: () => Promise<PaymentReadiness>;
 }
 
 /** 人工收款 provider:PaymentProvider + admin 核帳入口。 */
@@ -64,10 +70,15 @@ export interface ManualPaymentProvider extends PaymentProvider {
 }
 
 class KitManualPaymentProvider implements ManualPaymentProvider {
+  /** 2.1.0:extension 有給 ready 才有;沒給 = 不知道,呼叫端照舊由 createCheckout 得知。 */
+  readonly checkReady?: () => Promise<PaymentReadiness>;
+
   constructor(private readonly opts: ManualPaymentProviderOptions) {
     if (!TABLE_RE.test(opts.table)) {
       throw new Error(`[payment-kit] invalid orders table name "${opts.table}"`);
     }
+    const { ready } = opts;
+    if (ready) this.checkReady = () => ready();
   }
 
   async getStatus(orderNo: string) {

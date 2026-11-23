@@ -14,8 +14,8 @@ import { NewebPayAdminPage } from "./admin-page";
 // 引擎(訂單/回呼結算/結果頁/checkout handler)全部來自 @/ext/payment-kit。
 // 接新金流照抄這個資料夾的形狀:換 adapter、換表名、換設定欄位即可。
 //
-// coreApi "^1.14.0":依賴 PaymentProvider 介面與 CallbackReceiver 的 Response
-// 回傳支援(皆 1.14.0 新增,payment-kit 同批)。
+// coreApi "^2.1.0":0.4.0 起回答 PaymentProvider.checkReady(2.1.0)—— 商店金鑰沒設定好時,先成立訂單、
+// 後建付款的一方在寫入訂單之前得知。PaymentProvider 介面與 CallbackReceiver 的 Response 回傳是 1.14.0。
 //
 // 兩個 provides 共用同一個 kit provider,只差 mode:
 //   payment/newebpay        → NotifyURL(server-to-server,回 {ok:true})
@@ -33,9 +33,10 @@ export const newebpay = defineExtension({
   // paidInFull)。對不上時錢可能已經扣了,所以不算失敗:交給 kit 當作結果無法確認(「付款結果確認中」、通知回 500)。
   // 0.3.0(core 1.79.0):後台「測試付款」付完(或在藍新按返回商店)回到這個插件的後台頁,上面寫這次的結果
   // (PaymentReturn 只認領測試訂單,isTestOrderNo;商店訂單照舊由訂單管理插件認領)。
-  version: "0.3.0",
-  // ^2.0.0:core 2.0(公開頁整頁存起來)。只換範圍,插件版本不變。
-  coreApi: "^2.0.0",
+  // 0.4.0(core 2.1.0):商店金鑰沒填或格式不對時,訂單成立之前回答 not_configured(adapter.ts 的 checkReady),
+  // 訂單管理插件不先成立訂單、不預留庫存。
+  version: "0.4.0",
+  coreApi: "^2.1.0",
   description:
     "線上刷卡收款：客人在藍新付款成功後，訂單會自動改成已付款。",
   icon: "credit-card",

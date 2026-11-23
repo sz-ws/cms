@@ -104,9 +104,22 @@ export type CheckoutSession =
     }
   | { ok: false; error: string };
 
+/**
+ * 2.1.0: whether a payment method can take a checkout right now. `error` is the code createCheckout
+ * answers for the same reason ("not_configured").
+ */
+export type PaymentReadiness = { ok: true } | { ok: false; error: string };
+
 export interface PaymentProvider {
   /** 1.37.0: authoritative local payment status, for retry and reconciliation. */
   getStatus?(orderNo: string): Promise<{ status: "pending" | "paid" | "failed"; amount: number } | null>;
+  /**
+   * 2.1.0: can this method take a checkout right now? For a caller that writes its own records before
+   * createCheckout (an order, a stock reservation): it asks first and writes nothing on { ok: false }.
+   * It only reads, and it answers for the method, not for one order. Optional: without it the caller
+   * learns the same from createCheckout, as before.
+   */
+  checkReady?(): Promise<PaymentReadiness>;
   createCheckout(req: CheckoutRequest): Promise<CheckoutSession>;
 }
 
