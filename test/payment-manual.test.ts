@@ -160,3 +160,23 @@ describe("settleManual(統一結算)", () => {
     expect(state.hookEvents).toHaveLength(0);
   });
 });
+
+// 2.1.0:PaymentProvider.checkReady —— 「現在能不能收一筆結帳」。先寫訂單、後建付款的呼叫端在寫入之前問。
+describe("checkReady(2.1.0)", () => {
+  it("有給 ready → 照它回答,不寫付款列", async () => {
+    const answer = { ok: false as const, error: "not_configured" };
+    const provider = createManualPaymentProvider({
+      services: makeServices(),
+      providerId: "manualtest",
+      table: TABLE,
+      instructions: async () => state.instructions,
+      ready: async () => answer,
+    });
+    expect(await provider.checkReady?.()).toEqual(answer);
+    expect(await d1().prepare(`SELECT COUNT(*) AS n FROM ${TABLE}`).first("n")).toBe(0);
+  });
+
+  it("沒給 ready → 沒有 checkReady(呼叫端照舊由 createCheckout 得知)", () => {
+    expect(makeProvider(makeServices()).checkReady).toBeUndefined();
+  });
+});

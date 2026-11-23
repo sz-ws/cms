@@ -6,6 +6,7 @@ import type {
   CheckoutRequest,
   CheckoutSession,
   PaymentProvider,
+  PaymentReadiness,
 } from "../capabilities";
 import type { CoreServices } from "../services";
 import type { GatewayUrls, PaymentGatewayAdapter } from "./types";
@@ -37,10 +38,15 @@ export interface PaymentProviderOptions {
 }
 
 class KitPaymentProvider implements PaymentProvider, CallbackReceiver {
+  /** 2.1.0:adapter 有 checkReady 才有;沒有 = 不知道,呼叫端照舊由 createCheckout 得知。 */
+  readonly checkReady?: () => Promise<PaymentReadiness>;
+
   constructor(private readonly opts: PaymentProviderOptions) {
     if (!TABLE_RE.test(opts.table)) {
       throw new Error(`[payment-kit] invalid orders table name "${opts.table}"`);
     }
+    const { adapter } = opts;
+    if (adapter.checkReady) this.checkReady = () => adapter.checkReady!();
   }
 
   private async siteUrl(): Promise<string> {

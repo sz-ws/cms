@@ -1887,4 +1887,16 @@
 // use. A site opts in through `wrangler.jsonc` (`main`, the flag, `base_dir`, `find_additional_modules`, `rules`);
 // `custom-worker.ts` stays the default and needs none of it. `scripts/smoke-worker-boot.mjs` boots the built
 // Worker before deploys. `worker/README.md` has the details. Infrastructure only, no API change.
-export const CORE_API_VERSION = "2.0.0";
+// 2.1.0: A payment method can say it is not ready before anything is written for an order.
+// `PaymentProvider.checkReady()` (optional; `PaymentReadiness` = `{ ok: true } | { ok: false, error }`) answers
+// whether the method can take a checkout right now, with the code `createCheckout` gives for the same reason
+// (`not_configured`). It only reads and answers for the method, not for one order. It is for a caller that writes its
+// own records before `createCheckout` (an order manager that reserves stock with the order): such a caller learned that
+// a method was not set up only after the order existed, and the buyer got the error while the stock stayed reserved
+// until the payment deadline. A caller asks first and writes nothing on `{ ok: false }`; a provider without the method
+// is asked by `createCheckout`, as before. The shop's own checkout (`commerce-kit/checkout.ts`) creates the payment
+// session before the order and does not need it. payment-kit: `createManualPaymentProvider` takes `ready` and
+// `PaymentGatewayAdapter` may have `checkReady`; the kit's provider has `checkReady` only when the extension gave one.
+// banktransfer 0.3.0 (the account is entered) and newebpay 0.4.0 (the merchant keys pass the same check as
+// `buildCheckout`) answer it and declare coreApi "^2.1.0". Additive: plugins on "^2.0.0" load unchanged.
+export const CORE_API_VERSION = "2.1.0";
