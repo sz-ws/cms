@@ -1899,4 +1899,10 @@
 // `PaymentGatewayAdapter` may have `checkReady`; the kit's provider has `checkReady` only when the extension gave one.
 // banktransfer 0.3.0 (the account is entered) and newebpay 0.4.0 (the merchant keys pass the same check as
 // `buildCheckout`) answer it and declare coreApi "^2.1.0". Additive: plugins on "^2.0.0" load unchanged.
+// Unversioned (2026-11-25): a page from before the last deploy reloads itself instead of showing Next's English error
+// page. `src/app/global-error.tsx` (new, core) catches what no other boundary does; a chunk that will not load
+// (`lib/chunk-reload.ts`: webpack's ChunkLoadError and the browsers' failed dynamic-import messages) reloads the page
+// once per URL per minute (sessionStorage; no reload when it cannot remember one). Anything else, or the same failure
+// after the reload, shows `src/app/site-error.tsx`, a new site-owned file (`SiteError({ reloading, reload })`,
+// `SITE_ERROR_LANG`; default: white page, one sentence, 重新整理 and 回首頁). Not plugin API.
 export const CORE_API_VERSION = "2.1.0";

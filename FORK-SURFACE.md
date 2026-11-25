@@ -36,6 +36,7 @@ grep -rn "\[site\]\|\[site-seam\]\|\[core\] 不要" src/ extensions/ wrangler.js
 | 路徑 | 放什麼 |
 |---|---|
 | `src/app/site.css` | 品牌色、字體、樣式覆寫。在 `globals.css` 之後載入,所以蓋得掉 token 預設值 |
+| `src/app/site-error.tsx` | 整個網站壞掉時的畫面(logo、品牌色、文字)。`global-error.tsx` 是 core 的:它決定要不要先自動重新整理一次,畫面交給這個檔 |
 | `extensions/<你的站>/` | 這個站專屬的 extension。多數客製都該落在這裡 |
 | `extensions/registry.ts` | 加一行 import + 陣列項。⚠️ `export const registry` 那行的排版是 CLI 的契約,不要換行 |
 | `wrangler.jsonc` | worker 名稱、D1/R2 的 id(`sz-ws-cms setup` 會自動填)。但 `main` 與 `triggers` 是 core 的(`main` 只在 `custom-worker.ts` 與選用的 `worker/split-entry.ts` 之間選,見 `worker/README.md`) |
